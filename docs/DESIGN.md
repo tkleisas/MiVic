@@ -104,8 +104,8 @@ so narrative and mechanics validate each other from day one.
 |---|---|---|---|
 | Signature | design bureau (prototype gating) | parallel slots, batch build | per-unit morale |
 | Resources | Πόροι + Ενέργεια | Πόροι + Ενέργεια (cheap) | Πόροι + Ενέργεια (abundant) + morale funding |
-| Ground | rugged light/medium tank, electro-artillery, AA | infantry, light tank, artillery, AA | heavy MBT, self-propelled gun, air defence |
-| Air | few, powerful + orbital strike | many, cheap | few, excellent |
+| Ground | rugged light/medium tank, electro-artillery, AA | infantry, light tank, artillery, AA, **robots** | heavy MBT, self-propelled gun, air defence |
+| Air | few, powerful + orbital strike | many, cheap, **drones** | few, excellent |
 | Win | cheap capable mass + a few irreplaceable prototypes | never run out of bodies | out-tech and out-spend, if morale holds |
 
 Scope guard: 1 map, ~5 buildings and 5 units per faction, 2 resources, 1 utility

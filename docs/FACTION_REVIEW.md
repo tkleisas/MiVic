@@ -205,6 +205,42 @@ Two signature mechanics, both now built:
   bonus is +0.02 morale per friendly within scan range, capped at +0.20, so a large
   swarm is steady but never unbreakable.
 
+### 2.2.1 Their most advanced weapons: robots and drones — decided, not built
+
+The Chinese cannot out-tech anyone, so their *advanced* hardware is **automation**:
+machines instead of people. This is the faction's identity stated as hardware — a
+manufacturing giant with lagging technology does not build better weapons, it
+builds weapons that do not need soldiers.
+
+| Tier | Unit | Role | Mechanics |
+|---|---|---|---|
+| 3 | **Ρομποτικό Πεζικό** | automaton infantry | **no morale** — it cannot rout; **no water cost** (no crews to drink or feed); high energy cost to build and maintain |
+| 3 | **Ντρόουν** | expendable aircraft | cheap, low damage, **no morale**, produced in numbers |
+
+Why this is the right top end for them:
+
+- **It answers their own weakness.** The Κινέζοι morale floor is 0.80 and their
+  units are individually the weakest, so a bad engagement cascades. Automata are
+  immune to the cascade — the one thing the swarm could not buy with numbers.
+- **It is a direct counter to the Δυτικοί**, whose entire system is per-unit
+  morale. Against robots, the Western advantage evaporates; what is left is an
+  expensive army fighting a cheap one.
+- **It costs them the resource that represents people.** Water is crews, food and
+  cooling. Robots drink no water and eat no food, but they need *energy* — so the
+  Chinese economy shifts from a balanced base to an energy-hungry one, which is a
+  real build-order decision rather than a stat swap.
+- **It stays inside their ceiling.** Tier 3 is their maximum, so their most
+  advanced weapons are era III and there is no tier 4 for them. The ceiling still
+  means something.
+
+Implementation needs one new system hook: a `UnitDefinition` flag for automata that
+`MoraleSystem` honours — skip the unit, hold morale at maximum, never rout. That is
+small, but it is the first per-unit *behavioural* flag in the catalogue, so it
+belongs in the same change as the two units.
+
+Two tier-3 projects unlock them: **Ρομποτική Παραγωγή** (robotic infantry) and
+**Σμήνη Ντρόουν** (drones).
+
 Ground pressure 1250 makes mud punishing for them, which is deliberate — but they
 are the AI ally in the vertical slice, so it is worth checking that the AI ally
 does not bog down and stop participating.
@@ -224,6 +260,8 @@ now aligned with the content.
 | II | Επίπεδο 3: Αεροπορία | 2 | → tier 3 | built |
 | II | **Αριθμητική Συνοχή** | 2 | +0.02 morale per nearby friend, capped at +0.20 | **built** |
 | II | **Αντιαεροπορικό Δίκτυο** | 2 | +15 % anti-air damage | proposed |
+| III | **Ρομποτική Παραγωγή** | 3 | unlocks Ρομποτικό Πεζικό | **decided, not built** |
+| III | **Σμήνη Ντρόουν** | 3 | unlocks Ντρόουν | **decided, not built** |
 
 Every project is cheap and none is deep, which is the point: they are the faction
 whose research is broad and shallow, and whose real scaling comes from parallel
