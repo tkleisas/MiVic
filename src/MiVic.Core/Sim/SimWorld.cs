@@ -612,6 +612,11 @@ public sealed class SimWorld
             Profiler.Mark(ref Profiler.Vision, ref Profiler.WorstVision);
             EconomySystem.Tick(this);
             Profiler.Mark(ref Profiler.Economy, ref Profiler.WorstEconomy);
+
+            if (TerrainTypes.HasWeather)
+            {
+                TerrainTypes.ExpireWeather(Tick);
+            }
             ResearchSystem.Tick(this);
             Profiler.Mark(ref Profiler.Research, ref Profiler.WorstResearch);
             PrototypeSystem.Tick(this);
@@ -943,6 +948,21 @@ public sealed class SimWorld
         if (index >= 0 && state.AbilityReadyTick is not null)
         {
             state.AbilityReadyTick[index] = Tick + definition.CooldownTicks;
+        }
+
+        if (definition.WeatherDurationTicks > 0)
+        {
+            TerrainTypes.ApplyWeather(
+                target.X,
+                target.Z,
+                definition.RadiusMm,
+                TerrainType.Mud,
+                Tick + definition.WeatherDurationTicks);
+        }
+
+        if (definition.Damage <= 0)
+        {
+            return true;
         }
 
         long radiusSquared = (long)definition.RadiusMm * definition.RadiusMm;

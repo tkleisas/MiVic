@@ -27,6 +27,10 @@ public sealed class TerrainLayer
     public const int RockSlopePermille = 700;
 
     private readonly byte[] _types;
+    private readonly byte[] _original;
+    private readonly int[] _weatherExpiry;
+
+    private int _weatherCells;
 
     private TerrainLayer(int size, int cellSizeMm, int originMm, int waterLevelMm, int maxHeightMm, byte[] types)
     {
@@ -36,6 +40,8 @@ public sealed class TerrainLayer
         WaterLevelMm = waterLevelMm;
         MaxHeightMm = maxHeightMm;
         _types = types;
+        _original = new byte[types.Length];
+        _weatherExpiry = new int[types.Length];
     }
 
     /// <summary>Cells per side; matches the navigation grid.</summary>
@@ -387,6 +393,116 @@ public sealed class TerrainLayer
 
     /// <summary>Surface at a cell index.</summary>
     public TerrainType TypeAt(int index) => (TerrainType)_types[index];
+
+    /// <summary>Raw surface bytes, for hashing. Terrain is no longer seed-only once it can be changed.</summary>
+    public ReadOnlySpan<byte> RawTypes => _types;
+
+    /// <summary>True while any cell is under a temporary weather effect.</summary>
+    public bool HasWeather => _weatherCells > 0;
+
+    /// <summary>Cell index containing a world coordinate, or -1 when outside.</summary>
+    public int IndexOfWorld(int worldX, int worldZ)
+    {
+        int x = (worldX - OriginMm) / CellSizeMm;
+        int z = (worldZ - OriginMm) / CellSizeMm;
+
+        return (uint)x >= (uint)Size || (uint)z >= (uint)Size ? -1 : (z * Size) + x;
+    }
+
+    /// <summary>Replaces a cell's surface immediately.</summary>
+    public bool SetType(int index, TerrainType type)
+    {
+        if ((uint)index >= (uint)_types.Length)
+        {
+            return false;
+        }
+
+        _types[index] = (byte)type;
+        return true;
+    }
+
+    /// <summary>
+    /// Lays a surface over a circular area until <paramref name="expiresTick"/>.
+    /// <para>
+    /// The original surface of each affected cell is remembered once, so overlapping
+    /// effects extend rather than corrupt one another and the ground reverts to
+    /// exactly what it was. That is what makes weather control a timed weapon
+    /// rather than a permanent edit to the map.
+    /// </para>
+    /// </summary>
+    /// <returns>Number of cells covered.</returns>
+    public int ApplyWeather(int centreX, int centreZ, int radiusMm, TerrainType type, long expiresTick)
+    {
+        int minX = (centreX - radiusMm - OriginMm) / CellSizeMm;
+        int maxX = (centreX + radiusMm - OriginMm) / CellSizeMm;
+        int minZ = (centreZ - radiusMm - OriginMm) / CellSizeMm;
+        int maxZ = (centreZ + radiusMm - OriginMm) / CellSizeMm;
+
+        minX = IntMath.Clamp(minX, 0, Size - 1);
+        maxX = IntMath.Clamp(maxX, 0, Size - 1);
+        minZ = IntMath.Clamp(minZ, 0, Size - 1);
+        maxZ = IntMath.Clamp(maxZ, 0, Size - 1);
+
+        long radiusSquared = (long)radiusMm * radiusMm;
+        int tick = (int)Math.Min(expiresTick, int.MaxValue);
+        int covered = 0;
+
+        for (int z = minZ; z <= maxZ; z++)
+        {
+            for (int x = minX; x <= maxX; x++)
+            {
+                int centreXmm = OriginMm + (x * CellSizeMm) + (CellSizeMm / 2);
+                int centreZmm = OriginMm + (z * CellSizeMm) + (CellSizeMm / 2);
+                int dx = centreXmm - centreX;
+                int dz = centreZmm - centreZ;
+
+                if (((long)dx * dx) + ((long)dz * dz) > radiusSquared)
+                {
+                    continue;
+                }
+
+                int index = (z * Size) + x;
+
+                if (_weatherExpiry[index] == 0)
+                {
+                    _original[index] = _types[index];
+                    _weatherCells++;
+                }
+
+                _types[index] = (byte)type;
+                _weatherExpiry[index] = tick;
+                covered++;
+            }
+        }
+
+        return covered;
+    }
+
+    /// <summary>Reverts every weather effect that has run out. Returns cells restored.</summary>
+    public int ExpireWeather(long tick)
+    {
+        if (_weatherCells == 0)
+        {
+            return 0;
+        }
+
+        int restored = 0;
+
+        for (int index = 0; index < _types.Length; index++)
+        {
+            if (_weatherExpiry[index] == 0 || _weatherExpiry[index] > tick)
+            {
+                continue;
+            }
+
+            _types[index] = _original[index];
+            _weatherExpiry[index] = 0;
+            _weatherCells--;
+            restored++;
+        }
+
+        return restored;
+    }
 
     /// <summary>Surface at a lattice coordinate; grass outside the grid.</summary>
     public TerrainType TypeAtCell(int cellX, int cellZ)

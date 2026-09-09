@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 298 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 302 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 dotnet run --project src/MiVic.Game
@@ -146,7 +146,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
 | Pick round-trip | 168/168 |
-| Tests | 315 passing (298 core, 17 audio) |
+| Tests | 319 passing (302 core, 17 audio) |
 
 ### Performance
 
@@ -331,10 +331,22 @@ target.
 |---|---|---|---|---|
 | Τροχιακό Πλήγμα | 3 | Σοβιετικοί | Κόκκινος Ουρανός + design bureau | 350 damage in 55 m, enemies only |
 | Τακτικό Πυρηνικό Όπλο | 4 | Σοβιετικοί + Δυτικοί | a standing **Πυρηνικός Σταθμός** | 900 damage in 110 m, **friend and foe** |
+| Έλεγχος Καιρού | 4 | Σοβιετικοί | Κόκκινος Λογισμός + design bureau | turns a 70 m area to **mud for 60 s** — no damage at all |
 
 A nuke does not distinguish friend from foe; the orbital strike does, because it is
 aimed. Losing the nuclear plant takes the capability away with it, which makes the
 plant the first structure in the game whose value is not its income.
+
+**Έλεγχος Καιρού** is the payoff of the whole ground-pressure system: the
+Σοβιετικοί soak a 70 m stretch of ground into mud for sixty seconds, aimed at
+whoever has the worst ground pressure. It deals no damage — the mud is the weapon.
+Terrain is no longer a pure function of the seed, so the surface is part of the
+state hash and the ground reverts exactly when the effect expires.
+
+**Terrain is currently simulated but not drawn**: it changes pathing, cost and
+passability, and the fog overlay hides the enemy half of the map, but the ground
+itself is still a single texture. Showing mud, water and snow is part of the
+rendering work.
 
 The **Καταδρομέας** is the Δυτικοί era-V edge: fast, hard-hitting, fragile, and
 **invisible** to the enemy until it fires. A shot reveals it for five seconds, and

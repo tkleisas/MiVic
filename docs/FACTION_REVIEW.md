@@ -358,7 +358,7 @@ a strategic commitment rather than a button:
 | **Τροχιακό Πλήγμα** (orbital strike) | 3 | Σοβιετικοί | Κόκκινος Ουρανός project + design bureau | **built** |
 | **Τακτικό πυρηνικό όπλο** | 4 | Σοβιετικοί **and** Δυτικοί | a **Πυρηνικός Σταθμός** | **built** |
 | **Αποφυγή ανίχνευσης** (stealth) | 5 | Δυτικοί only | — | **built** |
-| **Έλεγχος Καιρού** (weather control) | 4 | Σοβιετικοί | — | blocked on mutable terrain |
+| **Έλεγχος Καιρού** (weather control) | 4 | Σοβιετικοί | — | **built** |
 
 - **Tactical nukes are shared by the superpowers, not the West's alone.** Both the
   Σοβιετικοί and the Δυτικοί reach era IV; the Κινέζοι never do, because their
@@ -388,8 +388,12 @@ reason, and it says which one in Greek. The support panel lists what the player'
 faction can call in; a click on the button arms the ability and the next left-click
 on the ground is the target.
 
-**Έλεγχος Καιρού remains the one blocked capability**, because terrain is generated
-once from the seed and nothing writes to it at runtime.
+**Έλεγχος Καιρού is now built**, which required making terrain mutable. It turns a
+70 m area into mud for 60 seconds, does no damage at all, and the ground reverts
+when it expires — the *rasputitsa* as a weapon, aimed at whoever has the worst
+ground pressure. Because terrain is no longer a pure function of the seed, the
+surface is now part of the state hash; `TerrainLayer` remembers each changed cell's
+original surface so overlapping effects extend rather than corrupt one another.
 
 ### 3.5 Roster
 

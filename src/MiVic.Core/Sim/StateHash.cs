@@ -28,6 +28,32 @@ public static class StateHash
         Mix(ref hash, world.PendingCommandCount);
         Mix(ref hash, (byte)world.Outcome);
 
+        // Terrain used to be a pure function of the seed and therefore needed no
+        // hashing. Weather control can now write to it, so the surface is state.
+        ReadOnlySpan<byte> terrain = world.TerrainTypes.RawTypes;
+
+        for (int i = 0; i < terrain.Length; i += 4)
+        {
+            int chunk = terrain[i];
+
+            if (i + 1 < terrain.Length)
+            {
+                chunk |= terrain[i + 1] << 8;
+            }
+
+            if (i + 2 < terrain.Length)
+            {
+                chunk |= terrain[i + 2] << 16;
+            }
+
+            if (i + 3 < terrain.Length)
+            {
+                chunk |= terrain[i + 3] << 24;
+            }
+
+            Mix(ref hash, chunk);
+        }
+
         // The mission's identity and objective progress decide the outcome, so
         // they are as much part of the state as any unit's position.
         Mix(ref hash, world.Mission?.Id);

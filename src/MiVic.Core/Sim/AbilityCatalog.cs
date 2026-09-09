@@ -10,6 +10,9 @@ public enum AbilityId : byte
 
     /// <summary>Tactical nuclear weapon. Both superpowers have one; the Κινέζοι never do.</summary>
     TacticalNuke = 2,
+
+    /// <summary>Σοβιετικοί: soak a stretch of ground into mud for a while.</summary>
+    WeatherControl = 3,
 }
 
 /// <summary>
@@ -32,6 +35,10 @@ public enum AbilityId : byte
 /// <param name="Damage">Damage dealt to everything inside the radius.</param>
 /// <param name="RadiusMm">Blast radius.</param>
 /// <param name="DamagesFriendlies">True when the blast does not distinguish friend from foe.</param>
+/// <param name="WeatherDurationTicks">
+/// Ticks the ability soaks the target area into mud. Zero for a pure strike; the
+/// ground reverts when it expires.
+/// </param>
 public readonly record struct AbilityDefinition(
     AbilityId Id,
     Faction Faction,
@@ -44,7 +51,8 @@ public readonly record struct AbilityDefinition(
     int CooldownTicks,
     int Damage,
     int RadiusMm,
-    bool DamagesFriendlies);
+    bool DamagesFriendlies,
+    int WeatherDurationTicks = 0);
 
 /// <summary>Every off-map support option in the game.</summary>
 public static class AbilityCatalog
@@ -84,6 +92,24 @@ public static class AbilityCatalog
             Damage: 900,
             RadiusMm: 110_000,
             DamagesFriendlies: true),
+
+        // Weather control is the payoff of the whole ground-pressure system: the
+        // Σοβιετικοί call the rasputitsa down on ground the enemy has to cross.
+        // It does no damage at all — the mud is the weapon.
+        new(
+            AbilityId.WeatherControl,
+            Faction.Soviet,
+            "Έλεγχος Καιρού",
+            "Μετατρέπει την περιοχή σε λάσπη για 60 δευτερόλεπτα.",
+            RequiredTechTier: 4,
+            RequiredTech: TechId.SovietAdvance4,
+            RequiredStructure: UnitKind.DesignBureau,
+            MaterialCost: 500,
+            CooldownTicks: 1_800,
+            Damage: 0,
+            RadiusMm: 70_000,
+            DamagesFriendlies: false,
+            WeatherDurationTicks: 1_200),
     ];
 
     /// <summary>Every ability, in catalogue order.</summary>
