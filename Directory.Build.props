@@ -1,0 +1,21 @@
+<Project>
+
+  <!--
+    Settings shared by every MiVic project.
+
+    Determinism note: MiVic.Core must never touch floating point in simulation
+    code. That rule is enforced by review and by the determinism tests in
+    tests/MiVic.Core.Tests, not by the compiler, so keep it in mind when adding
+    systems.
+  -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

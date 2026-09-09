@@ -1,0 +1,13 @@
+# Normalise line endings in the repository; check out per platform.
+* text=auto eol=lf
+
+# Windows-native files.
+*.sln text eol=crlf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets must never be normalised.
+*.ico binary
+*.bmp binary
+*.ttf binary

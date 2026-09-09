@@ -1,0 +1,63 @@
+using Microsoft.Xna.Framework;
+using MiVic.Core.Sim;
+
+namespace MiVic.Game.Data;
+
+/// <summary>
+/// Presentation colours. The three powers are deliberately readable at a glance
+/// from any camera angle: red for Σοβιετικοί, amber for Κινέζοι, blue for
+/// Δυτικοί.
+/// </summary>
+public static class FactionPalette
+{
+    /// <summary>Ground colour.</summary>
+    public static readonly Color Ground = new(44, 52, 42);
+
+    /// <summary>Grid line colour.</summary>
+    public static readonly Color GridLine = new(66, 76, 62);
+
+    /// <summary>Primary colour of a faction.</summary>
+    public static Color Primary(Faction faction) => faction switch
+    {
+        Faction.Soviet => new Color(200, 44, 36),
+        Faction.Chinese => new Color(224, 174, 44),
+        Faction.Western => new Color(50, 108, 210),
+        _ => new Color(140, 140, 140),
+    };
+
+    /// <summary>Darkened variant, used so unit roles read differently at a glance.</summary>
+    public static Color Shade(Color color, float amount) => new(
+        (int)(color.R * amount),
+        (int)(color.G * amount),
+        (int)(color.B * amount));
+
+    /// <summary>Colour for a specific unit role within a faction.</summary>
+    public static Color ForUnit(Faction faction, UnitKind kind)
+    {
+        Color primary = Primary(faction);
+
+        return kind switch
+        {
+            UnitKind.Infantry => Shade(primary, 1.15f),
+            UnitKind.Tank => primary,
+            UnitKind.Artillery => Shade(primary, 0.8f),
+            UnitKind.AntiAir => Shade(primary, 0.9f),
+            UnitKind.Aircraft => Shade(primary, 1.3f),
+            UnitKind.CommandCentre => Shade(primary, 0.65f),
+            _ => primary,
+        };
+    }
+
+    /// <summary>Player-facing Greek label for a unit role.</summary>
+    public static string UnitLabel(UnitKind kind) => kind switch
+    {
+        UnitKind.Infantry => "Πεζικό",
+        UnitKind.Tank => "Άρμα",
+        UnitKind.Artillery => "Πυροβολικό",
+        UnitKind.AntiAir => "Αντιαεροπορικό",
+        UnitKind.Aircraft => "Αεροσκάφος",
+        UnitKind.Harvester => "Συλλέκτης",
+        UnitKind.CommandCentre => "Κέντρο Διοίκησης",
+        _ => "Άγνωστο",
+    };
+}

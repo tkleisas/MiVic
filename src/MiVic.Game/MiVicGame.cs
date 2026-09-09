@@ -1,0 +1,2299 @@
+using System.Diagnostics;
+using System.Text;
+using ImGuiNET;
+using MiVic.Audio;
+using MiVic.Core.Campaign;
+using MiVic.Core.Numerics;
+using MiVic.Core.Pathfinding;
+using MiVic.Core.Replay;
+using MiVic.Core.Sim;
+using MiVic.Core.Terrain;
+using MiVic.Game.Audio;
+using MiVic.Game.Camera;
+using MiVic.Game.Data;
+using MiVic.Game.Rendering;
+using MiVic.Game.Rendering.Particles;
+using MiVic.Game.Sim;
+using MiVic.Game.Ui;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+using XnaGame = Microsoft.Xna.Framework.Game;
+
+namespace MiVic.Game;
+
+/// <summary>
+/// The MiVic client: a full-3D real-time strategy view of the deterministic
+/// simulation in <c>MiVic.Core</c>.
+/// <para>
+/// The client owns no game state. It reads the simulation, interpolates between
+/// ticks for smooth motion, and submits instanced draws. Rendering can never
+/// change the outcome of a tick.
+/// </para>
+/// </summary>
+public sealed class MiVicGame : XnaGame
+{
+    private const int WarmupFrames = 120;
+    private const int MaxReportedFrames = 100_000;
+
+    /// <summary>Team the human player commands: the Σοβιετικοί.</summary>
+    private const int PlayerTeam = 0;
+
+    private static readonly Color BackgroundColor = new(14, 16, 20);
+
+    /// <summary>
+    /// The window title, in Greek.
+    /// <para>
+    /// MonoGame creates the window through <c>SDL_CreateWindow</c>, whose title
+    /// argument is a plain <c>string</c> and therefore marshalled as ANSI: a
+    /// Greek title arrives at SDL as invalid bytes and the OS draws replacement
+    /// diamonds. <c>Sdl.Window.SetTitle</c> does not have that problem because it
+    /// encodes UTF-8 explicitly, so the title is re-applied once the window
+    /// exists.
+    /// </para>
+    /// </summary>
+    private const string GreekWindowTitle = "MiVic — Στρατηγική Πραγματικού Χρόνου";
+
+    private readonly GraphicsDeviceManager _graphics;
+    private readonly LaunchOptions _options;
+    private readonly Stopwatch _frameStopwatch = Stopwatch.StartNew();
+    private readonly List<double> _frameTimes = [];
+    private readonly GameHud _hud = new();
+    private readonly Dictionary<int, MeshBatch> _batches = [];
+    private readonly InstanceData[] _singleInstance = new InstanceData[1];
+
+    private InstancedRenderer? _renderer;
+    private ModelCatalog? _catalog;
+    private RtsCamera? _camera;
+    private SimBridge? _simulation;
+    private ImGuiController? _imgui;
+
+    private InstancedRenderer.Mesh? _terrainMesh;
+    private InstancedRenderer.Mesh? _selectionMarkerMesh;
+    private InstancedRenderer.Mesh? _axisMesh;
+    private InstancedRenderer.Mesh? _particleMesh;
+    private MeshBatch? _axisBatch;
+    private MeshBatch? _markerBatch;
+    private FogOverlayRenderer? _fog;
+    private ParticleSystem? _particles;
+    private AudioDirector? _audio;
+    private SfxDirector? _sfx;
+    private float[] _smokeTimers = [];
+    private RenderTarget2D? _screenshotTarget;
+    private SpriteFont? _uiFont;
+    private WorldLabelRenderer? _worldLabels;
+    private readonly List<WorldLabel> _labelBuffer = [];
+    private readonly List<OrderMarker> _orderMarkers = [];
+    private InstancedRenderer.Mesh? _orderMesh;
+    private MeshBatch? _orderBatch;
+
+    /// <summary>How long a move-order ring stays on screen, in seconds.</summary>
+    private const float OrderMarkerSeconds = 0.9f;
+
+    /// <summary>A fading ring where the player last ordered a move.</summary>
+    private readonly record struct OrderMarker(Vector3 Position, float Age);
+    private readonly SelectionController _selection = new();
+    private readonly List<EntityId>[] _controlGroups = new List<EntityId>[10];
+    private Vector2 _dragStart;
+    private bool _dragging;
+    private double _lastClickSeconds;
+    private int _lastClickedSlot = -1;
+
+    private KeyboardState _previousKeyboard;
+    private MouseState _previousMouse;
+    private int _previousScrollWheel;
+    private int _frameCount;
+    private int _drawCalls;
+    private int _instancesSubmitted;
+    private bool _greekGlyphsOk;
+    private bool _spriteFontHasGreek;
+    private FontCoverage _fontCoverage;
+    private double _worstFrameMilliseconds;
+    private int _peakParticles;
+    private int _peakParticleInstances;
+    private int _startGen0;
+    private int _startGen1;
+    private int _startGen2;
+    private long _startAllocatedBytes;
+    private double _worstFogMaskMilliseconds;
+    private double _fogMaskTotalMilliseconds;
+    private int _fogMaskRebuilds;
+    private int _worstFrameIndex;
+
+    public MiVicGame(LaunchOptions options)
+    {
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+
+        _graphics = new GraphicsDeviceManager(this)
+        {
+            PreferredBackBufferWidth = 1280,
+            PreferredBackBufferHeight = 720,
+            PreferredDepthStencilFormat = DepthFormat.Depth24,
+            PreferMultiSampling = true,
+            // Vertical sync would cap the self-test at the display refresh rate.
+            SynchronizeWithVerticalRetrace = !options.IsSelfTest,
+        };
+
+        IsFixedTimeStep = false;
+        IsMouseVisible = true;
+        Content.RootDirectory = "Content";
+        Window.AllowUserResizing = true;
+
+        // The title is deliberately NOT set here. See Initialize.
+    }
+
+    protected override void Initialize()
+    {
+        _graphics.ApplyChanges();
+        base.Initialize();
+
+        // Set the title only now that the native window exists.
+        //
+        // MonoGame creates the window through SDL_CreateWindow, whose title
+        // parameter is marshalled as ANSI, so a Greek title arrives as invalid
+        // bytes and the OS draws replacement diamonds. Sdl.Window.SetTitle does
+        // not have that problem because it encodes UTF-8 explicitly, but
+        // GameWindow.Title ignores an assignment that does not change the value —
+        // so the title must be left unset until this point for the setter to fire.
+        Window.Title = GreekWindowTitle;
+    }
+
+    protected override void LoadContent()
+    {
+        _camera = new RtsCamera
+        {
+            Target = Vector3.Zero,
+            MapHalfExtent = SimBridge.MapHalfExtentMetres,
+        };
+
+        // A screenshot wants the whole battlefield in frame.
+        if (_options.IsModelGallery)
+        {
+            _camera.ZoomTo(300f);
+            _camera.TiltTo(-1.42f);
+            _camera.Yaw = 0f;
+            _camera.FocusOn(Vector3.Zero);
+        }
+        else if (_options.WatchPath is not null)
+        {
+            // Playback is a spectator view: the whole map, so the recorded
+            // manoeuvres are all visible.
+            _camera.ZoomTo(620f);
+            _camera.TiltTo(-1.02f);
+            _camera.Yaw = 0.62f;
+            _camera.FocusOn(Vector3.Zero);
+        }
+        else if (_options.MissionId is not null)
+        {
+            // A mission starts looking at the player's own base.
+            MissionDefinition mission = MissionCatalog.Require(_options.MissionId);
+            _camera.ZoomTo(420f);
+            _camera.TiltTo(-0.92f);
+            _camera.Yaw = 0.62f;
+            _camera.FocusOn(new Vector3(
+                mission.PlayerBase.X / (float)WorldPos.MmPerMetre,
+                0f,
+                mission.PlayerBase.Z / (float)WorldPos.MmPerMetre));
+        }
+        else if (_options.ScreenshotPath is not null)
+        {
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 430f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.92f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 0.62f;
+            _camera.FocusOn(new Vector3(_options.ScreenshotTargetX ?? 0f, 0f, _options.ScreenshotTargetZ ?? 0f));
+        }
+
+        _simulation = _options.WatchPath is { } watchPath
+            ? new SimBridge(ReplayFile.Load(watchPath))
+            : _options.MissionId is { } missionId
+                ? new SimBridge(MissionCatalog.Require(missionId))
+                : new SimBridge(_options.Seed, _options.IsModelGallery);
+
+        _renderer = new InstancedRenderer(GraphicsDevice, Content);
+        _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
+
+        // The client meshes the simulation's own height field, so what is drawn is
+        // exactly what pathfinding reasons about.
+        _terrainMesh = _renderer.CreateMesh(TerrainMeshBuilder.FromHeightMap(_simulation.World.Terrain));
+        _selectionMarkerMesh = _renderer.CreateMesh(MeshBuilder.Cylinder(2.6f, 0.45f, 12));
+        _markerBatch = new MeshBatch(_selectionMarkerMesh, _simulation.World.Capacity);
+
+        // Order markers reuse the selection ring's geometry at a larger scale.
+        _orderMesh = _selectionMarkerMesh;
+        _orderBatch = new MeshBatch(_orderMesh, 32);
+
+        // Fog of war is a terrain-shaped overlay textured by the team's
+        // visibility mask, so its edge follows the ground instead of the cell
+        // lattice pathfinding uses.
+        _fog = new FogOverlayRenderer(
+            GraphicsDevice,
+            Content,
+            _simulation.World.Terrain,
+            _simulation.World.Navigation);
+
+        // Axis markers for the model gallery: a unit-cube scaled into bars.
+        _axisMesh = _renderer.CreateMesh(MeshBuilder.Box(1f, 1f, 1f));
+        _axisBatch = new MeshBatch(_axisMesh, _simulation.World.Capacity * 4);
+
+        // Particles are billboards: a unit quad the CPU orients per particle.
+        _particleMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
+        _particles = new ParticleSystem();
+        _smokeTimers = new float[_simulation.World.Capacity];
+
+        if (_options.ParticleDemo)
+        {
+            SpawnParticleDemo();
+        }
+
+        string fontPath = Path.Combine(AppContext.BaseDirectory, "Content", "Fonts", "NotoSans-Regular.ttf");
+        _imgui = new ImGuiController(GraphicsDevice, Window, fontPath, _options.FontSize);
+        _fontCoverage = _imgui.MeasureCoverage(SelfTestReport.GreekSample);
+        _greekGlyphsOk = _fontCoverage.IsComplete;
+
+        // The compiled SpriteFont, used for text that lives in the world.
+        _uiFont = Content.Load<SpriteFont>("Fonts/UiText");
+        _worldLabels = new WorldLabelRenderer(GraphicsDevice, _uiFont);
+        _spriteFontHasGreek = _worldLabels.HasGreekGlyphs;
+
+        _hud.ShowHelp = _options.ShowHelp;
+
+        // The soundtrack is generated, not loaded, so it is skipped in the modes
+        // that never open a window for long: a headless run does not need thirty
+        // seconds of music synthesised before it can measure a frame.
+        _audio = new AudioDirector(_options.Seed);
+        _sfx = new SfxDirector(_options.Seed) { IsMuted = _options.NoAudio };
+
+        if (!_options.NoAudio && !_options.IsSelfTest && _options.ScreenshotPath is null)
+        {
+            _audio.Play(FactionStyle.Soviet);
+        }
+
+        // Recording has to start before the first tick, otherwise the wander
+        // orders of the opening seconds are missing from the log and the replay
+        // cannot reproduce the match. A playback is not recorded: its own
+        // commands come from the log it is replaying.
+        if ((_options.IsSelfTest || _options.RecordPath is not null) && !_simulation.IsPlayback)
+        {
+            _simulation.World.StartRecording();
+        }
+
+        if (_options.VictoryDemo)
+        {
+            // Knock out every rival structure so the victory system decides the
+            // battle within a second, purely so the banner can be seen.
+            SimWorld world = _simulation.World;
+
+            for (int slot = 0; slot < world.Capacity; slot++)
+            {
+                if (!world.IsAliveSlot(slot))
+                {
+                    continue;
+                }
+
+                ref Entity entity = ref world.GetRefBySlot(slot);
+
+                if (entity.TeamId != PlayerTeam && IsBuilding(entity.Kind))
+                {
+                    world.Despawn(new EntityId(slot, entity.Generation));
+                }
+            }
+        }
+
+        if (_options.SelectHeadquarters)
+        {
+            SelectPlayerHeadquarters();
+        }
+
+        base.LoadContent();
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        _frameStopwatch.Stop();
+        double frameMilliseconds = _frameStopwatch.Elapsed.TotalMilliseconds;
+        _frameStopwatch.Restart();
+
+        if (_frameCount == WarmupFrames)
+        {
+            // Allocation is sampled over the measured window: a sporadic multi-
+            // millisecond pause that lands in a different system every run is
+            // usually the collector, not the system.
+            _startGen0 = GC.CollectionCount(0);
+            _startGen1 = GC.CollectionCount(1);
+            _startGen2 = GC.CollectionCount(2);
+            _startAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false);
+        }
+
+        _frameCount++;
+        if (_frameCount > WarmupFrames && _frameTimes.Count < MaxReportedFrames)
+        {
+            _frameTimes.Add(frameMilliseconds);
+
+            if (frameMilliseconds > _worstFrameMilliseconds)
+            {
+                _worstFrameMilliseconds = frameMilliseconds;
+                _worstFrameIndex = _frameCount;
+            }
+        }
+
+        KeyboardState keyboard = Keyboard.GetState();
+        MouseState mouse = Mouse.GetState();
+
+        if (Pressed(keyboard, Keys.F1))
+        {
+            _hud.ShowHelp = !_hud.ShowHelp;
+        }
+
+        if (Pressed(keyboard, Keys.M))
+        {
+            _audio?.ToggleMute();
+
+            if (_sfx is not null)
+            {
+                _sfx.IsMuted = _audio?.IsMuted ?? false;
+            }
+        }
+
+        if (Pressed(keyboard, Keys.Escape) && !_options.IsSelfTest)
+        {
+            Exit();
+        }
+
+        long elapsedMicroseconds = gameTime.ElapsedGameTime.Ticks / 10L;
+        _simulation!.Update(elapsedMicroseconds);
+        UpdateParticles((float)gameTime.ElapsedGameTime.TotalSeconds);
+
+        // Mouse actions are blocked only when ImGui actually wants the mouse.
+        // Gating them on the keyboard flag too was a bug: with keyboard navigation
+        // enabled, any focused HUD window reports WantCaptureKeyboard, and from
+        // then on the player could neither select nor order anything.
+        bool uiWantsMouse = _imgui!.WantsMouse;
+        bool uiWantsKeyboard = _imgui.WantsKeyboard;
+
+        // Once the battle is decided the player may look around but not fight on.
+        if (!uiWantsMouse && _simulation!.World.Outcome == GameOutcome.Ongoing)
+        {
+            HandleSelectionInput(keyboard, mouse, gameTime.TotalGameTime.TotalSeconds);
+        }
+
+        if (!uiWantsMouse && !uiWantsKeyboard)
+        {
+            int scroll = mouse.ScrollWheelValue - _previousScrollWheel;
+            _camera!.Update(
+                (float)gameTime.ElapsedGameTime.TotalSeconds,
+                keyboard,
+                _previousKeyboard,
+                mouse,
+                _previousMouse,
+                scroll);
+        }
+
+        _selection.PruneDead(_simulation.World);
+        UpdateOrderMarkers((float)gameTime.ElapsedGameTime.TotalSeconds);
+
+        _previousScrollWheel = mouse.ScrollWheelValue;
+        _previousKeyboard = keyboard;
+        _previousMouse = mouse;
+
+        _imgui.Update(gameTime);
+
+        HudCommand? command = _hud.Draw(BuildSnapshot());
+
+        if (command is HudCommand requested && !IsPlayback)
+        {
+            ApplyHudCommand(requested);
+        }
+
+        if (_dragging)
+        {
+            System.Numerics.Vector2 cursor = _imgui.MousePosition;
+            GameHud.DrawSelectionBox(
+                new System.Numerics.Vector2(_dragStart.X, _dragStart.Y),
+                cursor);
+        }
+
+        // The self-test runs frames as fast as it can, so the number of simulated
+        // ticks depends on how fast the renderer is — a lighter scene reaches the
+        // frame target with far fewer ticks. The AI only acts every
+        // DecisionInterval ticks, so the checks wait for at least two decision
+        // points before running, with a frame cap so a paused world still exits.
+        bool enoughTicks = _simulation.World.Tick >= AiSystem.DecisionInterval * 2;
+
+        if (_options.IsSelfTest &&
+            _frameCount >= _options.SelfTestFrames &&
+            (enoughTicks || _frameCount >= _options.SelfTestFrames * 6))
+        {
+            (int pickHits, int pickTotal) = CheckPickingRoundTrip();
+            string hudCommandCheck = CheckHudCommandPath();
+            string clickCheck = CheckClickSelection();
+            string moveOrderCheck = CheckMoveOrderPath();
+            string combatCheck = CheckCombatPath();
+            string aiCheck = CheckAiActivity();
+            string replayCheck = CheckReplayRoundTrip();
+            string missionCheck = CheckMissionObjectives();
+            string particleCheck = _particles is null
+                ? "n/a"
+                : $"{_particles.TotalSpawned} spawned, peak {_peakParticles} live / {_peakParticleInstances} drawn";
+            string sfxCheck = _sfx is null
+                ? "n/a"
+                : $"{_sfx.PlayedCount} played, {_sfx.DroppedCount} dropped, {_sfx.GeneratedCount} effects" +
+                  (_sfx.IsUnavailable ? ", no audio device" : string.Empty);
+
+            string gcCheck =
+                $"gen0 {GC.CollectionCount(0) - _startGen0}, gen1 {GC.CollectionCount(1) - _startGen1}, " +
+                $"gen2 {GC.CollectionCount(2) - _startGen2}, " +
+                $"{(GC.GetTotalAllocatedBytes(precise: false) - _startAllocatedBytes) / (1024d * 1024d):0.0} MB allocated";
+
+            // ImGui capture state: if this ever reports mouse capture while the
+            // cursor is over the battlefield, input is being swallowed.
+            string captureCheck =
+                $"mouse {_imgui.WantsMouse}, keyboard {_imgui.WantsKeyboard}, " +
+                $"window focused {ImGui.IsWindowFocused(ImGuiFocusedFlags.AnyWindow)}";
+
+            SelfTestReport.Write(
+                _options,
+                _frameTimes,
+                _simulation,
+                _instancesSubmitted,
+                _drawCalls,
+                _imgui.GlyphCount,
+                _imgui.FontCount,
+                _greekGlyphsOk,
+                Path.Combine("Content", "Fonts", "NotoSans-Regular.ttf"),
+                _catalog!.LoadedModels,
+                _catalog.FailedModels,
+                _fontCoverage,
+                _spriteFontHasGreek,
+                Window.Title,
+                WindowTitleProbe.ReadFromSdl(Window),
+                pickHits,
+                pickTotal,
+                hudCommandCheck,
+                clickCheck,
+                moveOrderCheck,
+                combatCheck,
+                aiCheck,
+                replayCheck,
+                missionCheck,
+                particleCheck,
+                sfxCheck,
+                gcCheck,
+                captureCheck,
+                _worstFogMaskMilliseconds,
+                _fogMaskRebuilds > 0 ? _fogMaskTotalMilliseconds / _fogMaskRebuilds : 0d,
+                _worstFrameIndex,
+                _simulation.World.Profiler);
+
+            Exit();
+        }
+
+        base.Update(gameTime);
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        bool capturing = _options.ScreenshotPath is not null && _frameCount >= _options.ScreenshotFrame;
+
+        if (capturing)
+        {
+            _screenshotTarget ??= new RenderTarget2D(
+                GraphicsDevice,
+                GraphicsDevice.PresentationParameters.BackBufferWidth,
+                GraphicsDevice.PresentationParameters.BackBufferHeight,
+                mipMap: false,
+                SurfaceFormat.Color,
+                DepthFormat.Depth24);
+
+            GraphicsDevice.SetRenderTarget(_screenshotTarget);
+        }
+
+        GraphicsDevice.Clear(BackgroundColor);
+        GraphicsDevice.DepthStencilState = DepthStencilState.Default;
+        GraphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
+        GraphicsDevice.BlendState = BlendState.Opaque;
+
+        DrawScene();
+        DrawWorldLabels();
+
+        if (_options.FontSample && _worldLabels is not null)
+        {
+            _worldLabels.DrawSample("Σοβιετικοί Κινέζοι Δυτικοί", new Vector2(60f, 520f), 3f, Color.White);
+        }
+
+        _imgui!.Render();
+
+        if (capturing)
+        {
+            GraphicsDevice.SetRenderTarget(null);
+            SaveScreenshot(_options.ScreenshotPath!);
+            Exit();
+        }
+
+        base.Draw(gameTime);
+    }
+
+    private void DrawScene()
+    {
+        float aspect = GraphicsDevice.Viewport.AspectRatio;
+        Matrix view = _camera!.GetView();
+        Matrix projection = _camera.GetProjection(aspect);
+
+        var environment = new InstancedRenderer.Environment(
+            LightDirection: new Vector3(-0.58f, -0.62f, -0.52f),
+            AmbientColor: new Color(84, 88, 96),
+            FogColor: BackgroundColor,
+            FogStart: 620f,
+            FogEnd: 2000f);
+
+        _renderer!.Begin(view, projection, _camera.Position, environment);
+
+        _drawCalls = 0;
+        _instancesSubmitted = 0;
+
+        DrawSingle(_terrainMesh!, Matrix.Identity, Color.White);
+        CollectUnitInstances();
+        CollectSelectionMarkers();
+        CollectOrderMarkers();
+
+        if (_options.IsModelGallery)
+        {
+            CollectGalleryAxes();
+        }
+
+        foreach (MeshBatch batch in _batches.Values)
+        {
+            if (batch.Count == 0)
+            {
+                continue;
+            }
+
+            _renderer.Draw(batch.Mesh, batch.Instances, batch.Count);
+            _drawCalls++;
+            _instancesSubmitted += batch.Count;
+        }
+
+        if (_markerBatch is { Count: > 0 })
+        {
+            _renderer.Draw(_markerBatch.Mesh, _markerBatch.Instances, _markerBatch.Count);
+            _drawCalls++;
+        }
+
+        if (_orderBatch is { Count: > 0 })
+        {
+            _renderer.Draw(_orderBatch.Mesh, _orderBatch.Instances, _orderBatch.Count);
+            _drawCalls++;
+        }
+
+        // Fog goes on top so it darkens terrain and units alike, but only over
+        // ground the player cannot see — their own units are never fogged.
+        if (_axisBatch is { Count: > 0 } && _options.IsModelGallery)
+        {
+            _renderer.Draw(_axisBatch.Mesh, _axisBatch.Instances, _axisBatch.Count);
+            _drawCalls++;
+        }
+
+        // Particles sit between the units and the fog overlay: an explosion
+        // behind fog is darkened by it like everything else.
+        if (_particles is { } particles && _particleMesh is not null && !_options.IsModelGallery)
+        {
+            Matrix viewMatrix = _camera.GetView();
+            Vector3 right = new(viewMatrix.M11, viewMatrix.M21, viewMatrix.M31);
+            Vector3 up = new(viewMatrix.M12, viewMatrix.M22, viewMatrix.M32);
+
+            if (particles.AlphaCount > 0)
+            {
+                _renderer.BeginParticles(InstancedRenderer.ParticleBlend.Alpha);
+                _renderer.Draw(_particleMesh, particles.AlphaInstances, particles.AlphaCount);
+                _renderer.EndParticles();
+                _drawCalls++;
+                _instancesSubmitted += particles.AlphaCount;
+            }
+
+            if (particles.AdditiveCount > 0)
+            {
+                _renderer.BeginParticles(InstancedRenderer.ParticleBlend.Additive);
+                _renderer.Draw(_particleMesh, particles.AdditiveInstances, particles.AdditiveCount);
+                _renderer.EndParticles();
+                _drawCalls++;
+                _instancesSubmitted += particles.AdditiveCount;
+            }
+        }
+
+        if (_fog is not null && !_options.IsModelGallery)
+        {
+            // Visibility only changes on its own interval, so the mask is rebuilt
+            // then rather than every frame — the texture upload is the expensive
+            // part, not the draw.
+            SimWorld world = _simulation!.World;
+
+            if (world.Tick % VisionSystem.UpdateInterval == 0)
+            {
+                long start = Stopwatch.GetTimestamp();
+                _fog.Update(world, PlayerTeam, (long)world.Tick);
+                double elapsed = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                _worstFogMaskMilliseconds = Math.Max(_worstFogMaskMilliseconds, elapsed);
+                _fogMaskTotalMilliseconds += elapsed;
+                _fogMaskRebuilds++;
+            }
+
+            _fog.Draw(view, projection);
+            _drawCalls++;
+        }
+
+        _renderer.End();
+    }
+
+    /// <summary>
+    /// Draws a forward axis and a right axis from every unit in the gallery:
+    /// cyan points +X, magenta points +Z. A model is oriented correctly when its
+    /// nose or gun barrel follows the cyan bar.
+    /// </summary>
+    private void CollectGalleryAxes()
+    {
+        if (_axisBatch is null || _simulation is null)
+        {
+            return;
+        }
+
+        _axisBatch.Count = 0;
+
+        const float Length = 13f;
+        const float Thickness = 0.7f;
+        Vector4 forward = new(0.2f, 1f, 1f, 1f);
+        Vector4 right = new(1f, 0.35f, 1f, 1f);
+
+        SimWorld world = _simulation.World;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            Vector3 position = _simulation.GetRenderPosition(slot, interpolate: false);
+            float x = position.X;
+            float y = position.Y + 0.6f;
+            float z = position.Z;
+
+            // +X bar and its tip.
+            _axisBatch.Instances[_axisBatch.Count++] = new InstanceData(
+                Matrix.CreateScale(Length, Thickness, Thickness) * Matrix.CreateTranslation(x + (Length * 0.5f), y, z),
+                forward);
+
+            _axisBatch.Instances[_axisBatch.Count++] = new InstanceData(
+                Matrix.CreateScale(2f, 2f, 2f) * Matrix.CreateTranslation(x + Length, y, z),
+                forward);
+
+            // +Z bar and its tip.
+            _axisBatch.Instances[_axisBatch.Count++] = new InstanceData(
+                Matrix.CreateScale(Thickness, Thickness, Length) * Matrix.CreateTranslation(x, y, z + (Length * 0.5f)),
+                right);
+
+            _axisBatch.Instances[_axisBatch.Count++] = new InstanceData(
+                Matrix.CreateScale(2f, 2f, 2f) * Matrix.CreateTranslation(x, y, z + Length),
+                right);
+        }
+    }
+
+    /// <summary>Draws a marker under every selected unit.</summary>
+    private void CollectSelectionMarkers()
+    {
+        if (_markerBatch is null)
+        {
+            return;
+        }
+
+        _markerBatch.Count = 0;
+        Vector4 color = new(0.30f, 1f, 0.45f, 1f);
+
+        foreach (EntityId id in _selection.Selected)
+        {
+            if (!_simulation!.World.TryGetRef(id, out _, out int slot) || _markerBatch.Count >= _markerBatch.Instances.Length)
+            {
+                continue;
+            }
+
+            Vector3 position = _simulation.GetRenderPosition(slot, interpolate: true);
+            Matrix transform = Matrix.CreateTranslation(position.X, position.Y + 0.3f, position.Z);
+
+            _markerBatch.Instances[_markerBatch.Count] = new InstanceData(transform, color);
+            _markerBatch.Count++;
+        }
+    }
+
+    /// <summary>Draws a fading ring at each recent move destination.</summary>
+    private void CollectOrderMarkers()
+    {
+        if (_orderBatch is null)
+        {
+            return;
+        }
+
+        _orderBatch.Count = 0;
+
+        foreach (OrderMarker marker in _orderMarkers)
+        {
+            if (_orderBatch.Count >= _orderBatch.Instances.Length)
+            {
+                break;
+            }
+
+            float t = Math.Clamp(marker.Age / OrderMarkerSeconds, 0f, 1f);
+            float scale = 0.6f + (t * 1.6f);
+            float alpha = 1f - t;
+
+            Matrix transform = Matrix.CreateScale(scale) * Matrix.CreateTranslation(marker.Position);
+
+            _orderBatch.Instances[_orderBatch.Count] = new InstanceData(
+                transform,
+                new Vector4(0.35f, 1f, 0.55f, alpha * 0.55f));
+            _orderBatch.Count++;
+        }
+    }
+
+    private void DrawSingle(InstancedRenderer.Mesh mesh, Matrix transform, Color color)
+    {
+        _singleInstance[0] = new InstanceData(transform, color.ToVector4());
+        _renderer!.Draw(mesh, _singleInstance, 1);
+        _drawCalls++;
+    }
+
+    private void CollectUnitInstances()
+    {
+        foreach (MeshBatch batch in _batches.Values)
+        {
+            batch.Count = 0;
+        }
+
+        SimWorld world = _simulation!.World;
+        int capacity = world.Capacity;
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            // Enemies the player cannot see are simply not drawn: that is the
+            // whole point of fog of war.
+            if (entity.TeamId != PlayerTeam &&
+                !world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(entity.Position)))
+            {
+                continue;
+            }
+
+            MeshBatch batch = GetBatch(entity.Faction, entity.Kind);
+            if (batch.Count >= batch.Instances.Length)
+            {
+                continue;
+            }
+
+            Vector3 position = _simulation.GetRenderPosition(slot, interpolate: true);
+            float heading = SimBridge.HeadingRadians(entity.Heading);
+
+            Matrix transform =
+                Matrix.CreateRotationY(-heading) *
+                Matrix.CreateTranslation(position);
+
+            batch.Instances[batch.Count] = new InstanceData(
+                transform,
+                FactionPalette.ForUnit(entity.Faction, entity.Kind).ToVector4());
+            batch.Count++;
+        }
+    }
+
+    private MeshBatch GetBatch(Faction faction, UnitKind kind)
+    {
+        int key = ((int)faction * 8) + (int)kind;
+
+        if (!_batches.TryGetValue(key, out MeshBatch? batch))
+        {
+            batch = new MeshBatch(_catalog!.Get(faction, kind), _simulation!.World.Capacity);
+            _batches[key] = batch;
+        }
+
+        return batch;
+    }
+
+    /// <summary>Draws each faction's name above its command centre, in world space.</summary>
+    private void DrawWorldLabels()
+    {
+        if (_worldLabels is null || _simulation is null || _camera is null)
+        {
+            return;
+        }
+
+        _labelBuffer.Clear();
+
+        if (_options.IsModelGallery)
+        {
+            SimWorld gallery = _simulation.World;
+
+            for (int slot = 0; slot < gallery.Capacity; slot++)
+            {
+                if (!gallery.IsAliveSlot(slot))
+                {
+                    continue;
+                }
+
+                ref Entity item = ref gallery.GetRefBySlot(slot);
+                Vector3 anchor = SimBridge.ToMetres(item.Position) + new Vector3(0f, 22f, 0f);
+
+                _labelBuffer.Add(new WorldLabel(
+                    anchor,
+                    $"{FactionProfile.For(item.Faction).GreekName} {FactionPalette.UnitLabel(item.Kind)}",
+                    Color.White));
+            }
+        }
+        else
+        {
+            foreach (EntityId id in _simulation.CommandCentres)
+            {
+                if (!_simulation.World.TryGet(id, out Entity headquarters))
+                {
+                    continue;
+                }
+
+                Vector3 anchor = SimBridge.ToMetres(headquarters.Position) + new Vector3(0f, 24f, 0f);
+
+                // Faction colours are dark enough to disappear against the terrain, so
+                // labels are lightened for legibility while keeping the faction hue.
+                Color tint = Color.Lerp(FactionPalette.Primary(headquarters.Faction), Color.White, 0.55f);
+
+                _labelBuffer.Add(new WorldLabel(
+                    anchor,
+                    FactionProfile.For(headquarters.Faction).GreekName,
+                    tint));
+            }
+        }
+
+        Viewport viewport = GraphicsDevice.Viewport;
+        _worldLabels.Draw(_labelBuffer, _camera.GetView(), _camera.GetProjection(viewport.AspectRatio), viewport);
+    }
+
+    /// <summary>Handles click selection, control groups and right-click orders.</summary>
+    private void HandleSelectionInput(KeyboardState keyboard, MouseState mouse, double now)
+    {
+        bool leftDown = mouse.LeftButton == ButtonState.Pressed;
+        bool leftWasDown = _previousMouse.LeftButton == ButtonState.Pressed;
+        bool rightDown = mouse.RightButton == ButtonState.Pressed;
+        bool rightWasDown = _previousMouse.RightButton == ButtonState.Pressed;
+
+        bool additive = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
+        bool control = keyboard.IsKeyDown(Keys.LeftControl) || keyboard.IsKeyDown(Keys.RightControl);
+
+        HandleControlGroups(keyboard, additive, control);
+
+        if (leftDown && !leftWasDown)
+        {
+            _dragStart = new Vector2(mouse.X, mouse.Y);
+            _dragging = true;
+        }
+
+        if (!leftDown && leftWasDown && _dragging)
+        {
+            _dragging = false;
+            Vector2 end = new(mouse.X, mouse.Y);
+
+            if (Vector2.Distance(_dragStart, end) < 6f)
+            {
+                SelectSingle(end, additive, now);
+            }
+            else
+            {
+                SelectInBox(_dragStart, end, additive);
+            }
+        }
+
+        if (rightDown && !rightWasDown)
+        {
+            IssueOrderAtCursor(new Vector2(mouse.X, mouse.Y));
+        }
+    }
+
+    /// <summary>Ctrl + digit stores the selection; a bare digit recalls it.</summary>
+    private void HandleControlGroups(KeyboardState keyboard, bool additive, bool control)
+    {
+        for (int index = 1; index < _controlGroups.Length; index++)
+        {
+            Keys key = Keys.D1 + (index - 1);
+
+            if (!Pressed(keyboard, key))
+            {
+                continue;
+            }
+
+            _controlGroups[index] ??= [];
+
+            if (control)
+            {
+                _controlGroups[index]!.Clear();
+                _controlGroups[index]!.AddRange(_selection.Selected);
+                continue;
+            }
+
+            if (!additive)
+            {
+                _selection.Clear();
+            }
+
+            foreach (EntityId id in _controlGroups[index]!)
+            {
+                if (_simulation!.World.IsValid(id))
+                {
+                    _selection.Add(id);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Converts a screen pixel to a point on the battlefield, marching the ray
+    /// against the height field.
+    /// <para>
+    /// The camera's own <see cref="RtsCamera.ScreenToGround"/> intersects the
+    /// y = 0 plane, which is the lowest point of the terrain — so a click that
+    /// visibly lands on a hillside resolves tens of metres <em>past</em> it, and a
+    /// click near the horizon misses entirely and silently drops the order. This
+    /// march returns the first point where the ray meets the ground, and falls
+    /// back to the plane when the ray never does (clicking beyond the map edge).
+    /// </para>
+    /// </summary>
+    private bool TryScreenToGround(Vector2 screen, out Vector3 ground)
+    {
+        ground = default;
+
+        if (_camera is null || _simulation is null)
+        {
+            return false;
+        }
+
+        Viewport viewport = GraphicsDevice.Viewport;
+
+        if (!_camera.TryGetRay(screen, viewport.Width, viewport.Height, out Vector3 near, out Vector3 far))
+        {
+            return false;
+        }
+
+        HeightMap terrain = _simulation.World.Terrain;
+        Vector3 direction = far - near;
+        const float Step = 2f;
+        float length = direction.Length();
+
+        if (length <= 0.001f)
+        {
+            return false;
+        }
+
+        direction /= length;
+
+        _groundRayDebug =
+            $"near {near.X:0},{near.Y:0},{near.Z:0} far {far.X:0},{far.Y:0},{far.Z:0} " +
+            $"dir {direction.X:0.00},{direction.Y:0.00},{direction.Z:0.00} len {length:0} " +
+            $"gap {near.Y - HeightAtMetres(terrain, near.X, near.Z):0.0}";
+
+        // A ray pointing at the sky never meets the ground: reject it rather than
+        // inventing a destination behind the camera.
+        if (direction.Y > -0.0001f)
+        {
+            return false;
+        }
+
+        float maxDistance = Math.Min(length, 4000f);
+        Vector3 previous = near;
+        float previousGap = near.Y - HeightAtMetres(terrain, near.X, near.Z);
+
+        for (float travelled = Step; travelled <= maxDistance; travelled += Step)
+        {
+            Vector3 point = near + (direction * travelled);
+            float gap = point.Y - HeightAtMetres(terrain, point.X, point.Z);
+
+            if (gap <= 0f)
+            {
+                // Refine the crossing by bisection: the step is 2 m, which would
+                // otherwise show up as a visible offset when ordering units.
+                Vector3 low = previous;
+                Vector3 high = point;
+
+                for (int i = 0; i < 12; i++)
+                {
+                    Vector3 mid = (low + high) * 0.5f;
+
+                    if (mid.Y - HeightAtMetres(terrain, mid.X, mid.Z) <= 0f)
+                    {
+                        high = mid;
+                    }
+                    else
+                    {
+                        low = mid;
+                    }
+                }
+
+                ground = high;
+                return true;
+            }
+
+            previous = point;
+            previousGap = gap;
+        }
+
+        _ = previousGap;
+
+        // Never hit the terrain: fall back to the flat plane so orders into the
+        // distance still work.
+        return _camera.ScreenToGround(screen, viewport.Width, viewport.Height) is Vector3 plane && Set(out ground, plane);
+    }
+
+    private static bool Set(out Vector3 target, Vector3 value)
+    {
+        target = value;
+        return true;
+    }
+
+    private string _groundRayDebug = string.Empty;
+
+    /// <summary>Terrain height in metres at a world position, clamped to the map.</summary>
+    private static float HeightAtMetres(HeightMap terrain, float x, float z)
+        => terrain.SampleHeightMm((int)(x * WorldPos.MmPerMetre), (int)(z * WorldPos.MmPerMetre)) / (float)WorldPos.MmPerMetre;
+
+    /// <summary>
+    /// Right-click: attack the enemy under the cursor, otherwise move there.
+    /// </summary>
+    private void IssueOrderAtCursor(Vector2 cursor)
+    {
+        // A playback must issue nothing of its own: any extra command would
+        // desync the replayed match from the recording.
+        if (IsPlayback)
+        {
+            return;
+        }
+
+        if (_selection.IsEmpty || _simulation is null)
+        {
+            return;
+        }
+
+        int targetSlot = PickSlotAt(cursor, teamFilter: -1);
+
+        if (targetSlot >= 0)
+        {
+            ref Entity picked = ref _simulation.World.GetRefBySlot(targetSlot);
+
+            // Only enemies are attacked. An ally under the cursor used to produce
+            // an attack order that the simulation rejected, so the click appeared
+            // to do nothing at all.
+            if (picked.TeamId != PlayerTeam && !SimWorld.AreAllied(picked.TeamId, PlayerTeam))
+            {
+                IssueAttackOrders(targetSlot);
+                return;
+            }
+        }
+
+        IssueMoveOrder(cursor);
+    }
+
+    /// <summary>Orders every selected unit to engage one enemy.</summary>
+    private void IssueAttackOrders(int targetSlot)
+    {
+        SimWorld world = _simulation!.World;
+        ref Entity target = ref world.GetRefBySlot(targetSlot);
+        var victim = new EntityId(targetSlot, target.Generation);
+        long executeTick = world.Tick + 1;
+
+        foreach (EntityId id in _selection.Selected)
+        {
+            if (world.TryGet(id, out Entity attacker) && UnitCatalog.Get(attacker.Kind).IsArmed)
+            {
+                world.Enqueue(SimCommand.Attack(id, victim, executeTick, attacker.TeamId));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Selects the closest own unit to the cursor. A second click on the same
+    /// unit within a third of a second selects every unit of that role on screen.
+    /// </summary>
+    private void SelectSingle(Vector2 cursor, bool additive, double now)
+    {
+        int slot = PickSlotAt(cursor);
+
+        if (slot >= 0 && slot == _lastClickedSlot && now - _lastClickSeconds < 0.35d)
+        {
+            SelectAllOfKind(slot);
+            _lastClickedSlot = -1;
+            return;
+        }
+
+        _lastClickSeconds = now;
+        _lastClickedSlot = slot;
+
+        if (!additive)
+        {
+            _selection.Clear();
+        }
+
+        if (slot >= 0)
+        {
+            ref Entity selected = ref _simulation!.World.GetRefBySlot(slot);
+            _selection.Add(new EntityId(slot, selected.Generation));
+        }
+    }
+
+    /// <summary>Selects every own unit of the same role that is currently on screen.</summary>
+    private void SelectAllOfKind(int referenceSlot)
+    {
+        SimWorld world = _simulation!.World;
+
+        if (!world.IsAliveSlot(referenceSlot))
+        {
+            return;
+        }
+
+        UnitKind kind = world.GetRefBySlot(referenceSlot).Kind;
+        _selection.Clear();
+
+        int capacity = world.Capacity;
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId != PlayerTeam || entity.Kind != kind)
+            {
+                continue;
+            }
+
+            if (TryProjectToScreen(UnitAnchor(slot, ref entity), out Vector2 screen) &&
+                screen.X >= 0f && screen.Y >= 0f &&
+                screen.X < GraphicsDevice.Viewport.Width && screen.Y < GraphicsDevice.Viewport.Height)
+            {
+                _selection.Add(new EntityId(slot, entity.Generation));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns the own unit whose screen position is nearest to the cursor, or -1.
+    /// <para>
+    /// This is the inverse of <see cref="TryProjectToScreen"/>, and the self-test
+    /// round-trips the two against each other: project a unit, pick at that exact
+    /// pixel, and the same unit must come back.
+    /// </para>
+    /// </summary>
+    private int PickSlotAt(Vector2 cursor, int teamFilter = PlayerTeam)
+    {
+        SimWorld world = _simulation!.World;
+        int capacity = world.Capacity;
+
+        int bestSlot = -1;
+        float bestDistance = 30f;
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (teamFilter >= 0 && entity.TeamId != teamFilter)
+            {
+                continue;
+            }
+
+            if (!TryProjectToScreen(UnitAnchor(slot, ref entity), out Vector2 screen))
+            {
+                continue;
+            }
+
+            float distance = Vector2.Distance(screen, cursor);
+
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestSlot = slot;
+            }
+        }
+
+        return bestSlot;
+    }
+
+    /// <summary>Selects every own unit whose screen position falls inside the drag rectangle.</summary>
+    private void SelectInBox(Vector2 start, Vector2 end, bool additive)
+    {
+        Rectangle box = new(
+            (int)MathF.Min(start.X, end.X),
+            (int)MathF.Min(start.Y, end.Y),
+            (int)MathF.Abs(end.X - start.X),
+            (int)MathF.Abs(end.Y - start.Y));
+
+        SimWorld world = _simulation!.World;
+        int capacity = world.Capacity;
+
+        if (!additive)
+        {
+            _selection.Clear();
+        }
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId != PlayerTeam)
+            {
+                continue;
+            }
+
+            if (!TryProjectToScreen(UnitAnchor(slot, ref entity), out Vector2 screen))
+            {
+                continue;
+            }
+
+            if (box.Contains((int)screen.X, (int)screen.Y))
+            {
+                _selection.Add(new EntityId(slot, entity.Generation));
+            }
+        }
+    }
+
+    /// <summary>Orders every selected unit to the ground point under the cursor.</summary>
+    private void IssueMoveOrder(Vector2 cursor)
+    {
+        if (_selection.IsEmpty || _camera is null)
+        {
+            return;
+        }
+
+        Viewport viewport = GraphicsDevice.Viewport;
+
+        if (!TryScreenToGround(cursor, out Vector3 ground))
+        {
+            return;
+        }
+
+        WorldPos target = new(
+            (int)(ground.X * WorldPos.MmPerMetre),
+            0,
+            (int)(ground.Z * WorldPos.MmPerMetre));
+
+        // Feedback: without a marker the player cannot tell an accepted order
+        // from a click that landed on a cliff and was refused.
+        _orderMarkers.Add(new OrderMarker(new Vector3(ground.X, ground.Y + 0.4f, ground.Z), 0f));
+
+        SimWorld world = _simulation!.World;
+
+        // Spread the group over a loose grid so units do not pile onto one point.
+        int count = _selection.Count;
+        int columns = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(count)));
+        int rows = Math.Max(1, (int)Math.Ceiling(count / (double)columns));
+        const int SpacingMm = 14_000;
+
+        int index = 0;
+
+        foreach (EntityId id in _selection.Selected)
+        {
+            if (!world.TryGet(id, out Entity entity))
+            {
+                continue;
+            }
+
+            int column = index % columns;
+            int row = index / columns;
+
+            WorldPos destination = new(
+                target.X + ((column - ((columns - 1) / 2)) * SpacingMm),
+                0,
+                target.Z + ((row - ((rows - 1) / 2)) * SpacingMm));
+
+            world.OrderMove(id, destination, entity.TeamId);
+            index++;
+        }
+    }
+
+    /// <summary>A point roughly at a unit's centre, used for picking.</summary>
+    private Vector3 UnitAnchor(int slot, ref Entity entity)
+        => _simulation!.GetRenderPosition(slot, interpolate: true) + new Vector3(0f, 2f, 0f);
+
+    /// <summary>Projects a world position to screen pixels, rejecting points behind the camera.</summary>
+    private bool TryProjectToScreen(Vector3 world, out Vector2 screen)
+    {
+        Viewport viewport = GraphicsDevice.Viewport;
+        Matrix viewProjection = _camera!.GetView() * _camera.GetProjection(viewport.AspectRatio);
+        Vector4 clip = Vector4.Transform(new Vector4(world, 1f), viewProjection);
+
+        if (clip.W <= 0.001f)
+        {
+            screen = default;
+            return false;
+        }
+
+        screen = new Vector2(
+            ((clip.X / clip.W * 0.5f) + 0.5f) * viewport.Width,
+            ((-clip.Y / clip.W * 0.5f) + 0.5f) * viewport.Height);
+
+        return true;
+    }
+
+    /// <summary>Selects the player's headquarters, for screenshots and quick starts.</summary>
+    private void SelectPlayerHeadquarters()
+    {
+        SimWorld world = _simulation!.World;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId == PlayerTeam && entity.Kind == UnitKind.CommandCentre)
+            {
+                _selection.Select(new EntityId(slot, entity.Generation));
+                _camera?.FocusOn(SimBridge.ToMetres(entity.Position));
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Slot of the single selected building, or -1 when the selection is empty or
+    /// holds something that is not a structure.
+    /// </summary>
+    private int SelectedBuildingSlot()
+    {
+        if (_selection.Count != 1 || _simulation is null)
+        {
+            return -1;
+        }
+
+        if (!_simulation.World.TryGetRef(_selection.Selected[0], out _, out int slot))
+        {
+            return -1;
+        }
+
+        return IsBuilding(_simulation.World.GetRefBySlot(slot).Kind) ? slot : -1;
+    }
+
+    /// <summary>Slot of the single selected entity when it is a unit, else -1.</summary>
+    private int SelectedUnitSlot()
+    {
+        int slot = SelectedBuildingSlot();
+
+        if (slot >= 0)
+        {
+            return -1;
+        }
+
+        if (_selection.Count != 1 || _simulation is null)
+        {
+            return -1;
+        }
+
+        return _simulation.World.TryGetRef(_selection.Selected[0], out _, out int unitSlot) ? unitSlot : -1;
+    }
+
+    /// <summary>True for structures, which are the only things with a build menu.</summary>
+    private static bool IsBuilding(UnitKind kind)
+        => kind is UnitKind.CommandCentre or UnitKind.PowerPlant or UnitKind.Factory or UnitKind.DesignBureau;
+
+    /// <summary>Turns a HUD button press into a simulation command.</summary>
+    private void ApplyHudCommand(HudCommand command)
+    {
+        int slot = SelectedBuildingSlot();
+
+        if (slot < 0 || _simulation is null)
+        {
+            return;
+        }
+
+        ref Entity building = ref _simulation.World.GetRefBySlot(slot);
+        var id = new EntityId(slot, building.Generation);
+        long executeTick = _simulation.World.Tick + 1;
+
+        switch (command.Kind)
+        {
+            case HudCommandKind.QueueUnit:
+                _simulation.World.Enqueue(SimCommand.QueueUnit(id, command.Unit, executeTick, building.TeamId));
+                break;
+
+            case HudCommandKind.Research:
+                _simulation.World.Enqueue(SimCommand.Research(id, command.Tech, executeTick, building.TeamId));
+                break;
+
+            case HudCommandKind.ApproveDesign:
+                _simulation.World.Enqueue(SimCommand.ApproveDesign(id, command.Unit, executeTick, building.TeamId));
+                break;
+
+            case HudCommandKind.Licence:
+                int ally = AllyBuildingSlot();
+
+                if (ally >= 0)
+                {
+                    ref Entity allyBuilding = ref _simulation.World.GetRefBySlot(ally);
+                    var allyId = new EntityId(ally, allyBuilding.Generation);
+
+                    _simulation.World.Enqueue(SimCommand.Licence(allyId, command.Unit, executeTick, building.TeamId));
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>Slot of the ally's first building, which is where licences land.</summary>
+    private int AllyBuildingSlot()
+    {
+        if (_simulation is null)
+        {
+            return -1;
+        }
+
+        SimWorld world = _simulation.World;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId == 1 && IsBuilding(entity.Kind))
+            {
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Fires a row of explosions of increasing size plus a couple of smoke
+    /// plumes, so one screenshot shows the whole range of the particle system.
+    /// </summary>
+    private void SpawnParticleDemo()
+    {
+        if (_particles is null || _simulation is null)
+        {
+            return;
+        }
+
+        MiVic.Core.Terrain.HeightMap terrain = _simulation.World.Terrain;
+
+        for (int i = 0; i < 5; i++)
+        {
+            float x = -80f + (i * 40f);
+            float z = -20f;
+            float ground = terrain.SampleHeightMm((int)(x * 1000f), (int)(z * 1000f)) / 1000f;
+
+            _particles.SpawnExplosion(new Vector3(x, ground + 1.5f, z), 1.2f + (i * 2.2f));
+        }
+
+        for (int i = 0; i < 6; i++)
+        {
+            float x = -60f + (i * 24f);
+            float z = 40f;
+            float ground = terrain.SampleHeightMm((int)(x * 1000f), (int)(z * 1000f)) / 1000f;
+
+            _particles.SpawnSmokePlume(new Vector3(x, ground + 3f, z), 0.8f);
+        }
+    }
+
+    /// <summary>Ages the move-order rings and drops the expired ones.</summary>
+    private void UpdateOrderMarkers(float elapsedSeconds)
+    {
+        for (int i = _orderMarkers.Count - 1; i >= 0; i--)
+        {
+            OrderMarker marker = _orderMarkers[i] with { Age = _orderMarkers[i].Age + elapsedSeconds };
+
+            if (marker.Age >= OrderMarkerSeconds)
+            {
+                _orderMarkers.RemoveAt(i);
+            }
+            else
+            {
+                _orderMarkers[i] = marker;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Turns simulation events into particles and keeps the ambient smoke going.
+    /// <para>
+    /// Everything here is one-way: the simulation reports deaths, the client
+    /// decides what they look like. Nothing in this method can affect a tick, so
+    /// particles are free to use a wall-clock delta and their own generator.
+    /// </para>
+    /// </summary>
+    private void UpdateParticles(float elapsedSeconds)
+    {
+        if (_particles is null || _simulation is null)
+        {
+            return;
+        }
+
+        SimWorld world = _simulation.World;
+        Vector3 listener = _camera!.Target;
+        _sfx?.BeginFrame();
+
+        if (_sfx is not null)
+        {
+            // A strategic-zoom camera is looking at the whole battlefield, so the
+            // audible radius has to grow with it or the far half of the map would
+            // be silent.
+            _sfx.FalloffDistance = MathF.Max(SfxDirector.DefaultFalloffDistance, _camera.Distance * 1.8f);
+        }
+
+        foreach (SimEvent simEvent in _simulation.Events)
+        {
+            // An enemy dying where the player cannot see must not produce a
+            // visible explosion, or fog of war would leak information.
+            bool visible = simEvent.TeamId == PlayerTeam ||
+                SimWorld.AreAllied(simEvent.TeamId, PlayerTeam) ||
+                world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(simEvent.PositionMm));
+
+            if (!visible)
+            {
+                continue;
+            }
+
+            if (simEvent.Type == SimEventType.UnitHit)
+            {
+                // Pitch rises for small targets: a rifle round hitting infantry
+                // should not sound like a shell hitting a factory.
+                float pitch = simEvent.Kind switch
+                {
+                    UnitKind.CommandCentre or UnitKind.Factory or UnitKind.PowerPlant => -0.55f,
+                    UnitKind.DesignBureau => -0.4f,
+                    UnitKind.Tank or UnitKind.Artillery or UnitKind.AntiAir => -0.1f,
+                    UnitKind.Aircraft => 0.25f,
+                    _ => 0.5f,
+                };
+
+                float volume = Math.Clamp(0.25f + (simEvent.Damage / 60f), 0.25f, 1f);
+                _sfx?.Play(SoundEffectKind.Impact, simEvent.Position, listener, volume, pitch);
+                continue;
+            }
+
+            Vector3 tint = FactionPalette.Primary(simEvent.Faction).ToVector3() * 0.35f;
+            _particles!.SpawnExplosion(simEvent.Position, simEvent.Scale, new Vector3(
+                0.28f + (tint.X * 0.4f),
+                0.27f + (tint.Y * 0.3f),
+                0.26f + (tint.Z * 0.3f)));
+
+            if (simEvent.Kind is UnitKind.CommandCentre or UnitKind.Factory)
+            {
+                // A big structure keeps burning for a moment after it goes up.
+                for (int i = 0; i < 4; i++)
+                {
+                    _particles.SpawnSmokePlume(simEvent.Position, 0.9f);
+                }
+
+                _sfx?.Play(SoundEffectKind.ExplosionLarge, simEvent.Position, listener, 1f, -0.3f);
+            }
+            else
+            {
+                _sfx?.Play(SoundEffectKind.ExplosionSmall, simEvent.Position, listener, 0.9f, 0.1f - (simEvent.Scale * 0.05f));
+            }
+        }
+
+        _simulation.ClearEvents();
+
+        _peakParticles = Math.Max(_peakParticles, _particles.LiveCount);
+        _peakParticleInstances = Math.Max(_peakParticleInstances, _particles.AlphaCount + _particles.AdditiveCount);
+
+        // Ambient smoke: structures that are working or damaged, and vehicles
+        // that are badly hurt. Timers stagger the puffs so the battlefield does
+        // not pulse in unison.
+        int capacity = world.Capacity;
+
+        for (int slot = 0; slot < capacity && slot < _smokeTimers.Length; slot++)
+        {
+            _smokeTimers[slot] -= elapsedSeconds;
+
+            if (_smokeTimers[slot] > 0f || !world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+            UnitDefinition definition = UnitCatalog.Get(entity.Kind);
+
+            bool visible = entity.TeamId == PlayerTeam ||
+                world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(entity.Position));
+
+            if (!visible)
+            {
+                continue;
+            }
+
+            float healthFraction = definition.Health > 0 ? (float)entity.Health / definition.Health : 1f;
+            Vector3 position = _simulation.GetRenderPosition(slot, interpolate: true);
+
+            if (definition.IsBuilding)
+            {
+                // Damaged industry smokes hard; healthy industry just idles.
+                float intensity = healthFraction < 0.65f ? 0.35f + ((1f - healthFraction) * 0.65f) : 0.16f;
+                _particles.SpawnSmokePlume(position + new Vector3(0f, definition.IsBuilding ? 4f : 1.5f, 0f), intensity);
+                _smokeTimers[slot] = 0.25f + ((slot % 7) * 0.06f);
+            }
+            else if (healthFraction < 0.45f)
+            {
+                _particles.SpawnSmokePlume(position + new Vector3(0f, 1.6f, 0f), 0.45f);
+                _smokeTimers[slot] = 0.7f + ((slot % 5) * 0.1f);
+            }
+            else
+            {
+                _smokeTimers[slot] = 1f;
+            }
+        }
+
+        Matrix view = _camera!.GetView();
+        _particles.Update(
+            elapsedSeconds,
+            new Vector3(view.M11, view.M21, view.M31),
+            new Vector3(view.M12, view.M22, view.M32),
+            Math.Clamp(_camera.Distance / 140f, 1f, 4f));
+    }
+
+    /// <summary>
+    /// Writes the recorded match when the player quits, so an interactive
+    /// <c>--record</c> run produces a replay without any extra step.
+    /// </summary>
+    private void SaveRecording()
+    {
+        if (_options.RecordPath is not { } path || _simulation is null || !_simulation.World.IsRecording)
+        {
+            return;
+        }
+
+        try
+        {
+            ReplayFile.Capture(_simulation.World, _simulation.Scenario).Save(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A failed save must not take the shutdown path down with it.
+        }
+    }
+
+    /// <summary>
+    /// Drives click selection the way a player does: project a unit to a pixel
+    /// and hand that pixel to the same single-click handler the mouse path calls.
+    /// </summary>
+    private string CheckClickSelection()
+    {
+        if (_simulation is null)
+        {
+            return "FAIL: no simulation";
+        }
+
+        SimWorld world = _simulation.World;
+        int slot = -1;
+
+        for (int i = 0; i < world.Capacity; i++)
+        {
+            if (!world.IsAliveSlot(i))
+            {
+                continue;
+            }
+
+            ref Entity candidate = ref world.GetRefBySlot(i);
+
+            if (candidate.TeamId == PlayerTeam && candidate.Kind != UnitKind.Aircraft)
+            {
+                slot = i;
+                break;
+            }
+        }
+
+        if (slot < 0)
+        {
+            return "FAIL: no player unit";
+        }
+
+        ref Entity unit = ref world.GetRefBySlot(slot);
+
+        if (!TryProjectToScreen(UnitAnchor(slot, ref unit), out Vector2 screen))
+        {
+            return "FAIL: unit is not on screen";
+        }
+
+        _selection.Clear();
+
+        // now = 0 so this cannot be mistaken for a double click.
+        SelectSingle(screen, additive: false, now: 0d);
+
+        bool selected = _selection.Selected.Contains(new EntityId(slot, unit.Generation));
+        _selection.Clear();
+
+        return selected ? "OK (click selected the unit)" : "FAIL (click did not select the unit)";
+    }
+
+    /// <summary>
+    /// Drives the right-click move order exactly as the player does: project a
+    /// point on the ground to a pixel, feed that pixel to the same handler a
+    /// right-click calls, and confirm the unit actually walks there.
+    /// </summary>
+    private string CheckMoveOrderPath()
+    {
+        if (_simulation is null)
+        {
+            return "FAIL: no simulation";
+        }
+
+        if (IsPlayback)
+        {
+            return "SKIPPED (playback)";
+        }
+
+        SimWorld world = _simulation.World;
+        int slot = -1;
+
+        for (int i = 0; i < world.Capacity; i++)
+        {
+            if (!world.IsAliveSlot(i))
+            {
+                continue;
+            }
+
+            ref Entity candidate = ref world.GetRefBySlot(i);
+
+            if (candidate.TeamId == PlayerTeam &&
+                !UnitCatalog.Get(candidate.Kind).IsBuilding &&
+                candidate.Kind != UnitKind.Aircraft)
+            {
+                slot = i;
+                break;
+            }
+        }
+
+        if (slot < 0)
+        {
+            return "FAIL: no player ground unit";
+        }
+
+        ref Entity unit = ref world.GetRefBySlot(slot);
+        var id = new EntityId(slot, unit.Generation);
+        WorldPos before = unit.Position;
+
+        // Geometric check first: project a point on the ground, then unproject
+        // that pixel. If the two disagree, every click lands somewhere else — the
+        // bug that made right-click orders go nowhere.
+        HeightMap terrain = world.Terrain;
+        Vector3 probe = _camera!.Target + new Vector3(30f, 0f, 20f);
+        probe.Y = HeightAtMetres(terrain, probe.X, probe.Z);
+
+        if (!TryProjectToScreen(probe, out Vector2 probePixel))
+        {
+            return "FAIL: probe point is not on screen";
+        }
+
+        if (!TryScreenToGround(probePixel, out Vector3 probeGround))
+        {
+            return $"FAIL: ground ray missed [{_groundRayDebug}]";
+        }
+
+        float error = Vector2.Distance(new Vector2(probe.X, probe.Z), new Vector2(probeGround.X, probeGround.Z));
+
+        if (error > 2f)
+        {
+            return $"FAIL: click mapping is off by {error:0.0} m [{_groundRayDebug}]";
+        }
+
+        // Then the behaviour: click that pixel and confirm the unit walks.
+        _selection.Clear();
+        _selection.Select(id);
+        IssueOrderAtCursor(probePixel);
+
+        if (world.PendingCommandCount == 0)
+        {
+            _selection.Clear();
+            return "FAIL: no command was queued";
+        }
+
+        world.RunTicks(40);
+
+        int distanceMm = IntMath.Abs(unit.Position.X - before.X) + IntMath.Abs(unit.Position.Z - before.Z);
+        _selection.Clear();
+
+        return distanceMm > 5_000
+            ? $"OK (click mapping {error:0.00} m, unit moved {distanceMm / 1000} m)"
+            : $"FAIL (unit did not move; {distanceMm} mm, path {unit.PathLength}, goal {unit.HasMoveGoal})";
+    }
+
+    /// <summary>
+    /// Reports the mission's objective states, so a headless run proves the
+    /// campaign logic actually ran rather than only that it compiled.
+    /// </summary>
+    private string CheckMissionObjectives()
+    {
+        if (_simulation is null)
+        {
+            return "n/a (skirmish)";
+        }
+
+        MissionDefinition? mission = _simulation.World.Mission;
+
+        if (mission is null)
+        {
+            return "n/a (skirmish)";
+        }
+
+        ReadOnlySpan<ObjectiveState> states = _simulation.World.Objectives;
+        StringBuilder text = new();
+        text.Append(mission.Id).Append(": ");
+
+        for (int i = 0; i < mission.Objectives.Count && i < states.Length; i++)
+        {
+            if (i > 0)
+            {
+                text.Append(", ");
+            }
+
+            text.Append(states[i].Status switch
+            {
+                ObjectiveStatus.Complete => "√",
+                ObjectiveStatus.Failed => "×",
+                _ => "•",
+            });
+
+            text.Append(' ');
+            text.Append(states[i].Progress);
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// Records the match so far as a replay and immediately replays it into a
+    /// fresh world. This is the end-to-end determinism check: the same seed, the
+    /// same scenario and the same external commands must produce the same state
+    /// hash, with the AI re-deriving its own orders.
+    /// </summary>
+    private string CheckReplayRoundTrip()
+    {
+        if (_simulation is null)
+        {
+            return "FAIL: no simulation";
+        }
+
+        if (_options.VictoryDemo)
+        {
+            // The demo removes rival structures directly instead of through
+            // commands, so its state is deliberately not reproducible from a log.
+            return "SKIPPED (victory demo)";
+        }
+
+        // Playing a recording back is verified differently: the world has been
+        // driven entirely by the log, so it must land on the recorded hash.
+        if (_simulation.Playback is { } playback)
+        {
+            if (!_simulation.IsPlaybackFinished)
+            {
+                return $"SKIPPED (playback at tick {_simulation.World.Tick} of {playback.FinalTick})";
+            }
+
+            ulong actual = StateHash.Compute(_simulation.World);
+
+            return actual == playback.FinalHash
+                ? $"OK (playback reached recorded hash at tick {playback.FinalTick})"
+                : $"FAIL (expected {playback.FinalHash}, got {actual})";
+        }
+
+        try
+        {
+            ReplayFile replay = ReplayFile.Capture(_simulation.World, _simulation.Scenario);
+            ReplayResult result = replay.Verify();
+
+            if (_options.RecordPath is { } path)
+            {
+                replay.Save(path);
+            }
+
+            return result.Matches
+                ? $"OK ({replay.Commands.Count} commands, {replay.FinalTick} ticks, hash match)"
+                : $"FAIL (expected {result.ExpectedHash}, replayed {result.ActualHash})";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return $"FAIL ({exception.GetType().Name}: {exception.Message})";
+        }
+    }
+
+    /// <summary>
+    /// Confirms the AI is actually playing: by the end of the self-test an AI team
+    /// should be researching, building or producing something.
+    /// </summary>
+    private string CheckAiActivity()
+    {
+        if (_simulation is null)
+        {
+            return "FAIL: no simulation";
+        }
+
+        if (_options.VictoryDemo)
+        {
+            // The demo removes every rival structure, so the AI has nothing left
+            // to research or build. The outcome check below covers this mode.
+            return "SKIPPED (victory demo)";
+        }
+
+        if (IsPlayback)
+        {
+            // Playback is verified against the recorded hash; whether the AI has
+            // got going by the end of a short recording says nothing about it.
+            return "SKIPPED (playback)";
+        }
+
+        SimWorld world = _simulation.World;
+
+        for (int team = 1; team < 3; team++)
+        {
+            TeamState state = world.Team(team);
+
+            if (state.IsResearching)
+            {
+                return $"OK (team {team} researching tier {state.ResearchTargetTier})";
+            }
+
+            for (int slot = 0; slot < world.Capacity; slot++)
+            {
+                if (!world.IsAliveSlot(slot))
+                {
+                    continue;
+                }
+
+                ref Entity entity = ref world.GetRefBySlot(slot);
+
+                if (entity.TeamId == team && entity.QueueLength > 0)
+                {
+                    return $"OK (team {team} producing {entity.QueueLength} job(s))";
+                }
+            }
+        }
+
+        return "FAIL (no AI activity)";
+    }
+
+    /// <summary>
+    /// Projects every player unit to the screen and picks at that exact pixel.
+    /// The same unit must come back, unless another unit projects closer to the
+    /// cursor — which happens when a formation is dense on screen. The hit rate
+    /// therefore catches a broken projection without being defeated by overlap.
+    /// </summary>
+    private (int Hits, int Total) CheckPickingRoundTrip()
+    {
+        SimWorld world = _simulation!.World;
+        int capacity = world.Capacity;
+        int hits = 0;
+        int total = 0;
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId != PlayerTeam)
+            {
+                continue;
+            }
+
+            if (!TryProjectToScreen(UnitAnchor(slot, ref entity), out Vector2 screen))
+            {
+                continue;
+            }
+
+            total++;
+
+            if (PickSlotAt(screen) == slot)
+            {
+                hits++;
+            }
+        }
+
+        return (hits, total);
+    }
+
+    /// <summary>
+    /// Drives the build panel's command path end to end: select a headquarters,
+    /// raise a queue request exactly as a button press would, step the simulation
+    /// and confirm the job exists and the resources were spent.
+    /// </summary>
+    private string CheckHudCommandPath()
+    {
+        if (_simulation is null)
+        {
+            return "FAIL: no simulation";
+        }
+
+        if (IsPlayback)
+        {
+            // This check issues a command and steps the world, which would push a
+            // playback past its own recording. Playback has its own hash check.
+            return "SKIPPED (playback)";
+        }
+
+        SimWorld world = _simulation.World;
+        int slot = -1;
+
+        for (int i = 0; i < world.Capacity; i++)
+        {
+            if (world.IsAliveSlot(i))
+            {
+                ref Entity candidate = ref world.GetRefBySlot(i);
+
+                if (candidate.TeamId == PlayerTeam && candidate.Kind == UnitKind.CommandCentre)
+                {
+                    slot = i;
+                    break;
+                }
+            }
+        }
+
+        if (slot < 0)
+        {
+            return "FAIL: no player command centre";
+        }
+
+        // Pick something the team can actually afford. The check used to top up
+        // the stockpile to force the issue, which silently broke mission replays:
+        // a direct resource write is not a command, so a replay could not
+        // reproduce it.
+        UnitKind affordable = UnitKind.None;
+
+        foreach (UnitDefinition definition in UnitCatalog.All)
+        {
+            if (definition.IsBuilding || definition.RequiredTechTier > world.Team(PlayerTeam).TechTier)
+            {
+                continue;
+            }
+
+            int cost = definition.MaterialCost * FactionProfile.For(SimWorld.FactionOfTeam(PlayerTeam)).CostPermille / 1_000;
+
+            if (world.Team(PlayerTeam).Materials >= cost)
+            {
+                affordable = definition.Kind;
+                break;
+            }
+        }
+
+        if (affordable == UnitKind.None)
+        {
+            return "SKIPPED (nothing affordable)";
+        }
+
+        ref Entity building = ref world.GetRefBySlot(slot);
+        _selection.Select(new EntityId(slot, building.Generation));
+
+        int before = world.Team(PlayerTeam).Materials;
+        ApplyHudCommand(new HudCommand(HudCommandKind.QueueUnit, affordable));
+        world.Step();
+
+        bool queued = world.JobsOf(slot).Length > 0;
+        int after = world.Team(PlayerTeam).Materials;
+
+        _selection.Clear();
+
+        return queued && after < before
+            ? $"OK (queued {affordable}, materials {before} -> {after})"
+            : $"FAIL (queued={queued}, materials {before} -> {after})";
+    }
+
+    /// <summary>
+    /// Drives the attack order path end to end: select an armed unit, raise the
+    /// order exactly as a right-click on an enemy would, and confirm the unit
+    /// locked onto that target.
+    /// </summary>
+    private string CheckCombatPath()
+    {
+        if (_simulation is null)
+        {
+            return "FAIL: no simulation";
+        }
+
+        if (_options.VictoryDemo)
+        {
+            // The demo has already destroyed every rival structure, which is the
+            // target this check needs; the outcome check covers this mode instead.
+            return "SKIPPED (victory demo)";
+        }
+
+        if (IsPlayback)
+        {
+            // Ordering an attack would add a command the recording never had.
+            return "SKIPPED (playback)";
+        }
+
+        SimWorld world = _simulation.World;
+        int attackerSlot = -1;
+        int enemySlot = -1;
+
+        for (int slot = 0; slot < world.Capacity && attackerSlot < 0; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity candidate = ref world.GetRefBySlot(slot);
+
+            if (candidate.TeamId == PlayerTeam && UnitCatalog.Get(candidate.Kind).IsArmed)
+            {
+                attackerSlot = slot;
+            }
+        }
+
+        if (attackerSlot < 0)
+        {
+            return "FAIL: no armed player unit";
+        }
+
+        long best = long.MaxValue;
+        ref Entity attacker = ref world.GetRefBySlot(attackerSlot);
+
+        // Target a structure rather than a unit: buildings do not die mid-check,
+        // so the assertion is about the order path, not about the battle.
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity candidate = ref world.GetRefBySlot(slot);
+
+            if (candidate.TeamId == PlayerTeam || !IsBuilding(candidate.Kind))
+            {
+                continue;
+            }
+
+            long distance = attacker.Position.DistanceSquaredTo(candidate.Position);
+
+            if (distance < best)
+            {
+                best = distance;
+                enemySlot = slot;
+            }
+        }
+
+        if (enemySlot < 0)
+        {
+            return "FAIL: no enemy structure";
+        }
+
+        var attackerId = new EntityId(attackerSlot, attacker.Generation);
+        _selection.Select(attackerId);
+        IssueAttackOrders(enemySlot);
+        world.Step();
+
+        bool locked = world.TryGet(attackerId, out Entity ordered) &&
+                      ordered.HasAttackOrder &&
+                      ordered.TargetSlot == enemySlot;
+
+        _selection.Clear();
+
+        return locked ? "OK (unit locked onto target)" : "FAIL (order did not take)";
+    }
+
+    private void SaveScreenshot(string path)
+    {
+        if (_screenshotTarget is null)
+        {
+            return;
+        }
+
+        string fullPath = Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
+        string? directory = Path.GetDirectoryName(fullPath);
+
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        using FileStream stream = File.Create(fullPath);
+        _screenshotTarget.SaveAsPng(stream, _screenshotTarget.Width, _screenshotTarget.Height);
+    }
+
+    private HudSnapshot BuildSnapshot()
+        => new(
+            _simulation!,
+            _camera!,
+            _frameTimes.Count > 0 ? (float)(1000d / _frameTimes[^1]) : 0f,
+            _frameTimes.Count > 0 ? (float)_frameTimes[^1] : 0f,
+            _instancesSubmitted,
+            _drawCalls,
+            _greekGlyphsOk,
+            _catalog!.LoadedModels.Count,
+            _catalog.FailedModels.Count,
+            _selection.Count,
+            SelectedBuildingSlot(),
+            SelectedUnitSlot(),
+            AllyBuildingSlot(),
+            _imgui!.LargeFont,
+            _simulation!.IsPlayback,
+            _simulation!.IsPlaybackFinished);
+
+    private bool Pressed(KeyboardState keyboard, Keys key)
+        => keyboard.IsKeyDown(key) && !_previousKeyboard.IsKeyDown(key);
+
+    /// <summary>True when the client is replaying a recorded match.</summary>
+    private bool IsPlayback => _simulation?.IsPlayback == true;
+
+    protected override void UnloadContent()
+    {
+        SaveRecording();
+
+        _imgui?.Dispose();
+        _worldLabels?.Dispose();
+        _screenshotTarget?.Dispose();
+        _audio?.Dispose();
+        _sfx?.Dispose();
+
+        _terrainMesh?.Dispose();
+        _selectionMarkerMesh?.Dispose();
+        _axisMesh?.Dispose();
+        _fog?.Dispose();
+
+        _catalog?.Dispose();
+        _renderer?.Dispose();
+        base.UnloadContent();
+    }
+
+    /// <summary>One mesh plus the instance array and live count submitted for it.</summary>
+    private sealed class MeshBatch
+    {
+        public MeshBatch(InstancedRenderer.Mesh mesh, int capacity)
+        {
+            Mesh = mesh;
+            Instances = new InstanceData[capacity];
+        }
+
+        public InstancedRenderer.Mesh Mesh { get; }
+
+        public InstanceData[] Instances { get; }
+
+        public int Count { get; set; }
+    }
+}

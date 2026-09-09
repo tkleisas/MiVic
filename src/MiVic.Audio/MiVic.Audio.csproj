@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The deterministic generator is reused, so a theme is reproducible. -->
+    <ProjectReference Include="..\MiVic.Core\MiVic.Core.csproj" />
+  </ItemGroup>
+
+</Project>

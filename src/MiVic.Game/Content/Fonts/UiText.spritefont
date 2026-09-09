@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MonoGame SpriteFont for in-world text (unit labels, floating numbers).
+
+  The character regions matter more than anything else here: MonoGame's default
+  template covers only Basic Latin, so a Greek game renders as empty boxes
+  without the Greek and Coptic range. Everything the HUD and world labels can
+  print is listed explicitly.
+
+  FontName resolves to NotoSans-Regular.ttf, which sits beside this file.
+-->
+<XnaContent xmlns:Graphics="Microsoft.Xna.Framework.Content.Pipeline.Graphics">
+  <Asset Type="Graphics:FontDescription">
+    <FontName>NotoSans-Regular.ttf</FontName>
+    <Size>22</Size>
+    <Spacing>0</Spacing>
+    <UseKerning>true</UseKerning>
+    <Style>Regular</Style>
+    <DefaultCharacter>?</DefaultCharacter>
+    <CharacterRegions>
+      <!-- Basic Latin -->
+      <CharacterRegion>
+        <Start>&#x0020;</Start>
+        <End>&#x007E;</End>
+      </CharacterRegion>
+      <!-- Latin-1 Supplement -->
+      <CharacterRegion>
+        <Start>&#x00A0;</Start>
+        <End>&#x00FF;</End>
+      </CharacterRegion>
+      <!-- Greek and Coptic: the accented and unaccented monotonic alphabet -->
+      <CharacterRegion>
+        <Start>&#x0370;</Start>
+        <End>&#x03FF;</End>
+      </CharacterRegion>
+      <!-- General Punctuation: dashes, quotes, ellipsis -->
+      <CharacterRegion>
+        <Start>&#x2000;</Start>
+        <End>&#x206F;</End>
+      </CharacterRegion>
+      <!-- Arrows -->
+      <CharacterRegion>
+        <Start>&#x2190;</Start>
+        <End>&#x21FF;</End>
+      </CharacterRegion>
+      <!-- Mathematical Operators -->
+      <CharacterRegion>
+        <Start>&#x2200;</Start>
+        <End>&#x22FF;</End>
+      </CharacterRegion>
+    </CharacterRegions>
+  </Asset>
+</XnaContent>

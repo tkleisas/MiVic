@@ -1,0 +1,268 @@
+namespace MiVic.Game;
+
+/// <summary>Command-line options for the client.</summary>
+public sealed record LaunchOptions
+{
+    /// <summary>Simulation seed. The whole world derives from it.</summary>
+    public ulong Seed { get; init; } = 20250101UL;
+
+    /// <summary>When greater than zero, run this many frames, report, and exit.</summary>
+    public int SelfTestFrames { get; init; }
+
+    /// <summary>When set, save a PNG of the scene and exit.</summary>
+    public string? ScreenshotPath { get; init; }
+
+    /// <summary>Frame at which the screenshot is taken, giving the scene time to settle.</summary>
+    public int ScreenshotFrame { get; init; } = 45;
+
+    /// <summary>Optional camera distance for a screenshot, in metres.</summary>
+    public float? ScreenshotZoom { get; init; }
+
+    /// <summary>Optional camera yaw for a screenshot, in radians.</summary>
+    public float? ScreenshotYaw { get; init; }
+
+    /// <summary>Optional camera pitch for a screenshot, in radians.</summary>
+    public float? ScreenshotPitch { get; init; }
+
+    /// <summary>Optional camera target X for a screenshot, in metres.</summary>
+    public float? ScreenshotTargetX { get; init; }
+
+    /// <summary>Optional camera target Z for a screenshot, in metres.</summary>
+    public float? ScreenshotTargetZ { get; init; }
+
+    /// <summary>Draws a large sample of the compiled SpriteFont, for font diagnostics.</summary>
+    public bool FontSample { get; init; }
+
+    /// <summary>Selects the player's headquarters at startup, so the build panel is visible.</summary>
+    public bool SelectHeadquarters { get; init; }
+
+    /// <summary>When set, render a gallery of every model and exit.</summary>
+    public string? ModelGalleryPath { get; init; }
+
+    /// <summary>True when the run is a model gallery.</summary>
+    public bool IsModelGallery => ModelGalleryPath is not null;
+
+    /// <summary>Removes every non-player structure at startup, to show the victory banner.</summary>
+    public bool VictoryDemo { get; init; }
+
+    /// <summary>When set, every external command is logged and the match is saved here on exit.</summary>
+    public string? RecordPath { get; init; }
+
+    /// <summary>When set, verify this replay headlessly and exit.</summary>
+    public string? ReplayPath { get; init; }
+
+    /// <summary>When set, play this recorded match back in the client.</summary>
+    public string? WatchPath { get; init; }
+
+    /// <summary>Campaign mission to play, by id.</summary>
+    public string? MissionId { get; init; }
+
+    /// <summary>Spawns a burst of explosions at startup, so a screenshot can show the particle system.</summary>
+    public bool ParticleDemo { get; init; }
+
+    /// <summary>When set, export one WAV per faction theme and exit.</summary>
+    public string? RenderAudioPath { get; init; }
+
+    /// <summary>When set, export one WAV per sound effect and exit.</summary>
+    public string? RenderSfxPath { get; init; }
+
+    /// <summary>Disables the procedural soundtrack.</summary>
+    public bool NoAudio { get; init; }
+
+    /// <summary>UI font size in pixels.</summary>
+    public float FontSize { get; init; } = 17f;
+
+    /// <summary>Whether the controls panel starts visible.</summary>
+    public bool ShowHelp { get; init; } = true;
+
+    /// <summary>Whether the run should report performance and exit.</summary>
+    public bool IsSelfTest => SelfTestFrames > 0;
+
+    /// <summary>Usage text shown by <c>--help</c>.</summary>
+    public const string Usage = """
+        MiVic — Στρατηγική Πραγματικού Χρόνου
+
+        Χρήση: MiVic.Game [επιλογές]
+
+          --seed <αριθμός>      Σπόρος προσομοίωσης (προεπιλογή 20250101)
+          --font-size <μέγεθος> Μέγεθος γραμματοσειράς σε pixel (προεπιλογή 17)
+          --no-help             Απόκρυψη του πίνακα χειριστηρίων
+          --screenshot <αρχείο> Αποθήκευση στιγμιότυπου PNG και έξοδος
+          --record <αρχείο>     Καταγραφή του αγώνα σε αρχείο replay
+          --replay <αρχείο>     Επαλήθευση αρχείου replay και έξοδος
+          --watch <αρχείο>      Αναπαραγωγή καταγεγραμμένου αγώνα
+          --mission <id>        Εκκίνηση αποστολής εκστρατείας
+          --mission-list        Λίστα αποστολών
+          --particle-demo       Επίδειξη σωματιδίων (εκρήξεις, καπνός)
+          --render-audio <dir>  Εξαγωγή θεμάτων μουσικής σε αρχεία WAV
+          --render-sfx <dir>    Εξαγωγή ηχητικών εφέ σε αρχεία WAV
+          --no-audio            Χωρίς μουσική
+          --selftest [καρέ]     Εκτέλεση δοκιμής απόδοσης και έξοδος (προεπιλογή 600)
+          --help                Αυτό το μήνυμα
+        """;
+
+    /// <summary>Parses command-line arguments.</summary>
+    public static LaunchOptions Parse(string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        LaunchOptions options = new();
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            string arg = args[i];
+
+            switch (arg)
+            {
+                case "--seed":
+                    options = options with { Seed = ParseUlong(NextValue(args, ref i, arg)) };
+                    break;
+
+                case "--font-size":
+                    options = options with { FontSize = ParseFloat(NextValue(args, ref i, arg)) };
+                    break;
+
+                case "--no-help":
+                    options = options with { ShowHelp = false };
+                    break;
+
+                case "--screenshot":
+                    options = options with { ScreenshotPath = NextValue(args, ref i, arg), ShowHelp = false };
+                    break;
+
+                case "--screenshot-zoom":
+                    options = options with { ScreenshotZoom = ParseFloat(NextValue(args, ref i, arg)) };
+                    break;
+
+                case "--screenshot-yaw":
+                    options = options with { ScreenshotYaw = ParseFloat(NextValue(args, ref i, arg)) };
+                    break;
+
+                case "--screenshot-pitch":
+                    options = options with { ScreenshotPitch = ParseFloat(NextValue(args, ref i, arg)) };
+                    break;
+
+                case "--screenshot-target-x":
+                    options = options with { ScreenshotTargetX = ParseFloat(NextValue(args, ref i, arg)) };
+                    break;
+
+                case "--screenshot-target-z":
+                    options = options with { ScreenshotTargetZ = ParseFloat(NextValue(args, ref i, arg)) };
+                    break;
+
+                case "--font-sample":
+                    options = options with { FontSample = true, ShowHelp = false };
+                    break;
+
+                case "--select-hq":
+                    options = options with { SelectHeadquarters = true, ShowHelp = false };
+                    break;
+
+                case "--victory-demo":
+                    // The victory check runs once a second, so the screenshot has
+                    // to wait for it.
+                    options = options with { VictoryDemo = true, ShowHelp = false, ScreenshotFrame = 260 };
+                    break;
+
+                case "--model-gallery":
+                {
+                    string path = NextValue(args, ref i, arg);
+
+                    // A gallery is always rendered straight to a file and exits.
+                    options = options with
+                    {
+                        ModelGalleryPath = path,
+                        ScreenshotPath = path,
+                        ScreenshotFrame = 60,
+                        ShowHelp = false,
+                    };
+
+                    break;
+                }
+
+                case "--record":
+                    options = options with { RecordPath = NextValue(args, ref i, arg) };
+                    break;
+
+                case "--replay":
+                    options = options with { ReplayPath = NextValue(args, ref i, arg), ShowHelp = false };
+                    break;
+
+                case "--watch":
+                    options = options with { WatchPath = NextValue(args, ref i, arg), ShowHelp = false };
+                    break;
+
+                case "--particle-demo":
+                    // The fireball is brightest a third of a second in.
+                    options = options with { ParticleDemo = true, ShowHelp = false, ScreenshotFrame = 20 };
+                    break;
+
+                case "--render-audio":
+                    options = options with { RenderAudioPath = NextValue(args, ref i, arg) };
+                    break;
+
+                case "--render-sfx":
+                    options = options with { RenderSfxPath = NextValue(args, ref i, arg) };
+                    break;
+
+                case "--no-audio":
+                    options = options with { NoAudio = true };
+                    break;
+
+                case "--mission":
+                    options = options with { MissionId = NextValue(args, ref i, arg), ShowHelp = false };
+                    break;
+
+                case "--mission-list":
+                    Console.WriteLine(MiVic.Core.Campaign.MissionCatalog.Describe());
+                    Environment.Exit(0);
+                    break;
+
+                case "--selftest":
+                case "--self-test":
+                    int frames = 600;
+
+                    if (i + 1 < args.Length && int.TryParse(args[i + 1], out int parsed) && parsed > 0)
+                    {
+                        frames = parsed;
+                        i++;
+                    }
+
+                    options = options with { SelfTestFrames = frames, ShowHelp = false };
+                    break;
+
+                case "--help":
+                case "-h":
+                    Console.WriteLine(Usage);
+                    Environment.Exit(0);
+                    break;
+
+                default:
+                    throw new ArgumentException($"Unknown option '{arg}'.\n\n{Usage}", nameof(args));
+            }
+        }
+
+        return options;
+    }
+
+    private static string NextValue(string[] args, ref int index, string option)
+    {
+        if (index + 1 >= args.Length)
+        {
+            throw new ArgumentException($"Option '{option}' requires a value.", nameof(args));
+        }
+
+        index++;
+        return args[index];
+    }
+
+    private static ulong ParseUlong(string value)
+        => ulong.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out ulong parsed)
+            ? parsed
+            : throw new ArgumentException($"'{value}' is not a valid unsigned integer.");
+
+    private static float ParseFloat(string value)
+        => float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsed)
+            ? parsed
+            : throw new ArgumentException($"'{value}' is not a valid number.");
+}

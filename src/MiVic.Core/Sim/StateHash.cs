@@ -1,0 +1,162 @@
+using MiVic.Core.Campaign;
+
+namespace MiVic.Core.Sim;
+
+/// <summary>
+/// FNV-1a 64-bit hash of the entire simulation state.
+/// <para>
+/// This is the backbone of determinism testing: run the same seed and command
+/// log twice and the hashes must match, and run them on two machines and the
+/// hashes must still match. Every field that can influence future ticks must be
+/// folded in here — if a field is missing, desyncs become invisible.
+/// </para>
+/// </summary>
+public static class StateHash
+{
+    internal const ulong OffsetBasis = 14695981039346656037UL;
+    internal const ulong Prime = 1099511628211UL;
+
+    /// <summary>Computes the state hash of a world.</summary>
+    public static ulong Compute(SimWorld world)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        ulong hash = OffsetBasis;
+        Mix(ref hash, world.Tick);
+        Mix(ref hash, world.AliveCount);
+        Mix(ref hash, world.Rng.State);
+        Mix(ref hash, world.PendingCommandCount);
+        Mix(ref hash, (byte)world.Outcome);
+
+        // The mission's identity and objective progress decide the outcome, so
+        // they are as much part of the state as any unit's position.
+        Mix(ref hash, world.Mission?.Id);
+        ReadOnlySpan<ObjectiveState> objectives = world.Objectives;
+
+        for (int i = 0; i < objectives.Length; i++)
+        {
+            ref readonly ObjectiveState objective = ref objectives[i];
+            Mix(ref hash, (byte)objective.Status);
+            Mix(ref hash, objective.Progress);
+            Mix(ref hash, objective.HoldProgress);
+        }
+
+        int capacity = world.Capacity;
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity e = ref world.GetRefBySlot(slot);
+
+            Mix(ref hash, slot);
+            Mix(ref hash, e.Generation);
+            Mix(ref hash, (byte)e.Faction);
+            Mix(ref hash, e.TeamId);
+            Mix(ref hash, (byte)e.Kind);
+            Mix(ref hash, e.Position.X);
+            Mix(ref hash, e.Position.Y);
+            Mix(ref hash, e.Position.Z);
+            Mix(ref hash, e.MoveGoal.X);
+            Mix(ref hash, e.MoveGoal.Y);
+            Mix(ref hash, e.MoveGoal.Z);
+            Mix(ref hash, e.HasMoveGoal ? 1 : 0);
+            Mix(ref hash, e.SpeedMmPerTick.Raw);
+            Mix(ref hash, e.Morale.Raw);
+            Mix(ref hash, e.Health);
+            Mix(ref hash, e.Heading);
+            Mix(ref hash, e.AltitudeMm);
+            Mix(ref hash, e.PathLength);
+            Mix(ref hash, e.PathCursor);
+            Mix(ref hash, e.QueueLength);
+            Mix(ref hash, e.TargetSlot);
+            Mix(ref hash, e.AttackCooldown);
+            Mix(ref hash, e.HasAttackOrder ? 1 : 0);
+            Mix(ref hash, e.Routed ? 1 : 0);
+        }
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            ref TeamState state = ref world.TeamRef(team);
+
+            Mix(ref hash, state.Materials);
+            Mix(ref hash, state.Energy);
+            Mix(ref hash, state.Water);
+            Mix(ref hash, state.TechTier);
+            Mix(ref hash, state.ResearchTicksRemaining);
+            Mix(ref hash, state.ResearchTargetTier);
+            Mix(ref hash, state.RecentCasualties);
+            Mix(ref hash, (long)state.LicenceMask);
+            Mix(ref hash, (long)state.TechMask);
+            Mix(ref hash, (int)state.ResearchingTech);
+            Mix(ref hash, state.DamagePermille);
+            Mix(ref hash, state.ArmorPermille);
+            Mix(ref hash, state.SpeedPermille);
+            Mix(ref hash, state.ProductionPermille);
+            Mix(ref hash, state.MoraleBonusRaw);
+            Mix(ref hash, state.StructuresLost);
+            Mix(ref hash, (long)state.ApprovedMask);
+            Mix(ref hash, (int)state.PrototypeKind);
+            Mix(ref hash, state.PrototypeTicksRemaining);
+        }
+
+        return hash;
+    }
+
+    /// <summary>
+    /// Folds a string into the hash with a stable algorithm.
+    /// <para>
+    /// <see cref="string.GetHashCode()"/> is randomised per process, so using it
+    /// here would make the state hash differ between runs of the same build —
+    /// exactly the bug this whole file exists to prevent.
+    /// </para>
+    /// </summary>
+    public static void Mix(ref ulong hash, string? value)
+    {
+        if (value is null)
+        {
+            Mix(ref hash, -1);
+            return;
+        }
+
+        Mix(ref hash, value.Length);
+
+        foreach (char character in value)
+        {
+            Mix(ref hash, (byte)character);
+            Mix(ref hash, (byte)(character >> 8));
+        }
+    }
+
+    /// <summary>Folds a 64-bit value into the hash.</summary>
+    public static void Mix(ref ulong hash, long value)
+    {
+        unchecked
+        {
+            ulong v = (ulong)value;
+            for (int i = 0; i < 8; i++)
+            {
+                hash ^= (byte)(v >> (i * 8));
+                hash *= Prime;
+            }
+        }
+    }
+
+    /// <summary>Folds a 64-bit unsigned value into the hash.</summary>
+    public static void Mix(ref ulong hash, ulong value) => Mix(ref hash, unchecked((long)value));
+
+    /// <summary>Folds a 32-bit value into the hash.</summary>
+    public static void Mix(ref ulong hash, int value) => Mix(ref hash, (long)value);
+
+    /// <summary>Folds a byte into the hash.</summary>
+    public static void Mix(ref ulong hash, byte value)
+    {
+        unchecked
+        {
+            hash ^= value;
+            hash *= Prime;
+        }
+    }
+}

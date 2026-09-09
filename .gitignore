@@ -1,0 +1,33 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+.vs/
+.idea/
+
+# Test and diagnostic artefacts
+TestResults/
+selftest-report.txt
+crash.log
+*.trx
+shot*.png
+top.png
+wide.png
+close.png
+hashdump.txt
+
+# Editor / tooling state, machine-specific
+imgui.ini
+
+# Imported 3D models are NOT committed.
+# See src/MiVic.Game/Content/Models/README.md — run tools/fetch-assets.ps1 instead.
+src/MiVic.Game/Content/Models/**/*.glb
+src/MiVic.Game/Content/Models/**/*.gltf
+src/MiVic.Game/Content/Models/**/*.bin
+
+# Content pipeline intermediate output
+src/MiVic.Game/Content/bin/
+src/MiVic.Game/Content/obj/
