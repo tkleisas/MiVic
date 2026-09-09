@@ -123,15 +123,15 @@ not exist yet, so building them out of order would produce dead buttons.
 | Κυβερνητική (OGAS) | a per-team parallel-slot bonus instead of the faction constant | **ready** — self-contained |
 | Επίπεδο 4 / AI Διοίκηση | an `AdvanceTier` 4 project and its content | **ready** — data only |
 | Ηλεκτροτεχνία | the Ηλεκτροπυροβόλο unit kind to unlock | **ready** once the unit exists |
-| Βαθιά Μάχη (mud doctrine) | the `TerrainLayer` from `ART_PIPELINE.md` §3 | **blocked on terrain** |
-| Έλεγχος Καιρού | the same `TerrainLayer`, plus a way to write mud into it | **blocked on terrain** |
+| Βαθιά Μάχη (mud doctrine) | the `TerrainLayer` — **now built** — plus a per-team mud-cost modifier | **ready** — terrain landed |
+| Έλεγχος Καιρού | the `TerrainLayer` — **now built** — plus a way to write mud into it at runtime | **ready** once terrain is mutable |
 | Κόκκινος Ουρανός | a targeted-ability system with a cooldown | **blocked on abilities** |
 | Σωματιδιακά Όπλα | a tier-4 prototype unit and its cap | **blocked on the cap mechanism** |
 
-Recommended order: **terrain first**. It unblocks Βαθιά Μάχη and Έλεγχος Καιρού —
-the two projects that make the mud the Soviet weapon — and it is already the
-biggest item on the roadmap. The four ready entries can ride along with it, since
-they are all data plus one small system hook each.
+Recommended order: **terrain first** — done. It unblocked Βαθιά Μάχη and, almost,
+Έλεγχος Καιρού: the *rasputitsa* is now a real mechanic, so the two projects that
+weaponise it are data plus one hook each. What remains genuinely blocking is the
+ability system (orbital strike) and the prototype cap.
 
 ### 1.5 Open questions
 

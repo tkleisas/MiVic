@@ -1,3 +1,4 @@
+using MiVic.Core.Pathfinding;
 using MiVic.Core.Sim;
 
 namespace MiVic.Core.Tests.Sim;
@@ -43,7 +44,7 @@ public sealed class ScenarioTests
     /// </summary>
     [Fact]
     public void SkirmishInitialHash_IsStable()
-        => Assert.Equal(13858934364992318583UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
+        => Assert.Equal(16686647283942334355UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
 
     [Fact]
     public void SkirmishLaysOutThreeForcesOfTheRightSize()
@@ -107,12 +108,31 @@ public sealed class ScenarioTests
         SimWorld world = Build(20250101, ScenarioKind.Skirmish, out ScenarioSetup setup);
 
         // Spawn() rewrites Y with the terrain height, so the recorded request is
-        // the only way to know where a unit was meant to start.
+        // the only way to know where a unit was meant to start. A request that
+        // lands on impassable ground is deliberately moved to the nearest dry cell,
+        // so that case is checked for passability instead of exactness.
         foreach (SpawnedEntity spawned in setup.Spawned)
         {
             Assert.True(world.TryGet(spawned.Id, out Entity entity));
-            Assert.Equal(spawned.RequestedPosition.X, entity.Position.X);
-            Assert.Equal(spawned.RequestedPosition.Z, entity.Position.Z);
+
+            UnitDefinition definition = UnitCatalog.Get(entity.Kind);
+            PathContext context = SimWorld.PathContextFor(entity.Faction, entity.Kind);
+            int requestedCell = world.Navigation.IndexOfWorld(spawned.RequestedPosition);
+            bool requestedIsPassable = definition.IsBuilding
+                || definition.Movement == MiVic.Core.Terrain.MovementClass.Air
+                || world.TerrainTypes.IsPassable(requestedCell, definition.Movement);
+
+            if (requestedIsPassable)
+            {
+                Assert.Equal(spawned.RequestedPosition.X, entity.Position.X);
+                Assert.Equal(spawned.RequestedPosition.Z, entity.Position.Z);
+            }
+            else
+            {
+                Assert.True(
+                    world.TerrainTypes.IsPassable(world.Navigation.IndexOfWorld(entity.Position), definition.Movement),
+                    "A unit nudged off impassable ground landed on impassable ground.");
+            }
         }
     }
 

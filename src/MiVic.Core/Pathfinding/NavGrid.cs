@@ -123,7 +123,7 @@ public sealed class NavGrid
     /// makes movement read as a straight line.
     /// </para>
     /// </summary>
-    public bool HasLineOfSight(int fromIndex, int toIndex)
+    public bool HasLineOfSight(int fromIndex, int toIndex, TerrainLayer? terrain = null, PathContext context = default)
     {
         int x0 = CellX(fromIndex);
         int z0 = CellZ(fromIndex);
@@ -144,7 +144,7 @@ public sealed class NavGrid
             int x = x0 + ((dx * step) / steps);
             int z = z0 + ((dz * step) / steps);
 
-            if (!IsWalkable(IndexOf(x, z)))
+            if (!Passable(terrain, IndexOf(x, z), context))
             {
                 return false;
             }
@@ -154,10 +154,26 @@ public sealed class NavGrid
     }
 
     /// <summary>
+    /// True when a mover may occupy a cell: the grid allows it, and so does the
+    /// surface if one was supplied. A route must never be smoothed across a lake
+    /// the mover cannot cross.
+    /// </summary>
+    private bool Passable(TerrainLayer? terrain, int index, in PathContext context)
+        => index >= 0
+            && IsWalkable(index)
+            && (terrain is null || terrain.IsPassable(index, context.Movement));
+
+    /// <summary>
     /// Collapses a cell path to its turning points in place, returning the new
     /// length. <paramref name="start"/> is the cell the unit currently occupies.
     /// </summary>
-    public int Smooth(ReadOnlySpan<int> path, int length, int start, Span<int> destination)
+    public int Smooth(
+        ReadOnlySpan<int> path,
+        int length,
+        int start,
+        Span<int> destination,
+        TerrainLayer? terrain = null,
+        PathContext context = default)
     {
         if (length <= 1)
         {
@@ -170,7 +186,7 @@ public sealed class NavGrid
 
         for (int i = 0; i < length - 1; i++)
         {
-            if (!HasLineOfSight(anchor, path[i + 1]))
+            if (!HasLineOfSight(anchor, path[i + 1], terrain, context))
             {
                 destination[kept++] = path[i];
                 anchor = path[i];
@@ -198,16 +214,20 @@ public sealed class NavGrid
     /// <summary>
     /// Finds the closest walkable cell to <paramref name="index"/> by searching
     /// outward in rings. Returns -1 when the grid has no walkable cell at all.
+    /// <para>
+    /// Passing a terrain layer makes the search respect surfaces too, which is what
+    /// keeps a scenario from spawning a tank in the middle of a lake.
+    /// </para>
     /// </summary>
-    public int NearestWalkable(int index)
+    public int NearestWalkable(int index, TerrainLayer? terrain = null, PathContext context = default)
     {
-        if (IsWalkable(index))
+        if (Passable(terrain, index, context))
         {
             return index;
         }
 
-        int cx = CellX(index);
-        int cz = CellZ(index);
+        int cx = CellX(Math.Max(index, 0));
+        int cz = CellZ(Math.Max(index, 0));
         int maxRadius = Size;
 
         for (int radius = 1; radius <= maxRadius; radius++)
@@ -224,7 +244,7 @@ public sealed class NavGrid
 
                     int candidate = IndexOf(cx + dx, cz + dz);
 
-                    if (candidate >= 0 && IsWalkable(candidate))
+                    if (candidate >= 0 && Passable(terrain, candidate, context))
                     {
                         return candidate;
                     }

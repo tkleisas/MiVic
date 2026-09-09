@@ -1794,11 +1794,48 @@ public sealed class MiVicGame : XnaGame
         var id = new EntityId(slot, unit.Generation);
         WorldPos before = unit.Position;
 
+        // Pick a destination the unit can actually reach: a passable cell a good
+        // distance away. A fixed offset from the camera target can land in a lake,
+        // in which case the goal snaps back onto the unit and the check measures
+        // nothing.
+        PathContext pathContext = SimWorld.PathContextFor(unit.Faction, unit.Kind);
+        int unitCell = world.Navigation.IndexOfWorld(unit.Position);
+        int destinationCell = -1;
+
+        for (int radius = 10; radius <= 30 && destinationCell < 0; radius++)
+        {
+            for (int dz = -radius; dz <= radius && destinationCell < 0; dz++)
+            {
+                for (int dx = -radius; dx <= radius && destinationCell < 0; dx++)
+                {
+                    if (Math.Abs(dx) != radius && Math.Abs(dz) != radius)
+                    {
+                        continue;
+                    }
+
+                    int candidate = world.Navigation.IndexOf(
+                        world.Navigation.CellX(unitCell) + dx,
+                        world.Navigation.CellZ(unitCell) + dz);
+
+                    if (candidate >= 0 && world.TerrainTypes.IsPassable(candidate, pathContext.Movement))
+                    {
+                        destinationCell = candidate;
+                    }
+                }
+            }
+        }
+
+        if (destinationCell < 0)
+        {
+            return "FAIL: no reachable destination near the unit";
+        }
+
         // Geometric check first: project a point on the ground, then unproject
         // that pixel. If the two disagree, every click lands somewhere else — the
         // bug that made right-click orders go nowhere.
         HeightMap terrain = world.Terrain;
-        Vector3 probe = _camera!.Target + new Vector3(30f, 0f, 20f);
+        WorldPos destination = world.Navigation.CentreOf(destinationCell);
+        Vector3 probe = new(destination.X / 1000f, 0f, destination.Z / 1000f);
         probe.Y = HeightAtMetres(terrain, probe.X, probe.Z);
 
         if (!TryProjectToScreen(probe, out Vector2 probePixel))
@@ -1836,7 +1873,9 @@ public sealed class MiVicGame : XnaGame
 
         return distanceMm > 5_000
             ? $"OK (click mapping {error:0.00} m, unit moved {distanceMm / 1000} m)"
-            : $"FAIL (unit did not move; {distanceMm} mm, path {unit.PathLength}, goal {unit.HasMoveGoal})";
+            : $"FAIL (unit did not move; {distanceMm} mm, path {unit.PathLength}, goal {unit.HasMoveGoal}, " +
+              $"cell {unitCell} {world.TerrainTypes.TypeAt(unitCell)}, dest {destinationCell} " +
+              $"{world.TerrainTypes.TypeAt(destinationCell)}, {pathContext.Movement})";
     }
 
     /// <summary>

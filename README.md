@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 121 determinism and maths tests
+dotnet test tests/MiVic.Core.Tests          # 273 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 dotnet run --project src/MiVic.Game
@@ -140,12 +140,13 @@ system, and procedurally generated faction music.
 |---|---|
 | Entities | 510 (3 factions × 167 units + 9 structures) |
 | Terrain | 129 × 129 samples over 600 m, 42 m relief |
-| Navigation | 65 × 65 cells, slope-costed |
+| Surfaces | 9 types on the navigation lattice, generated from the seed |
+| Navigation | 65 × 65 cells, slope- and surface-costed |
 | Instanced draw calls | 12 with fog hiding the enemy half of the map |
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
-| Pick round-trip | 170/170 |
-| Tests | 272 passing (255 core, 17 audio) |
+| Pick round-trip | 168/168 |
+| Tests | 290 passing (273 core, 17 audio) |
 
 ### Performance
 
@@ -259,6 +260,47 @@ impact point scatters up to 26 m off target and everything hostile inside 22 m
 takes full damage — devastating against a formation or a building, poor against one
 moving tank. The **Κομισάριος** is unarmed, cheap and worth killing: it steadies
 the morale of friends around it. (Its stated initiative cost is not modelled yet.)
+
+### Terrain
+
+The battlefield has nine surface types, generated from the world seed on the same
+lattice as the navigation grid, so the same seed always produces the same mud in
+the same place. Passability and cost are a lookup in permille of flat ground, with
+zero meaning impassable, which is what lets the existing cost-driven A* pick
+terrain up without changing its algorithm.
+
+| | Γρασίδι | Λάσπη | Άμμος | Χιόνι | Βράχος | Ρηχό νερό | Βαθύ νερό |
+|---|---|---|---|---|---|---|---|
+| Πεζικό | 100 | 200 | 120 | 150 | 180 | 250 | — |
+| Ερπύστριες | 100 | 250 | 150 | 180 | 180 | 300 | — |
+| Τροχοφόρα | 100 | 300 | 160 | 200 | 180 | 450 | — |
+| Αεροσκάφη | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
+
+Mud and snow are then scaled by the mover's **ground pressure**, which is where
+the faction asymmetry becomes physical. A Σοβιετικοί tank runs at 750 ‰ of baseline
+pressure — a light hull on wide tracks — against 1100 for Δυτικοί and 1250 for
+Κινέζοι, so the same mud that costs a Soviet column 187 ‰ costs a Chinese one
+312 ‰. That is the T-34 lesson: the *rasputitsa* hurt the invader more than the
+defender, and the light hull kept moving where the heavies sank.
+
+- **Deep water is impassable to everything on the ground** and irrelevant to
+  aircraft. **Shallow water is a ford**: crossable, never cheap, and the reason a
+  flooded map is still playable.
+- **The generator guarantees a crossing.** Deep water can strand a unit on an
+  island, and a unit that cannot path anywhere reads as a bug rather than as
+  terrain. After classifying, the generator floods outward from the largest patch
+  of ground and carves the narrowest gap to every stranded patch into a ford.
+  Deterministic, and bounded: a patch walled off by cliffs rather than water is
+  left alone instead of being retried forever.
+- **Spawning respects it.** A unit whose spawn point lands in a lake is moved to
+  the nearest free dry cell, and formations spread out instead of stacking on one
+  point.
+- **A\* is memoised per search.** A cell is looked at once as a node but up to
+  eight times as a neighbour, so the surface lookup is cached; without that, adding
+  terrain tripled the test suite's runtime.
+
+Still to come: the mud **churn** counter (wet ground driven over becomes deep mud),
+mines and lava, snow shortening sight ranges, and bridges as buildable structures.
 
 ### The alliance and the AI
 

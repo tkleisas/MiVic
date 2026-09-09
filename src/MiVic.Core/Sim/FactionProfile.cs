@@ -72,6 +72,10 @@ public enum UnitKind : byte
 /// <param name="MoraleFloor">Baseline morale, 0..1 fixed point.</param>
 /// <param name="CostPermille">Unit cost multiplier, in thousandths.</param>
 /// <param name="ResearchSpeedPermille">Research rate multiplier, in thousandths.</param>
+/// <param name="GroundPressurePermille">
+/// Design-philosophy multiplier on every mobile role's ground pressure. Below 1000
+/// means a light hull on wide tracks, which is what keeps an army moving in mud.
+/// </param>
 public readonly record struct FactionProfile(
     Faction Faction,
     string GreekName,
@@ -80,7 +84,8 @@ public readonly record struct FactionProfile(
     int TechCeiling,
     MiVic.Core.Numerics.Fix32 MoraleFloor,
     int CostPermille,
-    int ResearchSpeedPermille)
+    int ResearchSpeedPermille,
+    int GroundPressurePermille = 1_000)
 {
     /// <summary>
     /// The three playable powers, ordered so that iteration is deterministic.
@@ -95,7 +100,8 @@ public readonly record struct FactionProfile(
         TechCeiling: 4,
         MoraleFloor: MiVic.Core.Numerics.Fix32.FromRaw(58982), // 0.90
         CostPermille: 1350,
-        ResearchSpeedPermille: 1250);
+        ResearchSpeedPermille: 1250,
+        GroundPressurePermille: 750);
 
     public static readonly FactionProfile Chinese = new(
         Faction.Chinese,
@@ -105,7 +111,8 @@ public readonly record struct FactionProfile(
         TechCeiling: 2,
         MoraleFloor: MiVic.Core.Numerics.Fix32.FromRaw(52428), // 0.80
         CostPermille: 700,
-        ResearchSpeedPermille: 700);
+        ResearchSpeedPermille: 700,
+        GroundPressurePermille: 1250);
 
     public static readonly FactionProfile Western = new(
         Faction.Western,
@@ -115,7 +122,8 @@ public readonly record struct FactionProfile(
         TechCeiling: 5,
         MoraleFloor: MiVic.Core.Numerics.Fix32.FromRaw(32768), // 0.50
         CostPermille: 1100,
-        ResearchSpeedPermille: 1000);
+        ResearchSpeedPermille: 1000,
+        GroundPressurePermille: 1100);
 
     /// <summary>All playable factions in stable order.</summary>
     public static readonly FactionProfile[] All = [Soviet, Chinese, Western];

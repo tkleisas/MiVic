@@ -65,6 +65,7 @@ public sealed class SimWorld
         // the per-tick state hash — only of the initial world hash.
         Terrain = HeightMap.Generate(seed, SimConstants.TerrainResolution, SimConstants.MapExtentMm, SimConstants.TerrainMaxHeightMm);
         Navigation = NavGrid.Build(Terrain, SimConstants.MaxSlopePermille, SimConstants.NavGridStride);
+        TerrainTypes = TerrainLayer.Build(Terrain, Navigation);
         _pathFinder = new PathFinder(Navigation.CellCount);
         _pathCells = new int[capacity * SimConstants.MaxPathCells];
         _jobs = new ProductionJob[capacity * SimConstants.MaxQueueLength];
@@ -86,6 +87,13 @@ public sealed class SimWorld
 
     /// <summary>Walkability and cost derived from <see cref="Terrain"/>.</summary>
     public NavGrid Navigation { get; }
+
+    /// <summary>
+    /// Surface types and their movement costs, on the same lattice as
+    /// <see cref="Navigation"/>. Like the height field it is a pure function of the
+    /// seed, so it is reproducible without being hashed every tick.
+    /// </summary>
+    public TerrainLayer TerrainTypes { get; }
 
     /// <summary>Uniform grid of live entities, rebuilt each tick for proximity queries.</summary>
     public SpatialIndex Spatial => _spatial;
@@ -320,7 +328,33 @@ public sealed class SimWorld
         e.TeamId = teamId;
         e.Kind = kind;
         e.AltitudeMm = kind == UnitKind.Aircraft ? 60_000 : 0;
-        e.Position = new WorldPos(position.X, Terrain.SampleHeightMm(position.X, position.Z) + e.AltitudeMm, position.Z);
+
+        UnitDefinition definition = UnitCatalog.Get(kind);
+        int spawnX = position.X;
+        int spawnZ = position.Z;
+
+        // A mobile unit that would appear in a lake is moved to the nearest dry
+        // ground. Spawning inside impassable terrain would leave it unable to path
+        // anywhere at all, which reads as a broken unit rather than a terrain rule.
+        if (!definition.IsBuilding && definition.Movement != MovementClass.Air)
+        {
+            PathContext context = new(definition.Movement, UnitCatalog.GroundPressure(faction, kind));
+            int cell = Navigation.IndexOfWorld(new WorldPos(spawnX, 0, spawnZ));
+
+            if (!TerrainTypes.IsPassable(cell, definition.Movement))
+            {
+                int dry = FindFreeCell(cell, definition.Movement);
+
+                if (dry >= 0)
+                {
+                    WorldPos centre = Navigation.CentreOf(dry);
+                    spawnX = centre.X;
+                    spawnZ = centre.Z;
+                }
+            }
+        }
+
+        e.Position = new WorldPos(spawnX, Terrain.SampleHeightMm(spawnX, spawnZ) + e.AltitudeMm, spawnZ);
         e.MoveGoal = e.Position;
         e.HasMoveGoal = false;
 
@@ -349,6 +383,71 @@ public sealed class SimWorld
         return new EntityId(slot, generation);
     }
 
+    /// <summary>
+    /// Nearest cell a mover can stand on that is not already taken.
+    /// <para>
+    /// When a whole formation spawns inside a lake, the nearest dry cell is the
+    /// same cell for every unit in it, and the whole formation stacks on one point
+    /// — which then breaks picking, because the units are literally co-located.
+    /// Spreading them out over the first free cells keeps the formation readable.
+    /// </para>
+    /// </summary>
+    private int FindFreeCell(int cell, MovementClass movement)
+    {
+        int cx = Navigation.CellX(Math.Max(cell, 0));
+        int cz = Navigation.CellZ(Math.Max(cell, 0));
+
+        for (int radius = 0; radius <= Navigation.Size; radius++)
+        {
+            for (int dz = -radius; dz <= radius; dz++)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    if (radius > 0 && Math.Abs(dx) != radius && Math.Abs(dz) != radius)
+                    {
+                        continue;
+                    }
+
+                    int candidate = Navigation.IndexOf(cx + dx, cz + dz);
+
+                    if (candidate < 0 || !Navigation.IsWalkable(candidate) ||
+                        !TerrainTypes.IsPassable(candidate, movement) ||
+                        IsCellOccupied(candidate))
+                    {
+                        continue;
+                    }
+
+                    return candidate;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>True when a live entity already stands in this cell.</summary>
+    private bool IsCellOccupied(int cell)
+    {
+        for (int slot = 0; slot < _entities.Length; slot++)
+        {
+            if (_entities[slot].Alive && Navigation.IndexOfWorld(_entities[slot].Position) == cell)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// How a faction's version of a role moves, for terrain cost and passability.
+    /// </summary>
+    public static PathContext PathContextFor(Faction faction, UnitKind kind)
+    {
+        UnitDefinition definition = UnitCatalog.Get(kind);
+        return new PathContext(definition.Movement, UnitCatalog.GroundPressure(faction, kind));
+    }
+
     /// <summary>Waypoints of an entity's current path, in walking order.</summary>
     public ReadOnlySpan<int> PathOf(int slot)
     {
@@ -373,7 +472,8 @@ public sealed class SimWorld
         }
 
         int start = Navigation.IndexOfWorld(e.Position);
-        int goal = Navigation.NearestWalkable(Navigation.IndexOfWorld(e.MoveGoal));
+        PathContext context = PathContextFor(e.Faction, e.Kind);
+        int goal = Navigation.NearestWalkable(Navigation.IndexOfWorld(e.MoveGoal), TerrainTypes, context);
 
         if (goal < 0)
         {
@@ -391,13 +491,13 @@ public sealed class SimWorld
         }
 
         Span<int> path = _pathCells.AsSpan(slot * SimConstants.MaxPathCells, SimConstants.MaxPathCells);
-        int length = _pathFinder.FindPath(Navigation, start, goal, path);
+        int length = _pathFinder.FindPath(Navigation, TerrainTypes, context, start, goal, path);
 
         if (length > 1)
         {
             // Straighten the route: raw A* output follows cell centres and reads
             // as a zigzag. Smoothing writes back over the same buffer.
-            length = Navigation.Smooth(path, length, start, path);
+            length = Navigation.Smooth(path, length, start, path, TerrainTypes, context);
         }
 
         e.PathLength = length;

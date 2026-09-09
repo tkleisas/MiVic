@@ -171,6 +171,17 @@ silhouettes cost nothing at runtime.
 
 ## 3. Terrain with per-unit difficulty
 
+**Implemented.** `TerrainLayer` classifies nine surface types on the navigation
+lattice from the height field and the seed; `PathContext` carries a mover's
+movement class and ground pressure into `PathFinder`; costs are permille with zero
+meaning impassable. Mud and snow are scaled by ground pressure, the generator
+carves fords so the map cannot fragment, spawning avoids water, and the A* surface
+lookup is memoised per search. `docs/README` describes the table and the
+`TerrainTests` cover determinism, passability, ground-pressure ordering, aircraft
+immunity, the ford rule and full-map connectivity.
+
+The rest of this section is the plan for what is not built yet.
+
 A parallel `TerrainLayer` grid, one byte per navigation cell, generated
 deterministically from the world seed: `Grass, Mud, Sand, Snow, Rock,
 ShallowWater, DeepWater, Lava, Mine`. Passability and cost become a lookup,

@@ -1,3 +1,5 @@
+using MiVic.Core.Terrain;
+
 namespace MiVic.Core.Pathfinding;
 
 /// <summary>
@@ -24,6 +26,8 @@ public sealed class PathFinder
     private readonly int[] _scratch;
     private readonly int[] _heapNode;
     private readonly int[] _heapPriority;
+    private readonly int[] _cellCost;
+    private readonly int[] _cellCostStamp;
 
     private int _openCount;
     private int _stampCounter;
@@ -41,6 +45,8 @@ public sealed class PathFinder
         _scratch = new int[cellCount];
         _heapNode = new int[cellCount + 1];
         _heapPriority = new int[cellCount + 1];
+        _cellCost = new int[cellCount];
+        _cellCostStamp = new int[cellCount];
     }
 
     /// <summary>Nodes expanded by the most recent search, for diagnostics.</summary>
@@ -64,17 +70,42 @@ public sealed class PathFinder
     /// </para>
     /// </summary>
     public int FindPath(NavGrid grid, int start, int goal, Span<int> path)
+        => FindPath(grid, terrain: null, PathContext.Default, start, goal, path);
+
+    /// <summary>
+    /// Finds a path for a specific mover, honouring terrain that the grid alone
+    /// cannot express — water a tank may not cross but an aircraft may, and mud
+    /// that costs a heavy hull more than a light one.
+    /// </summary>
+    /// <param name="grid">Walkability and slope cost.</param>
+    /// <param name="terrain">Surface layer, or null to ignore surfaces entirely.</param>
+    /// <param name="context">How the mover travels and how hard it presses.</param>
+    /// <param name="start">Cell the unit occupies.</param>
+    /// <param name="goal">Cell to reach.</param>
+    /// <param name="path">Buffer the route is written to.</param>
+    public int FindPath(
+        NavGrid grid,
+        TerrainLayer? terrain,
+        PathContext context,
+        int start,
+        int goal,
+        Span<int> path)
     {
         ArgumentNullException.ThrowIfNull(grid);
 
         LastExpandedNodes = 0;
+
+        // Bumped before any cost lookup: the memo arrays are zero-initialised, and a
+        // counter that is also zero on the first search would make every cell look
+        // cached and blocked.
+        _stampCounter++;
 
         if (path.Length == 0 || start < 0 || goal < 0 || start >= grid.CellCount || goal >= grid.CellCount)
         {
             return 0;
         }
 
-        if (!grid.IsWalkable(start) || !grid.IsWalkable(goal))
+        if (!Walkable(grid, terrain, start, context) || !Walkable(grid, terrain, goal, context))
         {
             return 0;
         }
@@ -84,7 +115,6 @@ public sealed class PathFinder
             return 0;
         }
 
-        _stampCounter++;
         _openCount = 0;
 
         int size = grid.Size;
@@ -126,7 +156,7 @@ public sealed class PathFinder
             int cellX = grid.CellX(current);
             int cellZ = grid.CellZ(current);
             int currentG = _gScore[current];
-            int currentCost = grid.CostAt(current);
+            int currentCost = ResolveCost(grid, terrain, current, context);
 
             for (int direction = 0; direction < NeighbourX.Length; direction++)
             {
@@ -145,7 +175,7 @@ public sealed class PathFinder
                 // neighbour, and this loop runs thousands of times per search.
                 int neighbour = current + stepX + (stepZ * size);
 
-                if (!grid.IsWalkable(neighbour))
+                if (!Walkable(grid, terrain, neighbour, context))
                 {
                     continue;
                 }
@@ -154,14 +184,14 @@ public sealed class PathFinder
 
                 // Diagonals may not squeeze between two blocked cells.
                 if (diagonal &&
-                    (!grid.IsWalkable(current + stepX) ||
-                     !grid.IsWalkable(current + (stepZ * size))))
+                    (!Walkable(grid, terrain, current + stepX, context) ||
+                     !Walkable(grid, terrain, current + (stepZ * size), context)))
                 {
                     continue;
                 }
 
                 int stepCost = diagonal ? DiagonalCost : 100;
-                int terrainCost = (currentCost + grid.CostAt(neighbour)) / 2;
+                int terrainCost = (currentCost + ResolveCost(grid, terrain, neighbour, context)) / 2;
                 int tentative = currentG + ((stepCost * terrainCost) / NavGrid.BaseCost);
 
                 if (_stamp[neighbour] == _stampCounter && tentative >= _gScore[neighbour])
@@ -177,6 +207,49 @@ public sealed class PathFinder
         }
 
         return 0;
+    }
+
+    /// <summary>True when a mover may enter a cell: the grid allows it and so does the surface.</summary>
+    private bool Walkable(NavGrid grid, TerrainLayer? terrain, int index, in PathContext context)
+        => ResolveCost(grid, terrain, index, context) > 0;
+
+    /// <summary>
+    /// Cost of entering a cell, combining the grid's slope cost with the surface's
+    /// multiplier. Open ground is exactly the grid cost, so a map with no terrain
+    /// features produces the same routes it always did.
+    /// <para>
+    /// Memoised per search: a cell is looked at once as a node but up to eight
+    /// times as a neighbour, and the surface lookup is a switch and a division.
+    /// </para>
+    /// </summary>
+    private int ResolveCost(NavGrid grid, TerrainLayer? terrain, int index, in PathContext context)
+    {
+        if ((uint)index >= (uint)grid.CellCount)
+        {
+            return 0;
+        }
+
+        if (_cellCostStamp[index] == _stampCounter)
+        {
+            return _cellCost[index];
+        }
+
+        int cost = 0;
+
+        if (grid.IsWalkable(index))
+        {
+            cost = grid.CostAt(index);
+
+            if (terrain is not null)
+            {
+                int permille = terrain.CostPermille(index, context.Movement, context.GroundPressurePermille);
+                cost = permille == 0 ? 0 : (cost * permille) / TerrainLayer.BasePermille;
+            }
+        }
+
+        _cellCostStamp[index] = _stampCounter;
+        _cellCost[index] = cost;
+        return cost;
     }
 
     /// <summary>Octile distance to the goal, scaled by the cheapest possible step cost.</summary>

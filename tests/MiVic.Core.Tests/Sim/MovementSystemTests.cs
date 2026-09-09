@@ -20,13 +20,14 @@ public sealed class MovementSystemTests
         NavGrid grid = world.Navigation;
         PathFinder finder = new(grid.CellCount);
         int[] buffer = new int[SimConstants.MaxPathCells];
+        PathContext context = SimWorld.PathContextFor(Faction.Soviet, kind);
 
-        int start = grid.NearestWalkable(grid.IndexOfWorld(WorldPos.Origin));
+        int start = grid.NearestWalkable(grid.IndexOfWorld(WorldPos.Origin), world.TerrainTypes, context);
         int goal = -1;
 
         for (int i = 0; i < grid.CellCount; i++)
         {
-            if (!grid.IsWalkable(i) || i == start)
+            if (!grid.IsWalkable(i) || i == start || !world.TerrainTypes.IsPassable(i, context.Movement))
             {
                 continue;
             }
@@ -38,7 +39,7 @@ public sealed class MovementSystemTests
                 continue;
             }
 
-            if (finder.FindPath(grid, start, i, buffer) > 0)
+            if (finder.FindPath(grid, world.TerrainTypes, context, start, i, buffer) > 0)
             {
                 goal = i;
                 break;
@@ -155,7 +156,9 @@ public sealed class MovementSystemTests
     public void UnitWithoutAnOrderKeepsItsPathEmpty()
     {
         SimWorld world = new(seed: 5, capacity: 4);
-        WorldPos start = world.Navigation.CentreOf(world.Navigation.NearestWalkable(0));
+        PathContext context = SimWorld.PathContextFor(Faction.Soviet, UnitKind.Tank);
+        WorldPos start = world.Navigation.CentreOf(
+            world.Navigation.NearestWalkable(0, world.TerrainTypes, context));
         EntityId unit = world.Spawn(Faction.Soviet, 0, UnitKind.Tank, start, Fix32.FromInt(400), 100);
 
         world.RunTicks(20);
