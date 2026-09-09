@@ -448,6 +448,27 @@ public sealed class SimWorld
         return new PathContext(definition.Movement, UnitCatalog.GroundPressure(faction, kind));
     }
 
+    /// <summary>
+    /// A team's version of the same context, after its completed research. The
+    /// mobility doctrine «Βαθιά Μάχη» lowers effective ground pressure, which is
+    /// how the Σοβιετικοί turn the mud from a tax into an advantage.
+    /// </summary>
+    public PathContext PathContextOf(int team, Faction faction, UnitKind kind)
+    {
+        PathContext context = PathContextFor(faction, kind);
+
+        if ((uint)team >= SimConstants.TeamCount || context.GroundPressurePermille <= 0)
+        {
+            return context;
+        }
+
+        int resistance = _teams[team].TerrainResistancePermille;
+
+        return resistance > 0
+            ? context with { GroundPressurePermille = (context.GroundPressurePermille * resistance) / 1_000 }
+            : context;
+    }
+
     /// <summary>Waypoints of an entity's current path, in walking order.</summary>
     public ReadOnlySpan<int> PathOf(int slot)
     {
@@ -472,7 +493,7 @@ public sealed class SimWorld
         }
 
         int start = Navigation.IndexOfWorld(e.Position);
-        PathContext context = PathContextFor(e.Faction, e.Kind);
+        PathContext context = PathContextOf(e.TeamId, e.Faction, e.Kind);
         int goal = Navigation.NearestWalkable(Navigation.IndexOfWorld(e.MoveGoal), TerrainTypes, context);
 
         if (goal < 0)

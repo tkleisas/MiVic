@@ -438,17 +438,57 @@ public sealed class ResearchTests
     }
 
     [Fact]
-    public void SpeedResearchRaisesTheTeamsSpeedMultiplier()
+    public void DeepBattleHalvesTheMudPenalty()
     {
         (SimWorld world, EntityId bureau) = WorldWithBureau(Faction.Soviet, 0);
         TechProject project = Project(TechId.SovietDeepBattle);
 
-        Assert.Equal(1_000, world.Team(0).SpeedPermille);
+        Assert.Equal(1_000, world.Team(0).TerrainResistancePermille);
+
+        int before = world.PathContextOf(0, Faction.Soviet, UnitKind.Tank).GroundPressurePermille;
 
         world.Enqueue(SimCommand.Research(bureau, project.Id, world.Tick + 1, 0));
         world.RunTicks(TechCatalog.TicksFor(Faction.Soviet, project) + 2);
 
-        Assert.Equal(project.Value, world.Team(0).SpeedPermille);
+        int after = world.PathContextOf(0, Faction.Soviet, UnitKind.Tank).GroundPressurePermille;
+
+        Assert.Equal(project.Value, world.Team(0).TerrainResistancePermille);
+        Assert.Equal(before / 2, after);
+    }
+
+    [Fact]
+    public void CommandAutomationAddsAParallelSlot()
+    {
+        (SimWorld world, _) = WorldWithBureau(Faction.Soviet, 0);
+
+        Assert.Equal(0, world.Team(0).BonusSlots);
+
+        world.TeamRef(0).TechMask |= 1UL << (int)TechId.SovietOgAs;
+        ResearchSystem.RefreshModifiers(ref world.TeamRef(0));
+
+        Assert.Equal(1, world.Team(0).BonusSlots);
+    }
+
+    [Fact]
+    public void ReconnaissanceWidensTheTeamsSight()
+    {
+        (SimWorld world, _) = WorldWithBureau(Faction.Soviet, 0);
+
+        world.TeamRef(0).TechMask |= 1UL << (int)TechId.SovietRecon;
+        ResearchSystem.RefreshModifiers(ref world.TeamRef(0));
+
+        Assert.Equal(1_300, world.Team(0).VisionPermille);
+    }
+
+    [Fact]
+    public void EraFourExistsAndTheSovietCeilingReachesIt()
+    {
+        Assert.True(TechCatalog.TryGet(TechId.SovietAdvance4, out TechProject era4));
+        Assert.Equal(TechEffect.AdvanceTier, era4.Effect);
+        Assert.Equal(4, era4.Value);
+        Assert.True(
+            FactionProfile.Soviet.TechCeiling >= 4,
+            "Era IV content exists but the Σοβιετικοί ceiling cannot reach it.");
     }
 
     [Fact]

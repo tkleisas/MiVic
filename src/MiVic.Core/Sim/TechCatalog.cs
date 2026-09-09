@@ -12,6 +12,12 @@ public enum TechId : byte
     SovietAdvance3 = 4,
     SovietOgAs = 5,
     SovietOrbital = 6,
+    SovietPartisans = 7,
+    SovietRecon = 8,
+    SovietAdvance4 = 9,
+
+    /// <summary>Command automation. Numbered above the Κινέζοι block, which owns 10–13.</summary>
+    SovietAiCommand = 14,
 
     // ---- Κινέζοι: wide and shallow ----
     ChineseMassMobilisation = 10,
@@ -48,6 +54,19 @@ public enum TechEffect : byte
 
     /// <summary>Raises the morale floor, in Q16.16 raw units.</summary>
     Morale = 5,
+
+    /// <summary>Increases sight radius, in thousandths.</summary>
+    Vision = 6,
+
+    /// <summary>
+    /// Reduces the mud and snow penalty, in thousandths of it paid. 500 means the
+    /// team's units pay half — the mobility doctrine that makes terrain the
+    /// Σοβιετικοί weapon rather than a tax.
+    /// </summary>
+    TerrainResistance = 7,
+
+    /// <summary>Adds parallel production slots per building.</summary>
+    ParallelSlots = 8,
 }
 
 /// <summary>A research project: what it needs, what it costs, what it does.</summary>
@@ -87,12 +106,19 @@ public static class TechCatalog
     private static readonly TechProject[] Projects =
     [
         // ---------------- Σοβιετικοί ----------------
-        new(TechId.SovietDeepBattle, Faction.Soviet, "Βαθιά Μάχη", "+15% ταχύτητα κίνησης", 1, 300, 300, TechId.None, TechEffect.Speed, 1150),
+        // Βαθιά Μάχη is the keystone: the faction that handles mud best can
+        // research its way to ignoring it, which is what makes the terrain system
+        // a Σοβιετικοί mechanic rather than a tax on everyone.
+        new(TechId.SovietDeepBattle, Faction.Soviet, "Βαθιά Μάχη", "-50% ποινή λάσπης και χιονιού", 1, 300, 300, TechId.None, TechEffect.TerrainResistance, 500),
+        new(TechId.SovietPartisans, Faction.Soviet, "Παρτιζάνοι", "+25% ορατότητα πεζικού", 1, 250, 250, TechId.None, TechEffect.Vision, 1250),
         new(TechId.SovietAdvance2, Faction.Soviet, "Επίπεδο 2: Τεθωρακισμένα", "Ξεκλειδώνει άρματα και πυροβολικό", 1, 400, 500, TechId.None, TechEffect.AdvanceTier, 2),
         new(TechId.SovietElectro, Faction.Soviet, "Ηλεκτροτεχνία", "+25% ζημιά — τόξα και παλμικά όπλα", 2, 550, 600, TechId.SovietAdvance2, TechEffect.Damage, 1250),
+        new(TechId.SovietRecon, Faction.Soviet, "Αναγνωριστικοί Δορυφόροι", "+30% ορατότητα", 2, 500, 500, TechId.SovietAdvance2, TechEffect.Vision, 1300),
         new(TechId.SovietAdvance3, Faction.Soviet, "Επίπεδο 3: Αεροπορία", "Ξεκλειδώνει αεροσκάφη", 2, 650, 700, TechId.SovietAdvance2, TechEffect.AdvanceTier, 3),
-        new(TechId.SovietOgAs, Faction.Soviet, "Κυβερνητική (OGAS)", "+30% ταχύτητα παραγωγής", 3, 800, 800, TechId.SovietElectro, TechEffect.Production, 1300),
+        new(TechId.SovietOgAs, Faction.Soviet, "Κυβερνητική (OGAS)", "+1 παράλληλη γραμμή παραγωγής", 3, 800, 800, TechId.SovietElectro, TechEffect.ParallelSlots, 1),
         new(TechId.SovietOrbital, Faction.Soviet, "Κόκκινος Ουρανός", "+20% θωράκιση — τροχιακή υποστήριξη", 3, 900, 900, TechId.SovietOgAs, TechEffect.Armor, 1200),
+        new(TechId.SovietAdvance4, Faction.Soviet, "Επίπεδο 4: Κόκκινος Λογισμός", "Ανοίγει την εποχή της αυτόματης διοίκησης", 3, 1_000, 1_000, TechId.SovietOgAs, TechEffect.AdvanceTier, 4),
+        new(TechId.SovietAiCommand, Faction.Soviet, "AI Διοίκηση", "+1 παράλληλη γραμμή παραγωγής", 4, 1_200, 1_100, TechId.SovietAdvance4, TechEffect.ParallelSlots, 1),
 
         // ---------------- Κινέζοι ----------------
         new(TechId.ChineseMassMobilisation, Faction.Chinese, "Μαζική Επιστράτευση", "+20% ταχύτητα παραγωγής", 1, 200, 250, TechId.None, TechEffect.Production, 1200),

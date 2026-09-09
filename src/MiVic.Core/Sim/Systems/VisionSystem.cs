@@ -71,7 +71,12 @@ public static class VisionSystem
                 continue;
             }
 
-            Stamp(world, entity.TeamId, entity.Position, SightRadiusMm(entity.Kind));
+            int visionPermille = world.Team(entity.TeamId).VisionPermille;
+            int sight = visionPermille > 0
+                ? (SightRadiusMm(entity.Kind) * visionPermille) / 1_000
+                : SightRadiusMm(entity.Kind);
+
+            Stamp(world, entity.TeamId, entity.Position, sight);
         }
     }
 

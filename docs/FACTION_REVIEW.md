@@ -82,22 +82,32 @@ because the new design needs a prototype run first.
 ### 1.3 Tech tree
 
 Shape stays narrow and deep. The chain is the identity; the changes below give each
-project a mechanic instead of a flat percentage, and fill Era IV.
+project a mechanic instead of a flat percentage, and fill Era IV. **Bold** entries
+are new or reworked.
 
-| Era | Project | Tier req | Effect |
-|---|---|---|---|
-| I | **Βαθιά Μάχη** | 1 | mobility doctrine: the team's ground units ignore half of the mud and snow penalty |
-| I | Επίπεδο 2: Τεθωρακισμένα | 1 | → tier 2 |
-| I | **Παρτιζάνοι** | 1 | partisan support: infantry sight +25 % and mine cells are revealed |
-| II | Ηλεκτροτεχνία | 2 | **unlocks the Ηλεκτροπυροβόλο prototype** (arc/EMP), instead of +25 % damage |
-| II | Επίπεδο 3: Αεροπορία | 2 | → tier 3 |
-| II | **Αναγνωριστικοί Δορυφόροι** | 2 | reconnaissance: team sight radius +30 %, fog cleared in a large radius around the command centre |
-| III | Κυβερνητική (OGAS) | 3 | command automation: **+1 parallel slot per factory** |
-| III | **Κόκκινος Ουρανός** | 3 | orbital strike ability: a targeted kinetic strike, long cooldown, heavy area damage (no longer +20 % armour) |
-| IV | **Επίπεδο 4: Κόκκινος Λογισμός** | 3 | → tier 4 |
-| IV | **AI Διοίκηση** | 4 | automated command: +1 parallel slot and shorter reaction latency |
-| IV | **Έλεγχος Καιρού** | 4 | weather control: creates deep mud over a target area for a fixed number of ticks — the *rasputitsa* as a weapon, aimed at whoever has the worst ground pressure |
-| IV | **Σωματιδιακά Όπλα** | 4 | unlocks the tier-4 Σωματιδιακό Άρμα, a capped prototype |
+| Era | Project | Tier req | Effect | Status |
+|---|---|---|---|---|
+| I | **Βαθιά Μάχη** | 1 | mobility doctrine: the team's ground units pay **half** the mud and snow penalty | **built** |
+| I | Επίπεδο 2: Τεθωρακισμένα | 1 | → tier 2 | built |
+| I | **Παρτιζάνοι** | 1 | partisan support: team sight +25 % | **built** (mine reveal waits on mines) |
+| II | Ηλεκτροτεχνία | 2 | **unlocks the Ηλεκτροπυροβόλο prototype** (arc/EMP), instead of +25 % damage | damage bonus built; the unit is not |
+| II | Επίπεδο 3: Αεροπορία | 2 | → tier 3 | built |
+| II | **Αναγνωριστικοί Δορυφόροι** | 2 | reconnaissance: team sight radius +30 % | **built** |
+| III | Κυβερνητική (OGAS) | 3 | command automation: **+1 parallel slot per factory** | **built** |
+| III | **Κόκκινος Ουρανός** | 3 | orbital strike ability: a targeted kinetic strike, long cooldown, heavy area damage (no longer +20 % armour) | **blocked** — needs abilities |
+| IV | **Επίπεδο 4: Κόκκινος Λογισμός** | 3 | → tier 4 | **built** |
+| IV | **AI Διοίκηση** | 4 | automated command: **+1 parallel slot** | **built** (reaction latency is not) |
+| IV | **Έλεγχος Καιρού** | 4 | weather control: creates deep mud over a target area for a fixed number of ticks — the *rasputitsa* as a weapon, aimed at whoever has the worst ground pressure | **blocked** — terrain is generated once and never written to |
+| IV | **Σωματιδιακά Όπλα** | 4 | unlocks the tier-4 Σωματιδιακό Άρμα, a capped prototype | **blocked** — needs a prototype cap |
+
+Three new `TechEffect`s carry these: `Vision` (multiplies sight radius),
+`TerrainResistance` (multiplies the mud and snow penalty, so two such projects
+compound to a quarter) and `ParallelSlots` (adds slots per building, read by
+`ProductionSystem` and shown as `+N` in the status panel). Effective ground
+pressure is computed per team by `SimWorld.PathContextOf`, so a researched
+Σοβιετικοί tank runs at 375 ‰ of baseline pressure in mud — half of its already
+light 750 ‰. Era IV also needed its own `AdvanceTier` project: the ceiling of 4
+existed with no content to reach it.
 
 - **Βαθιά Μάχη** is the keystone change. It makes the terrain decision in
   `ART_PIPELINE.md` §3.1 a *Soviet* mechanic from the first research, rather than a

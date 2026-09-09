@@ -344,6 +344,15 @@ public sealed class GameHud
 
             ImGui.SameLine(210f);
             ImGui.TextColored(MutedColor, $"Τεχνολογία {profile.TechCeiling}   Παραγωγή {profile.ProductionSlots}");
+
+            // Faction ids map onto team slots by design: Soviet 1 -> team 0, and so on.
+            int bonus = world.Team((int)profile.Faction - 1).BonusSlots;
+
+            if (bonus > 0)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(MutedColor, $"+{bonus}");
+            }
         }
 
         ImGui.Separator();
@@ -475,7 +484,10 @@ public sealed class GameHud
             for (int i = 0; i < jobs.Length; i++)
             {
                 ProductionJob job = jobs[i];
-                bool active = i < profile.ProductionSlots;
+
+                // Completed command automation adds slots, so the active marker has
+                // to follow the team's effective slot count, not the faction's base.
+                bool active = i < profile.ProductionSlots + team.BonusSlots;
 
                 ImGui.Text($"{(active ? "▶" : "·")} {FactionPalette.UnitLabel(job.Kind)}");
                 ImGui.SameLine(190f);

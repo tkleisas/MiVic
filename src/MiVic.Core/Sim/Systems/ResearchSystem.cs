@@ -66,6 +66,9 @@ public static class ResearchSystem
         int armor = 1_000;
         int speed = 1_000;
         int production = 1_000;
+        int vision = 1_000;
+        int terrainResistance = 1_000;
+        int slots = 0;
         int morale = 0;
 
         foreach (TechProject project in TechCatalog.All)
@@ -89,6 +92,17 @@ public static class ResearchSystem
                 case TechEffect.Production:
                     production = (production * project.Value) / 1_000;
                     break;
+                case TechEffect.Vision:
+                    vision = (vision * project.Value) / 1_000;
+                    break;
+                case TechEffect.TerrainResistance:
+                    // Multiplies, so two projects of this kind compound: a team that
+                    // has both pays a quarter of the mud penalty.
+                    terrainResistance = (terrainResistance * project.Value) / 1_000;
+                    break;
+                case TechEffect.ParallelSlots:
+                    slots += project.Value;
+                    break;
                 case TechEffect.Morale:
                     morale += project.Value;
                     break;
@@ -99,6 +113,9 @@ public static class ResearchSystem
         state.ArmorPermille = armor;
         state.SpeedPermille = speed;
         state.ProductionPermille = production;
+        state.VisionPermille = vision;
+        state.TerrainResistancePermille = terrainResistance;
+        state.BonusSlots = slots;
         state.MoraleBonusRaw = morale;
     }
 }

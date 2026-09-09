@@ -87,6 +87,18 @@ public struct TeamState
     /// <summary>Production-speed multiplier in thousandths; 1000 is baseline.</summary>
     public int ProductionPermille;
 
+    /// <summary>Sight-radius multiplier in thousandths; 1000 is baseline.</summary>
+    public int VisionPermille;
+
+    /// <summary>
+    /// Multiplier on the mud and snow penalty in thousandths; 1000 is baseline and
+    /// 500 means the team's units pay half. This is what "Βαθιά Μάχη" buys.
+    /// </summary>
+    public int TerrainResistancePermille;
+
+    /// <summary>Extra parallel production slots per building, from command automation.</summary>
+    public int BonusSlots;
+
     /// <summary>Morale floor bonus in Q16.16 raw units.</summary>
     public int MoraleBonusRaw;
 

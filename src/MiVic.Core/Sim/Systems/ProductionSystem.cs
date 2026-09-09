@@ -46,7 +46,8 @@ public static class ProductionSystem
                 continue;
             }
 
-            int parallel = Math.Min(FactionProfile.For(building.Faction).ProductionSlots, building.QueueLength);
+            int slots = FactionProfile.For(building.Faction).ProductionSlots + team.BonusSlots;
+            int parallel = Math.Min(slots, building.QueueLength);
 
             for (int i = 0; i < parallel; i++)
             {

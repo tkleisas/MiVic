@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 273 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 276 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 dotnet run --project src/MiVic.Game
@@ -146,7 +146,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
 | Pick round-trip | 168/168 |
-| Tests | 290 passing (273 core, 17 audio) |
+| Tests | 293 passing (276 core, 17 audio) |
 
 ### Performance
 
@@ -298,6 +298,11 @@ defender, and the light hull kept moving where the heavies sank.
 - **A\* is memoised per search.** A cell is looked at once as a node but up to
   eight times as a neighbour, so the surface lookup is cached; without that, adding
   terrain tripled the test suite's runtime.
+- **Research lightens it.** «Βαθιά Μάχη» multiplies the team's mud and snow penalty
+  by 0.5, so a researched Σοβιετικοί tank runs at 375 ‰ of baseline ground pressure
+  — the faction that handles mud best is the one that can research its way to
+  ignoring it. The multiplier is per team, so an ally who never researches it still
+  bogs down.
 
 Still to come: the mud **churn** counter (wet ground driven over becomes deep mud),
 mines and lava, snow shortening sight ranges, and bridges as buildable structures.
