@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 283 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 287 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 dotnet run --project src/MiVic.Game
@@ -146,7 +146,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
 | Pick round-trip | 168/168 |
-| Tests | 300 passing (283 core, 17 audio) |
+| Tests | 304 passing (287 core, 17 audio) |
 
 ### Performance
 
@@ -266,6 +266,12 @@ The **Κινέζοι** answer technology with automation. **Ρομποτικό �
 so they never rout and get no morale-driven reload bonus either, and they cost
 **energy instead of water** because there are no crews to feed. Drones fly, which
 means terrain ignores them and only anti-air can engage them.
+
+The **Δυτικοί** army is a bill. Propaganda costs one material per eight armed units
+per tick and sets the morale baseline — **+0.10** while it is paid, **−0.20** when
+it is not — and **Μισθοφόρος** contract infantry cost a wage every tick and
+**down-tools** (routs, and will not fight) the moment the treasury cannot cover it.
+The status panel shows the bill and says which obligation went unpaid.
 
 ### Terrain
 

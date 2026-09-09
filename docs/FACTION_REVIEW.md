@@ -325,33 +325,76 @@ cannot come back silently.
 
 ### 3.3 What is still missing
 
-Their two signature mechanics are designed but not built, and they are the whole
-reason the faction is interesting rather than just expensive:
+Their two signature mechanics are now **built**:
 
-- **Contract units (μισθοφόροι)** — excellent stats, but a morale floor tied to
-  payment. If the treasury dips, they down-tools or defects. Needs a per-unit link
-  to the treasury, which nothing has today.
-- **Propaganda upkeep** — a recurring drain that sets the morale baseline. Stop
-  paying and the army stops wanting to fight. This is a *cost*, and the faction is
-  currently the richest in the game with nothing to spend the surplus on.
+- **Contract units (μισθοφόροι)** — the best infantry in the game, and the only
+  unit that has to be paid every tick. `UnitDefinition.WagePerTick` and a per-team
+  wage bill; when the treasury cannot cover it, the contract lapses and the unit
+  **down-tools** — it routs and will not fight until it is paid. That is not a
+  morale penalty bolted on, it is the existing rout machinery doing exactly what it
+  was built for.
+- **Propaganda upkeep** — a recurring bill of one material per eight armed units
+  per tick, set by `FactionProfile.PropagandaDivisor`. Funded, the army's morale
+  baseline is **+0.10** above its floor; unfunded, **−0.20**. With a floor of 0.50
+  that is the difference between an army that holds and one that is already halfway
+  to breaking before the first shot.
 
-Without them the Δυτικοί have the weakness (low morale floor, 0.50) but none of the
-texture that makes the weakness feel earned.
+Both are paid in `EconomySystem.PayUpkeep`, wages first — contract troops are the
+first to notice an empty treasury — and the funded/unfunded flags are hashed, so a
+replay reproduces the same collapse on the same tick. The status panel shows the
+bill and says plainly which obligation went unpaid.
 
-### 3.4 Roster
+This gives the West the texture the weakness needed: the richest faction in the
+game finally has somewhere for the money to go, and the greed that was only
+narrative is now a per-tick bill.
+
+### 3.4 Tier-4 and tier-5 capabilities: nukes and stealth — decided, not built
+
+Two capabilities that belong to the high eras, and one prerequisite that makes them
+a strategic commitment rather than a button:
+
+| Capability | Era | Who | Prerequisite |
+|---|---|---|---|
+| **Τακτικό πυρηνικό όπλο** | 4 | Σοβιετικοί **and** Δυτικοί | a **Πυρηνικός Σταθμός** (nuclear power plant) |
+| **Αποφυγή ανίχνευσης** (stealth) | 5 | Δυτικοί only | — |
+
+- **Tactical nukes are shared by the superpowers, not the West's alone.** Both the
+  Σοβιετικοί and the Δυτικοί reach era IV; the Κινέζοι never do, because their
+  ceiling is 3. That is the cleanest possible expression of the setting: the two
+  empires that over-invested in the Cold War have the bomb, and the manufacturing
+  power does not.
+- **The nuclear plant is the interesting part.** Requiring a Πυρηνικός Σταθμός
+  before the weapon exists turns it into a strategic commitment: you must build a
+  large, expensive, obvious structure and *defend* it. Losing the plant should take
+  the capability away, which makes the plant a target worth a raid — the first
+  structure in the game whose value is not its income.
+- **Stealth is the West's era-V edge** and the natural counterpart to few,
+  expensive, excellent units: you cannot shoot what you cannot see. It needs a
+  stealth flag on the unit, a detection radius, and a reveal on firing.
+- **Both are blocked on the same missing system.** A nuke is a targeted ability
+  with a cooldown, exactly like the Soviet orbital strike and weather control. Until
+  there is an ability system, none of the three can be built — and it is now the
+  single item blocking four separate design decisions across two factions.
+
+### 3.5 Roster
 
 Same principle as the Κινέζοι: no new roles, better versions of the same ones. The
 MBT is the best tank in the game, the self-propelled gun the most accurate, and the
 air defence the longest-ranged — each at a price that makes losing one a disaster
-and a morale hit on top.
+and a morale hit on top. **Μισθοφόρος** is the exception: a new role, the best
+infantry in the game, and the only unit with a wage.
 
-### 3.5 Open questions
+### 3.6 Open questions
 
-- Morale floor 0.50 with no rally mechanic beyond proximity: is the rout cascade
-  too punishing now that their units cost 2.2×?
-- Should the treasury surplus have a sink (propaganda upkeep) before any further
-  balance pass? Right now the richest faction has nothing to buy but units it
-  cannot build quickly.
-- The high-era projects are all passive multipliers. If the Δυτικοί are the
-  technology faction, era IV and V are where a genuinely new *capability* belongs —
-  but that needs the ability system the orbital strike is also waiting on.
+- Morale floor 0.50 with a possible −0.20 when propaganda is unfunded: is the rout
+  cascade too punishing now that their units cost 2.2×? The floor and the penalty
+  were designed separately and now stack.
+- How does the nuclear plant interact with the existing energy economy? If it is
+  also a power plant, the West's energy problem is solved by the same building that
+  gives them the bomb, which may be too neat.
+- Should losing the nuclear plant remove the nuke, or merely stop production of
+  more? Removal makes the plant a raid target; stopping production makes it a
+  one-time investment.
+- Stealth needs a detection rule. Simplest: stealthed units are invisible beyond a
+  short detection radius and are revealed for a few seconds after firing. Anything
+  more elaborate needs the ability system anyway.

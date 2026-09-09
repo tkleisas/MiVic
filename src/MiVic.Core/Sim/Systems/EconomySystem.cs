@@ -33,6 +33,8 @@ public static class EconomySystem
             state.MaterialsPerTick = 0;
             state.EnergyPerTick = 0;
             state.WaterPerTick = 0;
+            state.ArmedCount = 0;
+            state.WagesPerTick = 0;
         }
 
         int capacity = world.Capacity;
@@ -57,6 +59,14 @@ public static class EconomySystem
             // A rich faction should be able to afford more, not run cheaper.
             int income = FactionProfile.For(entity.Faction).IncomePermille;
             income = income > 0 ? income : 1_000;
+
+            UnitDefinition definition = UnitCatalog.Get(entity.Kind);
+
+            if (definition.IsArmed && !definition.IsBuilding)
+            {
+                state.ArmedCount++;
+                state.WagesPerTick += definition.WagePerTick;
+            }
 
             switch (entity.Kind)
             {
@@ -91,6 +101,58 @@ public static class EconomySystem
             state.Materials = Math.Max(0, state.Materials + state.MaterialsPerTick);
             state.Energy = Math.Max(0, state.Energy + state.EnergyPerTick);
             state.Water = Math.Max(0, state.Water + state.WaterPerTick);
+
+            PayUpkeep(ref state, SimWorld.FactionOfTeam(team));
+        }
+    }
+
+    /// <summary>
+    /// Pays this tick's political and contractual bills.
+    /// <para>
+    /// Wages come first, because contract troops are the first to notice an empty
+    /// treasury. If a bill cannot be paid, the flag that says so is what the morale
+    /// system reads — an army that is not being paid does not merely get poorer, it
+    /// stops wanting to fight.
+    /// </para>
+    /// </summary>
+    private static void PayUpkeep(ref TeamState state, Faction faction)
+    {
+        // The fourth team slot is neutral and has no profile, so it owes nothing.
+        if (faction == Faction.None)
+        {
+            state.UpkeepPerTick = 0;
+            state.WagesPaid = true;
+            state.PropagandaPaid = true;
+            return;
+        }
+
+        FactionProfile profile = FactionProfile.For(faction);
+
+        int propaganda = profile.PropagandaDivisor > 0
+            ? (state.ArmedCount + profile.PropagandaDivisor - 1) / profile.PropagandaDivisor
+            : 0;
+
+        state.UpkeepPerTick = propaganda + state.WagesPerTick;
+
+        if (state.Materials >= state.WagesPerTick)
+        {
+            state.Materials -= state.WagesPerTick;
+            state.WagesPaid = true;
+        }
+        else
+        {
+            state.Materials = 0;
+            state.WagesPaid = state.WagesPerTick == 0;
+        }
+
+        if (state.Materials >= propaganda)
+        {
+            state.Materials -= propaganda;
+            state.PropagandaPaid = true;
+        }
+        else
+        {
+            state.PropagandaPaid = propaganda == 0;
         }
     }
 

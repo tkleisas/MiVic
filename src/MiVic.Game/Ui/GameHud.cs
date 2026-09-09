@@ -360,6 +360,22 @@ public sealed class GameHud
         // Player resources.
         TeamState player = world.Team(0);
         ImGui.Text($"Πόροι: {player.Materials}  (+{player.MaterialsPerTick})");
+
+        // The Western army has to be paid for. A player whose morale is collapsing
+        // needs to see why, or it reads as a bug.
+        if (player.UpkeepPerTick > 0)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(MutedColor, $"  −{player.UpkeepPerTick} υποχρεώσεις");
+        }
+
+        if (!player.PropagandaPaid || !player.WagesPaid)
+        {
+            ImGui.TextColored(WarningColor, !player.WagesPaid
+                ? "Ανεπλήρωτοι μισθοφόροι — αρνούνται να πολεμήσουν."
+                : "Ανεπλήρωτη προπαγάνδα — το ηθικό πέφτει.");
+        }
+
         ImGui.Text($"Ενέργεια: {player.Energy}  ({(player.EnergyPerTick >= 0 ? "+" : string.Empty)}{player.EnergyPerTick})");
         ImGui.Text($"Νερό: {player.Water}  (+{player.WaterPerTick})");
         ImGui.Text($"Τεχνολογία: {player.TechTier}");

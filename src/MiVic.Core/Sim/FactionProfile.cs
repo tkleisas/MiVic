@@ -56,6 +56,9 @@ public enum UnitKind : byte
 
     /// <summary>Ντρόουν — Κινέζοι expendable unmanned aircraft.</summary>
     Drone = 14,
+
+    /// <summary>Μισθοφόρος — Δυτικοί contract infantry, paid by the tick.</summary>
+    Mercenary = 15,
 }
 
 /// <summary>
@@ -88,6 +91,12 @@ public enum UnitKind : byte
 /// <paramref name="CostPermille"/> so a faction can be wealthy without being able to
 /// turn that wealth into units quickly.
 /// </param>
+/// <param name="PropagandaDivisor">
+/// Armed units per point of propaganda upkeep per tick. Zero means the faction does
+/// not pay for its army's willingness to fight.
+/// </param>
+/// <param name="PropagandaBonusRaw">Morale, in Q16.16 raw units, while propaganda is funded.</param>
+/// <param name="PropagandaPenaltyRaw">Morale lost while it is not.</param>
 public readonly record struct FactionProfile(
     Faction Faction,
     string GreekName,
@@ -98,7 +107,10 @@ public readonly record struct FactionProfile(
     int CostPermille,
     int ResearchSpeedPermille,
     int GroundPressurePermille = 1_000,
-    int IncomePermille = 1_000)
+    int IncomePermille = 1_000,
+    int PropagandaDivisor = 0,
+    int PropagandaBonusRaw = 0,
+    int PropagandaPenaltyRaw = 0)
 {
     /// <summary>
     /// The three playable powers, ordered so that iteration is deterministic.
@@ -139,7 +151,10 @@ public readonly record struct FactionProfile(
         CostPermille: 2_200,
         ResearchSpeedPermille: 1000,
         GroundPressurePermille: 1100,
-        IncomePermille: 2_500);
+        IncomePermille: 2_500,
+        PropagandaDivisor: 8,
+        PropagandaBonusRaw: 6_554,   // +0.10 while the propaganda budget is paid
+        PropagandaPenaltyRaw: 13_107); // -0.20 when it is not
 
     /// <summary>All playable factions in stable order.</summary>
     public static readonly FactionProfile[] All = [Soviet, Chinese, Western];

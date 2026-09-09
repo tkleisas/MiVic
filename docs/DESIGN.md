@@ -211,6 +211,18 @@ why every loss stings.
   counterplay is to avoid trading units at all. Income and throughput therefore have
   to be shown separately in the UI, or a Δυτικοί player will see a full bank and an
   idle factory and read it as a bug.
+- **The Δυτικοί army is a bill, not a possession — applied.** Propaganda costs one
+  material per eight armed units per tick and sets the morale baseline (+0.10
+  funded, −0.20 unfunded); **Μισθοφόρος** contract infantry cost a wage per tick and
+  down-tools when the treasury cannot cover it. `EconomySystem.PayUpkeep` pays wages
+  first and records whether each bill was met; the flags are hashed, so a replay
+  reproduces the same collapse on the same tick.
+- **Tactical nukes are era IV for both superpowers, gated behind a nuclear power
+  plant — decided, not built.** The Κινέζοι never get them: their ceiling is 3.
+  Requiring a Πυρηνικός Σταθμός makes the weapon a strategic commitment rather than
+  a button, and gives the game its first structure whose value is not its income.
+  **Stealth is the Δυτικοί era-V edge.** Both need the ability system the orbital
+  strike is also waiting on — see `docs/FACTION_REVIEW.md` §3.4.
 - **Κινέζοι tech ceiling is 3, not 2 — applied.** This was a correction rather
   than a buff: §6 already lists Κινέζοι air as "many, cheap", but a ceiling of 2
   meant they could never build an aircraft at all. Three changes landed together:

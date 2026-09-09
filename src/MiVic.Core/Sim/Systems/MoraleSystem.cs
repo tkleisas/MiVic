@@ -104,6 +104,7 @@ public static class MoraleSystem
     private static void Scan(SimWorld world, int slot, ref Entity entity)
     {
         FactionProfile profile = FactionProfile.For(entity.Faction);
+        UnitDefinition definition = UnitCatalog.Get(entity.Kind);
 
         int friends = 0;
         int enemies = 0;
@@ -177,11 +178,26 @@ public static class MoraleSystem
             MaxCohesionRaw,
             friends * team.CohesionPerFriendRaw);
 
+        // Propaganda sets the baseline the army fights for. It is a bill, not a
+        // switch: funded, the army is steadier than its raw floor; unfunded, it is
+        // already halfway to breaking before the first shot is fired.
+        int propaganda = profile.PropagandaDivisor > 0
+            ? (team.PropagandaPaid ? profile.PropagandaBonusRaw : -profile.PropagandaPenaltyRaw)
+            : 0;
+
         entity.MoraleTargetRaw = IntMath.Clamp(
-            profile.MoraleFloor.Raw + team.MoraleBonusRaw + auraRaw + cohesion +
+            profile.MoraleFloor.Raw + team.MoraleBonusRaw + auraRaw + cohesion + propaganda +
             (balance / BalanceWeightDivisor) - casualtyPenalty,
             0,
             65_536);
+
+        // Contract troops have no loyalty to the cause, only to the paymaster. An
+        // unpaid mercenary is not shaken, it is out of contract — which reads as a
+        // rout, because a unit that will not fight is what a rout is.
+        if (definition.WagePerTick > 0 && !team.WagesPaid)
+        {
+            entity.MoraleTargetRaw = 0;
+        }
 
         if (entity.Morale.Raw < RoutThresholdRaw && !entity.Routed)
         {

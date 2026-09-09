@@ -269,9 +269,9 @@ public sealed class MissionTests
         // reproduce faithfully but wrongly.
         ulong[] expected =
         [
-            7630000305010817569UL,
-            853140912564692894UL,
-            16277025063932592226UL,
+            105140188559656481UL,
+            2390072894977698974UL,
+            6354515627533405026UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)

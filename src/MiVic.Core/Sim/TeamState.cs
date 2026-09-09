@@ -105,6 +105,21 @@ public struct TeamState
     /// </summary>
     public int CohesionPerFriendRaw;
 
+    /// <summary>True when this tick's propaganda budget was paid.</summary>
+    public bool PropagandaPaid;
+
+    /// <summary>True when this tick's contract wages were paid.</summary>
+    public bool WagesPaid;
+
+    /// <summary>Materials this team owed this tick: propaganda plus contract wages.</summary>
+    public int UpkeepPerTick;
+
+    /// <summary>Live armed units, recomputed by the economy each tick.</summary>
+    public int ArmedCount;
+
+    /// <summary>Materials owed per tick to contract units, recomputed each tick.</summary>
+    public int WagesPerTick;
+
     /// <summary>Morale floor bonus in Q16.16 raw units.</summary>
     public int MoraleBonusRaw;
 

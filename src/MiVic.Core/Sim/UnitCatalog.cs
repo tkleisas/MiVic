@@ -34,6 +34,10 @@ using MiVic.Core.Terrain;
 /// The one faction that may build this role, or <see cref="Faction.None"/> for the
 /// shared roster. Most roles are shared; robots and drones are Κινέζοι only.
 /// </param>
+/// <param name="WagePerTick">
+/// Materials this unit costs every tick just to keep. Contract troops stop fighting
+/// when the money stops; everyone else has no wage.
+/// </param>
 public readonly record struct UnitDefinition(
     UnitKind Kind,
     int MaterialCost,
@@ -55,7 +59,8 @@ public readonly record struct UnitDefinition(
     MovementClass Movement = MovementClass.Foot,
     int GroundPressurePermille = 1_000,
     bool IsAutomaton = false,
-    Faction OnlyFor = Faction.None)
+    Faction OnlyFor = Faction.None,
+    int WagePerTick = 0)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -123,6 +128,14 @@ public static class UnitCatalog
             14, 80_000, 14, false, 0,
             Movement: MovementClass.Air, GroundPressurePermille: 0,
             IsAutomaton: true, OnlyFor: Faction.Chinese),
+
+        // Μισθοφόρος: the best infantry in the game, and the only unit that has to
+        // be paid every tick to keep fighting. Hired, not trained — so it needs no
+        // research, only money.
+        new(UnitKind.Mercenary, 140, 0, 80, 140, 130, 1, UnitKind.CommandCentre, false,
+            14, 100_000, 10, false, 14,
+            Movement: MovementClass.Foot, GroundPressurePermille: 1_000,
+            OnlyFor: Faction.Western, WagePerTick: 1),
 
         // Structures are unarmed for now; defensive buildings come with M3 balance.
         // Industry needs a great deal of water, which is what makes a second

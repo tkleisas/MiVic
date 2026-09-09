@@ -44,7 +44,7 @@ public sealed class ScenarioTests
     /// </summary>
     [Fact]
     public void SkirmishInitialHash_IsStable()
-        => Assert.Equal(7673587934720399731UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
+        => Assert.Equal(3016126332233171251UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
 
     [Fact]
     public void SkirmishLaysOutThreeForcesOfTheRightSize()
@@ -146,7 +146,7 @@ public sealed class ScenarioTests
         UnitKind[] kinds =
         [
             UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
-            UnitKind.AntiAir, UnitKind.Commissar, UnitKind.RobotInfantry, UnitKind.Drone,
+            UnitKind.AntiAir, UnitKind.Commissar, UnitKind.RobotInfantry, UnitKind.Drone, UnitKind.Mercenary,
             UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.Factory, UnitKind.DesignBureau,
         ];
 
