@@ -1582,8 +1582,9 @@ public sealed class MiVicGame : XnaGame
                 {
                     UnitKind.CommandCentre or UnitKind.Factory or UnitKind.PowerPlant => -0.55f,
                     UnitKind.DesignBureau => -0.4f,
-                    UnitKind.Tank or UnitKind.Artillery or UnitKind.AntiAir => -0.1f,
+                    UnitKind.Tank or UnitKind.Artillery or UnitKind.AntiAir or UnitKind.RocketArtillery => -0.1f,
                     UnitKind.Aircraft => 0.25f,
+                    UnitKind.Drone => 0.4f,
                     _ => 0.5f,
                 };
 
@@ -1717,7 +1718,7 @@ public sealed class MiVicGame : XnaGame
 
             ref Entity candidate = ref world.GetRefBySlot(i);
 
-            if (candidate.TeamId == PlayerTeam && candidate.Kind != UnitKind.Aircraft)
+            if (candidate.TeamId == PlayerTeam && !UnitCatalog.Flies(candidate.Kind))
             {
                 slot = i;
                 break;
@@ -1778,7 +1779,7 @@ public sealed class MiVicGame : XnaGame
 
             if (candidate.TeamId == PlayerTeam &&
                 !UnitCatalog.Get(candidate.Kind).IsBuilding &&
-                candidate.Kind != UnitKind.Aircraft)
+                !UnitCatalog.Flies(candidate.Kind))
             {
                 slot = i;
                 break;

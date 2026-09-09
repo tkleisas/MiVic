@@ -327,7 +327,7 @@ public sealed class SimWorld
         e.Faction = faction;
         e.TeamId = teamId;
         e.Kind = kind;
-        e.AltitudeMm = kind == UnitKind.Aircraft ? 60_000 : 0;
+        e.AltitudeMm = UnitCatalog.Flies(kind) ? 60_000 : 0;
 
         UnitDefinition definition = UnitCatalog.Get(kind);
         int spawnX = position.X;
@@ -686,7 +686,7 @@ public sealed class SimWorld
             case SimCommandKind.Move:
                 // Ground units are pinned to the terrain surface at the destination;
                 // aircraft keep the altitude they were ordered to.
-                int goalY = e.Kind == UnitKind.Aircraft
+                int goalY = UnitCatalog.Flies(e.Kind)
                     ? command.Destination.Y
                     : Terrain.SampleHeightMm(command.Destination.X, command.Destination.Z) + e.AltitudeMm;
 

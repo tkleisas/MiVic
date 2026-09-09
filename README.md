@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 279 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 283 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 dotnet run --project src/MiVic.Game
@@ -146,7 +146,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
 | Pick round-trip | 168/168 |
-| Tests | 296 passing (279 core, 17 audio) |
+| Tests | 300 passing (283 core, 17 audio) |
 
 ### Performance
 
@@ -260,6 +260,12 @@ impact point scatters up to 26 m off target and everything hostile inside 22 m
 takes full damage — devastating against a formation or a building, poor against one
 moving tank. The **Κομισάριος** is unarmed, cheap and worth killing: it steadies
 the morale of friends around it. (Its stated initiative cost is not modelled yet.)
+
+The **Κινέζοι** answer technology with automation. **Ρομποτικό Πεζικό** and
+**Ντρόουν** are tier-3 hardware restricted to them alone: they have **no morale**,
+so they never rout and get no morale-driven reload bonus either, and they cost
+**energy instead of water** because there are no crews to feed. Drones fly, which
+means terrain ignores them and only anti-air can engage them.
 
 ### Terrain
 

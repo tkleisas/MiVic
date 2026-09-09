@@ -45,6 +45,8 @@ public static class FactionPalette
             UnitKind.Commissar => Shade(primary, 1.05f),
             UnitKind.AntiAir => Shade(primary, 0.9f),
             UnitKind.Aircraft => Shade(primary, 1.3f),
+            UnitKind.Drone => Shade(primary, 1.2f),
+            UnitKind.RobotInfantry => Shade(primary, 1.0f),
             UnitKind.CommandCentre => Shade(primary, 0.65f),
             _ => primary,
         };
@@ -60,6 +62,8 @@ public static class FactionPalette
         UnitKind.Commissar => "Κομισάριος",
         UnitKind.AntiAir => "Αντιαεροπορικό",
         UnitKind.Aircraft => "Αεροσκάφος",
+        UnitKind.Drone => "Ντρόουν",
+        UnitKind.RobotInfantry => "Ρομποτικό Πεζικό",
         UnitKind.Harvester => "Συλλέκτης",
         UnitKind.CommandCentre => "Κέντρο Διοίκησης",
         _ => "Άγνωστο",

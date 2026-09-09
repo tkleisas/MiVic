@@ -66,8 +66,17 @@ public static class MoraleSystem
             }
 
             ref Entity entity = ref world.GetRefBySlot(slot);
+            UnitDefinition definition = UnitCatalog.Get(entity.Kind);
 
-            if (!UnitCatalog.Get(entity.Kind).IsArmed)
+            if (!definition.IsArmed)
+            {
+                continue;
+            }
+
+            // Automata have nobody aboard to steady or to break. Leaving them out
+            // entirely means they never rout and never accumulate a morale target,
+            // which is exactly what "no morale" should mean.
+            if (definition.IsAutomaton)
             {
                 continue;
             }

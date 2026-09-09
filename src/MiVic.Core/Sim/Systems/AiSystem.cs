@@ -138,7 +138,7 @@ public static class AiSystem
         ReadOnlySpan<UnitKind> preference =
         [
             UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery, UnitKind.AntiAir,
-            UnitKind.Aircraft, UnitKind.Infantry,
+            UnitKind.Drone, UnitKind.RobotInfantry, UnitKind.Aircraft, UnitKind.Infantry,
         ];
 
         foreach (UnitKind kind in preference)

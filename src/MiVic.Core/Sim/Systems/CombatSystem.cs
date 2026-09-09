@@ -127,9 +127,13 @@ public static class CombatSystem
             }
 
             // Morale scales reload speed: a shaken unit is already worse, not just
-            // closer to breaking.
-            int moralePermille = (attacker.Morale.Raw * 1_000) / 65_536;
-            int factor = 1_500 - moralePermille;
+            // closer to breaking. Automata have no morale at all, so they reload at
+            // exactly the catalogue rate — no bonus for being unshakeable, no
+            // penalty for being unmanned.
+            int factor = weapon.IsAutomaton
+                ? 1_000
+                : 1_500 - ((attacker.Morale.Raw * 1_000) / 65_536);
+
             attacker.AttackCooldown = Math.Max(1, (weapon.AttackCooldownTicks * factor) / 1_000);
         }
     }
@@ -236,7 +240,7 @@ public static class CombatSystem
             return false;
         }
 
-        return target.Kind != UnitKind.Aircraft || weapon.CanHitAir;
+        return !UnitCatalog.Flies(target.Kind) || weapon.CanHitAir;
     }
 
     /// <summary>

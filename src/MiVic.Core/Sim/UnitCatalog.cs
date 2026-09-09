@@ -25,6 +25,15 @@ using MiVic.Core.Terrain;
 /// <param name="MoraleAuraRaw">Morale bonus this unit grants to nearby friends, in Q16.16 raw units.</param>
 /// <param name="Movement">How the unit travels, which is what terrain costs key on.</param>
 /// <param name="GroundPressurePermille">Nominal ground pressure for this role, 1000 being baseline.</param>
+/// <param name="IsAutomaton">
+/// True for unmanned hardware. Automata have no morale at all: they never rout and
+/// they get no morale-driven reload bonus, because there is nobody aboard to steady
+/// or to break.
+/// </param>
+/// <param name="OnlyFor">
+/// The one faction that may build this role, or <see cref="Faction.None"/> for the
+/// shared roster. Most roles are shared; robots and drones are Κινέζοι only.
+/// </param>
 public readonly record struct UnitDefinition(
     UnitKind Kind,
     int MaterialCost,
@@ -44,7 +53,9 @@ public readonly record struct UnitDefinition(
     int ScatterMm = 0,
     int MoraleAuraRaw = 0,
     MovementClass Movement = MovementClass.Foot,
-    int GroundPressurePermille = 1_000)
+    int GroundPressurePermille = 1_000,
+    bool IsAutomaton = false,
+    Faction OnlyFor = Faction.None)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -100,6 +111,18 @@ public static class UnitCatalog
         // friends around it; the initiative cost is not modelled yet.
         new(UnitKind.Commissar, 60, 0, 50, 90, 110, 1, UnitKind.CommandCentre, false,
             WaterCost: 10, MoraleAuraRaw: 6_554, Movement: MovementClass.Foot, GroundPressurePermille: 900),
+
+        // Κινέζοι automata: the faction cannot out-tech anyone, so its advanced
+        // hardware is machines instead of people. No morale, no crews to feed, and
+        // an energy bill instead of a water one.
+        new(UnitKind.RobotInfantry, 70, 25, 70, 110, 130, 3, UnitKind.Factory, false,
+            12, 95_000, 12, false, 0,
+            Movement: MovementClass.Foot, GroundPressurePermille: 950,
+            IsAutomaton: true, OnlyFor: Faction.Chinese),
+        new(UnitKind.Drone, 90, 30, 90, 70, 1_300, 3, UnitKind.Factory, false,
+            14, 80_000, 14, false, 0,
+            Movement: MovementClass.Air, GroundPressurePermille: 0,
+            IsAutomaton: true, OnlyFor: Faction.Chinese),
 
         // Structures are unarmed for now; defensive buildings come with M3 balance.
         // Industry needs a great deal of water, which is what makes a second
@@ -183,13 +206,27 @@ public static class UnitCatalog
         return (definition.GroundPressurePermille * (factionPressure > 0 ? factionPressure : 1_000)) / 1_000;
     }
 
+    /// <summary>True when a role is airborne: it flies over terrain and only anti-air can hit it.</summary>
+    public static bool Flies(UnitKind kind) => TryGet(kind, out UnitDefinition definition)
+        && definition.Movement == MovementClass.Air;
+
+    /// <summary>True when a role is unmanned: no morale, no crews, no water.</summary>
+    public static bool IsAutomaton(UnitKind kind) => TryGet(kind, out UnitDefinition definition)
+        && definition.IsAutomaton;
+
     /// <summary>
     /// True when a faction at <paramref name="techTier"/> may build the role.
-    /// This is what stops the Κινέζοι from ever fielding tier-3 hardware.
+    /// This is what stops the Κινέζοι from ever fielding tier-4 hardware, and what
+    /// keeps the Κινέζοι automata out of everyone else's hands.
     /// </summary>
     public static bool IsUnlocked(Faction faction, UnitKind kind, int techTier)
     {
         if (!TryGet(kind, out UnitDefinition definition))
+        {
+            return false;
+        }
+
+        if (definition.OnlyFor != Faction.None && definition.OnlyFor != faction)
         {
             return false;
         }
@@ -206,7 +243,8 @@ public static class UnitCatalog
 
         foreach (UnitDefinition definition in Definitions)
         {
-            if (definition.RequiredTechTier <= profile.TechCeiling)
+            if (definition.RequiredTechTier <= profile.TechCeiling &&
+                (definition.OnlyFor == Faction.None || definition.OnlyFor == faction))
             {
                 yield return definition;
             }

@@ -205,7 +205,7 @@ Two signature mechanics, both now built:
   bonus is +0.02 morale per friendly within scan range, capped at +0.20, so a large
   swarm is steady but never unbreakable.
 
-### 2.2.1 Their most advanced weapons: robots and drones — decided, not built
+### 2.2.1 Their most advanced weapons: robots and drones — **built**
 
 The Chinese cannot out-tech anyone, so their *advanced* hardware is **automation**:
 machines instead of people. This is the faction's identity stated as hardware — a
@@ -214,7 +214,7 @@ builds weapons that do not need soldiers.
 
 | Tier | Unit | Role | Mechanics |
 |---|---|---|---|
-| 3 | **Ρομποτικό Πεζικό** | automaton infantry | **no morale** — it cannot rout; **no water cost** (no crews to drink or feed); high energy cost to build and maintain |
+| 3 | **Ρομποτικό Πεζικό** | automaton infantry | **no morale** — it cannot rout; **no water cost** (no crews to drink or feed); high energy cost |
 | 3 | **Ντρόουν** | expendable aircraft | cheap, low damage, **no morale**, produced in numbers |
 
 Why this is the right top end for them:
@@ -233,13 +233,18 @@ Why this is the right top end for them:
   advanced weapons are era III and there is no tier 4 for them. The ceiling still
   means something.
 
-Implementation needs one new system hook: a `UnitDefinition` flag for automata that
-`MoraleSystem` honours — skip the unit, hold morale at maximum, never rout. That is
-small, but it is the first per-unit *behavioural* flag in the catalogue, so it
-belongs in the same change as the two units.
+Built as `UnitDefinition.IsAutomaton` and `UnitDefinition.OnlyFor`: `MoraleSystem`
+skips automata entirely (they never drift and never rout), `CombatSystem` gives them
+the catalogue reload rate with no morale modifier in either direction, and
+`UnitCatalog.IsUnlocked`/`BuildableBy` honour `OnlyFor` so no other faction can
+field them. Air is now decided by `MovementClass.Air` rather than by the `Aircraft`
+role, so drones fly, are ignored by terrain, and can only be engaged by anti-air.
 
-Two tier-3 projects unlock them: **Ρομποτική Παραγωγή** (robotic infantry) and
-**Σμήνη Ντρόουν** (drones).
+**Not needed after all:** the two "unlock" projects (Ρομποτική Παραγωγή, Σμήνη
+Ντρόουν) are unnecessary. Units gate on tech tier, not on named projects, so both
+automata arrive with tier 3 like everything else in that era. A named-project
+unlock would need a per-unit unlock effect that does not exist yet, and adding one
+only for these two units would be machinery without a purpose.
 
 Ground pressure 1250 makes mud punishing for them, which is deliberate — but they
 are the AI ally in the vertical slice, so it is worth checking that the AI ally
@@ -260,8 +265,7 @@ now aligned with the content.
 | II | Επίπεδο 3: Αεροπορία | 2 | → tier 3 | built |
 | II | **Αριθμητική Συνοχή** | 2 | +0.02 morale per nearby friend, capped at +0.20 | **built** |
 | II | **Αντιαεροπορικό Δίκτυο** | 2 | +15 % anti-air damage | proposed |
-| III | **Ρομποτική Παραγωγή** | 3 | unlocks Ρομποτικό Πεζικό | **decided, not built** |
-| III | **Σμήνη Ντρόουν** | 3 | unlocks Ντρόουν | **decided, not built** |
+| III | — | 3 | Ρομποτικό Πεζικό and Ντρόουν arrive with the tier; no project needed | **built** |
 
 Every project is cheap and none is deep, which is the point: they are the faction
 whose research is broad and shallow, and whose real scaling comes from parallel

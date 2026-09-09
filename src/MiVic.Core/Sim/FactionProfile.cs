@@ -50,6 +50,12 @@ public enum UnitKind : byte
 
     /// <summary>Κομισάριος — unarmed support that steadies the morale of nearby units.</summary>
     Commissar = 12,
+
+    /// <summary>Ρομποτικό Πεζικό — Κινέζοι automaton infantry: no morale, no crews.</summary>
+    RobotInfantry = 13,
+
+    /// <summary>Ντρόουν — Κινέζοι expendable unmanned aircraft.</summary>
+    Drone = 14,
 }
 
 /// <summary>

@@ -93,7 +93,7 @@ public static class Scenario
         UnitKind[] kinds =
         [
             UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
-            UnitKind.AntiAir, UnitKind.Commissar,
+            UnitKind.AntiAir, UnitKind.Commissar, UnitKind.RobotInfantry, UnitKind.Drone,
             UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.Factory, UnitKind.DesignBureau,
         ];
 
@@ -235,7 +235,7 @@ public static class Scenario
 
             // Aircraft sit above the battlefield; the air layer is simulated as a
             // height on the same entity rather than as a separate domain.
-            if (kind == UnitKind.Aircraft)
+            if (UnitCatalog.Flies(kind))
             {
                 position = new WorldPos(position.X, 60_000, position.Z);
             }

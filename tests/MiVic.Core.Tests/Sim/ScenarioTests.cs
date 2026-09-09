@@ -146,7 +146,7 @@ public sealed class ScenarioTests
         UnitKind[] kinds =
         [
             UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
-            UnitKind.AntiAir, UnitKind.Commissar,
+            UnitKind.AntiAir, UnitKind.Commissar, UnitKind.RobotInfantry, UnitKind.Drone,
             UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.Factory, UnitKind.DesignBureau,
         ];
 
