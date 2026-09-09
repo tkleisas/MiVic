@@ -38,6 +38,10 @@ using MiVic.Core.Terrain;
 /// Materials this unit costs every tick just to keep. Contract troops stop fighting
 /// when the money stops; everyone else has no wage.
 /// </param>
+/// <param name="Stealthy">
+/// True when the unit is invisible to the enemy until it fires or is detected at
+/// close range. You cannot shoot what you cannot see.
+/// </param>
 public readonly record struct UnitDefinition(
     UnitKind Kind,
     int MaterialCost,
@@ -60,7 +64,8 @@ public readonly record struct UnitDefinition(
     int GroundPressurePermille = 1_000,
     bool IsAutomaton = false,
     Faction OnlyFor = Faction.None,
-    int WagePerTick = 0)
+    int WagePerTick = 0,
+    bool Stealthy = false)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -136,6 +141,13 @@ public static class UnitCatalog
             14, 100_000, 10, false, 14,
             Movement: MovementClass.Foot, GroundPressurePermille: 1_000,
             OnlyFor: Faction.Western, WagePerTick: 1),
+
+        // Καταδρομέας: the Δυτικοί era-V edge. Fast, hard-hitting, fragile, and
+        // invisible until it opens fire — you cannot shoot what you cannot see.
+        new(UnitKind.StealthRecon, 200, 20, 120, 120, 420, 5, UnitKind.Factory, false,
+            40, 120_000, 20, false, 18,
+            Movement: MovementClass.Foot, GroundPressurePermille: 850,
+            OnlyFor: Faction.Western, Stealthy: true),
 
         // Structures are unarmed for now; defensive buildings come with M3 balance.
         // Industry needs a great deal of water, which is what makes a second

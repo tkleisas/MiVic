@@ -75,6 +75,7 @@ public static class StateHash
             Mix(ref hash, e.AttackCooldown);
             Mix(ref hash, e.HasAttackOrder ? 1 : 0);
             Mix(ref hash, e.Routed ? 1 : 0);
+            Mix(ref hash, e.RevealedUntilTick);
         }
 
         for (int team = 0; team < SimConstants.TeamCount; team++)

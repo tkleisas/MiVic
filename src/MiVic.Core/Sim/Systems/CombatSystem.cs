@@ -126,6 +126,13 @@ public static class CombatSystem
                 target.Health -= damage;
             }
 
+            // Firing gives away a position: a stealthed unit is visible to the enemy
+            // for a while after every shot, which is the cost of using stealth.
+            if (weapon.Stealthy)
+            {
+                attacker.RevealedUntilTick = world.Tick + SimWorld.StealthRevealTicks;
+            }
+
             // Morale scales reload speed: a shaken unit is already worse, not just
             // closer to breaking. Automata have no morale at all, so they reload at
             // exactly the catalogue rate — no bonus for being unshakeable, no
@@ -236,6 +243,13 @@ public static class CombatSystem
         ref Entity target = ref world.GetRefBySlot(slot);
 
         if (target.TeamId == attacker.TeamId)
+        {
+            return false;
+        }
+
+        // A stealthed enemy is not a target until it fires or something gets close
+        // enough to detect it.
+        if (world.IsHiddenFrom(attacker.TeamId, slot))
         {
             return false;
         }

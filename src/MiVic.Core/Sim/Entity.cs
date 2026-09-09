@@ -91,4 +91,10 @@ public struct Entity
 
     /// <summary>Consecutive routing failures; the move order is dropped after a few.</summary>
     public int PathFailures;
+
+    /// <summary>
+    /// Tick until which a stealthy entity is visible to the enemy. Set when it
+    /// fires: a shot gives away a position, which is the whole cost of stealth.
+    /// </summary>
+    public long RevealedUntilTick;
 }

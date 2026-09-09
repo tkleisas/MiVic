@@ -845,6 +845,67 @@ public sealed class SimWorld
         return true;
     }
 
+    /// <summary>How close a hostile unit must be to spot a stealthed one, in millimetres.</summary>
+    public const int DetectionRadiusMm = 40_000;
+
+    /// <summary>Ticks a stealthed unit stays visible after it fires.</summary>
+    public const int StealthRevealTicks = 100;
+
+    /// <summary>
+    /// True when <paramref name="slot"/> cannot be seen by <paramref name="viewerTeam"/>:
+    /// it is stealthed, it is not the viewer's own, it has not just fired, and no
+    /// unit of the viewer's team is close enough to detect it.
+    /// </summary>
+    public bool IsHiddenFrom(int viewerTeam, int slot)
+    {
+        if (!IsAliveSlot(slot))
+        {
+            return false;
+        }
+
+        ref Entity target = ref _entities[slot];
+
+        if (target.TeamId == viewerTeam || !UnitCatalog.Get(target.Kind).Stealthy)
+        {
+            return false;
+        }
+
+        if (target.RevealedUntilTick > Tick)
+        {
+            return false;
+        }
+
+        return !HasDetectorNear(viewerTeam, target.Position);
+    }
+
+    /// <summary>True when any live unit of the team is within detection range.</summary>
+    private bool HasDetectorNear(int team, WorldPos position)
+    {
+        long radiusSquared = (long)DetectionRadiusMm * DetectionRadiusMm;
+
+        for (int slot = 0; slot < _entities.Length; slot++)
+        {
+            if (!IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity watcher = ref _entities[slot];
+
+            if (watcher.TeamId != team)
+            {
+                continue;
+            }
+
+            if (watcher.Position.DistanceSquaredTo(position) <= radiusSquared)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>True when the team has at least one live structure of a role.</summary>
     public bool HasStructure(int team, UnitKind kind)
     {

@@ -65,6 +65,9 @@ public enum UnitKind : byte
     /// and is the prerequisite for a tactical nuclear weapon.
     /// </summary>
     NuclearPlant = 16,
+
+    /// <summary>Καταδρομέας — Δυτικοί stealth raider: invisible until it fires.</summary>
+    StealthRecon = 17,
 }
 
 /// <summary>

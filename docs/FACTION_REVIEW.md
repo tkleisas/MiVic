@@ -357,7 +357,7 @@ a strategic commitment rather than a button:
 |---|---|---|---|---|
 | **Τροχιακό Πλήγμα** (orbital strike) | 3 | Σοβιετικοί | Κόκκινος Ουρανός project + design bureau | **built** |
 | **Τακτικό πυρηνικό όπλο** | 4 | Σοβιετικοί **and** Δυτικοί | a **Πυρηνικός Σταθμός** | **built** |
-| **Αποφυγή ανίχνευσης** (stealth) | 5 | Δυτικοί only | — | decided, not built |
+| **Αποφυγή ανίχνευσης** (stealth) | 5 | Δυτικοί only | — | **built** |
 | **Έλεγχος Καιρού** (weather control) | 4 | Σοβιετικοί | — | blocked on mutable terrain |
 
 - **Tactical nukes are shared by the superpowers, not the West's alone.** Both the
@@ -373,9 +373,12 @@ a strategic commitment rather than a button:
 - **A nuke does not distinguish friend from foe.** The orbital strike does, because
   it is aimed; a nuclear weapon is not. That is the whole tactical cost.
 - **Stealth is the West's era-V edge** and the natural counterpart to few,
-  expensive, excellent units: you cannot shoot what you cannot see. It needs a
-  stealth flag on the unit, a detection radius, and a reveal on firing. Unlike the
-  rest of this section it is **not** blocked on anything — it is simply not built.
+  expensive, excellent units: you cannot shoot what you cannot see. Built as
+  `UnitDefinition.Stealthy` and the **Καταδρομέας** (fast, hard-hitting, fragile,
+  Δυτικοί-only, era V). A stealthed unit is hidden from an enemy team until it
+  fires — a shot sets `Entity.RevealedUntilTick` for 100 ticks — or until one of
+  that team's units comes within 40 m. Hidden units are not targetable and are not
+  drawn, so the mechanic applies to the simulation and the interface alike.
 
 Abilities are data in `AbilityCatalog` and resolved by `SimWorld.TryUseAbility`,
 which validates faction, era, prerequisite project, prerequisite structure,

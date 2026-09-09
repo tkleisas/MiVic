@@ -782,9 +782,11 @@ public sealed class MiVicGame : XnaGame
             ref Entity entity = ref world.GetRefBySlot(slot);
 
             // Enemies the player cannot see are simply not drawn: that is the
-            // whole point of fog of war.
+            // whole point of fog of war. A stealthed enemy outside detection range
+            // is hidden for the same reason, and stays hidden until it fires.
             if (entity.TeamId != PlayerTeam &&
-                !world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(entity.Position)))
+                (world.IsHiddenFrom(PlayerTeam, slot) ||
+                 !world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(entity.Position))))
             {
                 continue;
             }

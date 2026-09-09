@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 293 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 298 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 dotnet run --project src/MiVic.Game
@@ -146,7 +146,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
 | Pick round-trip | 168/168 |
-| Tests | 310 passing (293 core, 17 audio) |
+| Tests | 315 passing (298 core, 17 audio) |
 
 ### Performance
 
@@ -335,6 +335,12 @@ target.
 A nuke does not distinguish friend from foe; the orbital strike does, because it is
 aimed. Losing the nuclear plant takes the capability away with it, which makes the
 plant the first structure in the game whose value is not its income.
+
+The **Καταδρομέας** is the Δυτικοί era-V edge: fast, hard-hitting, fragile, and
+**invisible** to the enemy until it fires. A shot reveals it for five seconds, and
+any enemy unit within 40 m detects it regardless — so stealth is a way to choose
+your moment, not a way to become untouchable. Hidden units are neither targetable
+nor drawn.
 
 ### The alliance and the AI
 

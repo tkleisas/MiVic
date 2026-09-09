@@ -94,6 +94,7 @@ public static class Scenario
         [
             UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
             UnitKind.AntiAir, UnitKind.Commissar, UnitKind.RobotInfantry, UnitKind.Drone, UnitKind.Mercenary,
+            UnitKind.StealthRecon,
             UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.NuclearPlant,
             UnitKind.Factory, UnitKind.DesignBureau,
         ];

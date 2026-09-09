@@ -106,6 +106,7 @@ public sealed class ModelCatalog : IDisposable
         UnitKind.Drone => MeshBuilder.Wedge(2.2f, 0.9f, 3.2f),
         UnitKind.RobotInfantry => MeshBuilder.Box(1.1f, 1.7f, 1.1f),
         UnitKind.Mercenary => MeshBuilder.Box(1.3f, 1.9f, 1.3f),
+        UnitKind.StealthRecon => MeshBuilder.Wedge(1.6f, 1.4f, 2.2f),
         UnitKind.CommandCentre => MeshBuilder.Box(14f, 9f, 14f),
         UnitKind.PowerPlant => MeshBuilder.Box(9f, 7f, 9f),
         UnitKind.NuclearPlant => MeshBuilder.Cylinder(11f, 14f),
