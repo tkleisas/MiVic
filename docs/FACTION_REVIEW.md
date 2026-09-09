@@ -112,7 +112,28 @@ project a mechanic instead of a flat percentage, and fill Era IV.
   unreachable in content. Era IV fixes that; Δυτικοί ceiling 5 still has no content
   and needs the same treatment in their review.
 
-### 1.4 Open questions
+### 1.4 What the tree needs before it can be built
+
+The reworked tree is not one change: four of its entries depend on systems that do
+not exist yet, so building them out of order would produce dead buttons.
+
+| Project | Needs | Status |
+|---|---|---|
+| Αναγνωριστικοί Δορυφόροι | a `TechEffect.Vision` folded into `VisionSystem.SightRadiusMm` | **ready** — self-contained |
+| Κυβερνητική (OGAS) | a per-team parallel-slot bonus instead of the faction constant | **ready** — self-contained |
+| Επίπεδο 4 / AI Διοίκηση | an `AdvanceTier` 4 project and its content | **ready** — data only |
+| Ηλεκτροτεχνία | the Ηλεκτροπυροβόλο unit kind to unlock | **ready** once the unit exists |
+| Βαθιά Μάχη (mud doctrine) | the `TerrainLayer` from `ART_PIPELINE.md` §3 | **blocked on terrain** |
+| Έλεγχος Καιρού | the same `TerrainLayer`, plus a way to write mud into it | **blocked on terrain** |
+| Κόκκινος Ουρανός | a targeted-ability system with a cooldown | **blocked on abilities** |
+| Σωματιδιακά Όπλα | a tier-4 prototype unit and its cap | **blocked on the cap mechanism** |
+
+Recommended order: **terrain first**. It unblocks Βαθιά Μάχη and Έλεγχος Καιρού —
+the two projects that make the mud the Soviet weapon — and it is already the
+biggest item on the roadmap. The four ready entries can ride along with it, since
+they are all data plus one small system hook each.
+
+### 1.5 Open questions
 
 - Slice scope: 7 roles per faction, or fold Κομισάριος into an aura?
 - Παρτιζάνοι as a vision bonus, or as an actual partisan unit?
