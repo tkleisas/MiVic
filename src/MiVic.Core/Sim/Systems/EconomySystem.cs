@@ -22,6 +22,12 @@ public static class EconomySystem
     /// <summary>Water per tick from a power plant: cooling towers recondense a lot.</summary>
     public const int PowerPlantWater = 2;
 
+    /// <summary>Energy per tick from a nuclear plant: far more than a conventional one.</summary>
+    public const int NuclearPlantEnergy = 30;
+
+    /// <summary>Water per tick from a nuclear plant: it needs a great deal of cooling.</summary>
+    public const int NuclearPlantWater = 6;
+
     /// <summary>Runs one economy tick.</summary>
     public static void Tick(SimWorld world)
     {
@@ -82,6 +88,11 @@ public static class EconomySystem
                 case UnitKind.PowerPlant:
                     state.EnergyPerTick += Scale(PowerPlantEnergy, income);
                     state.WaterPerTick += Scale(PowerPlantWater, income);
+                    break;
+
+                case UnitKind.NuclearPlant:
+                    state.EnergyPerTick += Scale(NuclearPlantEnergy, income);
+                    state.WaterPerTick += Scale(NuclearPlantWater, income);
                     break;
 
                 case UnitKind.Factory:

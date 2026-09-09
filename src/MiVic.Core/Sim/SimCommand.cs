@@ -34,6 +34,9 @@ public enum SimCommandKind : byte
     /// production when it completes. Σοβιετικοί only.
     /// </summary>
     ApproveDesign = 8,
+
+    /// <summary>Call in an off-map support ability at a ground position.</summary>
+    UseAbility = 9,
 }
 
 /// <summary>
@@ -52,6 +55,7 @@ public enum SimCommandKind : byte
 /// <param name="UnitKind">Role being produced, for production commands.</param>
 /// <param name="AttackTarget">Enemy to engage, for <see cref="SimCommandKind.Attack"/>.</param>
 /// <param name="Tech">Project to research, for <see cref="SimCommandKind.Research"/>.</param>
+/// <param name="Ability">Off-map support to call in, for <see cref="SimCommandKind.UseAbility"/>.</param>
 public readonly record struct SimCommand(
     SimCommandKind Kind,
     EntityId Target,
@@ -60,7 +64,8 @@ public readonly record struct SimCommand(
     int IssuerTeam,
     UnitKind UnitKind = UnitKind.None,
     EntityId AttackTarget = default,
-    TechId Tech = TechId.None)
+    TechId Tech = TechId.None,
+    AbilityId Ability = AbilityId.None)
 {
     /// <summary>Creates a move order executing on <paramref name="executeTick"/>.</summary>
     public static SimCommand Move(EntityId target, WorldPos destination, long executeTick, int issuerTeam)
@@ -101,6 +106,22 @@ public readonly record struct SimCommand(
     /// </summary>
     public static SimCommand ApproveDesign(EntityId bureau, UnitKind kind, long executeTick, int issuerTeam)
         => new(SimCommandKind.ApproveDesign, bureau, WorldPos.Origin, executeTick, issuerTeam, kind);
+
+    /// <summary>
+    /// Calls in an off-map ability at a ground position. <paramref name="Target"/> is
+    /// unused: support arrives from off the map, not from a unit.
+    /// </summary>
+    public static SimCommand UseAbility(AbilityId ability, WorldPos target, long executeTick, int issuerTeam)
+        => new(
+            SimCommandKind.UseAbility,
+            EntityId.None,
+            target,
+            executeTick,
+            issuerTeam,
+            UnitKind.None,
+            default,
+            TechId.None,
+            ability);
 }
 
 /// <summary>

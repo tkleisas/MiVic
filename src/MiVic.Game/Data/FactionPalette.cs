@@ -49,6 +49,7 @@ public static class FactionPalette
             UnitKind.RobotInfantry => Shade(primary, 1.0f),
             UnitKind.Mercenary => Shade(primary, 1.25f),
             UnitKind.CommandCentre => Shade(primary, 0.65f),
+            UnitKind.NuclearPlant => Shade(primary, 0.55f),
             _ => primary,
         };
     }
@@ -68,6 +69,7 @@ public static class FactionPalette
         UnitKind.Mercenary => "Μισθοφόρος",
         UnitKind.Harvester => "Συλλέκτης",
         UnitKind.CommandCentre => "Κέντρο Διοίκησης",
+        UnitKind.NuclearPlant => "Πυρηνικός Σταθμός",
         _ => "Άγνωστο",
     };
 }

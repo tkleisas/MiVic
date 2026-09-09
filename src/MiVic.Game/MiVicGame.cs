@@ -96,6 +96,9 @@ public sealed class MiVicGame : XnaGame
     private readonly List<EntityId>[] _controlGroups = new List<EntityId>[10];
     private Vector2 _dragStart;
     private bool _dragging;
+
+    /// <summary>Off-map ability waiting for the player to click a target.</summary>
+    private AbilityId _pendingAbility = AbilityId.None;
     private double _lastClickSeconds;
     private int _lastClickedSlot = -1;
 
@@ -899,7 +902,20 @@ public sealed class MiVicGame : XnaGame
             _dragging = false;
             Vector2 end = new(mouse.X, mouse.Y);
 
-            if (Vector2.Distance(_dragStart, end) < 6f)
+            // A pending ability turns the next click into a target, not a
+            // selection. Escape cancels it; see the keyboard handler.
+            if (_pendingAbility != AbilityId.None)
+            {
+                if (Vector2.Distance(_dragStart, end) < 6f)
+                {
+                    IssueAbilityAtCursor(end);
+                }
+                else
+                {
+                    _pendingAbility = AbilityId.None;
+                }
+            }
+            else if (Vector2.Distance(_dragStart, end) < 6f)
             {
                 SelectSingle(end, additive, now);
             }
@@ -1096,7 +1112,33 @@ public sealed class MiVicGame : XnaGame
         IssueMoveOrder(cursor);
     }
 
-    /// <summary>Orders every selected unit to engage one enemy.</summary>
+    /// <summary>
+    /// Calls the pending ability in at the ground point under the cursor. The
+    /// ability is data, so this does not need to know which one it is.
+    /// </summary>
+    private void IssueAbilityAtCursor(Vector2 cursor)
+    {
+        AbilityId ability = _pendingAbility;
+        _pendingAbility = AbilityId.None;
+
+        if (IsPlayback || _simulation is null || ability == AbilityId.None)
+        {
+            return;
+        }
+
+        if (!TryScreenToGround(cursor, out Vector3 ground))
+        {
+            return;
+        }
+
+        WorldPos target = WorldPos.FromMetres((int)ground.X, 0, (int)ground.Z);
+
+        _simulation.World.Enqueue(SimCommand.UseAbility(ability, target, _simulation.World.Tick + 1, PlayerTeam));
+    }
+
+    /// <summary>
+    /// Orders every selected unit to engage one enemy.
+    /// </summary>
     private void IssueAttackOrders(int targetSlot)
     {
         SimWorld world = _simulation!.World;
@@ -1439,6 +1481,10 @@ public sealed class MiVicGame : XnaGame
 
             case HudCommandKind.ApproveDesign:
                 _simulation.World.Enqueue(SimCommand.ApproveDesign(id, command.Unit, executeTick, building.TeamId));
+                break;
+
+            case HudCommandKind.UseAbility:
+                _pendingAbility = command.Ability;
                 break;
 
             case HudCommandKind.Licence:

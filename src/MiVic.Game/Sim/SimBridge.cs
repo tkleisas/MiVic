@@ -279,6 +279,7 @@ public sealed class SimBridge
         UnitKind.CommandCentre => 9f,
         UnitKind.Factory => 7f,
         UnitKind.PowerPlant => 6.5f,
+        UnitKind.NuclearPlant => 8.5f,
         UnitKind.DesignBureau => 5.5f,
         UnitKind.Aircraft => 3.2f,
         UnitKind.Drone => 1.6f,

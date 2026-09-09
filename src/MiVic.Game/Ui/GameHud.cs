@@ -27,13 +27,20 @@ public enum HudCommandKind
 
     /// <summary>Run a prototype so factories may build the design.</summary>
     ApproveDesign = 4,
+    /// <summary>Call in an off-map ability; the client then asks for a target.</summary>
+    UseAbility = 5,
 }
 
 /// <summary>A request raised by a HUD button, applied by the client as a command.</summary>
 /// <param name="Kind">What to do.</param>
 /// <param name="Unit">Role to queue, for <see cref="HudCommandKind.QueueUnit"/>.</param>
 /// <param name="Tech">Project to start, for <see cref="HudCommandKind.Research"/>.</param>
-public readonly record struct HudCommand(HudCommandKind Kind, UnitKind Unit = UnitKind.None, TechId Tech = TechId.None);
+/// <param name="Ability">Off-map support to call in, for <see cref="HudCommandKind.UseAbility"/>.</param>
+public readonly record struct HudCommand(
+    HudCommandKind Kind,
+    UnitKind Unit = UnitKind.None,
+    TechId Tech = TechId.None,
+    AbilityId Ability = AbilityId.None);
 
 /// <summary>Everything the HUD needs for one frame, captured by the client.</summary>
 /// <param name="Simulation">Simulation bridge to read state from.</param>
@@ -108,6 +115,12 @@ public sealed class GameHud
         DrawMissionPanel(snapshot);
 
         HudCommand? command = DrawBuildPanel(snapshot);
+        HudCommand? support = DrawSupportPanel(snapshot);
+
+        if (support is not null)
+        {
+            command = support;
+        }
 
         if (ShowHelp)
         {
@@ -719,6 +732,76 @@ public sealed class GameHud
         }
 
         return options;
+    }
+
+    /// <summary>
+    /// Off-map support. Only shown when the player's faction has an ability it
+    /// could plausibly use, so the panel does not sit empty for most of a match.
+    /// A disabled button states why, in the same way the build panel does.
+    /// </summary>
+    private static HudCommand? DrawSupportPanel(in HudSnapshot snapshot)
+    {
+        SimWorld world = snapshot.Simulation.World;
+
+        // The player owns team 0 throughout; the HUD has no other notion of "us".
+        const int Player = 0;
+
+        Faction faction = SimWorld.FactionOfTeam(Player);
+        TeamState team = world.Team(Player);
+
+        var options = new List<(AbilityDefinition Definition, bool Enabled, string Reason)>();
+
+        foreach (AbilityDefinition ability in AbilityCatalog.AvailableTo(faction, team.TechTier))
+        {
+            bool enabled = world.CanUseAbility(Player, ability.Id, out string reason);
+            options.Add((ability, enabled, reason));
+        }
+
+        if (options.Count == 0)
+        {
+            return null;
+        }
+
+        NVec2 display = ImGui.GetIO().DisplaySize;
+
+        // Above the production panel on the left, so the two never overlap.
+        ImGui.SetNextWindowPos(new NVec2(12f, display.Y - 12f), ImGuiCond.Always, new NVec2(0f, 1f));
+
+        HudCommand? command = null;
+
+        if (!ImGui.Begin("Υποστήριξη##support", PanelFlags))
+        {
+            ImGui.End();
+            return null;
+        }
+
+        foreach ((AbilityDefinition definition, bool enabled, string reason) in options)
+        {
+            ImGui.BeginDisabled(!enabled);
+
+            string label = $"{definition.GreekName,-24} {definition.MaterialCost,4}Π {definition.CooldownTicks / 20f,5:0.0}δ";
+
+            if (ImGui.Button(label))
+            {
+                command = new HudCommand(HudCommandKind.UseAbility, Ability: definition.Id);
+            }
+
+            ImGui.EndDisabled();
+
+            if (reason.Length > 0)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(MutedColor, reason);
+            }
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(definition.GreekDescription);
+            }
+        }
+
+        ImGui.End();
+        return command;
     }
 
     /// <summary>

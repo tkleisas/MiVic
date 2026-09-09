@@ -108,6 +108,7 @@ public sealed class ModelCatalog : IDisposable
         UnitKind.Mercenary => MeshBuilder.Box(1.3f, 1.9f, 1.3f),
         UnitKind.CommandCentre => MeshBuilder.Box(14f, 9f, 14f),
         UnitKind.PowerPlant => MeshBuilder.Box(9f, 7f, 9f),
+        UnitKind.NuclearPlant => MeshBuilder.Cylinder(11f, 14f),
         UnitKind.Factory => MeshBuilder.Box(16f, 8f, 12f),
         UnitKind.DesignBureau => MeshBuilder.Box(10f, 11f, 10f),
         UnitKind.Harvester => MeshBuilder.Box(3f, 2f, 4f),

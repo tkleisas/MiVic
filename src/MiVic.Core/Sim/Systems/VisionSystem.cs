@@ -41,6 +41,7 @@ public static class VisionSystem
         UnitKind.RobotInfantry => 100_000,
         UnitKind.CommandCentre => 150_000,
         UnitKind.PowerPlant => 110_000,
+        UnitKind.NuclearPlant => 140_000,
         UnitKind.Factory => 130_000,
         UnitKind.DesignBureau => 120_000,
         _ => 100_000,

@@ -144,6 +144,11 @@ public static class UnitCatalog
         new(UnitKind.PowerPlant, 160, 0, 200, 1_200, 0, 1, UnitKind.CommandCentre, true, WaterCost: 90),
         new(UnitKind.Factory, 280, 0, 300, 2_000, 0, 1, UnitKind.CommandCentre, true, WaterCost: 120),
         new(UnitKind.DesignBureau, 320, 0, 320, 1_500, 0, 1, UnitKind.CommandCentre, true, WaterCost: 100),
+
+        // The nuclear plant is the one structure whose value is not its income: it
+        // is the prerequisite for a tactical nuclear weapon, so it is worth raiding.
+        // The Κινέζοι can never build it — their ceiling stops at era III.
+        new(UnitKind.NuclearPlant, 900, 0, 600, 4_000, 0, 4, UnitKind.CommandCentre, true, WaterCost: 320),
     ];
 
     /// <summary>Every defined role.</summary>

@@ -94,7 +94,7 @@ are new or reworked.
 | II | Επίπεδο 3: Αεροπορία | 2 | → tier 3 | built |
 | II | **Αναγνωριστικοί Δορυφόροι** | 2 | reconnaissance: team sight radius +30 % | **built** |
 | III | Κυβερνητική (OGAS) | 3 | command automation: **+1 parallel slot per factory** | **built** |
-| III | **Κόκκινος Ουρανός** | 3 | orbital strike ability: a targeted kinetic strike, long cooldown, heavy area damage (no longer +20 % armour) | **blocked** — needs abilities |
+| III | **Κόκκινος Ουρανός** | 3 | orbital strike ability: a targeted kinetic strike, long cooldown, heavy area damage (no longer +20 % armour) | **built** |
 | IV | **Επίπεδο 4: Κόκκινος Λογισμός** | 3 | → tier 4 | **built** |
 | IV | **AI Διοίκηση** | 4 | automated command: **+1 parallel slot** | **built** (reaction latency is not) |
 | IV | **Έλεγχος Καιρού** | 4 | weather control: creates deep mud over a target area for a fixed number of ticks — the *rasputitsa* as a weapon, aimed at whoever has the worst ground pressure | **blocked** — terrain is generated once and never written to |
@@ -348,15 +348,17 @@ This gives the West the texture the weakness needed: the richest faction in the
 game finally has somewhere for the money to go, and the greed that was only
 narrative is now a per-tick bill.
 
-### 3.4 Tier-4 and tier-5 capabilities: nukes and stealth — decided, not built
+### 3.4 Tier-4 and tier-5 capabilities: nukes and stealth — **nuke built, stealth not**
 
 Two capabilities that belong to the high eras, and one prerequisite that makes them
 a strategic commitment rather than a button:
 
-| Capability | Era | Who | Prerequisite |
-|---|---|---|---|
-| **Τακτικό πυρηνικό όπλο** | 4 | Σοβιετικοί **and** Δυτικοί | a **Πυρηνικός Σταθμός** (nuclear power plant) |
-| **Αποφυγή ανίχνευσης** (stealth) | 5 | Δυτικοί only | — |
+| Capability | Era | Who | Prerequisite | Status |
+|---|---|---|---|---|
+| **Τροχιακό Πλήγμα** (orbital strike) | 3 | Σοβιετικοί | Κόκκινος Ουρανός project + design bureau | **built** |
+| **Τακτικό πυρηνικό όπλο** | 4 | Σοβιετικοί **and** Δυτικοί | a **Πυρηνικός Σταθμός** | **built** |
+| **Αποφυγή ανίχνευσης** (stealth) | 5 | Δυτικοί only | — | decided, not built |
+| **Έλεγχος Καιρού** (weather control) | 4 | Σοβιετικοί | — | blocked on mutable terrain |
 
 - **Tactical nukes are shared by the superpowers, not the West's alone.** Both the
   Σοβιετικοί and the Δυτικοί reach era IV; the Κινέζοι never do, because their
@@ -365,16 +367,26 @@ a strategic commitment rather than a button:
   power does not.
 - **The nuclear plant is the interesting part.** Requiring a Πυρηνικός Σταθμός
   before the weapon exists turns it into a strategic commitment: you must build a
-  large, expensive, obvious structure and *defend* it. Losing the plant should take
-  the capability away, which makes the plant a target worth a raid — the first
-  structure in the game whose value is not its income.
+  large, expensive, obvious structure and *defend* it. Losing the plant takes the
+  capability away with it, which makes it the first structure in the game whose
+  value is not its income — and a target worth raiding.
+- **A nuke does not distinguish friend from foe.** The orbital strike does, because
+  it is aimed; a nuclear weapon is not. That is the whole tactical cost.
 - **Stealth is the West's era-V edge** and the natural counterpart to few,
   expensive, excellent units: you cannot shoot what you cannot see. It needs a
-  stealth flag on the unit, a detection radius, and a reveal on firing.
-- **Both are blocked on the same missing system.** A nuke is a targeted ability
-  with a cooldown, exactly like the Soviet orbital strike and weather control. Until
-  there is an ability system, none of the three can be built — and it is now the
-  single item blocking four separate design decisions across two factions.
+  stealth flag on the unit, a detection radius, and a reveal on firing. Unlike the
+  rest of this section it is **not** blocked on anything — it is simply not built.
+
+Abilities are data in `AbilityCatalog` and resolved by `SimWorld.TryUseAbility`,
+which validates faction, era, prerequisite project, prerequisite structure,
+cooldown and cost before applying damage in ascending slot order. `CanUseAbility`
+is separate from execution so the interface can grey a button out for the right
+reason, and it says which one in Greek. The support panel lists what the player's
+faction can call in; a click on the button arms the ability and the next left-click
+on the ground is the target.
+
+**Έλεγχος Καιρού remains the one blocked capability**, because terrain is generated
+once from the seed and nothing writes to it at runtime.
 
 ### 3.5 Roster
 

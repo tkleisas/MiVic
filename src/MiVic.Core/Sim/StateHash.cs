@@ -101,6 +101,14 @@ public static class StateHash
             Mix(ref hash, state.CohesionPerFriendRaw);
             Mix(ref hash, state.PropagandaPaid ? 1 : 0);
             Mix(ref hash, state.WagesPaid ? 1 : 0);
+
+            if (state.AbilityReadyTick is not null)
+            {
+                for (int i = 0; i < state.AbilityReadyTick.Length; i++)
+                {
+                    Mix(ref hash, state.AbilityReadyTick[i]);
+                }
+            }
             Mix(ref hash, state.MoraleBonusRaw);
             Mix(ref hash, state.StructuresLost);
             Mix(ref hash, (long)state.ApprovedMask);

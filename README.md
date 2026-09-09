@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 287 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 293 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 dotnet run --project src/MiVic.Game
@@ -146,7 +146,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
 | Pick round-trip | 168/168 |
-| Tests | 304 passing (287 core, 17 audio) |
+| Tests | 310 passing (293 core, 17 audio) |
 
 ### Performance
 
@@ -318,6 +318,23 @@ defender, and the light hull kept moving where the heavies sank.
 
 Still to come: the mud **churn** counter (wet ground driven over becomes deep mud),
 mines and lava, snow shortening sight ranges, and bridges as buildable structures.
+
+### Off-map support
+
+Abilities are data in `AbilityCatalog`, validated by `SimWorld.TryUseAbility`
+(faction, era, prerequisite project, prerequisite structure, cooldown, cost) and
+resolved in ascending slot order. The **Υποστήριξη** panel lists what your faction
+can call in; clicking a button arms it and the next left-click on the ground is the
+target.
+
+| Ability | Era | Who | Prerequisite | Effect |
+|---|---|---|---|---|
+| Τροχιακό Πλήγμα | 3 | Σοβιετικοί | Κόκκινος Ουρανός + design bureau | 350 damage in 55 m, enemies only |
+| Τακτικό Πυρηνικό Όπλο | 4 | Σοβιετικοί + Δυτικοί | a standing **Πυρηνικός Σταθμός** | 900 damage in 110 m, **friend and foe** |
+
+A nuke does not distinguish friend from foe; the orbital strike does, because it is
+aimed. Losing the nuclear plant takes the capability away with it, which makes the
+plant the first structure in the game whose value is not its income.
 
 ### The alliance and the AI
 

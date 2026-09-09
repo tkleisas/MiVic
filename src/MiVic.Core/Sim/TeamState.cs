@@ -120,6 +120,13 @@ public struct TeamState
     /// <summary>Materials owed per tick to contract units, recomputed each tick.</summary>
     public int WagesPerTick;
 
+    /// <summary>
+    /// Tick each ability becomes available again, indexed by
+    /// <see cref="AbilityCatalog.IndexOf"/>. Allocated by the world, one array per
+    /// team, because the number of abilities is data.
+    /// </summary>
+    public long[] AbilityReadyTick;
+
     /// <summary>Morale floor bonus in Q16.16 raw units.</summary>
     public int MoraleBonusRaw;
 

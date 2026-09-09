@@ -59,6 +59,12 @@ public enum UnitKind : byte
 
     /// <summary>Μισθοφόρος — Δυτικοί contract infantry, paid by the tick.</summary>
     Mercenary = 15,
+
+    /// <summary>
+    /// Πυρηνικός Σταθμός — nuclear power plant. Produces a great deal of energy,
+    /// and is the prerequisite for a tactical nuclear weapon.
+    /// </summary>
+    NuclearPlant = 16,
 }
 
 /// <summary>

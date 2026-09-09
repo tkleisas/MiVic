@@ -78,6 +78,7 @@ public sealed class SimWorld
         for (int team = 0; team < SimConstants.TeamCount; team++)
         {
             _teams[team].TechTier = 1;
+            _teams[team].AbilityReadyTick = new long[AbilityCatalog.Count];
             ResearchSystem.RefreshModifiers(ref _teams[team]);
         }
     }
@@ -661,6 +662,14 @@ public sealed class SimWorld
 
     private bool Apply(in SimCommand command)
     {
+        // Off-map support arrives from outside the battlefield and has no target
+        // entity at all, so it is dispatched before the resolution check that every
+        // other command needs.
+        if (command.Kind == SimCommandKind.UseAbility)
+        {
+            return TryUseAbility(command.Ability, command.Destination, command.IssuerTeam);
+        }
+
         if (!TryResolve(command.Target, out int slot))
         {
             return false;
@@ -774,6 +783,142 @@ public sealed class SimWorld
         return FactionOfTeam(team) != Faction.Soviet
             || definition.ProducedAt != UnitKind.Factory
             || (state.ApprovedMask & bit) != 0;
+    }
+
+    /// <summary>
+    /// True when a team could call in an ability right now: right faction, era
+    /// reached, prerequisite project and structure in place, off cooldown and
+    /// affordable. Split out from the execution so the interface can grey out a
+    /// button for the right reason.
+    /// </summary>
+    public bool CanUseAbility(int team, AbilityId ability, out string reason)
+    {
+        reason = string.Empty;
+
+        if ((uint)team >= SimConstants.TeamCount || !AbilityCatalog.TryGet(ability, out AbilityDefinition definition))
+        {
+            reason = "άγνωστη ικανότητα";
+            return false;
+        }
+
+        ref TeamState state = ref _teams[team];
+        Faction faction = FactionOfTeam(team);
+
+        if (definition.Faction != Faction.None && definition.Faction != faction)
+        {
+            reason = "δεν ανήκει σε αυτή την παράταξη";
+            return false;
+        }
+
+        if (state.TechTier < definition.RequiredTechTier)
+        {
+            reason = $"χρειάζεται τεχνολογία {definition.RequiredTechTier}";
+            return false;
+        }
+
+        if (definition.RequiredTech != TechId.None && !TechCatalog.IsCompleted(state.TechMask, definition.RequiredTech))
+        {
+            reason = "χρειάζεται έρευνα";
+            return false;
+        }
+
+        if (definition.RequiredStructure != UnitKind.None && !HasStructure(team, definition.RequiredStructure))
+        {
+            reason = $"χρειάζεται {definition.RequiredStructure}";
+            return false;
+        }
+
+        int index = AbilityCatalog.IndexOf(ability);
+
+        if (index >= 0 && state.AbilityReadyTick is not null && Tick < state.AbilityReadyTick[index])
+        {
+            reason = $"σε αναμονή {(state.AbilityReadyTick[index] - Tick) / 20}δ";
+            return false;
+        }
+
+        if (state.Materials < definition.MaterialCost)
+        {
+            reason = $"λείπουν {definition.MaterialCost - state.Materials} Π";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>True when the team has at least one live structure of a role.</summary>
+    public bool HasStructure(int team, UnitKind kind)
+    {
+        for (int slot = 0; slot < _entities.Length; slot++)
+        {
+            ref Entity entity = ref _entities[slot];
+
+            if (entity.Alive && entity.TeamId == team && entity.Kind == kind)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Resolves an off-map strike. The blast is applied in ascending slot order so
+    /// the outcome is independent of the order entities happen to be stored in.
+    /// </summary>
+    private bool TryUseAbility(AbilityId ability, WorldPos target, int team)
+    {
+        if (!CanUseAbility(team, ability, out _))
+        {
+            return false;
+        }
+
+        AbilityCatalog.TryGet(ability, out AbilityDefinition definition);
+
+        ref TeamState state = ref _teams[team];
+        state.Materials -= definition.MaterialCost;
+
+        int index = AbilityCatalog.IndexOf(ability);
+
+        if (index >= 0 && state.AbilityReadyTick is not null)
+        {
+            state.AbilityReadyTick[index] = Tick + definition.CooldownTicks;
+        }
+
+        long radiusSquared = (long)definition.RadiusMm * definition.RadiusMm;
+
+        for (int slot = 0; slot < _entities.Length; slot++)
+        {
+            if (!IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity victim = ref _entities[slot];
+
+            if (!definition.DamagesFriendlies && victim.TeamId == team)
+            {
+                continue;
+            }
+
+            int dx = victim.Position.X - target.X;
+            int dz = victim.Position.Z - target.Z;
+
+            if (((long)dx * dx) + ((long)dz * dz) > radiusSquared)
+            {
+                continue;
+            }
+
+            if (victim.Health <= definition.Damage)
+            {
+                Despawn(new EntityId(slot, victim.Generation));
+            }
+            else
+            {
+                victim.Health -= definition.Damage;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Cost and time of a prototype run, as a multiple of the unit's own.</summary>
