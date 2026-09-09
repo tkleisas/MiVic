@@ -37,18 +37,27 @@ public sealed class UnitCatalogTests
     public void NoFactionCanResearchPastItsCeiling()
     {
         // A ceiling above every project a faction owns is inert, and a project
-        // above the ceiling is unreachable content. Either is a design bug, and
-        // the Σοβιετικοί had the first one until Era IV was written.
-        foreach (TechProject project in TechCatalog.All)
+        // above the ceiling is unreachable content. Either is a design bug, and the
+        // Σοβιετικοί and Δυτικοί each had the first one.
+        foreach (FactionProfile profile in FactionProfile.All)
         {
-            if (project.Effect != TechEffect.AdvanceTier)
+            int highest = 0;
+
+            foreach (TechProject project in TechCatalog.All)
             {
-                continue;
+                if (project.Faction != profile.Faction || project.Effect != TechEffect.AdvanceTier)
+                {
+                    continue;
+                }
+
+                Assert.True(
+                    project.Value <= profile.TechCeiling,
+                    $"'{project.GreekName}' unlocks era {project.Value}, above its faction's ceiling.");
+
+                highest = Math.Max(highest, project.Value);
             }
 
-            Assert.True(
-                project.Value <= FactionProfile.For(project.Faction).TechCeiling,
-                $"'{project.GreekName}' unlocks era {project.Value}, above its faction's ceiling.");
+            Assert.Equal(profile.TechCeiling, highest);
         }
     }
 

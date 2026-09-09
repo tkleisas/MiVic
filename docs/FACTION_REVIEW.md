@@ -232,10 +232,84 @@ slots rather than from quality.
 ### 2.4 Open questions
 
 - Πολιτοφυλακή as a separate unit kind, or a cheaper infantry variant?
-- Does «Αριθμητική Συνοχή» replace or stack with the faction morale floor?
+- Does «Αριθμητική Συνοχή» stack with the faction morale floor? (It does: it is
+  added to the target, and the sum is clamped.)
 - Ground pressure 1250 vs the AI ally: does the Chinese AI still reach the fight in
   mud-heavy maps?
 - The production ordering decided in `DESIGN.md` §7 (Κινέζοι > Σοβιετικοί >
   Δυτικοί throughput, Δυτικοί rich but unproductive) is now **applied**, including
   `IncomePermille`. What is still missing from the Σοβιετικοί two-tier cost is the
   *cap* on advanced prototypes.
+
+## 3. Δυτικοί
+
+Intent, from `DESIGN.md` §§2, 3 and 5: **the best technology and the strongest
+economy, undermined by greed**. Their units are the most expensive in the game by a
+wide margin, their production is the slowest, and their morale is the only one that
+breaks — the faction that should win on paper and loses on nerve.
+
+### 3.1 Economy — **applied**
+
+| | Value | Consequence |
+|---|---|---|
+| Parallel slots | 3 | the slowest factories of the three |
+| Build speed | ×0.80 | even a slot that is running is slow |
+| Unit cost | ×2.20 | *questionably expensive*: a Western tank costs 330 Π against 105 for a Κινέζοι one |
+| Resource income | ×2.50 | they never run short of money |
+| Research speed | ×1.00 | fastest ceiling, ordinary speed |
+| Tech ceiling | 5 | the only faction with a route to era V |
+
+The point of the split is that **money is not their bottleneck, factory time is**.
+A Western player will routinely see a full treasury and an idle factory, which is
+deliberate — and which means income and throughput have to be shown separately in
+the interface or it reads as a bug.
+
+### 3.2 Era IV and V — **built**
+
+The ceilings of 4 and 5 existed with no content to reach them, which made them
+inert: a faction cannot research past the last project it owns. Both eras now exist.
+
+| Era | Project | Tier req | Effect |
+|---|---|---|---|
+| IV | Επίπεδο 4: Αυτόνομα Συστήματα | 3 | → tier 4 |
+| IV | Αυτόνομα Συστήματα | 4 | +20 % production speed |
+| IV | Προηγμένα Υλικά | 4 | +20 % armour |
+| V | Επίπεδο 5: Διαστημική Επιτήρηση | 4 | → tier 5 |
+| V | Διαστημική Επιτήρηση | 5 | +40 % sight radius |
+
+`NoFactionCanResearchPastItsCeiling` now checks both directions — no project above
+a ceiling, and no ceiling above the faction's own content — so this class of bug
+cannot come back silently.
+
+### 3.3 What is still missing
+
+Their two signature mechanics are designed but not built, and they are the whole
+reason the faction is interesting rather than just expensive:
+
+- **Contract units (μισθοφόροι)** — excellent stats, but a morale floor tied to
+  payment. If the treasury dips, they down-tools or defects. Needs a per-unit link
+  to the treasury, which nothing has today.
+- **Propaganda upkeep** — a recurring drain that sets the morale baseline. Stop
+  paying and the army stops wanting to fight. This is a *cost*, and the faction is
+  currently the richest in the game with nothing to spend the surplus on.
+
+Without them the Δυτικοί have the weakness (low morale floor, 0.50) but none of the
+texture that makes the weakness feel earned.
+
+### 3.4 Roster
+
+Same principle as the Κινέζοι: no new roles, better versions of the same ones. The
+MBT is the best tank in the game, the self-propelled gun the most accurate, and the
+air defence the longest-ranged — each at a price that makes losing one a disaster
+and a morale hit on top.
+
+### 3.5 Open questions
+
+- Morale floor 0.50 with no rally mechanic beyond proximity: is the rout cascade
+  too punishing now that their units cost 2.2×?
+- Should the treasury surplus have a sink (propaganda upkeep) before any further
+  balance pass? Right now the richest faction has nothing to buy but units it
+  cannot build quickly.
+- The high-era projects are all passive multipliers. If the Δυτικοί are the
+  technology faction, era IV and V are where a genuinely new *capability* belongs —
+  but that needs the ability system the orbital strike is also waiting on.

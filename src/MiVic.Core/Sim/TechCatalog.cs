@@ -41,6 +41,14 @@ public enum TechId : byte
     WesternAdvance3 = 23,
     WesternComposite = 24,
     WesternNetwork = 25,
+
+    // ---- Δυτικοί: the high eras. Without these the ceilings of 4 and 5 were
+    // inert — a faction cannot research past the last project it owns.
+    WesternAdvance4 = 26,
+    WesternAutonomy = 27,
+    WesternMaterials = 28,
+    WesternAdvance5 = 29,
+    WesternSpace = 30,
 }
 
 /// <summary>What completing a project does.</summary>
@@ -151,6 +159,11 @@ public static class TechCatalog
         new(TechId.WesternAdvance3, Faction.Western, "Επίπεδο 3: Αεροπορία", "Ξεκλειδώνει αεροσκάφη", 2, 700, 700, TechId.WesternAdvance2, TechEffect.AdvanceTier, 3),
         new(TechId.WesternComposite, Faction.Western, "Σύνθετη Θωράκιση", "+30% θωράκιση", 3, 850, 800, TechId.WesternPrecision, TechEffect.Armor, 1300),
         new(TechId.WesternNetwork, Faction.Western, "Δικτυοκεντρικός Πόλεμος", "+25% ταχύτητα παραγωγής", 3, 900, 850, TechId.WesternAdvance3, TechEffect.Production, 1250),
+        new(TechId.WesternAdvance4, Faction.Western, "Επίπεδο 4: Αυτόνομα Συστήματα", "Ανοίγει την εποχή των αυτόνομων συστημάτων", 3, 1_100, 1_000, TechId.WesternAdvance3, TechEffect.AdvanceTier, 4),
+        new(TechId.WesternAutonomy, Faction.Western, "Αυτόνομα Συστήματα", "+20% ταχύτητα παραγωγής", 4, 1_200, 1_000, TechId.WesternAdvance4, TechEffect.Production, 1200),
+        new(TechId.WesternMaterials, Faction.Western, "Προηγμένα Υλικά", "+20% θωράκιση", 4, 1_250, 1_050, TechId.WesternAdvance4, TechEffect.Armor, 1200),
+        new(TechId.WesternAdvance5, Faction.Western, "Επίπεδο 5: Διαστημική Επιτήρηση", "Η κορύφωση της δυτικής τεχνολογίας", 4, 1_400, 1_200, TechId.WesternAdvance4, TechEffect.AdvanceTier, 5),
+        new(TechId.WesternSpace, Faction.Western, "Διαστημική Επιτήρηση", "+40% ορατότητα", 5, 1_500, 1_200, TechId.WesternAdvance5, TechEffect.Vision, 1400),
     ];
 
     /// <summary>Every project in the tree.</summary>
