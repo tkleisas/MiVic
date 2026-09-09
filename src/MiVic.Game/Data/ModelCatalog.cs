@@ -99,6 +99,8 @@ public sealed class ModelCatalog : IDisposable
         UnitKind.Infantry => MeshBuilder.Box(1.2f, 1.8f, 1.2f),
         UnitKind.Tank => MeshBuilder.Box(3.2f, 1.6f, 5f),
         UnitKind.Artillery => MeshBuilder.Box(3f, 1.4f, 5.5f),
+        UnitKind.RocketArtillery => MeshBuilder.Box(3.1f, 1.5f, 6f),
+        UnitKind.Commissar => MeshBuilder.Box(1.1f, 1.9f, 1.1f),
         UnitKind.AntiAir => MeshBuilder.Cylinder(1.8f, 2.4f),
         UnitKind.Aircraft => MeshBuilder.Wedge(4f, 1.6f, 7f),
         UnitKind.CommandCentre => MeshBuilder.Box(14f, 9f, 14f),

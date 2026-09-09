@@ -92,7 +92,8 @@ public static class Scenario
 
         UnitKind[] kinds =
         [
-            UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.AntiAir,
+            UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
+            UnitKind.AntiAir, UnitKind.Commissar,
             UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.Factory, UnitKind.DesignBureau,
         ];
 

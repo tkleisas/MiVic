@@ -20,9 +20,9 @@ bureau.
 | Tier | Unit | Role | Cost tier | Notes |
 |---|---|---|---|---|
 | 1 | Πεζικό | line infantry | cheap | baseline; produced at the command centre |
-| 1 | **Κομισάριος** | unarmed support | cheap | morale aura: nearby friendly units get an immovable morale floor |
+| 1 | **Κομισάριος** | unarmed support | cheap | morale aura: nearby friendly units get an immovable morale floor — *implemented* |
 | 2 | Άρμα «Τ-44» | workhorse MBT | cheap | light hull, wide tracks, sloped armour — the mud-mobile tank |
-| 2 | **Κατιούσα** | rocket artillery | cheap | very damaging, very inaccurate, area saturation |
+| 2 | **Κατιούσα** | rocket artillery | cheap | very damaging, very inaccurate, area saturation — *implemented* |
 | 2 | Αντιαεροπορικό | anti-air | cheap | |
 | 3 | **Ηλεκτροπυροβόλο «Τόξο»** | electro prototype | capped, expensive | arc/EMP; the Ηλεκτροτεχνία payoff |
 | 3 | Αεροσκάφος | aircraft | expensive | few and powerful |
@@ -36,9 +36,13 @@ bureau.
   fired in salvos. Very high damage per volley over an area, but the salvo lands
   scattered, so it is a weapon against *formations and buildings*, not against a
   single moving tank. This is what makes the Soviet army want the enemy to come to
-  it in the open. Mechanically it needs two things the combat system does not have
-  yet: a **scatter radius** (the salvo centre lands off-target) and **splash
-  damage** (everything inside a small radius takes damage).
+  it in the open. Implemented as two new weapon properties: a **scatter radius**
+  (the salvo centre lands up to 26 m off target) and **splash damage** (everything
+  hostile within 22 m takes full damage). The offset is a deterministic integer
+  hash of the tick and the two slots, so a salvo scatters identically in a replay.
+  First-pass numbers: 95 damage per salvo on a 90-tick cooldown at 260 m, against
+  the howitzer's 60 on 60 ticks at 220 m — more than half again the punch per
+  salvo, and it can miss entirely.
 - **No generic howitzer.** The Σοβιετικοί artillery slot *is* the Κατιούσα.
   Western and Chinese artillery stay conventional, accurate and shorter-ranged,
   which is a real asymmetry rather than a stat difference.

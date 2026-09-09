@@ -95,6 +95,7 @@ public static class MoraleSystem
 
         int friends = 0;
         int enemies = 0;
+        int auraRaw = 0;
         long nearestEnemySquared = long.MaxValue;
         int nearestEnemyX = 0;
         int nearestEnemyZ = 0;
@@ -128,6 +129,13 @@ public static class MoraleSystem
                     if (candidate.TeamId == entity.TeamId)
                     {
                         friends++;
+
+                        UnitDefinition friend = UnitCatalog.Get(candidate.Kind);
+
+                        if (friend.HasMoraleAura && friend.MoraleAuraRaw > auraRaw)
+                        {
+                            auraRaw = friend.MoraleAuraRaw;
+                        }
                     }
                     else
                     {
@@ -152,7 +160,7 @@ public static class MoraleSystem
         int casualtyPenalty = Math.Min(32_768, team.RecentCasualties * CasualtyPenaltyRaw);
 
         entity.MoraleTargetRaw = IntMath.Clamp(
-            profile.MoraleFloor.Raw + team.MoraleBonusRaw + (balance / BalanceWeightDivisor) - casualtyPenalty,
+            profile.MoraleFloor.Raw + team.MoraleBonusRaw + auraRaw + (balance / BalanceWeightDivisor) - casualtyPenalty,
             0,
             65_536);
 

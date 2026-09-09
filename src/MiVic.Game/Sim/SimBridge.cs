@@ -283,6 +283,8 @@ public sealed class SimBridge
         UnitKind.Aircraft => 3.2f,
         UnitKind.Tank => 2.4f,
         UnitKind.Artillery => 2.2f,
+        UnitKind.RocketArtillery => 2.3f,
+        UnitKind.Commissar => 0.9f,
         UnitKind.AntiAir => 2f,
         _ => 1.1f,
     };

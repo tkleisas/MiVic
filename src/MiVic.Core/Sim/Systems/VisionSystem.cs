@@ -32,6 +32,8 @@ public static class VisionSystem
         UnitKind.Infantry => 110_000,
         UnitKind.Tank => 130_000,
         UnitKind.Artillery => 160_000,
+        UnitKind.RocketArtillery => 170_000,
+        UnitKind.Commissar => 90_000,
         UnitKind.AntiAir => 140_000,
         UnitKind.Aircraft => 200_000,
         UnitKind.CommandCentre => 150_000,

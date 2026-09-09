@@ -44,6 +44,12 @@ public enum UnitKind : byte
 
     /// <summary>Researches tech tiers. The Σοβιετικοί design bureau.</summary>
     DesignBureau = 10,
+
+    /// <summary>Κατιούσα — rocket artillery: heavy area damage, poor accuracy.</summary>
+    RocketArtillery = 11,
+
+    /// <summary>Κομισάριος — unarmed support that steadies the morale of nearby units.</summary>
+    Commissar = 12,
 }
 
 /// <summary>

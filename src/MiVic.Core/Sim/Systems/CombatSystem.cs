@@ -111,7 +111,11 @@ public static class CombatSystem
             int damageScale = attackerTeam.DamagePermille > 0 ? attackerTeam.DamagePermille : 1_000;
             int damage = Math.Max(1, (weapon.AttackDamage * damageScale) / 1_000);
 
-            if (target.Health <= damage)
+            if (weapon.ScatterMm > 0)
+            {
+                FireScattered(world, slot, ref attacker, weapon, damage);
+            }
+            else if (target.Health <= damage)
             {
                 Kill(world, attacker.TargetSlot);
                 attacker.TargetSlot = -1;
@@ -128,6 +132,93 @@ public static class CombatSystem
             int factor = 1_500 - moralePermille;
             attacker.AttackCooldown = Math.Max(1, (weapon.AttackCooldownTicks * factor) / 1_000);
         }
+    }
+
+    /// <summary>
+    /// Fires an inaccurate salvo at a target's position.
+    /// <para>
+    /// The impact point is offset from the target by a deterministic pseudo-random
+    /// vector derived from the tick and the two slots, so a salvo scatters the same
+    /// way in a replay without needing a random source in the hot loop. Every
+    /// hostile entity inside the splash radius takes full damage, and the intended
+    /// target may be missed entirely — which is the whole point of the Κατιούσα.
+    /// </para>
+    /// </summary>
+    private static void FireScattered(
+        SimWorld world,
+        int slot,
+        ref Entity attacker,
+        in UnitDefinition weapon,
+        int damage)
+    {
+        ref Entity target = ref world.GetRefBySlot(attacker.TargetSlot);
+
+        int seed = (int)(world.Tick & 0xFFFF) ^ (slot << 8) ^ (attacker.TargetSlot * 31);
+        int impactX = target.Position.X + ScatterOffset(seed, weapon.ScatterMm);
+        int impactZ = target.Position.Z + ScatterOffset(seed + 7_919, weapon.ScatterMm);
+
+        long radiusSquared = (long)weapon.SplashRadiusMm * weapon.SplashRadiusMm;
+        int capacity = world.Capacity;
+
+        for (int other = 0; other < capacity; other++)
+        {
+            if (!world.IsAliveSlot(other))
+            {
+                continue;
+            }
+
+            ref Entity victim = ref world.GetRefBySlot(other);
+
+            if (victim.TeamId == attacker.TeamId)
+            {
+                continue;
+            }
+
+            int dx = victim.Position.X - impactX;
+            int dz = victim.Position.Z - impactZ;
+
+            if (((long)dx * dx) + ((long)dz * dz) > radiusSquared)
+            {
+                continue;
+            }
+
+            if (victim.Health <= damage)
+            {
+                Kill(world, other);
+            }
+            else
+            {
+                victim.Health -= damage;
+            }
+        }
+
+        // The blast may have killed the sticky target, or missed it entirely.
+        if (attacker.TargetSlot >= 0 && !world.IsAliveSlot(attacker.TargetSlot))
+        {
+            attacker.TargetSlot = -1;
+            attacker.HasAttackOrder = false;
+        }
+    }
+
+    /// <summary>
+    /// An integer hash in <c>[-magnitude, magnitude]</c>. Deliberately not a PRNG
+    /// object: the combat loop must not allocate, and the value has to depend only
+    /// on simulation state so replays match.
+    /// </summary>
+    private static int ScatterOffset(int seed, int magnitude)
+    {
+        if (magnitude <= 0)
+        {
+            return 0;
+        }
+
+        int hash = (seed * 1_103_515_245) + 12_345;
+        hash ^= hash >> 13;
+        hash *= 0x5BD1E995;
+        hash ^= hash >> 15;
+
+        int span = (magnitude * 2) + 1;
+        return ((hash & 0x7FFFFFFF) % span) - magnitude;
     }
 
     /// <summary>True when the slot holds a live enemy this weapon may engage.</summary>

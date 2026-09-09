@@ -121,11 +121,12 @@ public sealed class ScenarioTests
     {
         SimWorld world = Build(20250101, ScenarioKind.ModelGallery, out ScenarioSetup setup);
 
-        // The gallery is a parade of the nine modelled roles, not of every
-        // UnitKind the catalogue knows (harvesters have no model yet).
+        // The gallery is a parade of the modelled roles, not of every UnitKind the
+        // catalogue knows (harvesters have no model yet).
         UnitKind[] kinds =
         [
-            UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.AntiAir,
+            UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
+            UnitKind.AntiAir, UnitKind.Commissar,
             UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.Factory, UnitKind.DesignBureau,
         ];
 

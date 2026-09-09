@@ -253,6 +253,13 @@ aircraft. Morale — the Δυτικοί weakness — falls with local force bala
 recent casualties, scales reload speed by up to ×1.5, and below 0.25 sends a unit
 **routing** away from the enemy until it rallies above 0.40.
 
+Two Σοβιετικοί roles exist purely because of that asymmetry. The **Κατιούσα** is
+rocket artillery: a harder-hitting, longer-ranged salvo than a howitzer, but the
+impact point scatters up to 26 m off target and everything hostile inside 22 m
+takes full damage — devastating against a formation or a building, poor against one
+moving tank. The **Κομισάριος** is unarmed, cheap and worth killing: it steadies
+the morale of friends around it. (Its stated initiative cost is not modelled yet.)
+
 ### The alliance and the AI
 
 The Σοβιετικοί can **licence** a design to the Κινέζοι from their build panel. A

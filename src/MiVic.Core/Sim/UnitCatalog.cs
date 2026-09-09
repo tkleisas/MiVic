@@ -18,6 +18,9 @@ namespace MiVic.Core.Sim;
 /// <param name="AttackCooldownTicks">Ticks between shots.</param>
 /// <param name="CanHitAir">Whether this role can engage aircraft.</param>
 /// <param name="WaterCost">Water the unit consumes when it is built.</param>
+/// <param name="SplashRadiusMm">Radius around the impact point that also takes damage; zero for single-target weapons.</param>
+/// <param name="ScatterMm">Maximum distance the shot lands from its target; zero for accurate weapons.</param>
+/// <param name="MoraleAuraRaw">Morale bonus this unit grants to nearby friends, in Q16.16 raw units.</param>
 public readonly record struct UnitDefinition(
     UnitKind Kind,
     int MaterialCost,
@@ -32,10 +35,19 @@ public readonly record struct UnitDefinition(
     int AttackRangeMm = 0,
     int AttackCooldownTicks = 0,
     bool CanHitAir = false,
-    int WaterCost = 0)
+    int WaterCost = 0,
+    int SplashRadiusMm = 0,
+    int ScatterMm = 0,
+    int MoraleAuraRaw = 0)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
+
+    /// <summary>True when the weapon damages everything near the impact point.</summary>
+    public bool HasSplash => SplashRadiusMm > 0;
+
+    /// <summary>True when this unit steadies the morale of nearby friends.</summary>
+    public bool HasMoraleAura => MoraleAuraRaw > 0;
 
     /// <summary>Damage per tick, for balance comparisons.</summary>
     public readonly float DamagePerTick => AttackCooldownTicks > 0 ? (float)AttackDamage / AttackCooldownTicks : 0f;
@@ -63,6 +75,18 @@ public static class UnitCatalog
         new(UnitKind.Artillery, 180, 30, 140, 210, 300, 2, UnitKind.Factory, false, 60, 220_000, 60, false, 22),
         new(UnitKind.AntiAir, 120, 20, 100, 190, 350, 2, UnitKind.Factory, false, 25, 150_000, 16, true, 16),
         new(UnitKind.Aircraft, 260, 60, 200, 160, 1_500, 3, UnitKind.Factory, false, 30, 100_000, 20, true, 45),
+
+        // Κατιούσα: one salvo is worth more than a howitzer's, but it lands
+        // scattered over an area. Devastating against formations and buildings,
+        // poor against a single moving tank — which is why the Σοβιετικοί want
+        // the enemy to come to them in the open.
+        new(UnitKind.RocketArtillery, 170, 25, 130, 160, 260, 2, UnitKind.Factory, false,
+            95, 260_000, 90, false, 24, SplashRadiusMm: 22_000, ScatterMm: 26_000),
+
+        // Κομισάριος: unarmed, cheap and worth killing. Steadies the morale of
+        // friends around it; the initiative cost is not modelled yet.
+        new(UnitKind.Commissar, 60, 0, 50, 90, 110, 1, UnitKind.CommandCentre, false,
+            WaterCost: 10, MoraleAuraRaw: 6_554),
 
         // Structures are unarmed for now; defensive buildings come with M3 balance.
         // Industry needs a great deal of water, which is what makes a second
