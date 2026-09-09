@@ -230,22 +230,16 @@ at the end of this section and is not yet applied.
   burst, and their counterplay is to avoid trading units at all. It also means
   income and throughput must be shown separately in the UI, or a Δυτικοί player
   will see a full bank and an idle factory and read it as a bug.
-- **Κινέζοι tech ceiling is 3, not 2 — decided, not yet applied.** This is a
-  correction rather than a buff: §6 already lists Κινέζοι air as "many, cheap", but
-  a ceiling of 2 means they could never build an aircraft at all. Three changes are
-  needed together, and doing only the first is inert:
-  1. `FactionProfile.Chinese.TechCeiling` 2 → 3.
-  2. A new `TechId.ChineseAdvance3` project — "Επίπεδο 3: Αεροπορία", required tier
-     2, prerequisite `ChineseAdvance2`, effect `AdvanceTier` 3. The Κινέζοι tree
-     currently has no route to tier 3 at all, so without this the ceiling change
-     changes nothing.
-  3. `EconomyTests.TheChineseTreeHasNoThirdEra` asserts the opposite of the new
-     design and must be replaced by a test that tier 3 *is* reachable and tier 4 is
-     not.
-  `EconomyTests.ChineseCannotUnlockHighTiers` still passes, since it probes tiers 5
-  and 2 explicitly, but its comment ("the Κινέζοι ceiling is 2") is stale and it
-  should gain an assertion that tier 3 now is unlocked. The ordering assertion
-  `Chinese.TechCeiling < Soviet.TechCeiling` survives unchanged (3 &lt; 4).
+- **Κινέζοι tech ceiling is 3, not 2 — applied.** This was a correction rather
+  than a buff: §6 already lists Κινέζοι air as "many, cheap", but a ceiling of 2
+  meant they could never build an aircraft at all. Three changes landed together:
+  `FactionProfile.Chinese.TechCeiling` is 3; a new `TechId.ChineseAdvance3` project
+  ("Επίπεδο 3: Αεροπορία", required tier 2, prerequisite `ChineseAdvance2`) gives
+  the tree a route to tier 3, without which the ceiling change was inert; and
+  `EconomyTests.TheChineseTreeHasNoThirdEra`, which asserted the opposite, was
+  replaced by one that asserts tier 3 *is* reachable and tier 4 is not. The ordering
+  assertion `Chinese.TechCeiling < Soviet.TechCeiling` still holds (3 &lt; 4). See
+  `docs/FACTION_REVIEW.md` §2.1.
 
 ### Combat and morale (M3)
 

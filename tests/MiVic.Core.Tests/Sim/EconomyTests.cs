@@ -22,12 +22,34 @@ public sealed class UnitCatalogTests
     }
 
     [Fact]
-    public void ChineseCannotUnlockHighTiers()
+    public void ChineseReachAircraftButNoFurther()
     {
-        // Tier 3 is the aircraft tier; the Κινέζοι ceiling is 2.
-        Assert.False(UnitCatalog.IsUnlocked(Faction.Chinese, UnitKind.Aircraft, techTier: 5));
         Assert.False(UnitCatalog.IsUnlocked(Faction.Chinese, UnitKind.Aircraft, techTier: 2));
-        Assert.True(UnitCatalog.IsUnlocked(Faction.Chinese, UnitKind.Tank, techTier: 2));
+        Assert.True(UnitCatalog.IsUnlocked(Faction.Chinese, UnitKind.Aircraft, techTier: 3));
+
+        // The ceiling is what stops them climbing past their own tier-3 project.
+        Assert.Equal(3, FactionProfile.Chinese.TechCeiling);
+        Assert.True(FactionProfile.Chinese.TechCeiling < FactionProfile.Soviet.TechCeiling);
+        Assert.True(FactionProfile.Chinese.TechCeiling < FactionProfile.Western.TechCeiling);
+    }
+
+    [Fact]
+    public void NoFactionCanResearchPastItsCeiling()
+    {
+        // A ceiling above every project a faction owns is inert, and a project
+        // above the ceiling is unreachable content. Either is a design bug, and
+        // the Σοβιετικοί had the first one until Era IV was written.
+        foreach (TechProject project in TechCatalog.All)
+        {
+            if (project.Effect != TechEffect.AdvanceTier)
+            {
+                continue;
+            }
+
+            Assert.True(
+                project.Value <= FactionProfile.For(project.Faction).TechCeiling,
+                $"'{project.GreekName}' unlocks era {project.Value}, above its faction's ceiling.");
+        }
     }
 
     [Fact]
@@ -394,20 +416,28 @@ public sealed class ResearchTests
     }
 
     [Fact]
-    public void TheChineseTreeHasNoThirdEra()
+    public void TheChineseTreeReachesTheAircraftEraAndStopsThere()
     {
-        // The Κινέζοι cannot research their way into the aircraft tier at all.
+        // §6 promises the Κινέζοι "many, cheap" air, so a ceiling of 2 with no
+        // route to tier 3 contradicted the design. They reach the aircraft era and
+        // never the high eras.
+        bool reachesThree = false;
+        bool reachesFour = false;
+
         foreach (TechProject project in TechCatalog.All)
         {
-            if (project.Faction != Faction.Chinese)
+            if (project.Faction != Faction.Chinese || project.Effect != TechEffect.AdvanceTier)
             {
                 continue;
             }
 
-            Assert.False(
-                project.Effect == TechEffect.AdvanceTier && project.Value >= 3,
-                $"Κινέζοι project '{project.GreekName}' unlocks era {project.Value}.");
+            reachesThree |= project.Value >= 3;
+            reachesFour |= project.Value >= 4;
         }
+
+        Assert.True(reachesThree, "The Κινέζοι have no route to the aircraft tier.");
+        Assert.False(reachesFour, "The Κινέζοι have a route to tier 4.");
+        Assert.True(FactionProfile.Chinese.TechCeiling >= 3, "The ceiling blocks their own tier-3 project.");
     }
 
     [Fact]

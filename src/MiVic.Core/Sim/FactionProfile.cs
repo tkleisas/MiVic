@@ -108,7 +108,7 @@ public readonly record struct FactionProfile(
         "Κινέζοι",
         ProductionSlots: 6,
         BuildSpeedPermille: 1500,
-        TechCeiling: 2,
+        TechCeiling: 3,
         MoraleFloor: MiVic.Core.Numerics.Fix32.FromRaw(52428), // 0.80
         CostPermille: 700,
         ResearchSpeedPermille: 700,

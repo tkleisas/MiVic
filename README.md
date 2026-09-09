@@ -146,7 +146,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
 | Pick round-trip | 168/168 |
-| Tests | 293 passing (276 core, 17 audio) |
+| Tests | 294 passing (277 core, 17 audio) |
 
 ### Performance
 

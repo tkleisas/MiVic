@@ -25,6 +25,9 @@ public enum TechId : byte
     ChineseMilitia = 12,
     ChineseSwarm = 13,
 
+    /// <summary>The Κινέζοι reach the aircraft era, but no further.</summary>
+    ChineseAdvance3 = 15,
+
     // ---- Δυτικοί: deep and broad, but expensive ----
     WesternNco = 20,
     WesternAdvance2 = 21,
@@ -125,6 +128,7 @@ public static class TechCatalog
         new(TechId.ChineseAdvance2, Faction.Chinese, "Επίπεδο 2: Τεθωρακισμένα", "Ξεκλειδώνει άρματα και πυροβολικό", 1, 300, 400, TechId.None, TechEffect.AdvanceTier, 2),
         new(TechId.ChineseMilitia, Faction.Chinese, "Λαϊκή Πολιτοφυλακή", "+15% θωράκιση", 2, 250, 350, TechId.ChineseAdvance2, TechEffect.Armor, 1150),
         new(TechId.ChineseSwarm, Faction.Chinese, "Τακτική Πλήθους", "+10% ζημιά", 2, 250, 350, TechId.ChineseAdvance2, TechEffect.Damage, 1100),
+        new(TechId.ChineseAdvance3, Faction.Chinese, "Επίπεδο 3: Αεροπορία", "Ξεκλειδώνει αεροσκάφη", 2, 500, 700, TechId.ChineseAdvance2, TechEffect.AdvanceTier, 3),
 
         // ---------------- Δυτικοί ----------------
         new(TechId.WesternNco, Faction.Western, "Επαγγελματίες Αξιωματικοί", "+0.10 ηθικό", 1, 350, 400, TechId.None, TechEffect.Morale, 6_554),

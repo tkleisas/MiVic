@@ -151,3 +151,89 @@ ability system (orbital strike) and the prototype cap.
   no ability system yet. Both need a command plus a cooldown in `TeamState`, which
   is a bigger change than a modifier and should be scheduled deliberately.
 - Does the Κατιούσα scatter apply to buildings too, or only to units?
+
+## 2. Κινέζοι
+
+Intent, from `DESIGN.md` §§2, 3 and 5 plus the decisions: **volume**. Cheap,
+individually weak units produced in enormous parallel batches; a tech tree that is
+**wide and shallow** — many cheap upgrades, no high era; and, because they cannot
+out-tech anyone, the alliance is their answer to technology.
+
+### 2.1 Tech ceiling: 3 — **applied**
+
+This was recorded in §7 of `DESIGN.md` as decided but not applied, and it was a
+correction rather than a buff: §6 already lists Κινέζοι air as "many, cheap", but a
+ceiling of 2 with **no tier-3 advance project at all** meant they could never build
+an aircraft. Both halves are now fixed: `FactionProfile.Chinese.TechCeiling` is 3,
+and `TechId.ChineseAdvance3` ("Επίπεδο 3: Αεροπορία", required tier 2, prerequisite
+`ChineseAdvance2`) gives the tree a route to it.
+
+The old test asserted the opposite — `TheChineseTreeHasNoThirdEra` — and has been
+replaced by one that asserts tier 3 is reachable and tier 4 is not. A second test,
+`NoFactionCanResearchPastItsCeiling`, now checks the structural invariant that bit
+the Σοβιετικοί: a ceiling with no content to reach it is inert, and content above
+the ceiling is unreachable.
+
+What the ceiling still buys: they reach the aircraft era and stop. No Era IV, no
+tier-4/5 hardware, and their ×0.70 research speed means the aircraft arrive late
+enough that there is a window where the swarm does not exist yet.
+
+### 2.2 Roster
+
+Their roster should stay **the same roles at lower quality and higher volume** —
+new Chinese-specific units would undercut the identity. The differentiation is the
+production numbers, the ground pressure and one signature:
+
+| Tier | Unit | Chinese version |
+|---|---|---|
+| 1 | Πεζικό | the cheapest infantry in the game; their core, not a screen |
+| 1 | **Πολιτοφυλακή** (militia) | cheaper and weaker still, produced in bulk; the «Λαϊκή Πολιτοφυλακή» payoff |
+| 2 | Άρμα | light, cheap, **narrow tracks** — worst ground pressure of the three, so mud is their enemy |
+| 2 | Πυροβολικό | conventional and accurate, in contrast to the Κατιούσα |
+| 2 | Αντιαεροπορικό | cheap, plentiful |
+| 3 | Αεροσκάφος | now reachable, and meant to be fielded in numbers |
+
+Two signature mechanics, one already built:
+
+- **Άδεια Παραγωγής (licence production)** — *built*. They build a Soviet design at
+  Chinese speed, which is how the alliance answers Western technology without
+  breaking the "no high era" identity.
+- **Αριθμητική Συνοχή (numerical cohesion)** — *not built*. Morale rises with the
+  number of nearby friends, making the swarm steadier than its individual units
+  look. This is the designed counter to Western per-unit morale and needs a hook in
+  `MoraleSystem.Scan`.
+
+Ground pressure 1250 makes mud punishing for them, which is deliberate — but they
+are the AI ally in the vertical slice, so it is worth checking that the AI ally
+does not bog down and stop participating.
+
+### 2.3 Tech tree
+
+Shape: wide and shallow. Many cheap projects, none of them an era. The ceiling is
+now aligned with the content.
+
+| Era | Project | Tier req | Effect | Status |
+|---|---|---|---|---|
+| I | Μαζική Επιστράτευση | 1 | +20 % production speed | built |
+| I | Επίπεδο 2: Τεθωρακισμένα | 1 | → tier 2 | built |
+| I | **Οδικές Μεταφορές** | 1 | +10 % movement speed — cheap and early | proposed |
+| II | Λαϊκή Πολιτοφυλακή | 2 | +15 % armour | built |
+| II | Τακτική Πλήθους | 2 | +10 % damage | built |
+| II | Επίπεδο 3: Αεροπορία | 2 | → tier 3 | **built** |
+| II | **Αντιαεροπορικό Δίκτυο** | 2 | +15 % anti-air damage | proposed |
+| II | **Αριθμητική Συνοχή** | 2 | morale floor rises with nearby friendly count | proposed — needs the morale hook |
+
+Every project is cheap and none is deep, which is the point: they are the faction
+whose research is broad and shallow, and whose real scaling comes from parallel
+slots rather than from quality.
+
+### 2.4 Open questions
+
+- Πολιτοφυλακή as a separate unit kind, or a cheaper infantry variant?
+- Does «Αριθμητική Συνοχή» replace or stack with the faction morale floor?
+- Ground pressure 1250 vs the AI ally: does the Chinese AI still reach the fight in
+  mud-heavy maps?
+- The production ordering decided in `DESIGN.md` §7 (Κινέζοι > Σοβιετικοί >
+  Δυτικοί throughput, Δυτικοί rich but unproductive) is **still not applied**. It
+  changes every cost and build-time number, so it should land as one deliberate
+  change with the hashes regenerated.
