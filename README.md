@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 276 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 278 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 dotnet run --project src/MiVic.Game
@@ -146,7 +146,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
 | Pick round-trip | 168/168 |
-| Tests | 294 passing (277 core, 17 audio) |
+| Tests | 295 passing (278 core, 17 audio) |
 
 ### Performance
 
@@ -320,18 +320,21 @@ issues, so it stays inside the determinism contract.
 
 | | Σοβιετικοί | Κινέζοι | Δυτικοί |
 |---|---|---|---|
-| Parallel production slots | 2 | 6 | 4 |
-| Build speed | ×0.75 | ×1.50 | ×1.20 |
-| Unit cost | ×1.35 | ×0.70 | ×1.10 |
+| Parallel production slots | 4 | 6 | 3 |
+| Build speed | ×1.10 | ×1.50 | ×0.80 |
+| Unit cost | ×0.90 | ×0.70 | ×2.20 |
+| Resource income | ×1.00 | ×0.90 | ×2.50 |
 | Research speed | ×1.25 | ×0.70 | ×1.00 |
-| Tech ceiling | 4 | 2 | 5 |
+| Tech ceiling | 4 | 3 | 5 |
 
 Resources are **Πόροι** (materials), **Ενέργεια** (energy) and **Νερό** (water).
 Command centres produce materials and water, power plants produce energy and water,
 and every other structure draws energy as upkeep — a team that cannot pay its
 upkeep stops producing. Every construction job and every unit costs all three, paid
 when it is queued, so a queue can never be filled with resources the team does not
-have.
+have. **Income scales with the faction's wealth multiplier, upkeep does not**: the
+Δυτικοί are rich rather than productive, so their bottleneck is factory time, never
+money.
 
 Σοβιετικοί factories cannot build a design directly. The design bureau must first
 run a **prototype** — twice the cost and twice the build time, one at a time — which

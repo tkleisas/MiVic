@@ -76,6 +76,12 @@ public enum UnitKind : byte
 /// Design-philosophy multiplier on every mobile role's ground pressure. Below 1000
 /// means a light hull on wide tracks, which is what keeps an army moving in mud.
 /// </param>
+/// <param name="IncomePermille">
+/// Multiplier on what a team's structures <em>produce</em> per tick, in thousandths.
+/// Above 1000 means the faction is rich; it is deliberately separate from
+/// <paramref name="CostPermille"/> so a faction can be wealthy without being able to
+/// turn that wealth into units quickly.
+/// </param>
 public readonly record struct FactionProfile(
     Faction Faction,
     string GreekName,
@@ -85,7 +91,8 @@ public readonly record struct FactionProfile(
     MiVic.Core.Numerics.Fix32 MoraleFloor,
     int CostPermille,
     int ResearchSpeedPermille,
-    int GroundPressurePermille = 1_000)
+    int GroundPressurePermille = 1_000,
+    int IncomePermille = 1_000)
 {
     /// <summary>
     /// The three playable powers, ordered so that iteration is deterministic.
@@ -95,35 +102,38 @@ public readonly record struct FactionProfile(
     public static readonly FactionProfile Soviet = new(
         Faction.Soviet,
         "Σοβιετικοί",
-        ProductionSlots: 2,
-        BuildSpeedPermille: 750,
+        ProductionSlots: 4,
+        BuildSpeedPermille: 1_100,
         TechCeiling: 4,
         MoraleFloor: MiVic.Core.Numerics.Fix32.FromRaw(58982), // 0.90
-        CostPermille: 1350,
+        CostPermille: 900,
         ResearchSpeedPermille: 1250,
-        GroundPressurePermille: 750);
+        GroundPressurePermille: 750,
+        IncomePermille: 1_000);
 
     public static readonly FactionProfile Chinese = new(
         Faction.Chinese,
         "Κινέζοι",
         ProductionSlots: 6,
-        BuildSpeedPermille: 1500,
+        BuildSpeedPermille: 1_500,
         TechCeiling: 3,
         MoraleFloor: MiVic.Core.Numerics.Fix32.FromRaw(52428), // 0.80
         CostPermille: 700,
         ResearchSpeedPermille: 700,
-        GroundPressurePermille: 1250);
+        GroundPressurePermille: 1250,
+        IncomePermille: 900);
 
     public static readonly FactionProfile Western = new(
         Faction.Western,
         "Δυτικοί",
-        ProductionSlots: 4,
-        BuildSpeedPermille: 1200,
+        ProductionSlots: 3,
+        BuildSpeedPermille: 800,
         TechCeiling: 5,
         MoraleFloor: MiVic.Core.Numerics.Fix32.FromRaw(32768), // 0.50
-        CostPermille: 1100,
+        CostPermille: 2_200,
         ResearchSpeedPermille: 1000,
-        GroundPressurePermille: 1100);
+        GroundPressurePermille: 1100,
+        IncomePermille: 2_500);
 
     /// <summary>All playable factions in stable order.</summary>
     public static readonly FactionProfile[] All = [Soviet, Chinese, Western];

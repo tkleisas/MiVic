@@ -234,6 +234,6 @@ slots rather than from quality.
 - Ground pressure 1250 vs the AI ally: does the Chinese AI still reach the fight in
   mud-heavy maps?
 - The production ordering decided in `DESIGN.md` §7 (Κινέζοι > Σοβιετικοί >
-  Δυτικοί throughput, Δυτικοί rich but unproductive) is **still not applied**. It
-  changes every cost and build-time number, so it should land as one deliberate
-  change with the hashes regenerated.
+  Δυτικοί throughput, Δυτικοί rich but unproductive) is now **applied**, including
+  `IncomePermille`. What is still missing from the Σοβιετικοί two-tier cost is the
+  *cap* on advanced prototypes.

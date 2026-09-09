@@ -160,21 +160,30 @@ The faction asymmetry is data, not special cases. Every building runs
 `ProductionSlots` jobs in parallel and each job takes
 `BaseBuildTicks * 1000 / BuildSpeedPermille`, so a Κινέζοι factory turns out six
 cheap hulls at a time while a Δυτικοί factory works on three very expensive ones.
-The table below still carries the pre-decision numbers; the decided replacement is
-at the end of this section and is not yet applied.
 
 | | Σοβιετικοί | Κινέζοι | Δυτικοί |
 |---|---|---|---|
-| Parallel slots | 2 | 6 | 4 |
-| Build speed | ×0.75 | ×1.50 | ×1.20 |
-| Unit cost | ×1.35 | ×0.70 | ×1.10 |
+| Parallel slots | 4 | 6 | 3 |
+| Build speed | ×1.10 | ×1.50 | ×0.80 |
+| Unit cost | ×0.90 | ×0.70 | ×2.20 |
+| Resource income | ×1.00 | ×0.90 | ×2.50 |
 | Research speed | ×1.25 | ×0.70 | ×1.00 |
-| Tech ceiling | 4 | 2 | 5 |
+| Tech ceiling | 4 | 3 | 5 |
+| Ground pressure | ×0.75 | ×1.25 | ×1.10 |
+
+The ordering is *units produced*, not wealth: per factory the Κινέζοι turn out
+roughly 12.9 units' worth per cycle against 4.9 for the Σοβιετικοί and 1.1 for the
+Δυτικοί. The Δυτικοί are rich rather than productive — a ×2.50 income against a
+×2.20 unit cost means money is never their bottleneck, factory time is. That is why
+they can field gold-plated, over-engineered equipment nobody else could afford, and
+why every loss stings.
 
 - **Resources.** Πόροι come from command centres, Ενέργεια from power plants;
   every other structure draws energy as upkeep, and a team that cannot pay its
   upkeep stops producing. Costs are taken when a unit is queued, so a queue can
-  never hold resources the team does not have.
+  never hold resources the team does not have. **Income scales with the faction's
+  wealth multiplier; upkeep does not** — a rich faction should be able to afford
+  more, not run cheaper.
 - **Tech gating.** Units declare a required tier. Research at the design bureau
   raises the team's tier, capped by the faction ceiling, so no amount of money can
   brute-force past it. The ceiling caps the *era*, and it is 3 for the Κινέζοι:
@@ -184,52 +193,24 @@ at the end of this section and is not yet applied.
   late even so, so the swarm has a window before it exists.
 - **Everything is data.** `UnitCatalog` holds base numbers and `FactionProfile`
   holds the multipliers; no system contains a faction-specific branch.
-- **Σοβιετικοί cost is two-tier, not flat — decided, not yet applied.** The
-  historical Soviet tank was *cheap*: simplified, built in tractor plants, made in
-  tens of thousands, and light on wide tracks so it kept moving in mud where the
-  heavies sank. A flat ×1.35 for the whole army contradicts that and blurs the
-  asymmetry into "Soviets are just pricey". Standard hulls should be cheap and
-  simple — few parts, no electronics, low tech requirement, fast to build — while
-  design-bureau prototypes and electro-artillery stay expensive, slow and capped in
-  number. What cannot be mass-produced is the *technology*, not the tank. Full
-  reasoning and the silhouette consequences are in `docs/ART_PIPELINE.md` §2.1.
-- **Production ordering is Κινέζοι > Σοβιετικοί > Δυτικοί — decided, not yet
-  applied.** The ordering is *units produced*, not wealth. The current table has
-  Σοβιετικοί last and Δυτικοί second, which contradicts both the T-34 lesson and
-  the intended feel. Proposed replacement for the table above:
-
-  | | Σοβιετικοί | Κινέζοι | Δυτικοί |
-  |---|---|---|---|
-  | Parallel slots | 4 | 6 | 3 |
-  | Build speed | ×1.10 | ×1.50 | ×0.80 |
-  | Unit cost | ×0.90 | ×0.70 | ×2.20 |
-  | Resource income | ×1.00 | ×0.90 | ×2.50 |
-  | Research speed | ×1.25 | ×0.70 | ×1.00 |
-  | Tech ceiling | 4 | 3 | 5 |
-
-  Throughput check (slots × build speed ÷ cost): Κινέζοι ≈ 12.9, Σοβιετικοί ≈ 4.9,
-  Δυτικοί ≈ 1.1 — the intended ordering, with Δυτικοί an order of magnitude behind
-  per unit.
-
-  - **Δυτικοί are rich, not productive.** They get a large income multiplier — a
-    new `IncomePermille` in `FactionProfile`, applied to materials, energy and
-    water per tick, since income is currently flat per building with no faction
-    multiplier — but the lowest throughput: few slots, slow build, and
-    *questionably expensive* units. Their bottleneck is factory time and slots,
-    never money. That is precisely why they can field gold-plated, over-engineered
-    equipment nobody else could afford, and why every loss stings: a destroyed
-    unit is a fortune, and it costs morale on top.
-  - **Σοβιετικοί are second in throughput because their designs are cheap and
-    simple**, not because their industry is large. A hull with few parts and no
-    electronics is fast to build in any factory — the T-34 lesson, applied to the
-    factory floor rather than the mud.
-  - **Κινέζοι stay first**, but their units are individually the weakest and their
-    tech ceiling remains the lowest, so volume is the only lever they have.
-
-  Consequence: Δυτικοί lose by *attrition over time*, not by being out-built in a
-  burst, and their counterplay is to avoid trading units at all. It also means
-  income and throughput must be shown separately in the UI, or a Δυτικοί player
-  will see a full bank and an idle factory and read it as a bug.
+- **Production ordering is Κινέζοι > Σοβιετικοί > Δυτικοί — applied.** See the
+  table above. The Σοβιετικοί are second in throughput because their designs are
+  cheap and simple, not because their industry is large — a hull with few parts and
+  no electronics is fast to build in any factory, which is the T-34 lesson applied
+  to the factory floor rather than the mud. The Κινέζοι stay first but their units
+  are individually the weakest and their tech ceiling is the lowest, so volume is
+  their only lever. `IncomePermille` is a separate axis from `CostPermille`: the
+  Δυτικοί are rich and unproductive, and `EconomySystem` scales income but not
+  upkeep, so a rich faction can afford more rather than run cheaper.
+- **Σοβιετικοί cost is two-tier, not flat — partly applied.** Standard hulls are
+  now cheap (×0.90) and the design bureau gates advanced ones behind a prototype
+  run. What is still missing is the *cap*: an advanced prototype is expensive to
+  prove but nothing stops a Σοβιετικοί player fielding twenty of them once it is
+  approved. The cap belongs with the tier-4 prototype content.
+- **Δυτικοί lose by attrition, not by being out-built in a burst**, and their
+  counterplay is to avoid trading units at all. Income and throughput therefore have
+  to be shown separately in the UI, or a Δυτικοί player will see a full bank and an
+  idle factory and read it as a bug.
 - **Κινέζοι tech ceiling is 3, not 2 — applied.** This was a correction rather
   than a buff: §6 already lists Κινέζοι air as "many, cheap", but a ceiling of 2
   meant they could never build an aircraft at all. Three changes landed together:

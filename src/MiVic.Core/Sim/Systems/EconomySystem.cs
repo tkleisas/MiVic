@@ -53,6 +53,11 @@ public static class EconomySystem
 
             ref TeamState state = ref world.TeamRef(entity.TeamId);
 
+            // Income scales with the faction's wealth multiplier; upkeep does not.
+            // A rich faction should be able to afford more, not run cheaper.
+            int income = FactionProfile.For(entity.Faction).IncomePermille;
+            income = income > 0 ? income : 1_000;
+
             switch (entity.Kind)
             {
                 case UnitKind.CommandCentre:
@@ -60,13 +65,13 @@ public static class EconomySystem
                     // power, a team with nothing but a headquarters would sit at
                     // zero energy, and production halts at zero energy — the base
                     // could never build the power plant that would fix it.
-                    state.MaterialsPerTick += CommandCentreMaterials;
-                    state.WaterPerTick += CommandCentreWater;
+                    state.MaterialsPerTick += Scale(CommandCentreMaterials, income);
+                    state.WaterPerTick += Scale(CommandCentreWater, income);
                     break;
 
                 case UnitKind.PowerPlant:
-                    state.EnergyPerTick += PowerPlantEnergy;
-                    state.WaterPerTick += PowerPlantWater;
+                    state.EnergyPerTick += Scale(PowerPlantEnergy, income);
+                    state.WaterPerTick += Scale(PowerPlantWater, income);
                     break;
 
                 case UnitKind.Factory:
@@ -88,4 +93,8 @@ public static class EconomySystem
             state.Water = Math.Max(0, state.Water + state.WaterPerTick);
         }
     }
+
+    /// <summary>Applies a faction's income multiplier to a per-tick yield.</summary>
+    private static int Scale(int amount, int incomePermille)
+        => (amount * incomePermille) / 1_000;
 }

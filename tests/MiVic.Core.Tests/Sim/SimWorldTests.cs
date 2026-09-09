@@ -174,18 +174,40 @@ public sealed class SimWorldTests
     [Fact]
     public void FactionProfiles_EncodeTheAsymmetricDesign()
     {
-        // Σοβιετικοί: best tech ceiling short of the West, worst throughput.
-        Assert.True(FactionProfile.Soviet.ProductionSlots < FactionProfile.Chinese.ProductionSlots);
-        Assert.True(FactionProfile.Soviet.BuildSpeedPermille < FactionProfile.Western.BuildSpeedPermille);
+        // Throughput ordering is Κινέζοι > Σοβιετικοί > Δυτικοί: the ordering is
+        // units produced, not wealth.
+        Assert.True(FactionProfile.Chinese.ProductionSlots > FactionProfile.Soviet.ProductionSlots);
+        Assert.True(FactionProfile.Soviet.ProductionSlots > FactionProfile.Western.ProductionSlots);
+        Assert.True(FactionProfile.Chinese.BuildSpeedPermille > FactionProfile.Soviet.BuildSpeedPermille);
+        Assert.True(FactionProfile.Soviet.BuildSpeedPermille > FactionProfile.Western.BuildSpeedPermille);
 
-        // Κινέζοι: unmatched manufacturing, lowest tech ceiling.
-        Assert.True(FactionProfile.Chinese.BuildSpeedPermille > FactionProfile.Western.BuildSpeedPermille);
+        // Cost runs the same way round, which is why the West's wealth is the only
+        // reason it can field its units at all.
+        Assert.True(FactionProfile.Chinese.CostPermille < FactionProfile.Soviet.CostPermille);
+        Assert.True(FactionProfile.Soviet.CostPermille < FactionProfile.Western.CostPermille);
+        Assert.True(FactionProfile.Western.IncomePermille > FactionProfile.Soviet.IncomePermille);
+
+        // Tech ceilings: Κινέζοι lowest, Δυτικοί highest.
         Assert.True(FactionProfile.Chinese.TechCeiling < FactionProfile.Soviet.TechCeiling);
-
-        // Δυτικοί: highest tech and strong industry, but the most brittle morale.
         Assert.True(FactionProfile.Western.TechCeiling > FactionProfile.Soviet.TechCeiling);
+
+        // Δυτικοί have the most brittle morale.
         Assert.True(FactionProfile.Western.MoraleFloor < FactionProfile.Chinese.MoraleFloor);
         Assert.True(FactionProfile.Western.MoraleFloor < FactionProfile.Soviet.MoraleFloor);
+
+        // The mud is the Σοβιετικοί's friend and the Κινέζοι's enemy.
+        Assert.True(FactionProfile.Soviet.GroundPressurePermille < FactionProfile.Western.GroundPressurePermille);
+        Assert.True(FactionProfile.Western.GroundPressurePermille < FactionProfile.Chinese.GroundPressurePermille);
+    }
+
+    [Fact]
+    public void TheChineseOutProduceEveryonePerFactory()
+    {
+        static double Throughput(FactionProfile profile)
+            => (double)profile.ProductionSlots * profile.BuildSpeedPermille / profile.CostPermille;
+
+        Assert.True(Throughput(FactionProfile.Chinese) > Throughput(FactionProfile.Soviet));
+        Assert.True(Throughput(FactionProfile.Soviet) > Throughput(FactionProfile.Western));
     }
 
     [Fact]
