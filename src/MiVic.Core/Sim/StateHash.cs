@@ -98,6 +98,7 @@ public static class StateHash
             Mix(ref hash, state.VisionPermille);
             Mix(ref hash, state.TerrainResistancePermille);
             Mix(ref hash, state.BonusSlots);
+            Mix(ref hash, state.CohesionPerFriendRaw);
             Mix(ref hash, state.MoraleBonusRaw);
             Mix(ref hash, state.StructuresLost);
             Mix(ref hash, (long)state.ApprovedMask);

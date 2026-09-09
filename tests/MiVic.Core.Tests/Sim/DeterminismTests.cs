@@ -258,5 +258,5 @@ public sealed class DeterminismTests
     /// <summary>Golden hash of the fixed scenario. Regenerate only on a deliberate balance or system change.</summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(16342361439814847214UL, HashScenario(20250101));
+        => Assert.Equal(7403353262860195630UL, HashScenario(20250101));
 }

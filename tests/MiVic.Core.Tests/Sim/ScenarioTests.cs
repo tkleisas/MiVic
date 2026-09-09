@@ -44,7 +44,7 @@ public sealed class ScenarioTests
     /// </summary>
     [Fact]
     public void SkirmishInitialHash_IsStable()
-        => Assert.Equal(16516653938985352595UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
+        => Assert.Equal(7673587934720399731UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
 
     [Fact]
     public void SkirmishLaysOutThreeForcesOfTheRightSize()

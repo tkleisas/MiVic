@@ -28,6 +28,12 @@ public enum TechId : byte
     /// <summary>The Κινέζοι reach the aircraft era, but no further.</summary>
     ChineseAdvance3 = 15,
 
+    /// <summary>Morale rises with the number of nearby friends — the swarm's steadiness.</summary>
+    ChineseCohesion = 16,
+
+    /// <summary>Cheap, early mobility for a faction that has to walk everywhere.</summary>
+    ChineseRoadTransport = 17,
+
     // ---- Δυτικοί: deep and broad, but expensive ----
     WesternNco = 20,
     WesternAdvance2 = 21,
@@ -70,6 +76,12 @@ public enum TechEffect : byte
 
     /// <summary>Adds parallel production slots per building.</summary>
     ParallelSlots = 8,
+
+    /// <summary>
+    /// Raises morale per nearby friendly unit, in Q16.16 raw units. This is the
+    /// swarm's answer to per-unit morale: numbers are the steadiness.
+    /// </summary>
+    Cohesion = 9,
 }
 
 /// <summary>A research project: what it needs, what it costs, what it does.</summary>
@@ -129,6 +141,8 @@ public static class TechCatalog
         new(TechId.ChineseMilitia, Faction.Chinese, "Λαϊκή Πολιτοφυλακή", "+15% θωράκιση", 2, 250, 350, TechId.ChineseAdvance2, TechEffect.Armor, 1150),
         new(TechId.ChineseSwarm, Faction.Chinese, "Τακτική Πλήθους", "+10% ζημιά", 2, 250, 350, TechId.ChineseAdvance2, TechEffect.Damage, 1100),
         new(TechId.ChineseAdvance3, Faction.Chinese, "Επίπεδο 3: Αεροπορία", "Ξεκλειδώνει αεροσκάφη", 2, 500, 700, TechId.ChineseAdvance2, TechEffect.AdvanceTier, 3),
+        new(TechId.ChineseCohesion, Faction.Chinese, "Αριθμητική Συνοχή", "+0.02 ηθικό ανά γειτονική μονάδα (έως +0.20)", 2, 300, 400, TechId.ChineseAdvance2, TechEffect.Cohesion, 1_310),
+        new(TechId.ChineseRoadTransport, Faction.Chinese, "Οδικές Μεταφορές", "+10% ταχύτητα κίνησης", 1, 200, 250, TechId.None, TechEffect.Speed, 1100),
 
         // ---------------- Δυτικοί ----------------
         new(TechId.WesternNco, Faction.Western, "Επαγγελματίες Αξιωματικοί", "+0.10 ηθικό", 1, 350, 400, TechId.None, TechEffect.Morale, 6_554),

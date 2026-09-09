@@ -69,6 +69,7 @@ public static class ResearchSystem
         int vision = 1_000;
         int terrainResistance = 1_000;
         int slots = 0;
+        int cohesion = 0;
         int morale = 0;
 
         foreach (TechProject project in TechCatalog.All)
@@ -103,6 +104,9 @@ public static class ResearchSystem
                 case TechEffect.ParallelSlots:
                     slots += project.Value;
                     break;
+                case TechEffect.Cohesion:
+                    cohesion += project.Value;
+                    break;
                 case TechEffect.Morale:
                     morale += project.Value;
                     break;
@@ -116,6 +120,7 @@ public static class ResearchSystem
         state.VisionPermille = vision;
         state.TerrainResistancePermille = terrainResistance;
         state.BonusSlots = slots;
+        state.CohesionPerFriendRaw = cohesion;
         state.MoraleBonusRaw = morale;
     }
 }

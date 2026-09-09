@@ -193,15 +193,17 @@ production numbers, the ground pressure and one signature:
 | 2 | Αντιαεροπορικό | cheap, plentiful |
 | 3 | Αεροσκάφος | now reachable, and meant to be fielded in numbers |
 
-Two signature mechanics, one already built:
+Two signature mechanics, both now built:
 
-- **Άδεια Παραγωγής (licence production)** — *built*. They build a Soviet design at
+- **Άδεια Παραγωγής (licence production)** — they build a Soviet design at
   Chinese speed, which is how the alliance answers Western technology without
   breaking the "no high era" identity.
-- **Αριθμητική Συνοχή (numerical cohesion)** — *not built*. Morale rises with the
-  number of nearby friends, making the swarm steadier than its individual units
-  look. This is the designed counter to Western per-unit morale and needs a hook in
-  `MoraleSystem.Scan`.
+- **Αριθμητική Συνοχή (numerical cohesion)** — morale rises with the number of
+  nearby friends, making the swarm steadier than its individual units look. It is
+  the designed counter to Western per-unit morale, and the only bonus in the game
+  that scales with *how many* units are present rather than how good they are. The
+  bonus is +0.02 morale per friendly within scan range, capped at +0.20, so a large
+  swarm is steady but never unbreakable.
 
 Ground pressure 1250 makes mud punishing for them, which is deliberate — but they
 are the AI ally in the vertical slice, so it is worth checking that the AI ally
@@ -216,12 +218,12 @@ now aligned with the content.
 |---|---|---|---|---|
 | I | Μαζική Επιστράτευση | 1 | +20 % production speed | built |
 | I | Επίπεδο 2: Τεθωρακισμένα | 1 | → tier 2 | built |
-| I | **Οδικές Μεταφορές** | 1 | +10 % movement speed — cheap and early | proposed |
+| I | **Οδικές Μεταφορές** | 1 | +10 % movement speed — cheap and early | **built** (applies to units built after it) |
 | II | Λαϊκή Πολιτοφυλακή | 2 | +15 % armour | built |
 | II | Τακτική Πλήθους | 2 | +10 % damage | built |
-| II | Επίπεδο 3: Αεροπορία | 2 | → tier 3 | **built** |
+| II | Επίπεδο 3: Αεροπορία | 2 | → tier 3 | built |
+| II | **Αριθμητική Συνοχή** | 2 | +0.02 morale per nearby friend, capped at +0.20 | **built** |
 | II | **Αντιαεροπορικό Δίκτυο** | 2 | +15 % anti-air damage | proposed |
-| II | **Αριθμητική Συνοχή** | 2 | morale floor rises with nearby friendly count | proposed — needs the morale hook |
 
 Every project is cheap and none is deep, which is the point: they are the faction
 whose research is broad and shallow, and whose real scaling comes from parallel

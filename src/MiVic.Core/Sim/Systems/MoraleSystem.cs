@@ -47,6 +47,9 @@ public static class MoraleSystem
     /// <summary>Morale lost per recent casualty, capped at half the bar.</summary>
     private const int CasualtyPenaltyRaw = 2_048;
 
+    /// <summary>Ceiling on the cohesion bonus (0.20), so numbers steady a unit but never make it unbreakable.</summary>
+    public const int MaxCohesionRaw = 13_107;
+
     /// <summary>Runs one morale tick.</summary>
     public static void Tick(SimWorld world)
     {
@@ -159,8 +162,15 @@ public static class MoraleSystem
         ref TeamState team = ref world.TeamRef(entity.TeamId);
         int casualtyPenalty = Math.Min(32_768, team.RecentCasualties * CasualtyPenaltyRaw);
 
+        // Numerical cohesion: numbers are the Κινέζοι answer to per-unit morale.
+        // Capped, so a large swarm is steady but never unbreakable.
+        int cohesion = Math.Min(
+            MaxCohesionRaw,
+            friends * team.CohesionPerFriendRaw);
+
         entity.MoraleTargetRaw = IntMath.Clamp(
-            profile.MoraleFloor.Raw + team.MoraleBonusRaw + auraRaw + (balance / BalanceWeightDivisor) - casualtyPenalty,
+            profile.MoraleFloor.Raw + team.MoraleBonusRaw + auraRaw + cohesion +
+            (balance / BalanceWeightDivisor) - casualtyPenalty,
             0,
             65_536);
 

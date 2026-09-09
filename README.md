@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 278 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 279 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 dotnet run --project src/MiVic.Game
@@ -146,7 +146,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 23 |
 | Pick round-trip | 168/168 |
-| Tests | 295 passing (278 core, 17 audio) |
+| Tests | 296 passing (279 core, 17 audio) |
 
 ### Performance
 

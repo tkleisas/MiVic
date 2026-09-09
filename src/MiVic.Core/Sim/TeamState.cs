@@ -99,6 +99,12 @@ public struct TeamState
     /// <summary>Extra parallel production slots per building, from command automation.</summary>
     public int BonusSlots;
 
+    /// <summary>
+    /// Morale gained per nearby friendly unit, in Q16.16 raw units. This is the
+    /// Κινέζοι answer to per-unit morale: the swarm is steadier than its parts.
+    /// </summary>
+    public int CohesionPerFriendRaw;
+
     /// <summary>Morale floor bonus in Q16.16 raw units.</summary>
     public int MoraleBonusRaw;
 

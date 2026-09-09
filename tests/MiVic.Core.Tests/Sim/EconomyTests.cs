@@ -511,6 +511,57 @@ public sealed class ResearchTests
     }
 
     [Fact]
+    public void ChineseCohesionRaisesMoraleWithNearbyFriends()
+    {
+        static int MoraleTarget(bool withCohesion)
+        {
+            SimWorld world = new(seed: 77, capacity: 32);
+            WorldPos centre = world.Navigation.CentreOf(world.Navigation.NearestWalkable(0));
+
+            world.Spawn(Faction.Chinese, 1, UnitKind.Infantry, centre, Fix32.Zero, 1_000);
+
+            for (int i = 1; i <= 4; i++)
+            {
+                world.Spawn(
+                    Faction.Chinese,
+                    1,
+                    UnitKind.Infantry,
+                    new WorldPos(centre.X + (i * 10_000), 0, centre.Z),
+                    Fix32.Zero,
+                    1_000);
+            }
+
+            // Enough enemies that the force-balance term is negative and the morale
+            // target is not simply clamped at maximum — otherwise cohesion would be
+            // invisible against the ceiling.
+            for (int i = 1; i <= 6; i++)
+            {
+                world.Spawn(
+                    Faction.Soviet,
+                    0,
+                    UnitKind.Infantry,
+                    new WorldPos(centre.X - (i * 10_000), 0, centre.Z),
+                    Fix32.Zero,
+                    1_000);
+            }
+
+            if (withCohesion)
+            {
+                world.TeamRef(1).TechMask |= 1UL << (int)TechId.ChineseCohesion;
+                ResearchSystem.RefreshModifiers(ref world.TeamRef(1));
+            }
+
+            world.RunTicks(MoraleSystem.ScanInterval + 1);
+            return world.GetRefBySlot(0).MoraleTargetRaw;
+        }
+
+        int without = MoraleTarget(withCohesion: false);
+        int with = MoraleTarget(withCohesion: true);
+
+        Assert.True(with > without, $"Cohesion did not steady the unit ({without} -> {with}).");
+    }
+
+    [Fact]
     public void EraFourExistsAndTheSovietCeilingReachesIt()
     {
         Assert.True(TechCatalog.TryGet(TechId.SovietAdvance4, out TechProject era4));
