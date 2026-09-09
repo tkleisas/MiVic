@@ -38,6 +38,19 @@ public sealed class DeterminismTests
             world.Spawn(faction, team, UnitKind.Tank, start, Fix32.FromInt(speed), 100 + i);
         }
 
+        // Each team gets an economy, so the golden hash actually depends on income,
+        // costs and build times. Without buildings the scenario spawns units
+        // directly and the whole production system is invisible to this test — the
+        // production-ordering change did not move the hash at all.
+        for (int team = 0; team < FactionProfile.All.Length; team++)
+        {
+            Faction faction = FactionProfile.All[team].Faction;
+            int x = -200 + (team * 150);
+
+            world.Spawn(faction, team, UnitKind.CommandCentre, WorldPos.GroundMetres(x, -200), Fix32.Zero, 5_000);
+            world.Spawn(faction, team, UnitKind.PowerPlant, WorldPos.GroundMetres(x, -160), Fix32.Zero, 1_200);
+        }
+
         return world;
     }
 
@@ -245,5 +258,5 @@ public sealed class DeterminismTests
     /// <summary>Golden hash of the fixed scenario. Regenerate only on a deliberate balance or system change.</summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(13439402377621095370UL, HashScenario(20250101));
+        => Assert.Equal(16342361439814847214UL, HashScenario(20250101));
 }
