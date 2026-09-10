@@ -197,6 +197,11 @@ public sealed class TerrainLayer
         // grass in it.
         uint[] attributes = GenerateAttributes(types, size, grid, map, stride, waterLevel, relief, seed);
 
+        // Aspect and landform are the two fields that are not facts about the cell: they
+        // are facts about the cell *and its neighbours*, and they are read off the height
+        // field rather than off the surface, so they are a pass of their own.
+        GenerateShape(attributes, size, map, stride);
+
         return new TerrainLayer(
             size,
             grid.CellSizeMm,
@@ -716,6 +721,70 @@ public sealed class TerrainLayer
 
     /// <summary>Wetness permille a cell loses per 1000 mm/m of slope, as a hillside drains.</summary>
     private const int MoistureDrainPermille = 500;
+
+    /// <summary>
+    /// How many navigation cells out aspect and landform sample the ground the cell's shape
+    /// is decided from. One, so the eight ring samples are the anchors of the eight
+    /// neighbouring navigation cells: the shape is then read over the same ground the
+    /// lattice itself calls one cell across, and the two height samples inside the cell
+    /// cannot outvote it.
+    /// </summary>
+    public const int ShapeRadiusCells = 1;
+
+    /// <summary>
+    /// How many navigation cells out the shape pass looks for the ground a level cell sits
+    /// among — the fetch that decides whether flat ground is a plateau, a basin or a shelf.
+    /// Further out than the ring, because "high relative to its surroundings" is not a claim
+    /// a cell can make about ground at its own edge, and far enough that the fetch sees the
+    /// next landform rather than the same bump twice.
+    /// </summary>
+    public const int ShapeFetchCells = 3;
+
+    /// <summary>
+    /// Generates the aspect and the landform of every cell.
+    /// <para>
+    /// Sampled on the <em>height map</em> rather than on the navigation heights. Aspect is a
+    /// property of the ground, the finer field carries more of it, and the surface's own
+    /// slope already comes from the height map at this very sample — reading the coarse
+    /// lattice here instead would leave one layer holding two terrains to disagree about.
+    /// The cell still gets one direction, because the ring is drawn at the stride: its eight
+    /// samples are the anchors of the eight neighbouring navigation cells, so the answer is
+    /// a direction over the cell's own footprint rather than over half of it.
+    /// </para>
+    /// <para>
+    /// A pure function of the height field and the lattice: no seed, no floating point, and
+    /// no dependence on the order cells are visited.
+    /// </para>
+    /// </summary>
+    private static void GenerateShape(uint[] attributes, int size, HeightMap map, int stride)
+    {
+        Span<int> ring = stackalloc int[TerrainShape.RingSamples];
+        Span<int> far = stackalloc int[TerrainShape.RingSamples];
+        ReadOnlySpan<int> heights = map.RawHeights;
+        int radius = ShapeRadiusCells * stride;
+        int fetch = ShapeFetchCells * stride;
+        int ringMm = radius * map.CellSizeMm;
+        int farMm = fetch * map.CellSizeMm;
+
+        for (int z = 0; z < size; z++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                int index = (z * size) + x;
+                int sampleX = Math.Min(x * stride, map.Size - 1);
+                int sampleZ = Math.Min(z * stride, map.Size - 1);
+                int height = map.HeightAt(sampleX, sampleZ);
+
+                TerrainShape.SampleRing(heights, map.Size, sampleX, sampleZ, radius, ring);
+                TerrainShape.SampleRing(heights, map.Size, sampleX, sampleZ, fetch, far);
+
+                attributes[index] = new TerrainAttributes(attributes[index])
+                    .WithAspect(TerrainShape.AspectOf(ring, ringMm))
+                    .WithLandform(TerrainShape.LandformOf(ring, far, height, ringMm, farMm))
+                    .Raw;
+            }
+        }
+    }
 
     /// <summary>
     /// Generates the attribute word of every cell.

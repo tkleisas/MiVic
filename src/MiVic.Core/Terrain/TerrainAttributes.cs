@@ -74,13 +74,20 @@ public readonly struct TerrainAttributes : IEquatable<TerrainAttributes>
     /// <summary>Returns a copy with the moisture set.</summary>
     public TerrainAttributes WithMoisture(int value) => new(Write(MoistureShift, MoistureBits, value));
 
-    /// <summary>The way the ground faces, 0-7, or <see cref="FlatAspect"/> where it does not.</summary>
+    /// <summary>
+    /// The way the ground faces, 0-7, or <see cref="FlatAspect"/> where it does not.
+    /// <see cref="TerrainShape"/> is where the eight ids are spelled out and where the
+    /// generator that writes them lives.
+    /// </summary>
     public int Aspect => Read(AspectShift, AspectBits);
 
     /// <summary>Returns a copy with the aspect set.</summary>
     public TerrainAttributes WithAspect(int value) => new(Write(AspectShift, AspectBits, value));
 
-    /// <summary>Which landform the cell sits on, 0-7. See <see cref="MaxLandform"/>.</summary>
+    /// <summary>
+    /// Which landform the cell sits on, 0-7. See <see cref="MaxLandform"/> and
+    /// <see cref="TerrainShape"/>, which defines what each of the eight means.
+    /// </summary>
     public int Landform => Read(LandformShift, LandformBits);
 
     /// <summary>Returns a copy with the landform set.</summary>

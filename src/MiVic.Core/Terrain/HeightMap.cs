@@ -50,6 +50,13 @@ public sealed class HeightMap
     /// <summary>Height at a lattice index.</summary>
     public int HeightAtIndex(int index) => _heights[index];
 
+    /// <summary>
+    /// Every height, row major. The attribute generator reads a neighbourhood around each
+    /// cell, and a span it can index is what lets that walk be eight lookups rather than
+    /// eight calls that clamp a coordinate each.
+    /// </summary>
+    public ReadOnlySpan<int> RawHeights => _heights;
+
     /// <summary>Converts a world coordinate to the nearest lattice index.</summary>
     public int CellOf(int worldMm) => IntMath.Clamp((worldMm - OriginMm) / CellSizeMm, 0, Size - 1);
 

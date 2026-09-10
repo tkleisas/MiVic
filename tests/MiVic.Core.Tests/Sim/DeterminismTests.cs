@@ -259,14 +259,15 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by the terrain attributes: every cell now carries a second word —
-    /// canopy density, moisture, and the bits the fire step will write — and that word is
-    /// folded into the state hash, so every hash of a world moved with it. Before that it
-    /// was moved by the terrain bands, which are cut from the map's relief and stacked in
-    /// order so that sand and snow can appear at all.
+    /// Last changed by aspect and landform, which fill two more fields of the attribute word
+    /// from the height field: the word is hashed, so a ground that faces somewhere new is a
+    /// state that has moved. Before that it was the terrain attributes themselves — canopy
+    /// density, moisture and the bits the fire step will write. Before *that* it was the
+    /// terrain bands, which are cut from the map's relief and stacked in order so that sand
+    /// and snow can appear at all.
     /// </para>
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(14384559235790102999UL, HashScenario(20250101));
+        => Assert.Equal(17839250894260355520UL, HashScenario(20250101));
 }

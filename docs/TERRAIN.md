@@ -49,7 +49,7 @@ parallel array.
 |---|---|---|
 | 0–7 | `Vegetation` | canopy density, 0 bare to 255 closed |
 | 8–11 | `Moisture` | how wet the ground is, 0–15 |
-| 12–15 | `Aspect` | the way the ground faces: 0–7 compass points, 8 flat, 9–15 unused |
+| 12–15 | `Aspect` | the way the ground falls: 0–7 compass points, 8 flat, 9–15 unused |
 | 16–19 | `Landform` | 0 plain, 1 slope, 2 ridge, 3 valley, 4 pass, 5 plateau, 6 basin, 7 shelf |
 | 20–23 | `Fuel` | how much there is left to burn, **scaled** from the vegetation because 8 bits do not fit in 4 — a closed canopy is 15 and bare ground is 0; falls as it burns |
 | 24 | `Burning` | fire is in this cell now |
@@ -62,10 +62,39 @@ parallel array.
 A `TerrainAttributes` wrapper with named accessors over the `uint`, never raw bit
 twiddling at the call site.
 
-**Stored versus derived:** `Vegetation`, `Moisture`, `Landform`, `Fuel` and the flags
-are generated and stored. `Aspect` is stored because it is a *neighbourhood* fact —
-every other field is a point fact, and recomputing aspect per query would mean reading
-three cells to answer a question about one.
+**Stored versus derived:** `Vegetation`, `Moisture`, `Aspect`, `Landform`, `Fuel` and the
+flags are generated and stored. The two shape fields are stored because both are
+*neighbourhood* facts — an aspect needs the ground around a cell to know which way it
+falls, and a pass is a saddle, which is four neighbours in a particular arrangement — so
+deriving either per query would mean reading a ring of cells to answer a question about
+one. The rest are point facts.
+
+**Both shape fields are built now, and their precise definitions live in
+`src/MiVic.Core/Terrain/TerrainShape.cs` rather than here**, because they are a set of
+thresholds calibrated against the actual terrain and a doc that drifts from the code is
+worse than one that points at it:
+
+- **Aspect: 0 is east (+X)** and the ids turn 45° towards +Z (south), so 1 is south-east
+  through to 7 north-east, and 8 is flat. It is the direction the ground **falls**, so a
+  hill rising to the north faces south. The rotation is deliberately the same one
+  `Entity.Heading` uses, so a unit's heading and a cell's aspect can be compared without a
+  second angle convention. Eight sectors come from the signs of two integer gradients plus
+  one dominance comparison — `Atan2` is not used and cannot be, since the diagonal
+  boundary is irrational and would need floating point to place exactly.
+- **Landform precedence, most specific first: pass → plateau → basin → shelf → ridge →
+  valley → slope → plain.** The order is the design: a saddle satisfies several
+  descriptions, and ridge/valley must be tested *after* the level shapes, because a crest
+  is ground that falls away *at* the cell and testing it first swallows the top of every
+  plateau. Measured, not assumed — the first cut of the order gave zero plateaus and zero
+  basins on the map, which is the sand-band failure mode again.
+- Landform says **nothing about whether ground is passable.** Lava and rock have a shape;
+  the shape is a property of the ground rather than of movement, and keeping those separate
+  is why a lava-filled caldera can still be a basin.
+
+**A step that adds a field will break the previous step's test that pinned it at zero.**
+Step 1 shipped a test asserting the ungenerated fields were zero everywhere, which is what
+makes starting to generate one fail loudly; step 2 therefore had to relax it. That is the
+mechanism working, and it is worth expecting rather than being surprised by.
 
 **The scales are anchored, because a threshold means nothing without one.** `Moisture`
 is 15 at standing water — every water cell is 15, by rule — and falls to 0 at the

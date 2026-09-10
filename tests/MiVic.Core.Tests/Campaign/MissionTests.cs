@@ -268,14 +268,15 @@ public sealed class MissionTests
         // catches a change to the mission layouts that a replay would otherwise
         // reproduce faithfully but wrongly.
         //
-        // Last changed by the terrain attributes: every cell of every mission's ground
-        // now carries canopy density and moisture in a second word, and that word is part
-        // of the state hash.
+        // Last changed by aspect and landform: every cell of every mission's ground now carries
+        // the way it faces and the shape it is, and both are part of the state hash. Before
+        // that it was the terrain attributes, which put canopy density and moisture in a second
+        // word per cell.
         ulong[] expected =
         [
-            8026765886933108591UL,
-            12864648431666998699UL,
-            17539127846284617590UL,
+            17638114715606790532UL,
+            386865953345905344UL,
+            15572084829334274781UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)
