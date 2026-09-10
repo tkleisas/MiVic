@@ -967,7 +967,7 @@ public sealed class MiVicGame : XnaGame
                 // The blast bodies are the one particle effect with a surface, so they
                 // go through the lit-technique slot with their own pixel shader rather
                 // than through the billboard passes.
-                _renderer.BeginParticles(InstancedRenderer.ParticleBlend.Additive, forBlast: true);
+                _renderer.BeginParticles(InstancedRenderer.ParticleBlend.Additive, InstancedRenderer.ParticlePass.Blast);
                 _renderer.Draw(_blastMesh, particles.BlastInstances, particles.BlastCount);
                 _renderer.EndParticles();
                 _drawCalls++;
@@ -2731,7 +2731,12 @@ public sealed class MiVicGame : XnaGame
 
         if (shells.AdditiveCount > 0)
         {
-            _renderer!.BeginParticles(InstancedRenderer.ParticleBlend.Additive);
+            // Tracers get their own shader. The billboard one shades radially from the
+            // mesh's own coordinates, and a round is drawn with a cube — which has no
+            // vertex anywhere near the middle of a face, so its falloff is zero at every
+            // vertex and interpolates to zero everywhere. Every tracer, flak round and
+            // electric arc was drawn completely transparent.
+            _renderer!.BeginParticles(InstancedRenderer.ParticleBlend.Additive, InstancedRenderer.ParticlePass.Tracer);
             _renderer.Draw(_projectileMesh, shells.AdditiveInstances, shells.AdditiveCount);
             _renderer.EndParticles();
             _drawCalls++;

@@ -55,11 +55,11 @@ struct VertexOutput
     float4 Tint     : TEXCOORD7;
 
     // The vertex's own position inside its mesh, before any transform. Particles use
-    // it to work out how far a pixel is from the middle of the quad, which is what
-    // turns a square into a puff of smoke: the mesh is a unit quad, so its own
-    // coordinates are the only radial coordinate the shader needs, and it needs
-    // nothing added to the vertex format to get them.
-    float2 Local    : TEXCOORD1;
+    // its xy to work out how far a pixel is from the middle of the quad, which is what
+    // turns a square into a puff of smoke; tracers use its z to fade along the length
+    // of a round. Three components rather than two because a round is drawn with a
+    // cube and there is no vertex at the middle of one of its faces.
+    float3 Local    : TEXCOORD1;
 };
 
 VertexOutput MainVS(VertexInput input, InstanceInput instance)
@@ -73,7 +73,7 @@ VertexOutput MainVS(VertexInput input, InstanceInput instance)
     output.Material = input.Color;
     output.Tint = instance.Color;
     output.WorldPos = worldPosition.xyz;
-    output.Local = input.Position.xy;
+    output.Local = input.Position.xyz;
     return output;
 }
 
@@ -151,11 +151,11 @@ float4 ParticlePS(VertexOutput input) : COLOR0
     // Particles are unlit by design, and their mesh is plain white: the colour
     // and the fade both come from the per-particle instance tint.
     float3 color = input.Material.rgb * input.Tint.rgb;
-    float opacity = input.Material.a * input.Tint.a * ParticleMask(input.Local);
+    float opacity = input.Material.a * input.Tint.a * ParticleMask(input.Local.xy);
 
     // A hot particle is brighter in the middle and cooler at its edge, which is
     // what stops a spark being a flat dot and makes fire look like fire.
-    float core = saturate(1.0 - (length(input.Local) * 2.4));
+    float core = saturate(1.0 - (length(input.Local.xy) * 2.4));
     color *= 0.75 + (core * 0.75);
 
     // Distance fog still applies, so a smoke column far away sits in the haze
@@ -204,6 +204,41 @@ float4 BlastPS(VertexOutput input) : COLOR0
     return float4(lerp(finalColor, FogColor.rgb, fogAmount), opacity);
 }
 
+// -----------------------------------------------------------------------------
+// Tracers: a round in flight, drawn as a streak rather than as a card or a puff.
+//
+// It cannot use the billboard shader. That one computes a radial falloff from the
+// mesh's own coordinates, which works because a quad has vertices running from its
+// centre to its edge — but a round is drawn with a cube, and a cube has no vertex
+// anywhere near the middle of a face. Every vertex of it is a corner, so the falloff
+// is zero at all of them and interpolates to zero across the whole surface: every
+// tracer, every flak round and every electric arc has been drawn completely
+// transparent.
+//
+// This shader shades along the round's length instead, which is the direction a
+// tracer actually varies in: solid through the middle, tapering at the two ends so
+// it does not read as a bar with cut ends.
+// -----------------------------------------------------------------------------
+
+float4 TracerPS(VertexOutput input) : COLOR0
+{
+    float3 color = input.Material.rgb * input.Tint.rgb;
+
+    float along = saturate(abs(input.Local.z) * 2.0);
+    float taper = saturate(1.2 - along);
+
+    // Hot in the middle of the streak as well as along it, so the core of a tracer is
+    // brighter than its edges at the distance the game is actually played at.
+    float3 finalColor = color * (0.9 + (0.6 * taper));
+    float opacity = input.Material.a * input.Tint.a * taper;
+
+    float distanceToCamera = length(input.WorldPos - CameraPosition);
+    float fogRange = max(FogEnd - FogStart, 0.001);
+    float fogAmount = saturate((distanceToCamera - FogStart) / fogRange) * FogColor.a;
+
+    return float4(lerp(finalColor, FogColor.rgb, fogAmount), opacity);
+}
+
 technique Instanced
 {
     pass P0
@@ -219,6 +254,15 @@ technique Particles
     {
         VertexShader = compile VS_SHADERMODEL MainVS();
         PixelShader  = compile PS_SHADERMODEL ParticlePS();
+    }
+};
+
+technique Tracer
+{
+    pass P0
+    {
+        VertexShader = compile VS_SHADERMODEL MainVS();
+        PixelShader  = compile PS_SHADERMODEL TracerPS();
     }
 };
 

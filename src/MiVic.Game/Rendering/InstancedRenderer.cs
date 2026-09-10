@@ -88,6 +88,23 @@ public sealed class InstancedRenderer : IDisposable
         Additive = 1,
     }
 
+    /// <summary>
+    /// Which unlit shader an unlit pass draws with. They are not interchangeable: a
+    /// billboard is shaded radially from its own coordinates, a blast body from which
+    /// way each facet faces the camera, and a tracer along its length.
+    /// </summary>
+    public enum ParticlePass
+    {
+        /// <summary>Camera-facing cards: smoke, dust, sparks, fire, debris.</summary>
+        Billboard = 0,
+
+        /// <summary>Spheres with a surface: the body of a detonation.</summary>
+        Blast = 1,
+
+        /// <summary>Streaks along their length: rounds in flight.</summary>
+        Tracer = 2,
+    }
+
     private ParticleBlend _particleBlend = ParticleBlend.Alpha;
     private bool _particles;
 
@@ -119,17 +136,24 @@ public sealed class InstancedRenderer : IDisposable
     /// <see cref="Begin"/> first; <see cref="EndParticles"/> switches back.
     /// </summary>
     /// <param name="blend">How the pass composites.</param>
-    /// <param name="forBlast">
-    /// Selects the blast-body shader instead of the billboard one. A blast body is a
-    /// sphere with a real surface — its shading comes from which way each facet faces
-    /// the camera — where every other particle is a camera-facing card whose shading
-    /// comes from a radial falloff.
+    /// <param name="pass">
+    /// Which unlit shader to use. The three are not interchangeable: a billboard is
+    /// shaded radially from its own coordinates, a blast body from which way each
+    /// facet faces the camera, and a tracer along its length. Drawing one with
+    /// another's shader is how a round ends up invisible — a cube has no vertex near
+    /// the middle of a face, so a radial falloff is zero across all of it.
     /// </param>
-    public void BeginParticles(ParticleBlend blend, bool forBlast = false)
+    public void BeginParticles(ParticleBlend blend, ParticlePass pass = ParticlePass.Billboard)
     {
         _particles = true;
         _particleBlend = blend;
-        _effect.CurrentTechnique = _effect.Techniques[forBlast ? "Blast" : "Particles"];
+        _effect.CurrentTechnique = _effect.Techniques[pass switch
+        {
+            ParticlePass.Blast => "Blast",
+            ParticlePass.Tracer => "Tracer",
+            _ => "Particles",
+        }];
+
         _effect.CurrentTechnique.Passes[0].Apply();
     }
 
