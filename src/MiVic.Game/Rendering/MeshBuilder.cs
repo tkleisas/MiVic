@@ -63,6 +63,63 @@ public static class MeshBuilder
     }
 
     /// <summary>
+    /// A low-poly sphere centred on the origin, radius 1.
+    /// <para>
+    /// Faceted on purpose, and coarse: it is the body of an explosion, seen for a
+    /// fifth of a second while it expands, and a smooth sphere would cost vertices to
+    /// look like a bad ball where a faceted one looks like a deliberate one. Twelve
+    /// segments and eight rings is 96 triangles, which is nothing to draw a hundred of.
+    /// </para>
+    /// <para>
+    /// Unit radius rather than a radius in metres, so the caller scales it: a blast
+    /// grows, and its mesh should not have to.
+    /// </para>
+    /// </summary>
+    public static MeshData Sphere(int segments = 12, int rings = 8)
+    {
+        var vertices = new List<VertexPositionNormal>((segments + 1) * (rings + 1));
+        var indices = new List<ushort>(segments * rings * 6);
+
+        for (int ring = 0; ring <= rings; ring++)
+        {
+            // Top to bottom, so the poles are single vertices rather than a fan of
+            // coincident ones.
+            float phi = MathF.PI * ring / rings;
+            float y = MathF.Cos(phi);
+            float r = MathF.Sin(phi);
+
+            for (int segment = 0; segment <= segments; segment++)
+            {
+                float theta = MathF.Tau * segment / segments;
+                var normal = new Vector3(r * MathF.Cos(theta), y, r * MathF.Sin(theta));
+
+                vertices.Add(new VertexPositionNormal(normal, normal));
+            }
+        }
+
+        int stride = segments + 1;
+
+        for (int ring = 0; ring < rings; ring++)
+        {
+            for (int segment = 0; segment < segments; segment++)
+            {
+                ushort a = (ushort)((ring * stride) + segment);
+                ushort b = (ushort)(a + stride);
+
+                indices.Add(a);
+                indices.Add(b);
+                indices.Add((ushort)(a + 1));
+
+                indices.Add((ushort)(a + 1));
+                indices.Add(b);
+                indices.Add((ushort)(b + 1));
+            }
+        }
+
+        return new MeshData([.. vertices], [.. indices]);
+    }
+
+    /// <summary>
     /// A flat annulus in the XY plane, centred on the origin.
     /// <para>
     /// A shockwave drawn with <see cref="Quad"/> is a filled square that grows, which

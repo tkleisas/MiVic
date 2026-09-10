@@ -53,6 +53,13 @@ struct VertexOutput
     float4 Material : COLOR0;
     float3 WorldPos : TEXCOORD6;
     float4 Tint     : TEXCOORD7;
+
+    // The vertex's own position inside its mesh, before any transform. Particles use
+    // it to work out how far a pixel is from the middle of the quad, which is what
+    // turns a square into a puff of smoke: the mesh is a unit quad, so its own
+    // coordinates are the only radial coordinate the shader needs, and it needs
+    // nothing added to the vertex format to get them.
+    float2 Local    : TEXCOORD1;
 };
 
 VertexOutput MainVS(VertexInput input, InstanceInput instance)
@@ -66,6 +73,7 @@ VertexOutput MainVS(VertexInput input, InstanceInput instance)
     output.Material = input.Color;
     output.Tint = instance.Color;
     output.WorldPos = worldPosition.xyz;
+    output.Local = input.Position.xy;
     return output;
 }
 
@@ -116,14 +124,39 @@ float4 MainPS(VertexOutput input) : COLOR0
 // no new vertex format — but no lighting either. A smoke puff lit by the sun
 // would read as a solid lump; what sells it is the per-particle colour and alpha
 // fading out over its life, which the CPU already computed.
+//
+// What the pixel shader adds is a round edge. The mesh is a unit quad, so
+// `Local` runs -0.5..0.5 across it and its length is a radial coordinate for
+// free: without it every puff, every spark and every wisp of smoke is a square,
+// and a battlefield is a field of small drifting squares.
 // -----------------------------------------------------------------------------
+
+/// <summary>
+/// How opaque this pixel of a quad particle is, 1 in the middle and 0 at the rim.
+///
+/// Squared rather than linear: a linear ramp leaves a visible square edge at the
+/// corners, because the distance to a corner is longer than to the middle of an
+/// edge. Squaring pulls the falloff in so the shape reads as a disc.
+/// </summary>
+float ParticleMask(float2 local)
+{
+    float r = saturate(length(local) * 2.0);
+    float soft = 1.0 - (r * r);
+
+    return soft * soft * (1.0 + (0.35 * soft));
+}
 
 float4 ParticlePS(VertexOutput input) : COLOR0
 {
     // Particles are unlit by design, and their mesh is plain white: the colour
     // and the fade both come from the per-particle instance tint.
     float3 color = input.Material.rgb * input.Tint.rgb;
-    float opacity = input.Material.a * input.Tint.a;
+    float opacity = input.Material.a * input.Tint.a * ParticleMask(input.Local);
+
+    // A hot particle is brighter in the middle and cooler at its edge, which is
+    // what stops a spark being a flat dot and makes fire look like fire.
+    float core = saturate(1.0 - (length(input.Local) * 2.4));
+    color *= 0.75 + (core * 0.75);
 
     // Distance fog still applies, so a smoke column far away sits in the haze
     // like everything else rather than glowing through it.
@@ -132,6 +165,43 @@ float4 ParticlePS(VertexOutput input) : COLOR0
     float fogAmount = saturate((distanceToCamera - FogStart) / fogRange) * FogColor.a;
 
     return float4(lerp(color, FogColor.rgb, fogAmount), opacity);
+}
+
+// -----------------------------------------------------------------------------
+// Blast bodies: the fireball of a large explosion, as a ball rather than a card.
+//
+// A billboard is the right shape for smoke, which is a soft thing with no
+// surface. It is the wrong shape for the first instant of a detonation, which has
+// a definite volume: drawn flat it reads as a rectangle of orange that grows. A
+// low-poly sphere with this shading reads as something with a front and a back.
+//
+// Shaded additively from the interpolated normal, so the middle of the ball —
+// where the surface faces the camera — is the hottest part and the rim, where it
+// turns away, is cooler and dimmer. That is the opposite of a lit sphere, and it
+// is what a ball of fire actually looks like.
+// -----------------------------------------------------------------------------
+
+float4 BlastPS(VertexOutput input) : COLOR0
+{
+    float3 normal = normalize(input.Normal);
+    float3 toCamera = normalize(CameraPosition - input.WorldPos);
+    float facing = saturate(dot(normal, toCamera));
+
+    float3 color = input.Material.rgb * input.Tint.rgb;
+
+    // Facets, not a smooth gradient: this is a low-poly ball on purpose, and
+    // flattening the shading would only make it look like a bad sphere.
+    float core = pow(facing, 1.35);
+    float shell = pow(1.0 - facing, 2.0) * 0.45;
+
+    float3 finalColor = color * (0.35 + (core * 1.15) + shell);
+    float opacity = input.Material.a * input.Tint.a * (0.35 + (core * 0.8));
+
+    float distanceToCamera = length(input.WorldPos - CameraPosition);
+    float fogRange = max(FogEnd - FogStart, 0.001);
+    float fogAmount = saturate((distanceToCamera - FogStart) / fogRange) * FogColor.a;
+
+    return float4(lerp(finalColor, FogColor.rgb, fogAmount), opacity);
 }
 
 technique Instanced
@@ -149,5 +219,14 @@ technique Particles
     {
         VertexShader = compile VS_SHADERMODEL MainVS();
         PixelShader  = compile PS_SHADERMODEL ParticlePS();
+    }
+};
+
+technique Blast
+{
+    pass P0
+    {
+        VertexShader = compile VS_SHADERMODEL MainVS();
+        PixelShader  = compile PS_SHADERMODEL BlastPS();
     }
 };

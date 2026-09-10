@@ -118,11 +118,18 @@ public sealed class InstancedRenderer : IDisposable
     /// Switches to the unlit particle technique. The caller must call
     /// <see cref="Begin"/> first; <see cref="EndParticles"/> switches back.
     /// </summary>
-    public void BeginParticles(ParticleBlend blend)
+    /// <param name="blend">How the pass composites.</param>
+    /// <param name="forBlast">
+    /// Selects the blast-body shader instead of the billboard one. A blast body is a
+    /// sphere with a real surface — its shading comes from which way each facet faces
+    /// the camera — where every other particle is a camera-facing card whose shading
+    /// comes from a radial falloff.
+    /// </param>
+    public void BeginParticles(ParticleBlend blend, bool forBlast = false)
     {
         _particles = true;
         _particleBlend = blend;
-        _effect.CurrentTechnique = _effect.Techniques["Particles"];
+        _effect.CurrentTechnique = _effect.Techniques[forBlast ? "Blast" : "Particles"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
 

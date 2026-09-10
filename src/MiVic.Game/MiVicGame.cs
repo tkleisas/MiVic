@@ -80,6 +80,7 @@ public sealed class MiVicGame : XnaGame
     private InstancedRenderer.Mesh? _axisMesh;
     private InstancedRenderer.Mesh? _particleMesh;
     private InstancedRenderer.Mesh? _ringMesh;
+    private InstancedRenderer.Mesh? _blastMesh;
     private InstancedRenderer.Mesh? _projectileMesh;
     private SingleBatch? _axisBatch;
     private SingleBatch? _markerBatch;
@@ -466,6 +467,10 @@ public sealed class MiVicGame : XnaGame
         // A shockwave needs to be a ring rather than a filled square, so it gets its
         // own geometry and its own instance list.
         _ringMesh = _renderer.CreateMesh(MeshBuilder.Ring(0.74f, 1f, 28));
+
+        // Blast bodies are spheres, for the same reason: the first instant of an
+        // explosion has a volume, and a billboard does not.
+        _blastMesh = _renderer.CreateMesh(MeshBuilder.Sphere(12, 8));
 
         // Rounds in flight are solid geometry, so they need a cube rather than a
         // quad: centred on the origin, because a round is placed by where it is.
@@ -937,6 +942,18 @@ public sealed class MiVicGame : XnaGame
                 _renderer.EndParticles();
                 _drawCalls++;
                 _instancesSubmitted += particles.RingCount;
+            }
+
+            if (particles.BlastCount > 0 && _blastMesh is not null)
+            {
+                // The blast bodies are the one particle effect with a surface, so they
+                // go through the lit-technique slot with their own pixel shader rather
+                // than through the billboard passes.
+                _renderer.BeginParticles(InstancedRenderer.ParticleBlend.Additive, forBlast: true);
+                _renderer.Draw(_blastMesh, particles.BlastInstances, particles.BlastCount);
+                _renderer.EndParticles();
+                _drawCalls++;
+                _instancesSubmitted += particles.BlastCount;
             }
         }
 
@@ -2789,9 +2806,15 @@ public sealed class MiVicGame : XnaGame
     private Vector3 _effectGridCentre;
 
     /// <summary>
-    /// Finds a spot the player's team can see, to lay the effect grid on. The first
-    /// unit of the player's team is the honest answer: its surroundings are visible by
-    /// definition, and the demo needs no special case in the fog rules.
+    /// Finds a spot the player's team can see, on dry land, to lay the effect grid on.
+    /// <para>
+    /// Three things have to be true of it, and each one cost a render to find out. It
+    /// has to be somewhere the player can see, because particles are drawn under the
+    /// fog overlay and a grid on unseen ground is a grid of fog. It has to be on land,
+    /// because a grid laid out on a lake draws its effects on the lake bed, under the
+    /// water. And it has to be anchored to a ground unit, because an aircraft's
+    /// position is tens of metres up and moving.
+    /// </para>
     /// </summary>
     private Vector3 FindVisibleFixtureCentre()
     {
@@ -2811,28 +2834,57 @@ public sealed class MiVicGame : XnaGame
 
             ref Entity entity = ref world.GetRefBySlot(slot);
 
-            if (entity.TeamId != PlayerTeam)
+            if (entity.TeamId != PlayerTeam || entity.Kind is UnitKind.Aircraft or UnitKind.Drone)
             {
                 continue;
             }
 
-            // A ground unit, not a flyer. An aircraft's position is tens of metres up
-            // and moving, so a grid laid out around one is a grid laid out in the sky.
-            if (entity.Kind is UnitKind.Aircraft or UnitKind.Drone)
-            {
-                continue;
-            }
-
-            // One cell diagonally from the unit itself: far enough that the grid is not
-            // drawn on top of it, near enough that the whole grid is inside the vision
-            // that unit provides — which is the only reason the effects will be visible
-            // rather than fogged.
+            // One cell diagonally from the unit itself: clear of the unit, and well
+            // inside the vision it provides.
             Vector3 position = _simulation.GetRenderPosition(slot, interpolate: false);
+            var centre = new Vector3(position.X + EffectGridPitch, 0f, position.Z + EffectGridPitch);
 
-            return new Vector3(position.X + EffectGridPitch, 0f, position.Z + EffectGridPitch);
+            if (IsDryLand(world, centre))
+            {
+                return centre;
+            }
         }
 
         return Vector3.Zero;
+    }
+
+    /// <summary>
+    /// True when the effect grid laid out at <paramref name="centre"/> would be on dry
+    /// land: every cell, not just the middle, since one corner in a lake is one effect
+    /// drawn underwater.
+    /// </summary>
+    private static bool IsDryLand(SimWorld world, Vector3 centre)
+    {
+        TerrainLayer terrain = world.TerrainTypes;
+
+        for (int column = -1; column <= 1; column++)
+        {
+            for (int row = -1; row <= 2; row++)
+            {
+                int x = (int)(centre.X + (column * EffectGridPitch));
+                int z = (int)(centre.Z + (row * EffectGridPitch));
+                int index = terrain.IndexOfWorld(x * WorldPos.MmPerMetre, z * WorldPos.MmPerMetre);
+
+                if (index < 0)
+                {
+                    return false;
+                }
+
+                TerrainType type = terrain.TypeAt(index);
+
+                if (type is TerrainType.ShallowWater or TerrainType.DeepWater or TerrainType.Lava)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

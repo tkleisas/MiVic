@@ -25,6 +25,13 @@ public enum ParticleKind : byte
 
     /// <summary>A flat scorch mark, left on the ground where something burned.</summary>
     Scorch = 6,
+
+    /// <summary>
+    /// The body of a detonation: a ball, not a card. Drawn with its own geometry
+    /// because a billboard has no front or back, and the first instant of an
+    /// explosion has both.
+    /// </summary>
+    Blast = 7,
 }
 
 /// <summary>One live particle. Plain data, integrated every frame.</summary>
@@ -67,6 +74,7 @@ public sealed class ParticleSystem
     private readonly InstanceData[] _alphaInstances = new InstanceData[Capacity];
     private readonly InstanceData[] _additiveInstances = new InstanceData[Capacity];
     private readonly InstanceData[] _ringInstances = new InstanceData[RingCapacity];
+    private readonly InstanceData[] _blastInstances = new InstanceData[RingCapacity];
     private readonly Random _random = new(20250101);
 
     private int _next;
@@ -95,6 +103,12 @@ public sealed class ParticleSystem
 
     /// <summary>How many rings to draw this frame.</summary>
     public int RingCount { get; private set; }
+
+    /// <summary>Blast bodies, drawn as spheres rather than as billboards.</summary>
+    public InstanceData[] BlastInstances => _blastInstances;
+
+    /// <summary>How many blast bodies to draw this frame.</summary>
+    public int BlastCount { get; private set; }
 
     /// <summary>Removes every particle, e.g. when loading a different world.</summary>
     public void Clear()
@@ -677,6 +691,26 @@ public sealed class ParticleSystem
     /// <summary>The core of an explosion: a fireball that is bright for a few frames.</summary>
     private void SpawnFireball(Vector3 position, float scale, float life)
     {
+        // The body of the blast, as a ball. This is the piece a billboard could never
+        // do: a flat card of orange growing in the middle of a street reads as a decal,
+        // where a lit sphere with a dark side reads as something with a volume.
+        Spawn(new Particle
+        {
+            Position = position,
+            Velocity = new Vector3(0f, 0.8f, 0f),
+            Life = 0f,
+            MaxLife = life * 0.85f,
+            StartSize = scale * 0.55f,
+            EndSize = scale * 1.45f,
+            StartColor = new Vector3(1f, 0.86f, 0.52f),
+            EndColor = new Vector3(0.85f, 0.28f, 0.08f),
+            StartAlpha = 0.95f,
+            EndAlpha = 0f,
+            Gravity = 0.4f,
+            Drag = 0f,
+            Kind = ParticleKind.Blast,
+        });
+
         Spawn(new Particle
         {
             Position = position,
@@ -863,6 +897,7 @@ public sealed class ParticleSystem
         AlphaCount = 0;
         AdditiveCount = 0;
         RingCount = 0;
+        BlastCount = 0;
 
         for (int i = 0; i < Capacity; i++)
         {
@@ -912,6 +947,12 @@ public sealed class ParticleSystem
                     * Matrix.CreateRotationX(MathHelper.PiOver2)
                     * Matrix.CreateTranslation(particle.Position);
             }
+            else if (particle.Kind == ParticleKind.Blast)
+            {
+                // A ball, placed by its centre and scaled evenly. No camera basis at
+                // all: the whole point of it is that it has a front and a back.
+                transform = Matrix.CreateScale(size) * Matrix.CreateTranslation(particle.Position);
+            }
             else
             {
                 transform = new Matrix(
@@ -923,12 +964,23 @@ public sealed class ParticleSystem
 
             var instance = new InstanceData(transform, new Vector4(color, alpha));
 
-            // Rings go to their own list: they are the one effect that is not a quad.
+            // Rings and blast bodies go to their own lists: they are the two effects
+            // that are not quads, and each needs its own geometry to be drawn with.
             if (particle.Kind == ParticleKind.Ring)
             {
                 if (RingCount < _ringInstances.Length)
                 {
                     _ringInstances[RingCount++] = instance;
+                }
+
+                continue;
+            }
+
+            if (particle.Kind == ParticleKind.Blast)
+            {
+                if (BlastCount < _blastInstances.Length)
+                {
+                    _blastInstances[BlastCount++] = instance;
                 }
 
                 continue;
