@@ -42,3 +42,6 @@ tools/blender/out/
 
 # Model review sheets, and the shots they are built from
 artifacts/
+
+# Scratch screenshots from agent review passes
+shots/
