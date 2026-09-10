@@ -141,16 +141,11 @@ public sealed class ScenarioTests
     {
         SimWorld world = Build(20250101, ScenarioKind.ModelGallery, out ScenarioSetup setup);
 
-        // The gallery is a parade of the modelled roles, not of every UnitKind the
-        // catalogue knows (harvesters have no model yet).
-        UnitKind[] kinds =
-        [
-            UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
-            UnitKind.AntiAir, UnitKind.Commissar, UnitKind.RobotInfantry, UnitKind.Drone, UnitKind.Mercenary,
-            UnitKind.StealthRecon, UnitKind.ElectroPrototype,
-            UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.NuclearPlant,
-            UnitKind.Factory, UnitKind.DesignBureau,
-        ];
+        // Read from the scenario rather than repeating the list here. A copy of the
+        // layout in a test is a copy that drifts: this one still claimed harvesters
+        // had no model long after they had one, so the gallery could have lost a
+        // column without anything noticing.
+        UnitKind[] kinds = Scenario.GalleryKinds;
 
         Assert.Equal(kinds.Length * FactionProfile.All.Count(), setup.Spawned.Count);
         Assert.Equal(setup.Spawned.Count, world.AliveCount);
