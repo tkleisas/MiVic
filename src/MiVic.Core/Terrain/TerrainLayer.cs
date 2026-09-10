@@ -1233,39 +1233,175 @@ public sealed class TerrainLayer
         return count;
     }
 
+    /// <summary>Cover of ground that hides nobody: every point of the damage lands.</summary>
+    public const int NoCoverPermille = 1_000;
+
     /// <summary>
-    /// Movement cost of a surface in permille of flat ground; zero means the
-    /// surface cannot be entered at all.
+    /// The most cover any ground can give: at the bottom of the scale a shot still does
+    /// half. This is a floor by rule, not by arithmetic — a defender who cannot be hit at
+    /// all has to be out of range or unseen, never saved by a multiplier that rounded to
+    /// nothing — so the formula is clamped to it rather than left to trust its own terms.
     /// </summary>
+    public const int MinCoverPermille = 500;
+
     /// <summary>
-    /// What cover a surface gives, as the permille of incoming damage that still
-    /// lands: 1000 is no cover, 600 is a third off.
+    /// The least cover, which is a crest: a unit on one is skylined and takes a tenth more
+    /// than the same unit on open ground. The scale is allowed past
+    /// <see cref="NoCoverPermille"/> because the opposite of cover is not the absence of
+    /// it, and a rule that could only ever return "no cover" would be a rule that does
+    /// nothing on the ground where most fighting happens.
+    /// </summary>
+    public const int MaxCoverPermille = 1_100;
+
+    /// <summary>What a closed canopy takes off a shot at a man on foot, in permille.</summary>
+    public const int FootCanopyShelterPermille = 400;
+
+    /// <summary>
+    /// What a closed canopy takes off a shot at anything that cannot get down among the
+    /// stems, in permille. A tank sits on top of the undergrowth and a structure cannot lie
+    /// down in it, so trees are an obstruction to both rather than cover — the asymmetry the
+    /// old table had, and the reason a wood is where infantry hold armour.
+    /// </summary>
+    public const int VehicleCanopyShelterPermille = 120;
+
+    /// <summary>
+    /// What cover a cell of ground gives a mover, as the permille of incoming damage that
+    /// still lands. <see cref="NoCoverPermille"/> is no cover, 600 is two fifths off, and
+    /// anything above 1000 is ground that makes the target easier to hit than flat ground
+    /// would.
     /// <para>
-    /// Deliberately keyed on the movement class as well as the surface, because cover
-    /// is not a property of the ground on its own. A wood is cover to a man who can lie
-    /// in it and an obstruction to a tank that can only sit on top of it — which is the
-    /// same reason the cost table inverts there.
+    /// <b>The formula, and the only place it lives.</b> Three terms, every one of them a
+    /// fact about the ground the target is standing on or about what the target is:
+    /// </para>
+    /// <list type="number">
+    /// <item><description>
+    /// <b>The surface is the base</b> — <see cref="BaseCoverPermille"/> — what the ground is
+    /// worth with nothing growing on it and no shape to it. Only rock and ore ground are
+    /// worth anything by themselves.
+    /// </description></item>
+    /// <item><description>
+    /// <b>The canopy takes a slice off it</b>, and it is the main term, because a wood
+    /// sheltering and a wood that has burned down not sheltering *is* the mechanic. It
+    /// scales with canopy density — bare ground takes nothing off — and with who is standing
+    /// in it. At a closed canopy the two coefficients are exactly the old lookup table: 400
+    /// off is what made a wood 600 to infantry, and 120 off is what made it 880 to armour.
+    /// </description></item>
+    /// <item><description>
+    /// <b>The shape of the ground adds or subtracts</b> —
+    /// <see cref="LandformShelterPermille"/>. Smaller than the canopy term because it is a
+    /// modifier, and it runs both ways, because a crest is the opposite of cover rather than
+    /// the absence of it.
+    /// </description></item>
+    /// </list>
+    /// <para>
+    /// A word that was never generated — all zeroes — is bare, plain ground, so an
+    /// ungenerated or out-of-range attribute set degrades to the surface's own cover rather
+    /// than to a special case.
     /// </para>
     /// </summary>
-    public static int CoverPermille(MovementClass movement, TerrainType type) => type switch
+    /// <param name="movement">How the unit being shot at moves.</param>
+    /// <param name="type">The surface it is standing on.</param>
+    /// <param name="attributes">The attribute word of the cell it is standing on.</param>
+    public static int CoverPermille(MovementClass movement, TerrainType type, TerrainAttributes attributes)
+        => IntMath.Clamp(
+            BaseCoverPermille(type)
+                - CanopyShelterPermille(movement, attributes.Vegetation)
+                - LandformShelterPermille(movement, attributes.Landform),
+            MinCoverPermille,
+            MaxCoverPermille);
+
+    /// <summary>
+    /// Cover the surface gives on its own: rock is broken ground to lie behind and ore
+    /// ground is a worked-out pit. Everything else is ground, and ground hides nobody.
+    /// </summary>
+    private static int BaseCoverPermille(TerrainType type) => type switch
     {
-        TerrainType.Forest => movement switch
-        {
-            MovementClass.Foot => 600,
-            MovementClass.Tracked => 880,
-            MovementClass.Wheeled => 880,
-            _ => 1_000,
-        },
         TerrainType.Rock => 850,
         TerrainType.Mine => 900,
-        _ => 1_000,
+        _ => NoCoverPermille,
     };
 
-    /// <summary>Cover where a unit is standing, by its movement class.</summary>
+    /// <summary>
+    /// What the canopy takes off a shot, in permille: what a closed canopy is worth, scaled
+    /// by how closed this one actually is.
+    /// <para>
+    /// Density is the field and density is all this reads, so a cell whose vegetation has
+    /// been burned, crushed or simply written to zero shelters nobody — on any surface, which
+    /// is why no surface appears in this term. A wood is a wood because of what is growing on
+    /// it, and a cell that calls itself woodland is not one after the fire has been through.
+    /// </para>
+    /// </summary>
+    private static int CanopyShelterPermille(MovementClass movement, int vegetation)
+    {
+        int closed = movement switch
+        {
+            MovementClass.Foot => FootCanopyShelterPermille,
+            MovementClass.Tracked or MovementClass.Wheeled or MovementClass.None => VehicleCanopyShelterPermille,
+
+            // Air is neither in the canopy nor behind anything: it is looked down on, which
+            // is the one direction a wood has never helped with.
+            _ => 0,
+        };
+
+        return (closed * vegetation) / TerrainAttributes.MaxVegetation;
+    }
+
+    /// <summary>
+    /// What the shape of the ground takes off a shot, in permille, best cover first: a
+    /// basin, then a valley, then the shapes that say nothing about being seen, then a
+    /// plateau, then a crest — which gives cover back, because a unit on one is skylined.
+    /// <para>
+    /// <b>Why these, and not the rest.</b> Directional cover is deferred, so there is no
+    /// shot to hide from and the only thing that can be said about a piece of ground is how
+    /// much of it stands between the target and the horizon on the average. A basin has
+    /// ground above it on most sides and a valley has ground above it all round, so both are
+    /// defilade, and the bowl is more enclosed than the trench. A crest is ground that falls
+    /// away at the cell: nothing at all stands between the target and anyone, which makes it
+    /// the one landform that is *worse* than flat ground rather than merely no better. A
+    /// plateau is the same statement weakened — level ground standing above its surroundings,
+    /// so there is a rim to go to ground behind instead of a knife edge to stand on.
+    /// </para>
+    /// <para>
+    /// The shapes left at zero are not oversights, and none of them is zero for the same
+    /// reason as another. A pass is high along one axis and low along the other: skylined
+    /// from the two valleys that meet there and masked from the two ridges, and with no shot
+    /// direction those are the same amount. A shelf is level ground with steep ground beside
+    /// it, and the classifier does not say whether that ground stands above it or falls away
+    /// from it — a foot masks, a shoulder exposes. A slope and a plain say nothing about being
+    /// seen at all. Giving any of them a sign would be inventing a direction that the query
+    /// does not have, which is the one thing this step was told not to do.
+    /// </para>
+    /// </summary>
+    private static int LandformShelterPermille(MovementClass movement, int landform)
+    {
+        // An aircraft is at 60 m: a hollow does not hide it and a crest does not skyline it.
+        if (movement == MovementClass.Air)
+        {
+            return 0;
+        }
+
+        return landform switch
+        {
+            TerrainShape.Basin => 125,
+            TerrainShape.Valley => 75,
+            TerrainShape.Plateau => -50,
+            TerrainShape.Ridge => -100,
+
+            // Plain, slope, pass and shelf — and any of the sixteen ids the four-bit field
+            // can hold that the schema does not define, which are neutral rather than a guess.
+            _ => 0,
+        };
+    }
+
+    /// <summary>
+    /// Cover where a unit is standing, by its movement class. Ground outside the lattice
+    /// hides nobody: nothing is known about it, and a cell that does not exist cannot be
+    /// hiding anything.
+    /// </summary>
     public int CoverAt(int index, MovementClass movement)
-        => index >= 0 && index < _types.Length
-            ? CoverPermille(movement, TypeAt(index))
-            : 1_000;
+        => (uint)index < (uint)_types.Length
+            ? CoverPermille(movement, TypeAt(index), AttributesAt(index))
+            : NoCoverPermille;
 
     /// <summary>
     /// Movement cost of a surface, in permille of the baseline: 1000 is normal going,

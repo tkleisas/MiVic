@@ -102,6 +102,13 @@ public sealed class SpawnPlacementTests
     /// <summary>
     /// A wood is hard going for armour and cover for infantry — the two rules that make
     /// it a wood rather than a darker shade of grass.
+    /// <para>
+    /// Cover is a property of the ground now rather than of the surface, so the two queries
+    /// below name the ground they are about: a <em>closed</em> wood, and bare open ground.
+    /// The numbers are the ones they always were, because a closed canopy is the anchor the
+    /// formula was cut against — but "a forest is cover" and "grass is not" are no longer
+    /// statements a surface can make on its own, and the test says so.
+    /// </para>
     /// </summary>
     [Fact]
     public void ForestSlowsArmourAndSheltersInfantry()
@@ -112,16 +119,20 @@ public sealed class SpawnPlacementTests
         Assert.True(foot > 0 && tracked > 0, "a forest has to be passable, or it is a wall");
         Assert.True(tracked > foot, "tracks should pay more for trees than legs do");
 
-        int footCover = TerrainLayer.CoverPermille(MovementClass.Foot, TerrainType.Forest);
-        int tankCover = TerrainLayer.CoverPermille(MovementClass.Tracked, TerrainType.Forest);
+        TerrainAttributes closedCanopy = new TerrainAttributes().WithVegetation(TerrainAttributes.MaxVegetation);
 
-        Assert.True(footCover < 1_000, "a forest has to protect the infantry standing in it");
+        int footCover = TerrainLayer.CoverPermille(MovementClass.Foot, TerrainType.Forest, closedCanopy);
+        int tankCover = TerrainLayer.CoverPermille(MovementClass.Tracked, TerrainType.Forest, closedCanopy);
+
+        Assert.True(footCover < TerrainLayer.NoCoverPermille, "a forest has to protect the infantry standing in it");
         Assert.True(footCover < tankCover, "trees are cover to a man and an obstruction to a tank");
 
         // And no other surface may be cheaper on foot and dearer on tracks by accident.
+        // Bare ground, so that what is being asserted is the surface and not the scrub
+        // growing on it — the density term is what the next test file is for.
         Assert.Equal(
-            1_000,
-            TerrainLayer.CoverPermille(MovementClass.Tracked, TerrainType.Grass));
+            TerrainLayer.NoCoverPermille,
+            TerrainLayer.CoverPermille(MovementClass.Tracked, TerrainType.Grass, default));
     }
 
     [Fact]

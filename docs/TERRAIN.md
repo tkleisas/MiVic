@@ -125,11 +125,18 @@ be an ability, later, and would be the only part that needs a command.
 
 ### What attributes change
 
-- **Cover** becomes derived rather than looked up: surface × vegetation density ×
-  landform, with `Cratered` and `Rubble` adding cover of their own. A ridge still wants
-  directionality — **directional cover is deliberately deferred**: it triples the cost
-  of the cover query and needs a rule for what happens when a unit is shot from two
-  directions at once.
+- **Cover** becomes derived rather than looked up, and the one formula is in
+  `TerrainLayer.CoverPermille`: the surface as a base, the canopy density on it as the main
+  term, then the landform as a signed modifier. The canopy is what makes it a mechanic — a
+  wood shelters and a burned wood does not — and the landform is what keeps a crest from
+  being cover: a basin and a valley are defilade, a plateau and a ridge are the opposite of
+  it, and a ridge on bare ground is worth *more* than open ground rather than merely no
+  cover. A ridge still wants directionality — **directional cover is deliberately
+  deferred**: it triples the cost of the cover query and needs a rule for what happens when
+  a unit is shot from two directions at once — so the shapes that are high on one axis and
+  low on the other, a pass and a shelf, are neutral: with no shot direction those cancel,
+  and giving them a sign would be inventing one. `Cratered` and `Rubble` get cover terms in
+  the steps that set those flags, and not before.
 - **Movement** keeps its categorical cost on the surface byte, so pathfinding stays
   cheap. Cratered and rubble ground get a surcharge on top, like churn already does.
 - **Trees** are placed from vegetation density rather than from the `Forest` surface, so
@@ -183,8 +190,11 @@ Each step is independently verifiable and lands on its own:
 1. The word itself: `TerrainAttributes`, generation of `Vegetation` and `Moisture`,
    hashing, and the counting tests.
 2. `Aspect` and `Landform` from the height field, with the counting tests.
-3. Cover derived from attributes rather than looked up, with tests. Movement surcharges
-   for cratered ground.
+3. Cover derived from attributes rather than looked up, with tests. The movement surcharge
+   for cratered ground was cut from this step: nothing writes `Cratered` yet, and a term
+   for a flag no code path can reach is the feature that never happens. It lands with
+   whichever of the later steps gives the flag a writer — a term and the thing that sets
+   it are one change, not two.
 4. Fire: ignition, spread, fuel, char. Regrowth.
 5. Crushing by vehicles.
 6. The client: density in the vertex alpha, the shader reading it, trees from density

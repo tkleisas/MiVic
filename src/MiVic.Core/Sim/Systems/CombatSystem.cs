@@ -153,11 +153,14 @@ public static class CombatSystem
     }
 
     /// <summary>
-    /// Reduces damage by whatever cover the target is standing in, never below one.
+    /// Scales damage by whatever cover the target is standing in, never below one.
     /// <para>
-    /// One is the floor because a shot that does nothing at all reads as a bug, and
-    /// because a defender who is genuinely untouchable should be untouchable by rule —
-    /// out of range, or unseen — rather than by a rounding of the damage.
+    /// The multiplier is not capped at "no cover": ground that hides nothing leaves the shot
+    /// alone, and a crest, which is the opposite of cover, makes it land harder. One is the
+    /// floor because a shot that does nothing at all reads as a bug, and because a defender
+    /// who is genuinely untouchable should be untouchable by rule — out of range, or unseen —
+    /// rather than by a rounding of the damage. <see cref="TerrainLayer.CoverPermille"/>
+    /// guarantees a positive multiplier, so a hit can never be zeroed out here.
     /// </para>
     /// </summary>
     private static int ApplyCover(SimWorld world, ref Entity target, int damage)
@@ -167,7 +170,7 @@ public static class CombatSystem
             world.TerrainTypes.IndexOfWorld(target.Position.X, target.Position.Z),
             movement);
 
-        return cover >= 1_000 ? damage : Math.Max(1, (damage * cover) / 1_000);
+        return Math.Max(1, (damage * cover) / TerrainLayer.NoCoverPermille);
     }
 
     /// <summary>

@@ -259,15 +259,19 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by aspect and landform, which fill two more fields of the attribute word
-    /// from the height field: the word is hashed, so a ground that faces somewhere new is a
-    /// state that has moved. Before that it was the terrain attributes themselves — canopy
-    /// density, moisture and the bits the fire step will write. Before *that* it was the
-    /// terrain bands, which are cut from the map's relief and stacked in order so that sand
-    /// and snow can appear at all.
+    /// Last changed by cover becoming a function of the ground — the surface as a base, the
+    /// canopy density on it, then the shape of the ground — rather than a lookup on the surface
+    /// byte. Both sides of this battle now take different damage in a wood than they did in the
+    /// open, and on the ground the scenario happens to drive across, so a different set of units
+    /// is alive at the end of five hundred ticks. Before that it was aspect and landform, which
+    /// fill two more fields of the attribute word from the height field: the word is hashed, so a
+    /// ground that faces somewhere new is a state that has moved. Before that it was the terrain
+    /// attributes themselves — canopy density, moisture and the bits the fire step will write.
+    /// Before *that* it was the terrain bands, which are cut from the map's relief and stacked in
+    /// order so that sand and snow can appear at all.
     /// </para>
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(17839250894260355520UL, HashScenario(20250101));
+        => Assert.Equal(2821426435522902204UL, HashScenario(20250101));
 }
