@@ -617,6 +617,8 @@ public sealed class SimWorld
             {
                 TerrainTypes.ExpireWeather(Tick);
             }
+
+            ConstructionSystem.Tick(this);
             ResearchSystem.Tick(this);
             Profiler.Mark(ref Profiler.Research, ref Profiler.WorstResearch);
             PrototypeSystem.Tick(this);
@@ -911,14 +913,21 @@ public sealed class SimWorld
         return false;
     }
 
-    /// <summary>True when the team has at least one live structure of a role.</summary>
+    /// <summary>True when the slot holds a structure that has finished being raised.</summary>
+    public bool IsComplete(int slot)
+        => IsAliveSlot(slot) && _entities[slot].ConstructionTicksRemaining <= 0;
+
+    /// <summary>True when a team has at least one live structure of a role.</summary>
     public bool HasStructure(int team, UnitKind kind)
     {
         for (int slot = 0; slot < _entities.Length; slot++)
         {
             ref Entity entity = ref _entities[slot];
 
-            if (entity.Alive && entity.TeamId == team && entity.Kind == kind)
+            // An unfinished structure does not count: it is not doing anything yet,
+            // so a team that has one still needs the finished article.
+            if (entity.Alive && entity.TeamId == team && entity.Kind == kind &&
+                entity.ConstructionTicksRemaining <= 0)
             {
                 return true;
             }

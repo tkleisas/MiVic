@@ -102,6 +102,9 @@ public sealed class MiVicGame : XnaGame
 
     /// <summary>Terrain revision the current ground mesh was built from.</summary>
     private int _terrainRevision;
+
+    /// <summary>Per slot: whether the structure was still being raised last frame.</summary>
+    private bool[] _wasBuilding = [];
     private double _lastClickSeconds;
     private int _lastClickedSlot = -1;
 
@@ -247,6 +250,7 @@ public sealed class MiVicGame : XnaGame
         _particleMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
         _particles = new ParticleSystem();
         _smokeTimers = new float[_simulation.World.Capacity];
+        _wasBuilding = new bool[_simulation.World.Capacity];
 
         if (_options.ParticleDemo)
         {
@@ -812,11 +816,28 @@ public sealed class MiVicGame : XnaGame
             Vector3 position = _simulation.GetRenderPosition(slot, interpolate: true);
             float heading = SimBridge.HeadingRadians(entity.Heading);
 
+            // A structure being raised: the progress is the simulation's, so a
+            // replay builds at the same rate.
+            float build = BuildFraction(ref entity);
+
             Matrix transform =
                 Matrix.CreateRotationY(-heading) *
                 Matrix.CreateTranslation(position);
 
+            if (build < 1f)
+            {
+                // Rising out of the ground, not fading in: a partially built
+                // structure should look like one.
+                float rise = 0.25f + (build * 0.75f);
+                transform *= Matrix.CreateScale(1f, rise, 1f);
+            }
+
             Vector4 tint = FactionPalette.ForUnit(entity.Faction, entity.Kind).ToVector4();
+
+            if (build < 1f)
+            {
+                tint = Vector4.Lerp(new Vector4(0.42f, 0.44f, 0.46f, 1f), tint, build);
+            }
 
             // One instance per part, each carrying its own place in the model. The
             // chain is composed here rather than at load time, because that is what
@@ -850,6 +871,60 @@ public sealed class MiVicGame : XnaGame
             }
         }
     }
+
+    /// <summary>
+    /// How far along a structure's construction is: 1 for anything that is not being
+    /// built, including every unit.
+    /// </summary>
+    private static float BuildFraction(ref Entity entity)
+    {
+        if (entity.ConstructionTicksRemaining <= 0 || entity.ConstructionTicksTotal <= 0)
+        {
+            return 1f;
+        }
+
+        return 1f - ((float)entity.ConstructionTicksRemaining / entity.ConstructionTicksTotal);
+    }
+
+    /// <summary>
+    /// A structure's world position for one of its named parts, so effects can come
+    /// out of a chimney rather than out of the middle of the building.
+    /// </summary>
+    private bool TryPartWorldPosition(MeshBatch batch, string partName, Matrix entityTransform, out Vector3 position)
+    {
+        for (int i = 0; i < batch.Parts.Length; i++)
+        {
+            if (!batch.Parts[i].Name.Equals(partName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            Matrix local = batch.Parts[i].LocalTransform;
+            int parent = batch.Parts[i].ParentIndex;
+
+            while (parent >= 0 && parent < batch.Parts.Length)
+            {
+                local *= batch.Parts[parent].LocalTransform;
+                parent = batch.Parts[parent].ParentIndex;
+            }
+
+            position = Vector3.Transform(Vector3.Zero, local * batch.ModelTransform * entityTransform);
+            return true;
+        }
+
+        position = Vector3.Zero;
+        return false;
+    }
+    /// <summary>The part a structure's exhaust comes out of, if it has one.</summary>
+    private static string? ChimneyPart(UnitKind kind) => kind switch
+    {
+        // The generator puts the stacks on one side, so both are plumbed.
+        UnitKind.Factory => "barrel",
+        UnitKind.PowerPlant => "stack_l",
+        UnitKind.NuclearPlant => "stack_l",
+        UnitKind.DesignBureau => "barrel",
+        _ => null,
+    };
 
     /// <summary>
     /// A part's transform for this entity, after animation.
@@ -1902,10 +1977,43 @@ public sealed class MiVicGame : XnaGame
 
             if (definition.IsBuilding)
             {
-                // Damaged industry smokes hard; healthy industry just idles.
-                float intensity = healthFraction < 0.65f ? 0.35f + ((1f - healthFraction) * 0.65f) : 0.16f;
-                _particles.SpawnSmokePlume(position + new Vector3(0f, definition.IsBuilding ? 4f : 1.5f, 0f), intensity);
-                _smokeTimers[slot] = 0.25f + ((slot % 7) * 0.06f);
+                MeshBatch batch = GetBatch(entity.Faction, entity.Kind);
+                Matrix entityTransform = Matrix.CreateTranslation(position);
+                float build = BuildFraction(ref entity);
+
+                if (build < 1f)
+                {
+                    // Being raised: dust off the ground, heavier the less of it
+                    // there is.
+                    _particles.SpawnDust(position + new Vector3(0f, 1.2f, 0f), 1.2f + ((1f - build) * 1.8f));
+                    _smokeTimers[slot] = 0.18f;
+                    _wasBuilding[slot] = true;
+                    continue;
+                }
+
+                if (_wasBuilding[slot])
+                {
+                    // Just finished: one good puff, so the moment it comes up reads.
+                    _wasBuilding[slot] = false;
+                    _particles.SpawnDust(position + new Vector3(0f, 2.5f, 0f), 5f);
+                }
+
+                // Working smoke, out of the chimney rather than out of the middle
+                // of the roof. The part contract names it, so a building smokes
+                // properly by exporting a part called `stack` or `barrel`.
+                if (healthFraction >= 0.65f && ChimneyPart(entity.Kind) is { } chimney &&
+                    TryPartWorldPosition(batch, chimney, entityTransform, out Vector3 vent))
+                {
+                    _particles.SpawnSmokePlume(vent, 0.22f);
+                    _smokeTimers[slot] = 0.30f + ((slot % 7) * 0.06f);
+                }
+                else
+                {
+                    // Damaged industry smokes hard, from wherever it is burning.
+                    float intensity = healthFraction < 0.65f ? 0.35f + ((1f - healthFraction) * 0.65f) : 0.16f;
+                    _particles.SpawnSmokePlume(position + new Vector3(0f, 4f, 0f), intensity);
+                    _smokeTimers[slot] = 0.25f + ((slot % 7) * 0.06f);
+                }
             }
             else if (healthFraction < 0.45f)
             {

@@ -25,6 +25,12 @@ public static class ResearchSystem
                 continue;
             }
 
+            // Research needs a finished design bureau, not a hole in the ground.
+            if (!world.HasStructure(team, UnitKind.DesignBureau))
+            {
+                continue;
+            }
+
             state.ResearchTicksRemaining--;
 
             if (state.ResearchTicksRemaining > 0)

@@ -396,6 +396,306 @@ def build_command_centre(faction, profile):
     return root
 
 
+def build_structure(faction, kind, profile, scale):
+    """A factory, power plant, nuclear plant or design bureau.
+
+    One builder with a size and a couple of switches, because these differ in
+    silhouette rather than in structure: a hall with a crane, a hall with stacks, a
+    dome with cooling towers, a tower with a dish.
+    """
+    root = bpy.data.objects.new(f"{faction}_{kind}", None)
+    bpy.context.collection.objects.link(root)
+
+    width, depth, height = scale
+    parts = []
+
+    base = box("hull", (width, depth, height), offset=(0.0, 0.0, height * 0.5))
+    parts.append(base)
+    paint(base, (0.34, 0.36, 0.35, 1.0))
+
+    if kind == "factory":
+        # A long hall with a gantry over it.
+        hall = box("turret", (width * 0.7, depth * 0.5, height * 0.5), offset=(0.0, 0.0, height * 1.2))
+        parts.append(hall)
+        paint(hall, (0.40, 0.42, 0.40, 1.0))
+
+        gantry = box("barrel", (width * 0.9, 1.2, 0.8), offset=(0.0, 0.0, height * 1.7))
+        parts.append(gantry)
+        paint(gantry, (0.28, 0.29, 0.29, 1.0))
+
+        # A crane that could travel along the gantry.
+        crane = box("radar", (1.6, 1.6, 1.0), offset=(width * 0.3, 0.0, height * 1.9))
+        parts.append(crane)
+        paint(crane, (0.22, 0.23, 0.24, 1.0))
+
+    elif kind == "power":
+        for side in (-1, 1):
+            stack = cylinder(
+                f"stack_{'l' if side < 0 else 'r'}",
+                1.6,
+                height * 1.6,
+                segments=12,
+                axis="z",
+                offset=(side * width * 0.3, 0.0, height * 1.3),
+            )
+            parts.append(stack)
+            paint(stack, (0.46, 0.46, 0.45, 1.0))
+
+            # Cooling fans, which are what rotate.
+            fan = cylinder(
+                f"radar_{'l' if side < 0 else 'r'}",
+                1.4,
+                0.4,
+                segments=14,
+                axis="z",
+                offset=(side * width * 0.3, 0.0, height * 2.1),
+            )
+            parts.append(fan)
+            paint(fan, (0.20, 0.21, 0.22, 1.0))
+
+    elif kind == "nuclear":
+        # A containment dome between two cooling towers: unmistakable from above,
+        # which matters because it is the one structure worth raiding.
+        dome_mesh = dome("turret", width * 0.42, (1.0, 1.0, 0.9), segments=14, rings=6)
+        dome_mesh.location = (0.0, 0.0, height)
+        parts.append(dome_mesh)
+        paint(dome_mesh, (0.62, 0.63, 0.62, 1.0))
+
+        for side in (-1, 1):
+            tower = cylinder(
+                f"stack_{'l' if side < 0 else 'r'}",
+                width * 0.26,
+                height * 2.2,
+                segments=14,
+                axis="z",
+                offset=(side * width * 0.42, 0.0, height * 1.1),
+            )
+            parts.append(tower)
+            paint(tower, (0.50, 0.50, 0.49, 1.0))
+
+        vent = cylinder("radar", width * 0.2, 0.6, segments=12, axis="z", offset=(0.0, 0.0, height * 1.9))
+        parts.append(vent)
+        paint(vent, (0.24, 0.25, 0.26, 1.0))
+
+    else:  # design bureau
+        tower = box("turret", (width * 0.5, depth * 0.5, height * 1.1), offset=(0.0, 0.0, height * 1.55))
+        parts.append(tower)
+        paint(tower, (0.44, 0.46, 0.45, 1.0))
+
+        dish = cylinder("radar", width * 0.22, 0.5, segments=14, axis="z", offset=(0.0, 0.0, height * 2.3))
+        parts.append(dish)
+        paint(dish, (0.58, 0.60, 0.60, 1.0))
+
+        mast = cylinder("barrel", 0.3, height * 0.6, segments=8, axis="z", offset=(width * 0.18, 0.0, height * 2.5))
+        parts.append(mast)
+        paint(mast, (0.28, 0.29, 0.29, 1.0))
+
+    stack_parts = [p for p in parts if p.name.startswith("stack_")]
+    join(root, [p for p in parts if p not in stack_parts])
+    for stack in stack_parts:
+        stack.parent = root
+
+    return root
+
+
+def build_katyusha(faction):
+    """Σοβιετικοί rocket artillery: a truck with a raised launcher rack.
+
+    Wheeled rather than tracked, which is both true to the vehicle and a
+    silhouette nobody else has.
+    """
+    root = bpy.data.objects.new(f"{faction}_katyusha", None)
+    bpy.context.collection.objects.link(root)
+
+    parts = []
+
+    body = box("hull", (2.6, 6.4, 1.5), offset=(0.0, 0.0, 1.5))
+    parts.append(body)
+    paint(body, (0.40, 0.42, 0.38, 1.0))
+
+    cab = box("turret", (2.4, 1.8, 1.4), offset=(0.0, -2.0, 2.7))
+    parts.append(cab)
+    paint(cab, (0.44, 0.46, 0.42, 1.0))
+
+    # The rack, angled up. This is the whole silhouette.
+    rack = box("barrel", (2.2, 0.6, 4.2), offset=(0.0, 0.6, 3.4))
+    rack.rotation_euler = (math.radians(-28.0), 0.0, 0.0)
+    parts.append(rack)
+    paint(rack, (0.26, 0.27, 0.26, 1.0))
+
+    for side in (-1, 1):
+        for i in range(3):
+            wheel = cylinder(
+                f"wheel_{'l' if side < 0 else 'r'}{i + 1:02d}",
+                0.62,
+                0.5,
+                segments=10,
+                axis="x",
+            )
+            wheel.location = (side * 1.4, -2.2 + (i * 2.2), 0.62)
+            parts.append(wheel)
+            paint(wheel, (0.15, 0.15, 0.16, 1.0))
+
+    join(root, parts)
+    return root
+
+
+def build_figure(faction, kind, scale, palette):
+    """A humanoid with a genuinely two-part leg rig.
+
+    The borrowed soldier ships one mesh for both legs, so it can only march. These
+    have `LegLeft` and `LegRight`, which the renderer can put out of phase with each
+    other — an alternating stride, from parts and no skeleton.
+    """
+    root = bpy.data.objects.new(f"{faction}_{kind}", None)
+    bpy.context.collection.objects.link(root)
+
+    w, h, bulk = scale
+    parts = []
+
+    hip = h * 0.46
+    leg_len = hip
+
+    for side, tag in ((-1, "Left"), (1, "Right")):
+        leg = box(
+            f"Leg{tag}",
+            (w * 0.32, w * 0.32, leg_len),
+            offset=(0.0, 0.0, leg_len * 0.5),
+        )
+        leg.location = (side * w * 0.22, 0.0, hip)
+        parts.append(leg)
+        paint(leg, palette["legs"])
+
+        foot = box(f"Foot{tag}", (w * 0.34, w * 0.55, leg_len * 0.12), offset=(0.0, w * 0.08, 0.0))
+        foot.parent = leg
+        parts.append(foot)
+        paint(foot, palette["gear"])
+
+    torso = box("Body", (w * 0.62, w * 0.44, h * 0.34), offset=(0.0, 0.0, h * 0.30))
+    torso.location = (0.0, 0.0, hip)
+    parts.append(torso)
+    paint(torso, palette["body"])
+
+    head = box("Head", (w * 0.34, w * 0.34, h * 0.15), offset=(0.0, 0.0, h * 0.08))
+    head.location = (0.0, 0.0, hip + (h * 0.34))
+    parts.append(head)
+    paint(head, palette["gear"])
+
+    if bulk > 1.0:
+        # Heavier shoulders read as better armour at a glance.
+        shoulders = box("Shoulders", (w * 0.86, w * 0.42, h * 0.10), offset=(0.0, 0.0, h * 0.28))
+        shoulders.location = (0.0, 0.0, hip)
+        parts.append(shoulders)
+        paint(shoulders, palette["body"])
+
+    join(root, parts)
+    return root
+
+
+def build_drone(faction):
+    """Κινέζοι drone: a small body with a rotor that spins."""
+    root = bpy.data.objects.new(f"{faction}_drone", None)
+    bpy.context.collection.objects.link(root)
+
+    parts = []
+
+    body = box("Body", (0.7, 1.5, 0.45), offset=(0.0, 0.0, 0.0))
+    parts.append(body)
+    paint(body, (0.38, 0.40, 0.38, 1.0))
+
+    for side in (-1, 1):
+        arm = box(f"Arm{'L' if side < 0 else 'R'}", (0.12, 1.1, 0.12), offset=(0.0, 0.0, 0.0))
+        arm.location = (side * 0.85, 0.0, 0.05)
+        parts.append(arm)
+        paint(arm, (0.24, 0.25, 0.25, 1.0))
+
+        rotor = cylinder(f"radar_{'l' if side < 0 else 'r'}", 0.75, 0.06, segments=14, axis="z")
+        rotor.location = (side * 0.85, 0.0, 0.18)
+        parts.append(rotor)
+        paint(rotor, (0.18, 0.19, 0.20, 1.0))
+
+    nose = box("Head", (0.4, 0.5, 0.3), offset=(0.0, 0.9, -0.05))
+    parts.append(nose)
+    paint(nose, (0.55, 0.57, 0.56, 1.0))
+
+    join(root, parts)
+    return root
+
+
+def build_artillery(faction, profile):
+    """Self-propelled gun: the tank hull with the turret replaced by a long gun."""
+    root = build_tank(faction, profile)
+    root.name = f"{faction}_artillery"
+
+    for obj in list(root.children):
+        if obj.name in ("barrel", "muzzle"):
+            obj.scale.y = 1.7
+            obj.rotation_euler = (math.radians(-12.0), 0.0, 0.0)
+
+    return root
+
+
+def build_antiair(faction, profile):
+    """Anti-air: a tank hull with a fast twin mount instead of a single gun."""
+    root = build_tank(faction, profile)
+    root.name = f"{faction}_antiair"
+
+    for obj in list(root.children):
+        if obj.name == "barrel":
+            obj.scale.y = 0.55
+            obj.rotation_euler = (math.radians(-18.0), 0.0, 0.0)
+
+            for offset in (-0.6, 0.6):
+                tube = cylinder("barrel", 0.09, 1.8, segments=8, axis="y", offset=(0.0, 1.0, 0.0))
+                tube.parent = obj
+                tube.location = (offset, 0.0, 0.0)
+                paint(tube, (0.30, 0.31, 0.30, 1.0))
+
+    return root
+
+
+def build_aircraft(faction, wingspan, length, swept):
+    """Aircraft: fuselage along +Y, wings across X, swept back by `swept`."""
+    root = bpy.data.objects.new(f"{faction}_aircraft", None)
+    bpy.context.collection.objects.link(root)
+
+    parts = []
+
+    body = box("hull", (1.2, length, 1.0), offset=(0.0, 0.0, 0.0))
+    parts.append(body)
+    paint(body, (0.40, 0.43, 0.46, 1.0))
+
+    # The wings are one box each so the sweep is visible in plan view, which is how
+    # an RTS camera sees an aircraft.
+    for side in (-1, 1):
+        wing = box(
+            f"Wing{'L' if side < 0 else 'R'}",
+            (wingspan * 0.5, length * 0.22, 0.22),
+            offset=(0.0, -swept * length * 0.5, 0.0),
+        )
+        wing.location = (side * wingspan * 0.25, 0.0, -0.1)
+        wing.rotation_euler = (0.0, 0.0, math.radians(-swept * 30.0 * side))
+        parts.append(wing)
+        paint(wing, (0.44, 0.47, 0.50, 1.0))
+
+    tail = box("Tail", (wingspan * 0.34, length * 0.14, 0.18), offset=(0.0, 0.0, 0.0))
+    tail.location = (0.0, -length * 0.44, 0.0)
+    parts.append(tail)
+    paint(tail, (0.44, 0.47, 0.50, 1.0))
+
+    fin = box("Fin", (0.16, length * 0.16, 0.7), offset=(0.0, 0.0, 0.35))
+    fin.location = (0.0, -length * 0.44, 0.0)
+    parts.append(fin)
+    paint(fin, (0.38, 0.41, 0.44, 1.0))
+
+    nose = box("Nose", (0.8, length * 0.14, 0.7), offset=(0.0, length * 0.46, 0.0))
+    parts.append(nose)
+    paint(nose, (0.60, 0.62, 0.64, 1.0))
+
+    join(root, parts)
+    return root
+
+
 # --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
@@ -442,21 +742,49 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     written = []
 
-    for faction, profile in PROFILES.items():
+    def emit(name, builder):
         clear_scene()
-        build_tank(faction, profile)
-        path = os.path.join(args.out, f"{faction}_tank.glb")
+        builder()
+        path = os.path.join(args.out, f"{name}.glb")
         export(path)
         written.append(path)
 
-    # One building, to prove the same part contract carries over: a radar dish
-    # that rotates is `radar`, exactly as a tank's turret is `turret`.
     for faction, profile in PROFILES.items():
-        clear_scene()
-        build_command_centre(faction, profile)
-        path = os.path.join(args.out, f"{faction}_hq.glb")
-        export(path)
-        written.append(path)
+        emit(f"{faction}_tank", lambda f=faction, p=profile: build_tank(f, p))
+        emit(f"{faction}_artillery", lambda f=faction, p=profile: build_artillery(f, p))
+        emit(f"{faction}_antiair", lambda f=faction, p=profile: build_antiair(f, p))
+        emit(f"{faction}_hq", lambda f=faction, p=profile: build_command_centre(f, p))
+
+        # The other structures used to reuse the headquarters mesh at a different
+        # scale, so a factory looked exactly like an HQ.
+        emit(f"{faction}_factory", lambda f=faction: build_structure(f, "factory", None, (18.0, 13.0, 7.0)))
+        emit(f"{faction}_power", lambda f=faction: build_structure(f, "power", None, (11.0, 9.0, 6.0)))
+        emit(f"{faction}_bureau", lambda f=faction: build_structure(f, "bureau", None, (11.0, 11.0, 8.0)))
+        emit(f"{faction}_nuclear", lambda f=faction: build_structure(f, "nuclear", None, (16.0, 16.0, 9.0)))
+
+    # Aircraft: wingspan and sweep are the whole silhouette, so they are the only
+    # numbers that differ per faction.
+    emit("soviet_aircraft", lambda: build_aircraft("soviet", 12.0, 11.0, 0.25))
+    emit("chinese_aircraft", lambda: build_aircraft("chinese", 9.5, 9.0, 0.05))
+    emit("western_aircraft", lambda: build_aircraft("western", 13.5, 12.5, 0.45))
+
+    # Faction-unique roles: these had no model at all and rendered as a raw box.
+    emit("soviet_katyusha", lambda: build_katyusha("soviet"))
+    emit("soviet_commissar", lambda: build_figure(
+        "soviet", "commissar", (1.0, 1.85, 0.9),
+        {"body": (0.30, 0.30, 0.32, 1.0), "legs": (0.24, 0.24, 0.26, 1.0), "gear": (0.52, 0.16, 0.14, 1.0)}))
+
+    emit("chinese_robot", lambda: build_figure(
+        "chinese", "robot", (0.95, 1.8, 0.8),
+        {"body": (0.46, 0.47, 0.44, 1.0), "legs": (0.30, 0.31, 0.30, 1.0), "gear": (0.62, 0.52, 0.18, 1.0)}))
+    emit("chinese_drone", lambda: build_drone("chinese"))
+
+    emit("western_mercenary", lambda: build_figure(
+        "western", "mercenary", (1.1, 1.9, 1.25),
+        {"body": (0.32, 0.35, 0.40, 1.0), "legs": (0.26, 0.28, 0.32, 1.0), "gear": (0.55, 0.58, 0.62, 1.0)}))
+    emit("western_stalker", lambda: build_figure(
+        "western", "stalker", (0.9, 1.8, 0.95),
+        {"body": (0.20, 0.22, 0.26, 1.0), "legs": (0.16, 0.18, 0.21, 1.0), "gear": (0.34, 0.38, 0.44, 1.0)}))
 
     for path in written:
         size = os.path.getsize(path)

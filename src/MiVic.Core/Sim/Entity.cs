@@ -109,4 +109,17 @@ public struct Entity
     /// </para>
     /// </summary>
     public long DistanceTravelledMm;
+
+    /// <summary>
+    /// Ticks left before a newly built structure is finished. Zero for units, for
+    /// anything a scenario places, and for a structure that is already up.
+    /// <para>
+    /// A half-built structure does not produce, generate or research: the whole
+    /// point of showing it under construction is that it is not yet doing anything.
+    /// </para>
+    /// </summary>
+    public int ConstructionTicksRemaining;
+
+    /// <summary>Ticks the structure's construction originally took, for a progress bar.</summary>
+    public int ConstructionTicksTotal;
 }

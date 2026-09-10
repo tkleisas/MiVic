@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 303 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 307 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 
@@ -148,9 +148,9 @@ system, and procedurally generated faction music.
 | Navigation | 65 × 65 cells, slope- and surface-costed |
 | Instanced draw calls | 38 — one per model part, not per unit, so a turret can aim |
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
-| Models imported | 23 |
+| Models imported | 33 generated, plus the fetched set |
 | Pick round-trip | 168/168 |
-| Tests | 320 passing (303 core, 17 audio) |
+| Tests | 324 passing (307 core, 17 audio) |
 
 ### Performance
 

@@ -63,9 +63,11 @@ public static class ModelInspector
                 (float plusTip, float minusTip) = TipWidths(mesh);
 
                 string note = string.Empty;
-                if (kind != Core.Sim.UnitKind.Infantry && kind != Core.Sim.UnitKind.CommandCentre && longest != "X")
+                string expected = ExpectedLongestAxis(kind);
+
+                if (longest != expected)
                 {
-                    note = "! long axis is not X";
+                    note = $"! long axis is {longest}, expected {expected}";
                 }
 
                 Console.WriteLine(string.Create(
@@ -127,6 +129,31 @@ public static class ModelInspector
             }
         }
     }
+
+    /// <summary>
+    /// Which axis a role's longest dimension should land on once imported.
+    /// <para>
+    /// Almost everything is longest along +X, because that is forward and a unit
+    /// faces +X. The exceptions are not errors: an aircraft's wingspan exceeds its
+    /// fuselage, and a standing figure is taller than it is deep. Warning about
+    /// those would train the reader to ignore the warning.
+    /// </para>
+    /// </summary>
+    private static string ExpectedLongestAxis(Core.Sim.UnitKind kind) => kind switch
+    {
+        Core.Sim.UnitKind.Aircraft => "Z",
+        Core.Sim.UnitKind.Infantry => "Y",
+        Core.Sim.UnitKind.Commissar => "Y",
+        Core.Sim.UnitKind.RobotInfantry => "Y",
+        Core.Sim.UnitKind.Mercenary => "Y",
+        Core.Sim.UnitKind.StealthRecon => "Y",
+
+        // A chimney stack and a research tower are taller than they are wide.
+        Core.Sim.UnitKind.PowerPlant => "Y",
+        Core.Sim.UnitKind.DesignBureau => "Y",
+        Core.Sim.UnitKind.NuclearPlant => "Y",
+        _ => "X",
+    };
 
     /// <summary>
     /// Angle of the mesh's most distant vertex from +X, in degrees. For a tank

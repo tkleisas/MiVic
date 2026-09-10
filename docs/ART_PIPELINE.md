@@ -95,6 +95,24 @@ distance, not the sum of the step components — a diagonal step is 400 mm of tr
 not the 566 mm its two parts add up to, and a wheel spun by the wrong number slides
 instead of rolling.
 
+### 2.0b Structures are raised, not spawned
+
+A structure arrives unfinished and **does nothing until it is up**: no income, no
+production, no research, and `HasStructure` does not count it — so an ability that
+needs a standing design bureau does not fire at a building site. The client uses
+that state for three effects, all of them presentation only:
+
+| Effect | Driven by |
+|---|---|
+| The building rises out of the ground | `ConstructionTicksRemaining / ConstructionTicksTotal`, scaled on Y |
+| Dust while it is being built, a heavier puff when it finishes | the same fraction; the puff fires on the transition |
+| **Working smoke from the chimney** | emitted at the world position of the named `stack_*` or `barrel` part, while the structure is healthy |
+
+Smoke coming out of the chimney rather than out of the middle of the roof is what
+the part contract buys: `TryPartWorldPosition` composes a part's parent chain and
+returns where it actually is, so a new building smokes correctly by exporting a part
+called `stack`.
+
 Three tiers of animation, cheapest first:
 
 1. **Moving parts, no new pipeline.** Vehicles split into hull / turret / barrel /

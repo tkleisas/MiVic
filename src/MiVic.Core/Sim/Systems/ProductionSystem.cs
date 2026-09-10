@@ -36,6 +36,12 @@ public static class ProductionSystem
                 continue;
             }
 
+            // A structure under construction has no tools to build with yet.
+            if (building.ConstructionTicksRemaining > 0)
+            {
+                continue;
+            }
+
             // A team actually in energy deficit has no power to build with. A team
             // merely at zero, but not running a deficit, still can — otherwise a
             // base with no power plant could never build one.
@@ -94,12 +100,24 @@ public static class ProductionSystem
 
         WorldPos spawn = new(building.Position.X + offsetX, 0, building.Position.Z + offsetZ);
 
-        world.Spawn(
+        EntityId created = world.Spawn(
             building.Faction,
             building.TeamId,
             kind,
             spawn,
             Fix32.FromInt(definition.SpeedMmPerTick),
             definition.Health);
+
+        // A structure does not pop into existence fully formed. It is raised over
+        // the last part of its build time and does nothing until it is up — which is
+        // what the client's construction animation is showing.
+        if (definition.IsBuilding)
+        {
+            ref Entity structure = ref world.GetRefBySlot(created.Slot);
+
+            int rise = Math.Max(20, definition.BuildTicks / 3);
+            structure.ConstructionTicksTotal = rise;
+            structure.ConstructionTicksRemaining = rise;
+        }
     }
 }

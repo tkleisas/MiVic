@@ -59,6 +59,13 @@ public static class EconomySystem
                 continue;
             }
 
+            // A structure that is still being raised produces nothing and draws no
+            // upkeep. It is a building site, not a building.
+            if (entity.ConstructionTicksRemaining > 0)
+            {
+                continue;
+            }
+
             ref TeamState state = ref world.TeamRef(entity.TeamId);
 
             // Income scales with the faction's wealth multiplier; upkeep does not.
