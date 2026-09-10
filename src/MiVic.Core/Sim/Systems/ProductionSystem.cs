@@ -100,6 +100,11 @@ public static class ProductionSystem
 
         WorldPos spawn = new(building.Position.X + offsetX, 0, building.Position.Z + offsetZ);
 
+        // The offset knows nothing about the map, so a factory on a shoreline would
+        // eventually put its next building in the lake. Nothing is ever placed on
+        // water or lava.
+        spawn = world.LegalSpawnSite(spawn);
+
         EntityId created = world.Spawn(
             building.Faction,
             building.TeamId,

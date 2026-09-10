@@ -266,6 +266,27 @@ its own facets, and a tracer is a streak shaded along its length.
 `--combat-demo`, `--fire-demo`, `--particle-demo` and `--nuke-demo` exist to look
 at all of this without playing a match; see [Screenshots](#screenshots).
 
+### Terrain, water and lava
+
+The ground is meshed from the simulation's own height field and surface layer, so
+what is drawn is exactly what pathfinding reasons about. Water and lava are
+separate surfaces drawn over it with their own shaders, animated from the frame
+clock rather than from a texture — the only way a project with no authored assets
+can have moving water. A separate mesh rather than a flag on the terrain's vertices,
+because the terrain vertex alpha is already the faction paint mask and borrowing it
+would let a team's colour bleed into the sea.
+
+Nothing is ever built or spawned on water or lava. Produced structures and units are
+placed at an offset from whatever made them, and that offset knows nothing about the
+map — so every site is resolved to the nearest solid ground before the entity appears.
+Without that, a factory on a shoreline eventually puts its next building in the lake,
+and a structure in the sea is one the player cannot reach, defend or use.
+
+**Bridges** are the way across. Building one spans the narrow way over the water and
+converts the cells it crosses into the shallow-water ford surface that ground units
+can already cross, capped by a maximum span so a bridge cannot be thrown over an
+ocean.
+
 ### Music and sound effects
 
 The soundtrack is generated, not recorded: no audio files ship with the game.

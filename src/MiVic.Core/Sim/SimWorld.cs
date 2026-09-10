@@ -1211,6 +1211,99 @@ public sealed class SimWorld
     private static bool IsWater(TerrainType type)
         => type is TerrainType.ShallowWater or TerrainType.DeepWater;
 
+    /// <summary>How far a spawn site may be pushed to find solid ground, in cells.</summary>
+    private const int SpawnSearchRadius = 8;
+
+    /// <summary>
+    /// The same radius, for tests that want to assert a site was moved to somewhere
+    /// near rather than somewhere arbitrary.
+    /// </summary>
+    public const int MaxSpawnSearchCells = SpawnSearchRadius;
+
+    /// <summary>
+    /// Moves a spawn position onto solid ground: the nearest cell that is neither
+    /// water nor lava, searched outwards from where it was wanted.
+    /// <para>
+    /// Produced structures and units are placed at a fixed offset from whatever made
+    /// them, and that offset knows nothing about the map — so a factory on a shoreline
+    /// would eventually put its next building in the lake, on whichever tick the
+    /// offset happened to point that way. A building in the sea is not merely odd: it
+    /// is a structure the player cannot reach, cannot defend and cannot use.
+    /// </para>
+    /// <para>
+    /// Nearest first, ring by ring, so a site pushed off a shore lands as close to
+    /// where it was meant to be as the ground allows. Deterministic: it reads the
+    /// terrain and the grid and nothing else.
+    /// </para>
+    /// <para>
+    /// Bridges are unaffected in the way that matters — a bridge cell is shallow
+    /// water, which is a ford rather than solid ground, so nothing is ever built on
+    /// one.
+    /// </para>
+    /// </summary>
+    public WorldPos LegalSpawnSite(WorldPos wanted)
+    {
+        int cell = Navigation.IndexOfWorld(wanted);
+
+        if (cell < 0 || IsSolidGround(cell))
+        {
+            return wanted;
+        }
+
+        int centreX = Navigation.CellX(cell);
+        int centreZ = Navigation.CellZ(cell);
+
+        for (int radius = 1; radius <= SpawnSearchRadius; radius++)
+        {
+            for (int dz = -radius; dz <= radius; dz++)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    // The ring only: everything inside it was searched already.
+                    if (Math.Abs(dx) != radius && Math.Abs(dz) != radius)
+                    {
+                        continue;
+                    }
+
+                    int candidate = Navigation.IndexOf(centreX + dx, centreZ + dz);
+
+                    if (candidate >= 0 && IsSolidGround(candidate))
+                    {
+                        return Navigation.CentreOf(candidate);
+                    }
+                }
+            }
+        }
+
+        // Nowhere solid within reach. Returning the wanted position keeps the
+        // behaviour visible rather than silently moving the unit somewhere arbitrary.
+        return wanted;
+    }
+
+    /// <summary>
+    /// True when a navigation cell is ground rather than water or lava.
+    /// <para>
+    /// The two grids are not the same size, so this goes through world coordinates:
+    /// the navigation cell's own centre locates the terrain cell underneath it.
+    /// Indexing one grid with the other's number is the kind of mistake that reads as
+    /// working code on a square map.
+    /// </para>
+    /// </summary>
+    private bool IsSolidGround(int navCell)
+    {
+        WorldPos centre = Navigation.CentreOf(navCell);
+        int terrainCell = TerrainTypes.IndexOfWorld(centre.X, centre.Z);
+
+        if (terrainCell < 0)
+        {
+            return false;
+        }
+
+        TerrainType type = TerrainTypes.TypeAt(terrainCell);
+
+        return type is not (TerrainType.ShallowWater or TerrainType.DeepWater or TerrainType.Lava);
+    }
+
     /// <summary>Cost and time of a prototype run, as a multiple of the unit's own.</summary>
     public const int PrototypeCostPermille = 2_000;
 

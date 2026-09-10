@@ -255,8 +255,17 @@ public sealed class DeterminismTests
     public void EmptyWorld_HashIsStable()
         => Assert.Equal(StateHash.Compute(new SimWorld(1, 8)), StateHash.Compute(new SimWorld(1, 8)));
 
-    /// <summary>Golden hash of the fixed scenario. Regenerate only on a deliberate balance or system change.</summary>
+    /// <summary>
+    /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
+    /// system change.
+    /// <para>
+    /// Last changed by <c>LegalSpawnSite</c>: produced structures and units are now
+    /// moved to the nearest solid ground instead of being placed at a fixed offset
+    /// that could land in a lake, which changes where they end up and therefore the
+    /// world's state.
+    /// </para>
+    /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(445440073218466495UL, HashScenario(20250101));
+        => Assert.Equal(3549733204526663041UL, HashScenario(20250101));
 }
