@@ -3,6 +3,7 @@ using MiVic.Core.Numerics;
 using MiVic.Core.Random;
 using MiVic.Core.Replay;
 using MiVic.Core.Sim;
+using MiVic.Core.Terrain;
 using Microsoft.Xna.Framework;
 
 namespace MiVic.Game.Sim;
@@ -239,6 +240,208 @@ public sealed class SimBridge
             observer.Health);
 
         return bridge;
+    }
+
+    /// <summary>
+    /// Two tanks facing each other on the clearest ground the map has, for looking at
+    /// where a turret points while its gun is firing.
+    /// <para>
+    /// The combat demo has tanks in it, but it is framed for a battle and the middle
+    /// of the map is woodland: a tank at that distance is a dozen pixels across and
+    /// half behind a tree, which is not enough to see a gun. This puts one shooter and
+    /// one target on open ground seventy metres apart — inside the tank's own 110 m
+    /// range from the first tick — on a line that is not along X, so both turrets have
+    /// a real traverse to make and the direction they make it in can be read against
+    /// the round in flight.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateTurretDemo(ulong seed)
+    {
+        var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
+
+        SimWorld world = bridge.World;
+        Clear(world);
+
+        TerrainLayer terrain = world.TerrainTypes;
+        int clearCells = ClearRadiusCells(terrain, metres: 90f);
+        int bestCell = -1;
+        int bestScore = -1;
+
+        // Woodland is what blocks the view, and where it is is a property of the
+        // seed, so the fixture looks for the largest clearing rather than hoping the
+        // map's middle is one. Water and lava count against a cell as much as trees
+        // do: the first version of this scored the sea as the clearest ground on the
+        // map and framed two tanks standing in it.
+        for (int z = clearCells; z < terrain.Size - clearCells; z++)
+        {
+            for (int x = clearCells; x < terrain.Size - clearCells; x++)
+            {
+                if (!IsOpenGround(terrain, x, z))
+                {
+                    continue;
+                }
+
+                int score = 0;
+
+                for (int dz = -clearCells; dz <= clearCells; dz++)
+                {
+                    for (int dx = -clearCells; dx <= clearCells; dx++)
+                    {
+                        if (IsOpenGround(terrain, x + dx, z + dz))
+                        {
+                            score++;
+                        }
+                    }
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestCell = (z * terrain.Size) + x;
+                }
+            }
+        }
+
+        if (bestCell < 0)
+        {
+            return bridge;
+        }
+
+        (int centreX, int centreZ) = CellCentreMetres(terrain, bestCell);
+
+        Console.WriteLine($"turret-demo: open ground at {centreX}, {centreZ} (score {bestScore})");
+
+        // Seventy metres apart, which fills a close frame and is well inside the
+        // 110 m a tank can shoot: the pair engages without either having to move. The
+        // line between them is deliberately *not* along X: a hull faces +X when it
+        // spawns, so a target straight ahead is a turret at zero traverse, and a
+        // traverse of zero looks identical whichever way round the sign is. On a
+        // diagonal the turret has to swing, and a mirrored traverse points somewhere
+        // else entirely.
+        Spawn(world, Faction.Soviet, TeamOf(Faction.Soviet), UnitKind.Tank, centreX - 30, centreZ - 20);
+        Spawn(world, Faction.Western, TeamOf(Faction.Western), UnitKind.Tank, centreX + 30, centreZ + 20);
+
+        return bridge;
+    }
+
+    /// <summary>
+    /// One flyer of every aircraft model, and the drone, crossing the map in a
+    /// straight line along X, so a picture of two moments says whether a model
+    /// travels nose-first.
+    /// <para>
+    /// Motion is the only honest reference for "which way is this model facing":
+    /// the simulation sets a unit's heading from the step it actually took, so a
+    /// unit flying along +X is flying along its own forward axis whatever the model
+    /// looks like. The displacement between two frames is therefore a heading the
+    /// renderer cannot lie about, and it needs no assumption about which way the
+    /// camera is pointing.
+    /// </para>
+    /// <para>
+    /// All four fly over the player's own team, whichever faction's model they
+    /// wear, because the client draws what that team can see: a model owned by
+    /// anyone else is drawn as fog unless something is watching it. Being on one
+    /// team also means nothing shoots anything, so the frame holds aeroplanes and
+    /// nothing else.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateFlightDemo(ulong seed)
+    {
+        var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
+
+        SimWorld world = bridge.World;
+        Clear(world);
+
+        // One lane each, so a model cannot hide behind the one in front of it.
+        (Faction Faction, UnitKind Kind, int Z)[] flyers =
+        [
+            (Faction.Soviet, UnitKind.Aircraft, -36),
+            (Faction.Chinese, UnitKind.Aircraft, -12),
+            (Faction.Western, UnitKind.Aircraft, 12),
+            (Faction.Chinese, UnitKind.Drone, 36),
+        ];
+
+        foreach ((Faction faction, UnitKind kind, int z) in flyers)
+        {
+            // Placed exactly, not via the legal-site search a ground unit needs: a
+            // flyer is sixty metres over whatever is underneath it, and snapping it to
+            // the nearest walkable cell would put the lanes — which are the whole
+            // geometry of this fixture — wherever the terrain felt like.
+            EntityId id = world.Spawn(
+                faction,
+                0,
+                kind,
+                WorldPos.FromMetres(-140, 0, z),
+                Fix32.FromInt(UnitCatalog.Get(kind).SpeedMmPerTick),
+                UnitCatalog.Get(kind).Health);
+
+            world.OrderMove(id, WorldPos.FromMetres(140, 0, z), 0);
+        }
+
+        return bridge;
+    }
+
+    /// <summary>Empties the world, so a fixture's own line-up is the whole scene.</summary>
+    private static void Clear(SimWorld world)
+    {
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (world.IsAliveSlot(slot))
+            {
+                world.Despawn(new EntityId(slot, world.GetRefBySlot(slot).Generation));
+            }
+        }
+    }
+
+    /// <summary>Spawns one unit of a kind at a metre position, on legal ground.</summary>
+    private static EntityId Spawn(SimWorld world, Faction faction, int team, UnitKind kind, int x, int z)
+    {
+        UnitDefinition definition = UnitCatalog.Get(kind);
+
+        return world.Spawn(
+            faction,
+            team,
+            kind,
+            world.LegalSpawnSite(WorldPos.FromMetres(x, 0, z)),
+            Fix32.FromInt(definition.SpeedMmPerTick),
+            definition.Health);
+    }
+
+    /// <summary>
+    /// Which team a faction fights for. The skirmish's own sides are 0 and 2, and
+    /// the combat system only engages units on opposing teams.
+    /// </summary>
+    private static int TeamOf(Faction faction) => faction switch
+    {
+        Faction.Soviet => 0,
+        Faction.Western => 2,
+        _ => 1,
+    };
+
+    /// <summary>Navigation cells that cover a distance in metres, at least one.</summary>
+    private static int ClearRadiusCells(TerrainLayer terrain, float metres)
+        => Math.Max(1, (int)MathF.Ceiling(metres * WorldPos.MmPerMetre / terrain.CellSizeMm));
+
+    /// <summary>
+    /// Ground a tank can stand on with a clear view over it: dry land, and not
+    /// woodland, which is the one surface that puts something in the way.
+    /// </summary>
+    private static bool IsOpenGround(TerrainLayer terrain, int x, int z)
+        => terrain.TypeAtCell(x, z) switch
+        {
+            TerrainType.Grass or TerrainType.Mud or TerrainType.Sand or TerrainType.Snow
+                or TerrainType.Rock or TerrainType.Mine => true,
+            _ => false,
+        };
+
+    /// <summary>A terrain cell's centre in render metres.</summary>
+    private static (int X, int Z) CellCentreMetres(TerrainLayer terrain, int cell)
+    {
+        int x = cell % terrain.Size;
+        int z = cell / terrain.Size;
+
+        return (
+            (int)((terrain.OriginMm + (x * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre),
+            (int)((terrain.OriginMm + (z * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre));
     }
 
     /// <summary>Creates a campaign mission from its definition.</summary>

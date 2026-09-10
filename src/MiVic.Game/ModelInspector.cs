@@ -134,14 +134,30 @@ public static class ModelInspector
     /// Which axis a role's longest dimension should land on once imported.
     /// <para>
     /// Almost everything is longest along +X, because that is forward and a unit
-    /// faces +X. The exceptions are not errors: an aircraft's wingspan exceeds its
-    /// fuselage, and a standing figure is taller than it is deep. Warning about
-    /// those would train the reader to ignore the warning.
+    /// faces +X. The exceptions are not errors: a standing figure is taller than it
+    /// is deep, and a structure whose frontage exceeds its depth is left alone by
+    /// the loader's own turn and then turned by the catalogue's, which puts that
+    /// frontage along Z. Warning about those would train the reader to ignore the
+    /// warning.
+    /// </para>
+    /// <para>
+    /// Two of these are also a check worth having. A model crosses the loader's
+    /// alignment line — see <c>ModelCatalog.GeneratedYaw</c> — by being wider than
+    /// it is long, and that is exactly when the axis in this table changes; so an
+    /// aircraft or a structure reported on the wrong axis is the signal that its
+    /// yaw offset may need to change with it.
     /// </para>
     /// </summary>
     private static string ExpectedLongestAxis(Core.Sim.UnitKind kind) => kind switch
     {
-        Core.Sim.UnitKind.Aircraft => "Z",
+        // Every aircraft is ours now, and all three are longer nose to tail than
+        // they are across: the borrowed models this used to expect "Z" for are gone.
+        Core.Sim.UnitKind.Aircraft => "X",
+
+        // The drone is the one flyer that is wider across its rotors than it is long,
+        // so the loader does not turn it and the catalogue does.
+        Core.Sim.UnitKind.Drone => "Z",
+
         Core.Sim.UnitKind.Infantry => "Y",
         Core.Sim.UnitKind.Commissar => "Y",
         Core.Sim.UnitKind.RobotInfantry => "Y",
@@ -152,6 +168,11 @@ public static class ModelInspector
         Core.Sim.UnitKind.PowerPlant => "Y",
         Core.Sim.UnitKind.DesignBureau => "Y",
         Core.Sim.UnitKind.NuclearPlant => "Y",
+
+        // A headquarters and a factory are wider than they are deep, which is the
+        // turn the loader does not make for them.
+        Core.Sim.UnitKind.CommandCentre => "Z",
+        Core.Sim.UnitKind.Factory => "Z",
         _ => "X",
     };
 

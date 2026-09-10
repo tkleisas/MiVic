@@ -26,7 +26,7 @@ its own files, so they never conflict.
 ## Slots
 
 `src/MiVic.Game/Data/ModelCatalog.cs` maps every (faction, role) pair to a file
-here. At present all 51 slots are generated; `--inspect-models` reports
+here. At present all 41 slots are generated; `--inspect-models` reports
 `failures=0 missing=0` when that is true.
 
 ## Materials and the faction paint mask
@@ -81,21 +81,40 @@ game build**, but must not be published as a standalone asset pack.
 
 ## Orientation
 
-MiVic renders every unit facing **+X**. glTF models usually face **−Z**, so the
-loader rotates a model whose longest horizontal axis is Z so that axis points at
-+X. The generators author vehicles and figures facing **+Y** in Blender, which the
-exporter turns into −Z, so the generated models need the half turn and the quarter
-turn that `ModelCatalog` gives them via `GeneratedYaw` and `FigureYaw`.
+MiVic renders every unit facing **+X**: a unit's heading is the direction it last
+moved in, and the client turns the model by `-heading`, so +X is forward.
 
-To check any model, use the headless inspector — it loads models through the real
-loader and reports their dimensions and part names:
+The generators author everything front-first along **Blender +Y**, which the glTF
+exporter writes as **−Z** — a tank's barrel, an aircraft's nose, a building's
+doorway, a harvester's bucket and a drone's camera are all on the −Z end of the
+file. The loader then turns a model whose longest horizontal axis is **Z** a
+quarter turn about Y, and that turn happens to land the −Z front on +X, which is
+why `GeneratedYaw` is **no offset at all**.
+
+A model that is *wider across than it is long* gets no such turn — a figure's
+shoulders, the drone's rotor span, a headquarters whose frontage exceeds its
+depth — so its −Z front is still on −Z and the table applies `AcrossYaw`, the
+quarter turn the loader did not make.
+
+Which of the two a model wants therefore depends on its proportions, and a model
+whose shape changes enough to cross that line flips between them. Two checks:
 
 ```pwsh
-./MiVic.Game.exe --inspect-models
+./MiVic.Game.exe --inspect-models                 # sizes, parts, failures
+python tools/model_facing.py --table src/MiVic.Game/Data/ModelCatalog.cs `
+    src/MiVic.Game/bin/Debug/net9.0/Content/Models
 ```
 
-A tank whose long axis is not X, or an infantry model that is not taller than it is
-wide, is a sign of a wrong rotation.
+`--inspect-models` reports each model's imported size and part names, and its
+`nose` figure for a swept-wing aircraft is a wingtip rather than a nose.
+`tools/model_facing.py` replays the loader's own alignment rules on the file as
+Blender exported it and measures a *named* part instead — a tank's `muzzle`, an
+aircraft's `Nose`, a drone's `Camera`, a harvester's `Bucket` — so it answers
+"which way does this model end up facing" directly, and says which offset each
+slot needs.
+
+A tank whose long axis is not X, or an infantry model that is not taller than it
+is wide, is a sign of a wrong rotation.
 
 ## Reviewing a model
 
@@ -117,3 +136,13 @@ pwsh tools/montage.ps1 -Out sheet.png -Paths a.png,b.png -Labels Soviet,Chinese 
 `--viewer-angle` is yaw in degrees (45 gives a three-quarter view; 90 is dead-on).
 The fixtures need the project built first, and they are the only way to see a model
 without playing the game.
+
+A model on a locked camera is the right fixture for a facing, and the wrong one for
+anything that only happens in a fight or in flight. Two other fixtures cover those,
+and both take `--screenshot-zoom`, `--screenshot-yaw`, `--screenshot-pitch` and
+`--screenshot-target-x/z` so a frame can be re-aimed without a rebuild:
+
+| Fixture | Shows |
+|---|---|
+| `--turret-demo` | two tanks shooting at each other on open ground, close enough to see which way the gun points next to the round it fired |
+| `--flight-demo` | one flyer of every aircraft model, and the drone, crossing the map in a line, so two frames a second apart say whether a model travels nose-first |
