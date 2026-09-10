@@ -390,14 +390,14 @@ public sealed class MiVicGame : XnaGame
         }
         else if (_options.FireDemo)
         {
-            // Looking along the line from behind and above, with no yaw: the line runs
-            // left to right and every trajectory runs away from the camera, so each
-            // weapon has a predictable place on screen and "did it fire" stops being a
-            // question about framing. Close in, because a tracer is centimetres thick
-            // however long it is.
+            // Looking along the line from behind and above, with the camera on the far
+            // side of it: yaw zero puts the camera *ahead* of the line looking back, so
+            // every trajectory comes at the viewer and a seventy-metre round is
+            // foreshortened into a stub. Turned around, the line runs left to right and
+            // every round recedes, which is the only angle at which its length shows.
             _camera.ZoomTo(120f);
             _camera.TiltTo(-0.62f);
-            _camera.Yaw = 0f;
+            _camera.Yaw = MathHelper.Pi;
         }
         else if (_options.NukeDemo)
         {

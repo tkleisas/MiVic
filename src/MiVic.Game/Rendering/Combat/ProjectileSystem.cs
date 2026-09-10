@@ -29,14 +29,21 @@ public sealed class ProjectileSystem
     /// How long an electric arc stays drawn, in seconds.
     /// <para>
     /// It is not travelling — it appears along its whole length at once — so this is
-    /// how long it *persists*. A single frame is what lightning physically does and is
-    /// also invisible: at sixty frames a second a one-frame arc is on screen for
-    /// sixteen milliseconds, which the eye reads as a flicker on the monitor rather
-    /// than as a weapon firing. A tenth of a second is long enough to see the shape of
-    /// it and short enough to still read as instantaneous.
+    /// how long it *persists*.
+    /// </para>
+    /// <para>
+    /// Longer than the physics suggests, for two reasons. A single frame is what
+    /// lightning does and is also invisible: sixteen milliseconds is on screen long
+    /// enough for the monitor to flicker and not long enough for a person to see a
+    /// weapon fire. And an effect shorter than a frame step is not merely brief, it is
+    /// *skipped*: the update advances a particle by the whole elapsed time and lands
+    /// anything whose life has run out without ever drawing it, so at a low frame rate
+    /// an arc with a tenth of a second to live can go from fired to gone in one step
+    /// and never appear. A quarter of a second is long enough to be seen at any frame
+    /// rate this game runs at, and short enough to still read as instantaneous.
     /// </para>
     /// </summary>
-    private const float BoltVisibleSeconds = 0.10f;
+    private const float BoltVisibleSeconds = 0.25f;
 
     /// <summary>One round in flight, or one bolt being drawn.</summary>
     private struct Round
