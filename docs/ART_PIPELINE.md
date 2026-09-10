@@ -42,8 +42,41 @@ works (Python 3.13.13) and the glTF exporter addon is present. Models are
 therefore generated as code:
 
 ```
-blender --background --python tools/blender/build_vehicles.py -- --out Content/Models
+blender --background --python tools/blender/build_vehicles.py -- --out <dir>
 ```
+
+**Status: the generator exists and its output is in the game.** One tank in all
+three faction silhouettes, plus a command centre per faction, are generated into
+`src/MiVic.Game/Content/Models/Generated/` and wired into `ModelCatalog` for
+`UnitKind.Tank` and `UnitKind.CommandCentre`. Verified with `--inspect-models`
+(558 / 444 / 588 triangles, imported and oriented) and a passing `--selftest` with
+`models unavailable: 0`.
+
+The silhouettes come out measurably distinct, which is the point of §2.1:
+
+| | width | height | length | triangles | wheels/side |
+|---|---|---|---|---|---|
+| Σοβιετικοί | 4.44 | **3.77** (lowest) | 6.17 | 558 | 5 |
+| Κινέζοι | **3.50** (narrowest) | **4.72** (tallest) | 5.70 | 444 | 5 |
+| Δυτικοί | **4.86** (widest) | 4.55 | **7.90** (longest) | 588 | 7 |
+
+### 2.0 Two loader limits that block the rest of this section
+
+Both are in `GltfLoader` and both need fixing before animation or textured colour
+means anything:
+
+1. **The loader merges the whole node hierarchy into one mesh.** Every part is
+   baked into a single vertex buffer, so the parts exist in the file — `hull`,
+   `turret`, `barrel`, `wheel_l01`, `radar` all export correctly and are visible in
+   the glTF — but the engine cannot reach them. Tier-1 animation (a turret that
+   traverses, wheels that spin) needs the loader to keep per-node meshes and expose
+   the node transform, which is the single largest remaining piece of work here.
+2. **`COLOR_0` is reduced to greyscale luminance.** The loader computes a single
+   luminance value per vertex and writes it to R, G and B, so a model's own colours
+   are discarded and the faction tint is applied on top. Colourful generated models
+   therefore currently render as tinted greyscale. Since identity is meant to come
+   from silhouette rather than hue this is not fatal, but "colourful and textured"
+   needs the loader to pass RGB through.
 
 Three tiers of animation, cheapest first:
 

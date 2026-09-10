@@ -34,6 +34,10 @@ dotnet build MiVic.sln
 dotnet test tests/MiVic.Core.Tests          # 302 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
+
+# Optional: regenerate our own models (needs Blender 5.x on PATH)
+blender --background --python tools/blender/build_vehicles.py -- --out src/MiVic.Game/Content/Models/Generated
+
 dotnet run --project src/MiVic.Game
 ```
 
@@ -411,8 +415,7 @@ Greek needed four separate fixes, all now verified automatically by `--selftest`
   `SDL_CreateWindow` marshals its title argument as ANSI.
 - The `.spritefont` needs explicit Greek character regions.
 
-The UI font is [Noto Sans](https://fonts.google.com/noto) (SIL OFL), used both as
-a runtime TTF for ImGui and, compiled through the content pipeline, as
+The UI font is [Noto Sans](https://fonts.google.com/noto) (SIL OFL), used both asa runtime TTF for ImGui and, compiled through the content pipeline, as
 `Content/Fonts/UiText.spritefont` for world-space labels.
 
 ## License

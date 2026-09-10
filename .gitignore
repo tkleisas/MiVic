@@ -28,6 +28,11 @@ src/MiVic.Game/Content/Models/**/*.glb
 src/MiVic.Game/Content/Models/**/*.gltf
 src/MiVic.Game/Content/Models/**/*.bin
 
+# ...except the ones we generate ourselves, which are ours to commit.
+# Regenerate with tools/blender/build_vehicles.py.
+!src/MiVic.Game/Content/Models/Generated/
+!src/MiVic.Game/Content/Models/Generated/*.glb
+
 # Content pipeline intermediate output
 src/MiVic.Game/Content/bin/
 src/MiVic.Game/Content/obj/

@@ -150,37 +150,46 @@ public sealed class ModelCatalog : IDisposable
 
         private const float AircraftYawWestern = 90f;
 
+        /// <summary>
+        /// The generated models are built nose-first along Blender's +Y, which the
+        /// glTF exporter turns into -Z. The loader then aligns the longest
+        /// horizontal axis to +X, so the nose lands 180° out and needs one half
+        /// turn — the same correction the borrowed tank models needed, for a
+        /// different reason. Measured with <c>--inspect-models</c>.
+        /// </summary>
+        private const float GeneratedYaw = 180f;
+
         private static readonly Dictionary<int, ModelSpec> Specs = new()
         {
             // ---- Σοβιετικοί: heavy armour, industrial structures ----
             [CacheKeyOf(Faction.Soviet, UnitKind.Infantry)] = new("Soviet", "soldier.glb", 1.9f, InfantryYaw),
-            [CacheKeyOf(Faction.Soviet, UnitKind.Tank)] = new("Soviet", "tank_heavy.glb", 6.4f, TankYaw),
+            [CacheKeyOf(Faction.Soviet, UnitKind.Tank)] = new("Generated", "soviet_tank.glb", 6.4f, GeneratedYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.Artillery)] = new("Soviet", "tank_medium.glb", 6.0f, TankYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.AntiAir)] = new("Soviet", "turret.glb", 4.2f),
             [CacheKeyOf(Faction.Soviet, UnitKind.Aircraft)] = new("Soviet", "aircraft.glb", 11f, AircraftYawSovietAndChinese),
-            [CacheKeyOf(Faction.Soviet, UnitKind.CommandCentre)] = new("Soviet", "hq.glb", 20f),
+            [CacheKeyOf(Faction.Soviet, UnitKind.CommandCentre)] = new("Generated", "soviet_hq.glb", 20f, GeneratedYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.PowerPlant)] = new("Soviet", "hq.glb", 12f),
             [CacheKeyOf(Faction.Soviet, UnitKind.Factory)] = new("Soviet", "hq.glb", 16f),
             [CacheKeyOf(Faction.Soviet, UnitKind.DesignBureau)] = new("Soviet", "hq.glb", 14f),
 
             // ---- Κινέζοι: light hulls, mass-produced patterns ----
             [CacheKeyOf(Faction.Chinese, UnitKind.Infantry)] = new("Chinese", "soldier.glb", 1.9f, InfantryYaw),
-            [CacheKeyOf(Faction.Chinese, UnitKind.Tank)] = new("Chinese", "tank_light.glb", 5.4f, TankYaw),
+            [CacheKeyOf(Faction.Chinese, UnitKind.Tank)] = new("Generated", "chinese_tank.glb", 5.4f, GeneratedYaw),
             [CacheKeyOf(Faction.Chinese, UnitKind.Artillery)] = new("Chinese", "tank_apc.glb", 5.0f, TankYaw),
             [CacheKeyOf(Faction.Chinese, UnitKind.AntiAir)] = new("Chinese", "turret.glb", 3.8f),
             [CacheKeyOf(Faction.Chinese, UnitKind.Aircraft)] = new("Chinese", "aircraft.glb", 10f, AircraftYawSovietAndChinese),
-            [CacheKeyOf(Faction.Chinese, UnitKind.CommandCentre)] = new("Chinese", "hq.glb", 18f),
+            [CacheKeyOf(Faction.Chinese, UnitKind.CommandCentre)] = new("Generated", "chinese_hq.glb", 18f, GeneratedYaw),
             [CacheKeyOf(Faction.Chinese, UnitKind.PowerPlant)] = new("Chinese", "hq.glb", 11f),
             [CacheKeyOf(Faction.Chinese, UnitKind.Factory)] = new("Chinese", "hq.glb", 15f),
             [CacheKeyOf(Faction.Chinese, UnitKind.DesignBureau)] = new("Chinese", "hq.glb", 13f),
 
             // ---- Δυτικοί: the most refined vehicles and buildings ----
             [CacheKeyOf(Faction.Western, UnitKind.Infantry)] = new("Western", "soldier.glb", 1.9f, InfantryYaw),
-            [CacheKeyOf(Faction.Western, UnitKind.Tank)] = new("Western", "tank_medium.glb", 6.6f, TankYaw),
+            [CacheKeyOf(Faction.Western, UnitKind.Tank)] = new("Generated", "western_tank.glb", 6.6f, GeneratedYaw),
             [CacheKeyOf(Faction.Western, UnitKind.Artillery)] = new("Western", "tank_heavy.glb", 6.2f, TankYaw),
             [CacheKeyOf(Faction.Western, UnitKind.AntiAir)] = new("Western", "turret.glb", 4.0f),
             [CacheKeyOf(Faction.Western, UnitKind.Aircraft)] = new("Western", "aircraft.glb", 12f, AircraftYawWestern),
-            [CacheKeyOf(Faction.Western, UnitKind.CommandCentre)] = new("Western", "hq.glb", 22f),
+            [CacheKeyOf(Faction.Western, UnitKind.CommandCentre)] = new("Generated", "western_hq.glb", 22f, GeneratedYaw),
             [CacheKeyOf(Faction.Western, UnitKind.PowerPlant)] = new("Western", "hq.glb", 13f),
             [CacheKeyOf(Faction.Western, UnitKind.Factory)] = new("Western", "hq.glb", 17f),
             [CacheKeyOf(Faction.Western, UnitKind.DesignBureau)] = new("Western", "hq.glb", 15f),
