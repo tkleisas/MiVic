@@ -345,12 +345,20 @@ float4 WaterPS(VertexOutput input) : COLOR0
     return float4(ApplyFog(color, input.WorldPos), input.Material.a * input.Tint.a);
 }
 
-float4 LavaPS(VertexOutput input) : COLOR0
+/// <summary>
+/// The colour of molten rock, as a function of where it is and when it is.
+///
+/// Shared by the lava surface technique and by the terrain technique, because lava has
+/// to be drawn by whichever of them owns the cells — and on a volcano's slopes it is the
+/// terrain, whose mesh follows the ground. A flat surface mesh sampled at the height of
+/// its cell's centre is buried by any slope that rises more than a few centimetres across
+/// nine metres, which is every slope a lava flow has ever run down.
+///
+/// Emissive, and deliberately unlit: lava is a light source, and molten rock that dims at
+/// dusk is not molten.
+/// </summary>
+float3 LavaGlow(float2 p, float3 material)
 {
-    // Emissive, and deliberately not lit: lava is a light source. Ambient and sun
-    // would only make it dimmer, and molten rock that dims at dusk is not molten.
-    float2 p = input.WorldPos.xz;
-
     // A slow crust drifting over faster veins: the crust cools and darkens in plates,
     // and the cracks between them are where the heat shows.
     float crust = 0.5 + (0.5 * sin((p.x * 0.055) + (Time * 0.22)) * cos((p.y * 0.071) - (Time * 0.18)));
@@ -364,7 +372,7 @@ float4 LavaPS(VertexOutput input) : COLOR0
     // five sixths cold rock.
     float heat = saturate((crust * 0.85) + (veins * 0.75) - 0.05);
 
-    float3 crustColor = input.Material.rgb * 0.55;
+    float3 crustColor = material * 0.55;
     float3 molten = float3(1.00, 0.42, 0.07);
 
     // Still squared, so the crust keeps its dark plates and the cracks between them stay
@@ -374,10 +382,15 @@ float4 LavaPS(VertexOutput input) : COLOR0
     // The hottest cores glow past their own colour, so lava reads as a light source
     // against the rock rather than as a stain on it. This is the whole reason it is drawn
     // unlit: nothing else on the ground gets to be brighter than the sun.
-    color += molten * pow(heat, 4.0) * 0.45;
+    return color + (molten * pow(heat, 4.0) * 0.45);
+}
 
+float4 LavaPS(VertexOutput input) : COLOR0
+{
     // Emissive means it keeps its own brightness, but haze still applies.
-    return float4(ApplyFog(color, input.WorldPos), input.Material.a * input.Tint.a);
+    return float4(
+        ApplyFog(LavaGlow(input.WorldPos.xz, input.Material.rgb), input.WorldPos),
+        input.Material.a * input.Tint.a);
 }
 
 technique Water
@@ -755,6 +768,14 @@ float4 TerrainPS(VertexOutput input) : COLOR0
     color += float3(1.00, 0.97, 0.92) * TreatmentScale * mud * sheen * 0.32;
     color += float3(0.93, 0.97, 1.00) * TreatmentScale * snow * sparkle * 0.78 * detail * snowMatch;
     color += float3(1.00, 0.86, 0.50) * TreatmentScale * mine * oreGlint * 0.82 * detail * mineMatch;
+
+    // Lava is the one surface that is not lit at all, so it is blended in rather than
+    // modulated: it replaces the lit ground with molten rock, and it is drawn here because
+    // this is the mesh that follows the slope a flow ran down. A separate flat surface
+    // mesh is buried on any gradient, which is exactly what happened — the terrain was
+    // painting dull interpolated rust over the top of it.
+    float lavaWeight = saturate(wLava * scale);
+    color = lerp(color, LavaGlow(input.WorldPos.xz, LavaColor / 255.0), lavaWeight);
 
     return float4(ApplyFog(color, input.WorldPos), input.Tint.a);
 }

@@ -2339,10 +2339,16 @@ public sealed class MiVicGame : XnaGame
             DrawSingle(_waterMesh, Matrix.Identity, Color.White);
         }
 
+        // Lava is deliberately not drawn as a surface. It sits on the ground it flowed
+        // down, and a flat quad sampled at its cell's centre height is buried by any
+        // gradient of more than a few centimetres across nine metres — which is every
+        // slope a flow has run down. The Terrain technique shades it instead, on the mesh
+        // that follows the slope, which is also why the terrain shader had to learn a
+        // lava treatment rather than leave it to this mesh.
         if (_lavaMesh is not null)
         {
-            _renderer.BeginLiquids(InstancedRenderer.LiquidPass.Lava);
-            DrawSingle(_lavaMesh, Matrix.Identity, Color.White);
+            _lavaMesh.Dispose();
+            _lavaMesh = null;
         }
 
         if (_waterMesh is not null || _lavaMesh is not null)
