@@ -76,6 +76,9 @@ public sealed record LaunchOptions
     /// <summary>Removes every non-player structure at startup, to show the victory banner.</summary>
     public bool VictoryDemo { get; init; }
 
+    /// <summary>Starts a small battle already in weapon range, for looking at the shooting.</summary>
+    public bool CombatDemo { get; init; }
+
     /// <summary>When set, every external command is logged and the match is saved here on exit.</summary>
     public string? RecordPath { get; init; }
 
@@ -159,6 +162,13 @@ public sealed record LaunchOptions
 
                 case "--screenshot":
                     options = options with { ScreenshotPath = NextValue(args, ref i, arg), ShowHelp = false };
+                    break;
+
+                case "--screenshot-frame":
+                    // Which frame to capture. A battle is a sequence of events, not a
+                    // still life: whether a shot is in flight depends entirely on when
+                    // the picture is taken, so it has to be askable for.
+                    options = options with { ScreenshotFrame = int.Parse(NextValue(args, ref i, arg), System.Globalization.CultureInfo.InvariantCulture) };
                     break;
 
                 case "--screenshot-zoom":
@@ -302,6 +312,12 @@ public sealed record LaunchOptions
                 case "--particle-demo":
                     // The fireball is brightest a third of a second in.
                     options = options with { ParticleDemo = true, ShowHelp = false, ScreenshotFrame = 20 };
+                    break;
+
+                case "--combat-demo":
+                    // Long enough for the first shots to have crossed the gap and for
+                    // the salvo weapons to have fired twice.
+                    options = options with { CombatDemo = true, ShowHelp = false, ScreenshotFrame = 150 };
                     break;
 
                 case "--render-audio":

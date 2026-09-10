@@ -12,6 +12,7 @@ using MiVic.Game.Audio;
 using MiVic.Game.Camera;
 using MiVic.Game.Data;
 using MiVic.Game.Rendering;
+using MiVic.Game.Rendering.Combat;
 using MiVic.Game.Rendering.Particles;
 using MiVic.Game.Sim;
 using MiVic.Game.Ui;
@@ -78,10 +79,13 @@ public sealed class MiVicGame : XnaGame
     private SingleBatch? _healthFillBatch;
     private InstancedRenderer.Mesh? _axisMesh;
     private InstancedRenderer.Mesh? _particleMesh;
+    private InstancedRenderer.Mesh? _ringMesh;
+    private InstancedRenderer.Mesh? _projectileMesh;
     private SingleBatch? _axisBatch;
     private SingleBatch? _markerBatch;
     private FogOverlayRenderer? _fog;
     private ParticleSystem? _particles;
+    private ProjectileSystem? _projectiles;
     private AudioDirector? _audio;
     private SfxDirector? _sfx;
     private float[] _smokeTimers = [];
@@ -90,6 +94,7 @@ public sealed class MiVicGame : XnaGame
     private WorldLabelRenderer? _worldLabels;
     private readonly List<WorldLabel> _labelBuffer = [];
     private readonly List<OrderMarker> _orderMarkers = [];
+    private readonly List<PendingStrike> _pendingStrikes = [];
     private InstancedRenderer.Mesh? _orderMesh;
     private SingleBatch? _orderBatch;
 
@@ -248,6 +253,7 @@ public sealed class MiVicGame : XnaGame
     private double _worstFrameMilliseconds;
     private int _peakParticles;
     private int _peakParticleInstances;
+    private int _peakShotsInFlight;
     private int _startGen0;
     private int _startGen1;
     private int _startGen2;
@@ -381,6 +387,15 @@ public sealed class MiVicGame : XnaGame
                 0f,
                 mission.PlayerBase.Z / (float)WorldPos.MmPerMetre));
         }
+        else if (_options.CombatDemo)
+        {
+            // Close in and low: a firefight is read from the side, at the distance
+            // where a tracer is a streak rather than a pixel.
+            _camera.ZoomTo(135f);
+            _camera.TiltTo(-0.48f);
+            _camera.Yaw = 1.05f;
+            _camera.FocusOn(Vector3.Zero);
+        }
         else if (_options.ScreenshotPath is not null)
         {
             _camera.ZoomTo(_options.ScreenshotZoom ?? 430f);
@@ -395,7 +410,9 @@ public sealed class MiVicGame : XnaGame
                 ? new SimBridge(MissionCatalog.Require(missionId))
                 : _options.Viewer
                     ? new SimBridge(_options.Seed, ViewerFaction, ViewerKind)
-                    : new SimBridge(_options.Seed, _options.IsModelGallery);
+                    : _options.CombatDemo
+                        ? SimBridge.CreateCombatDemo(_options.Seed)
+                        : new SimBridge(_options.Seed, _options.IsModelGallery);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
@@ -428,6 +445,14 @@ public sealed class MiVicGame : XnaGame
         // Particles are billboards: a unit quad the CPU orients per particle.
         _particleMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
 
+        // A shockwave needs to be a ring rather than a filled square, so it gets its
+        // own geometry and its own instance list.
+        _ringMesh = _renderer.CreateMesh(MeshBuilder.Ring(0.74f, 1f, 28));
+
+        // Rounds in flight are solid geometry, so they need a cube rather than a
+        // quad: centred on the origin, because a round is placed by where it is.
+        _projectileMesh = _renderer.CreateMesh(MeshBuilder.Cube(1f));
+
         // Health bars reuse the particle quad: a bar is two camera-facing quads, one
         // behind the other, and there is no reason to build a mesh for that.
         _healthBackMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
@@ -435,6 +460,7 @@ public sealed class MiVicGame : XnaGame
         _healthFillMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
         _healthFillBatch = new SingleBatch(_healthFillMesh, _simulation.World.Capacity);
         _particles = new ParticleSystem();
+        _projectiles = new ProjectileSystem(_particles);
         _smokeTimers = new float[_simulation.World.Capacity];
         _wasBuilding = new bool[_simulation.World.Capacity];
 
@@ -880,7 +906,18 @@ public sealed class MiVicGame : XnaGame
                 _drawCalls++;
                 _instancesSubmitted += particles.AdditiveCount;
             }
+
+            if (particles.RingCount > 0 && _ringMesh is not null)
+            {
+                _renderer.BeginParticles(InstancedRenderer.ParticleBlend.Additive);
+                _renderer.Draw(_ringMesh, particles.RingInstances, particles.RingCount);
+                _renderer.EndParticles();
+                _drawCalls++;
+                _instancesSubmitted += particles.RingCount;
+            }
         }
+
+        DrawProjectiles();
 
         if (_simulation is not null)
         {
@@ -2033,6 +2070,75 @@ public sealed class MiVicGame : XnaGame
         WorldPos target = WorldPos.FromMetres((int)ground.X, 0, (int)ground.Z);
 
         _simulation.World.Enqueue(SimCommand.UseAbility(ability, target, _simulation.World.Tick + 1, PlayerTeam));
+
+        // Off-map support is drawn from the order rather than from the simulation,
+        // and this is the one place in the client that works that way. The
+        // simulation records that an ability was used and what it damaged, but not
+        // where it was aimed, so a strike's position exists only in the command —
+        // which means a strike replayed from a log lands its damage without its
+        // flash. Making it exact would mean hashing a purely visual coordinate.
+        if (ability is AbilityId.TacticalNuke or AbilityId.OrbitalStrike)
+        {
+            _pendingStrikes.Add(new PendingStrike(ability, ground, _simulation.World.Tick + 1));
+        }
+    }
+
+    /// <summary>An off-map strike that has been ordered and not yet drawn.</summary>
+    private readonly record struct PendingStrike(AbilityId Ability, Vector3 Ground, long Tick);
+
+    /// <summary>
+    /// Draws the strikes whose tick has arrived.
+    /// <para>
+    /// The blast is drawn on the tick the simulation applies it, so the flash and the
+    /// damage are the same event as far as the eye is concerned even though only one
+    /// of them is in the simulation.
+    /// </para>
+    /// </summary>
+    private void UpdatePendingStrikes()
+    {
+        if (_pendingStrikes.Count == 0 || _simulation is null || _particles is null)
+        {
+            return;
+        }
+
+        long tick = _simulation.World.Tick;
+
+        for (int i = _pendingStrikes.Count - 1; i >= 0; i--)
+        {
+            PendingStrike strike = _pendingStrikes[i];
+
+            if (strike.Tick > tick)
+            {
+                continue;
+            }
+
+            _pendingStrikes.RemoveAt(i);
+
+            switch (strike.Ability)
+            {
+                case AbilityId.TacticalNuke:
+                    _particles.SpawnNuke(strike.Ground, 14f);
+                    _camera?.Shake(6f);
+                    _sfx?.Play(SoundEffectKind.ExplosionLarge, strike.Ground, _camera?.Target ?? Vector3.Zero, 1f, -0.55f);
+                    break;
+
+                case AbilityId.OrbitalStrike:
+                    // A barrage rather than one hit: a run of ground bursts walking
+                    // across the target, which is what "from orbit" should look like.
+                    for (int shot = 0; shot < 7; shot++)
+                    {
+                        float offset = (shot - 3) * 9f;
+
+                        _particles.SpawnGroundBurst(
+                            strike.Ground + new Vector3(offset, 0.5f + (shot * 0.15f), offset * 0.35f),
+                            2.4f);
+                    }
+
+                    _camera?.Shake(3.2f);
+                    _sfx?.Play(SoundEffectKind.ExplosionLarge, strike.Ground, _camera?.Target ?? Vector3.Zero, 1f, -0.4f);
+                    break;
+            }
+        }
     }
 
     /// <summary>
@@ -2467,6 +2573,102 @@ public sealed class MiVicGame : XnaGame
     }
 
     /// <summary>
+    /// Turns a shot the simulation has already resolved into something to look at:
+    /// a flash at the muzzle and a round on its way to the target.
+    /// <para>
+    /// The muzzle is approximated rather than read off the model's barrel. The barrel
+    /// has been rotated to face the target by then, and its own transform lives in
+    /// the render pass; what matters visually is only that the flash is at the front
+    /// of the shooter at roughly gun height, which is the model's size and the
+    /// direction to the target.
+    /// </para>
+    /// </summary>
+    private void FireShot(ref SimWorld world, in SimEvent shot, Vector3 listener)
+    {
+        if (_projectiles is null || _simulation is null)
+        {
+            return;
+        }
+
+        if (FireProfiles.For(shot.Kind) is not { } profile)
+        {
+            return;
+        }
+
+        float size = ModelCatalog.NominalSizeMetres(shot.Faction, shot.Kind);
+
+        if (!world.IsAliveSlot(shot.TargetSlot))
+        {
+            return;
+        }
+
+        Vector3 origin = shot.Position;
+        Vector3 target = _simulation.GetRenderPosition(shot.TargetSlot, interpolate: true);
+
+        Vector3 delta = target - origin;
+        float range = delta.Length();
+
+        if (range < 0.05f)
+        {
+            return;
+        }
+
+        Vector3 direction = delta / range;
+
+        // Stand the flash off the front of the shooter, and lift it to gun height:
+        // a third of the way up a person, rather less of a tank.
+        float reach = size * 0.45f;
+        float height = Math.Clamp(size * 0.28f, 0.7f, 2.6f);
+
+        Vector3 muzzle = origin
+            + (direction * reach)
+            + new Vector3(0f, height, 0f);
+
+        Vector3 impact = target + new Vector3(0f, Math.Clamp(size * 0.20f, 0.4f, 1.8f), 0f);
+
+        _projectiles.Fire(profile, muzzle, impact, MathF.Max(size / 6.4f, 0.42f));
+
+        // The shot is heard where it was fired, not where it is going.
+        _sfx?.Play(profile.Launch, muzzle, listener, 0.9f, 0f);
+
+        _peakShotsInFlight = Math.Max(_peakShotsInFlight, _projectiles.LiveCount);
+    }
+
+    /// <summary>
+    /// Draws the rounds in flight.
+    /// <para>
+    /// Solid rounds go through the lit pass, because a rocket is a thing with a
+    /// shape. Tracers go through the additive pass, because a bullet is a streak of
+    /// light and lighting it like a box makes it look like a flying brick.
+    /// </para>
+    /// </summary>
+    private void DrawProjectiles()
+    {
+        if (_projectiles is not { } shells ||
+            _projectileMesh is null ||
+            _options.IsModelGallery)
+        {
+            return;
+        }
+
+        if (shells.AlphaCount > 0)
+        {
+            _renderer!.Draw(_projectileMesh, shells.AlphaInstances, shells.AlphaCount);
+            _drawCalls++;
+            _instancesSubmitted += shells.AlphaCount;
+        }
+
+        if (shells.AdditiveCount > 0)
+        {
+            _renderer!.BeginParticles(InstancedRenderer.ParticleBlend.Additive);
+            _renderer.Draw(_projectileMesh, shells.AdditiveInstances, shells.AdditiveCount);
+            _renderer.EndParticles();
+            _drawCalls++;
+            _instancesSubmitted += shells.AdditiveCount;
+        }
+    }
+
+    /// <summary>
     /// Fires a row of explosions of increasing size plus a couple of smoke
     /// plumes, so one screenshot shows the whole range of the particle system.
     /// </summary>
@@ -2556,10 +2758,20 @@ public sealed class MiVicGame : XnaGame
                 continue;
             }
 
+            if (simEvent.Type == SimEventType.ShotFired)
+            {
+                // A shot: a muzzle flash and a round on its way. Nothing has landed
+                // yet — the damage was applied when the weapon fired, and the round
+                // drawn here is the picture of that.
+                FireShot(ref world, in simEvent, listener);
+                continue;
+            }
+
             if (simEvent.Type == SimEventType.UnitHit)
             {
-                // Pitch rises for small targets: a rifle round hitting infantry
-                // should not sound like a shell hitting a factory.
+                // The impact is drawn by the round that arrives, so this only needs
+                // the sound. A rifle round hitting infantry should not sound like a
+                // shell hitting a factory.
                 float pitch = simEvent.Kind switch
                 {
                     UnitKind.CommandCentre or UnitKind.Factory or UnitKind.PowerPlant => -0.55f,
@@ -2581,6 +2793,28 @@ public sealed class MiVicGame : XnaGame
                 0.27f + (tint.Y * 0.3f),
                 0.26f + (tint.Z * 0.3f)));
 
+            // A wreck is not finished exploding. Vehicles and structures carry
+            // something that burns, and a couple of delayed bangs is the cheapest
+            // way to say so — and the reason a battlefield keeps moving after the
+            // shooting stops.
+            bool structure = simEvent.Kind is UnitKind.CommandCentre or UnitKind.Factory
+                or UnitKind.PowerPlant or UnitKind.NuclearPlant or UnitKind.DesignBureau;
+
+            bool vehicle = simEvent.Kind is UnitKind.Tank or UnitKind.Artillery
+                or UnitKind.AntiAir or UnitKind.RocketArtillery or UnitKind.Harvester
+                or UnitKind.Aircraft or UnitKind.ElectroPrototype;
+
+            if (structure || vehicle)
+            {
+                _projectiles?.ScheduleCookOff(
+                    simEvent.Position,
+                    simEvent.Scale,
+                    structure ? 6 : 3,
+                    new Vector3(0.30f, 0.27f, 0.25f));
+
+                _camera?.Shake(structure ? simEvent.Scale * 0.22f : simEvent.Scale * 0.10f);
+            }
+
             if (simEvent.Kind is UnitKind.CommandCentre or UnitKind.Factory)
             {
                 // A big structure keeps burning for a moment after it goes up.
@@ -2601,6 +2835,7 @@ public sealed class MiVicGame : XnaGame
 
         _peakParticles = Math.Max(_peakParticles, _particles.LiveCount);
         _peakParticleInstances = Math.Max(_peakParticleInstances, _particles.AlphaCount + _particles.AdditiveCount);
+        _peakShotsInFlight = Math.Max(_peakShotsInFlight, _projectiles?.LiveCount ?? 0);
 
         // Ambient smoke: structures that are working or damaged, and vehicles
         // that are badly hurt. Timers stagger the puffs so the battlefield does
@@ -2682,11 +2917,29 @@ public sealed class MiVicGame : XnaGame
         }
 
         Matrix view = _camera!.GetView();
+        float sizeScale = Math.Clamp(_camera.Distance / 140f, 1f, 4f);
+
         _particles.Update(
             elapsedSeconds,
             new Vector3(view.M11, view.M21, view.M31),
             new Vector3(view.M12, view.M22, view.M32),
-            Math.Clamp(_camera.Distance / 140f, 1f, 4f));
+            sizeScale);
+
+        _projectiles?.Update(
+            elapsedSeconds,
+            new Vector3(view.M11, view.M21, view.M31),
+            new Vector3(view.M12, view.M22, view.M32),
+            sizeScale);
+
+        UpdatePendingStrikes();
+
+        // Shake is requested by whatever was loudest this frame, and applied to the
+        // camera for the *next* one. Applying it here would move the view under a
+        // frame that has already been built from it.
+        if (_projectiles is { PendingShake: > 0f } shells)
+        {
+            _camera.Shake(shells.PendingShake);
+        }
     }
 
     /// <summary>

@@ -60,13 +60,63 @@ public sealed class RtsCamera
         }
     }
 
+    /// <summary>Camera shake, in metres, applied on top of the position and view.</summary>
+    private Vector3 _shakeOffset;
+
+    /// <summary>Amplitude left to decay, in metres.</summary>
+    private float _shakeAmplitude;
+
+    /// <summary>How much of the shake is left, 0..1. For the HUD to read if it wants to.</summary>
+    public float ShakeFraction => MaxShake > 0f ? _shakeAmplitude / MaxShake : 0f;
+
+    /// <summary>Largest shake this camera will accept, so one nuke cannot throw it off the map.</summary>
+    private const float MaxShake = 6f;
+
+    /// <summary>
+    /// Impacts the camera. The largest request wins rather than the sum, so a
+    /// hundred rifles firing at once produce a rumble and not a seizure.
+    /// </summary>
+    public void Shake(float metres)
+    {
+        float wanted = Math.Clamp(metres, 0f, MaxShake);
+        _shakeAmplitude = MathF.Max(_shakeAmplitude, wanted);
+    }
+
+    /// <summary>Decays the shake and picks this frame's offset.</summary>
+    private void UpdateShake(float deltaSeconds)
+    {
+        if (_shakeAmplitude <= 0.0001f)
+        {
+            _shakeAmplitude = 0f;
+            _shakeOffset = Vector3.Zero;
+            return;
+        }
+
+        // Exponential decay: a shake that faded linearly would stop dead, and the
+        // stop is more noticeable than the shake.
+        _shakeAmplitude *= MathF.Pow(0.12f, deltaSeconds);
+
+        // A deterministic wobble rather than a random one: the camera is not game
+        // state, but a replay that shook differently every time would still look
+        // like a different replay.
+        float phase = _clock * 47f;
+        _clock += deltaSeconds;
+
+        _shakeOffset = new Vector3(
+            MathF.Sin(phase * 1.7f) * _shakeAmplitude,
+            MathF.Sin(phase * 2.3f) * _shakeAmplitude * 0.7f,
+            MathF.Cos(phase * 1.3f) * _shakeAmplitude);
+    }
+
+    private float _clock;
+
     /// <summary>Fraction of the way between the closest and farthest zoom, 0..1.</summary>
     public float ZoomFraction => MathHelper.Clamp((Distance - MinDistance) / (MaxDistance - MinDistance), 0f, 1f);
 
     /// <summary>True when the camera is far enough out that unit icons should replace meshes.</summary>
     public bool IsStrategicZoom => ZoomFraction > 0.82f;
 
-    public Matrix GetView() => Matrix.CreateLookAt(Position, Target, Vector3.Up);
+    public Matrix GetView() => Matrix.CreateLookAt(Position + _shakeOffset, Target + _shakeOffset, Vector3.Up);
 
     public Matrix GetProjection(float aspectRatio)
         => Matrix.CreatePerspectiveFieldOfView(FieldOfView, aspectRatio, 0.5f, 6000f);
@@ -84,6 +134,7 @@ public sealed class RtsCamera
         HandleRotation(deltaSeconds, keyboard, mouse, previousMouse);
         HandlePan(deltaSeconds, keyboard, mouse, previousMouse);
         ClampTarget();
+        UpdateShake(deltaSeconds);
     }
 
     /// <summary>

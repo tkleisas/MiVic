@@ -37,6 +37,76 @@ public static class MeshBuilder
         return new MeshData(vertices, indices);
     }
 
+    /// <summary>
+    /// A cube centred on the origin.
+    /// <para>
+    /// Distinct from <see cref="Box"/>, which sits on its base because buildings and
+    /// unit bodies stand on the ground. Anything that flies is placed by its centre,
+    /// and a box placed by its base needs half its height subtracted at every call
+    /// site — which is the sort of correction that gets forgotten once and leaves
+    /// every shell flying half a metre low.
+    /// </para>
+    /// </summary>
+    public static MeshData Cube(float size)
+    {
+        MeshData box = Box(size, size, size);
+        float half = size * 0.5f;
+
+        for (int i = 0; i < box.Vertices.Length; i++)
+        {
+            VertexPositionNormal vertex = box.Vertices[i];
+            vertex.Position.Y -= half;
+            box.Vertices[i] = vertex;
+        }
+
+        return box;
+    }
+
+    /// <summary>
+    /// A flat annulus in the XY plane, centred on the origin.
+    /// <para>
+    /// A shockwave drawn with <see cref="Quad"/> is a filled square that grows, which
+    /// reads as a sheet of paper being pulled across the ground rather than as a blast
+    /// going outwards. The shape is the entire effect.
+    /// </para>
+    /// </summary>
+    public static MeshData Ring(float innerRadius, float outerRadius, int segments = 24)
+    {
+        var vertices = new VertexPositionNormal[(segments + 1) * 2];
+        var indices = new ushort[segments * 6];
+
+        for (int i = 0; i <= segments; i++)
+        {
+            float angle = (MathF.Tau * i) / segments;
+            float cos = MathF.Cos(angle);
+            float sin = MathF.Sin(angle);
+
+            vertices[i * 2] = new VertexPositionNormal(
+                new Vector3(cos * innerRadius, sin * innerRadius, 0f), Vector3.UnitZ);
+
+            vertices[(i * 2) + 1] = new VertexPositionNormal(
+                new Vector3(cos * outerRadius, sin * outerRadius, 0f), Vector3.UnitZ);
+        }
+
+        for (int i = 0; i < segments; i++)
+        {
+            ushort inner = (ushort)(i * 2);
+            ushort outer = (ushort)((i * 2) + 1);
+            ushort nextInner = (ushort)((i + 1) * 2);
+            ushort nextOuter = (ushort)(((i + 1) * 2) + 1);
+
+            indices[i * 6] = inner;
+            indices[(i * 6) + 1] = outer;
+            indices[(i * 6) + 2] = nextOuter;
+
+            indices[(i * 6) + 3] = inner;
+            indices[(i * 6) + 4] = nextOuter;
+            indices[(i * 6) + 5] = nextInner;
+        }
+
+        return new MeshData(vertices, indices);
+    }
+
     /// <summary>Axis-aligned box centred on the origin, footprint centred, base at y = 0.</summary>
     public static MeshData Box(float width, float height, float depth)
     {

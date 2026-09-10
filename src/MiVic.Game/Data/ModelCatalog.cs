@@ -203,6 +203,17 @@ public sealed class ModelCatalog : IDisposable
     public float WheelRadius(Faction faction, UnitKind kind)
         => GetParts(faction, kind).WheelRadiusMetres;
 
+    /// <summary>
+    /// How big this role's model is, as the length of its longest axis in metres.
+    /// <para>
+    /// Presentation uses it to scale things that happen *to* a unit — where a
+    /// muzzle flash sits, how big a shell is, how far a wreck throws its debris —
+    /// so an infantryman's rifle does not fire a tank round's effect.
+    /// </para>
+    /// </summary>
+    public static float NominalSizeMetres(Faction faction, UnitKind kind)
+        => ModelSpec.TryGet(faction, kind, out ModelSpec spec) ? spec.TargetSizeMetres : 2f;
+
     private static int CacheKey(Faction faction, UnitKind kind) => ((int)faction << 8) | (int)kind;
 
     private InstancedRenderer.Mesh LoadOrBuild(Faction faction, UnitKind kind)
