@@ -80,6 +80,18 @@ public static class StateHash
             Mix(ref hash, chunk);
         }
 
+        // Ground attributes are state for the same reason the two above are, and more of
+        // it: canopy density and moisture are what the fire, crushing and regrowth steps
+        // write. They are a pure function of the seed today, so hashing them changes
+        // nothing yet — which is exactly why they go in now, while leaving them out is
+        // still a decision rather than an oversight.
+        ReadOnlySpan<uint> attributes = world.TerrainTypes.RawAttributes;
+
+        for (int i = 0; i < attributes.Length; i++)
+        {
+            Mix(ref hash, (long)attributes[i]);
+        }
+
         // The mission's identity and objective progress decide the outcome, so
         // they are as much part of the state as any unit's position.
         Mix(ref hash, world.Mission?.Id);

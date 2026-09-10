@@ -267,11 +267,15 @@ public sealed class MissionTests
         // Golden hashes of the three missions' starting worlds: this is what
         // catches a change to the mission layouts that a replay would otherwise
         // reproduce faithfully but wrongly.
+        //
+        // Last changed by the terrain attributes: every cell of every mission's ground
+        // now carries canopy density and moisture in a second word, and that word is part
+        // of the state hash.
         ulong[] expected =
         [
-            15187820408288186111UL,
-            9127364955658186919UL,
-            5710809577633218526UL,
+            8026765886933108591UL,
+            12864648431666998699UL,
+            17539127846284617590UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)

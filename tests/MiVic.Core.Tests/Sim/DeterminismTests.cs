@@ -259,12 +259,14 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by the terrain bands: mud, sand and snow are cut from the map's
-    /// relief and stacked in order, so sand and snow exist now where before they could
-    /// not appear at all.
+    /// Last changed by the terrain attributes: every cell now carries a second word —
+    /// canopy density, moisture, and the bits the fire step will write — and that word is
+    /// folded into the state hash, so every hash of a world moved with it. Before that it
+    /// was moved by the terrain bands, which are cut from the map's relief and stacked in
+    /// order so that sand and snow can appear at all.
     /// </para>
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(346948815215753103UL, HashScenario(20250101));
+        => Assert.Equal(14384559235790102999UL, HashScenario(20250101));
 }

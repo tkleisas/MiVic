@@ -41,10 +41,14 @@ public sealed class ScenarioTests
     /// Golden hash of the skirmish's initial state. Regenerate only on a
     /// deliberate change to the starting layout: this is what catches a refactor
     /// that quietly moves a unit, which a replay would then reproduce wrongly.
+    /// <para>
+    /// Last changed by the terrain attributes: the ground carries a second word per cell
+    /// — canopy density and moisture, so far — and that word is state, so it is hashed.
+    /// </para>
     /// </summary>
     [Fact]
     public void SkirmishInitialHash_IsStable()
-        => Assert.Equal(9298346810988819925UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
+        => Assert.Equal(14578439182083720977UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
 
     [Fact]
     public void SkirmishLaysOutThreeForcesOfTheRightSize()

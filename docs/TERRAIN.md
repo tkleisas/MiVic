@@ -51,7 +51,7 @@ parallel array.
 | 8–11 | `Moisture` | how wet the ground is, 0–15 |
 | 12–15 | `Aspect` | the way the ground faces: 0–7 compass points, 8 flat, 9–15 unused |
 | 16–19 | `Landform` | 0 plain, 1 slope, 2 ridge, 3 valley, 4 pass, 5 plateau, 6 basin, 7 shelf |
-| 20–23 | `Fuel` | how much there is left to burn; starts at the vegetation, falls as it burns |
+| 20–23 | `Fuel` | how much there is left to burn, **scaled** from the vegetation because 8 bits do not fit in 4 — a closed canopy is 15 and bare ground is 0; falls as it burns |
 | 24 | `Burning` | fire is in this cell now |
 | 25 | `Burned` | it has been on fire and is charred; regrows far more slowly |
 | 26 | `Cratered` | shelled ground: extra cover, worse going |
@@ -66,6 +66,15 @@ twiddling at the call site.
 are generated and stored. `Aspect` is stored because it is a *neighbourhood* fact —
 every other field is a point fact, and recomputing aspect per query would mean reading
 three cells to answer a question about one.
+
+**The scales are anchored, because a threshold means nothing without one.** `Moisture`
+is 15 at standing water — every water cell is 15, by rule — and falls to 0 at the
+highest ground on the map, measured against the map's *relief* rather than its height
+ceiling, which is the mistake the sand and volcano lines made. Drier ground drains
+faster, so slope subtracts from it. The fire step's "low moisture" threshold is written
+against that scale and not against a feeling. `Vegetation` is likewise anchored at both
+ends: 0 is bare ground and 255 is closed canopy, and both values are reachable on a
+generated map, or the top of the scale is a number that never happens.
 
 ### Vegetation is mutable
 

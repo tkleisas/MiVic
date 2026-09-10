@@ -31,10 +31,28 @@ public sealed class TerrainLayer
     private readonly int[] _weatherExpiry;
     private readonly byte[] _churn;
 
+    /// <summary>
+    /// The attribute word per cell — canopy density, moisture, aspect, landform, fuel
+    /// and the damage flags.
+    /// <para>
+    /// A second word rather than a second layer, and the arithmetic is the reason: 65×65
+    /// words is about 17 KB, which is nothing next to the entity array, and it buys
+    /// attributes that cannot get out of step with the cell they describe.
+    /// </para>
+    /// </summary>
+    private readonly uint[] _attributes;
+
     private int _weatherCells;
     private int _churnedCells;
 
-    private TerrainLayer(int size, int cellSizeMm, int originMm, int waterLevelMm, int maxHeightMm, byte[] types)
+    private TerrainLayer(
+        int size,
+        int cellSizeMm,
+        int originMm,
+        int waterLevelMm,
+        int maxHeightMm,
+        byte[] types,
+        uint[] attributes)
     {
         Size = size;
         CellSizeMm = cellSizeMm;
@@ -42,6 +60,7 @@ public sealed class TerrainLayer
         WaterLevelMm = waterLevelMm;
         MaxHeightMm = maxHeightMm;
         _types = types;
+        _attributes = attributes;
         _original = new byte[types.Length];
         _weatherExpiry = new int[types.Length];
         _churn = new byte[types.Length];
@@ -93,6 +112,13 @@ public sealed class TerrainLayer
     /// that rate would cost more than it shows: the client throttles this one.
     /// </summary>
     public int ChurnRevision { get; private set; }
+
+    /// <summary>
+    /// Bumped on every change to the attributes. Separate from <see cref="Revision"/>
+    /// and <see cref="ChurnRevision"/> because it moves for its own reasons: a wood
+    /// thinning from a fire, tracks crushing a clearing, or a field regrowing.
+    /// </summary>
+    public int AttributeRevision { get; private set; }
 
     /// <summary>
     /// Generates the layer for a height field, aligned to a navigation grid so the
@@ -165,7 +191,20 @@ public sealed class TerrainLayer
         EnsureGroundConnectivity(types, size, grid);
         ScatterDeposits(types, size, grid, seed);
 
-        return new TerrainLayer(size, grid.CellSizeMm, grid.OriginMm, waterLevel, map.MaxHeightMm, types);
+        // Attributes come last, once every pass that can rewrite a surface has run:
+        // vegetation is read off the surface, so a grove planted afterwards would be a
+        // wood with a bare floor and a ford carved afterwards would be a lake with
+        // grass in it.
+        uint[] attributes = GenerateAttributes(types, size, grid, map, stride, waterLevel, relief, seed);
+
+        return new TerrainLayer(
+            size,
+            grid.CellSizeMm,
+            grid.OriginMm,
+            waterLevel,
+            map.MaxHeightMm,
+            types,
+            attributes);
     }
 
     /// <summary>
@@ -660,6 +699,229 @@ public sealed class TerrainLayer
         return TerrainType.Grass;
     }
 
+    /// <summary>Feature size of the broad regional swing in vegetation and moisture, in cells.</summary>
+    private const int TextureRegionCells = 11;
+
+    /// <summary>Feature size of the grove-sized ripple beneath it, in cells.</summary>
+    private const int TextureGroveCells = 4;
+
+    /// <summary>Vegetation lost per 1000 mm/m of slope: soil does not sit on a hillside.</summary>
+    private const int VegetationSlopePenalty = 60;
+
+    /// <summary>
+    /// How far the canopy noise is stretched around its mean, in permille: 1000 would use
+    /// the noise as it comes, and 3000 reaches the ends of each surface's band.
+    /// </summary>
+    private const int TextureContrastPermille = 3_000;
+
+    /// <summary>Wetness permille a cell loses per 1000 mm/m of slope, as a hillside drains.</summary>
+    private const int MoistureDrainPermille = 500;
+
+    /// <summary>
+    /// Generates the attribute word of every cell.
+    /// <para>
+    /// A pure function of the height field, the surface, the lattice and the seed: no
+    /// floating point, no RNG stream, no dependence on the order cells are visited, so
+    /// two machines grow the same ground from the same seed without either of them
+    /// having to be told.
+    /// </para>
+    /// </summary>
+    private static uint[] GenerateAttributes(
+        byte[] types,
+        int size,
+        NavGrid grid,
+        HeightMap map,
+        int stride,
+        int waterLevel,
+        int relief,
+        ulong seed)
+    {
+        uint[] attributes = new uint[types.Length];
+
+        for (int z = 0; z < size; z++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                int index = (z * size) + x;
+                int sampleX = Math.Min(x * stride, map.Size - 1);
+                int sampleZ = Math.Min(z * stride, map.Size - 1);
+                int slope = map.SlopePermille(sampleX, sampleZ);
+                TerrainType type = (TerrainType)types[index];
+                int height = grid.HeightAt(index);
+
+                attributes[index] = new TerrainAttributes()
+                    .WithVegetation(VegetationFor(type, slope, x, z, seed))
+                    .WithMoisture(MoistureFor(type, height, slope, waterLevel, relief, x, z, seed))
+                    .Raw;
+            }
+        }
+
+        return attributes;
+    }
+
+    /// <summary>
+    /// Canopy density of a cell, 0..255.
+    /// <para>
+    /// The surface decides which band the cell lives in — a wood carries a canopy, open
+    /// ground carries scrub, sand and scree carry next to nothing — and the noise decides
+    /// where in that band it sits. That is what makes woodland a *density* rather than a
+    /// type: a thin wood and a closed one are both woods, and a player can tell them
+    /// apart without the movement table changing underneath them.
+    /// </para>
+    /// </summary>
+    private static int VegetationFor(TerrainType type, int slope, int x, int z, ulong seed)
+    {
+        // Bare at the bottom, closed canopy at the top. A wood is never quite bare, and
+        // dunes and scree are bare far more often than not, which is what keeps each
+        // surface's mean where a player would expect to find it.
+        (int floor, int ceiling) = type switch
+        {
+            TerrainType.Forest => (140, 255),
+            TerrainType.Grass => (10, 180),
+            TerrainType.Mud => (10, 150),
+            TerrainType.Sand => (0, 70),
+            TerrainType.Mine => (0, 60),
+            TerrainType.Rock => (0, 45),
+            TerrainType.Snow => (0, 35),
+            _ => (0, 0),
+        };
+
+        // Water and lava grow nothing, and saying so once here is cheaper than a rule
+        // about it everywhere downstream.
+        if (ceiling == 0)
+        {
+            return 0;
+        }
+
+        int texture = Texture(x, z, seed ^ 0x7E6E_7A71);
+
+        // Spread the noise across the band rather than letting it cluster in the middle of
+        // it. The weighted average of three scales is roughly a bell, and a bell uses half
+        // the range it is given — which would leave the closed-canopy end of the scale
+        // somewhere no cell ever reaches, with bare ground at the other. That is the shape
+        // of the last three bugs this project had, and it costs one multiply to not have a
+        // fourth: a wood can now be closed, and open ground can be bare.
+        int spread = IntMath.Clamp(
+            128 + (((texture - 128) * TextureContrastPermille) / 1_000),
+            0,
+            255);
+
+        // Divided by 255 rather than shifted: both ends of the band are then positions a
+        // cell can actually hold.
+        int vegetation = floor + (((ceiling - floor) * spread) / 255);
+
+        return IntMath.Clamp(
+            vegetation - ((slope * VegetationSlopePenalty) / 1_000),
+            0,
+            TerrainAttributes.MaxVegetation);
+    }
+
+    /// <summary>
+    /// How wet a cell's ground is, 0..15.
+    /// <para>
+    /// Moisture follows the water: the low ground by the shore is wet, the tops are dry,
+    /// and a slope sheds what falls on it. Which is what makes wet ground the ground a
+    /// player already reads as marsh and dry ground the ridge line — and it is the input
+    /// the fire step will need to decide what will not burn.
+    /// </para>
+    /// </summary>
+    private static int MoistureFor(
+        TerrainType type,
+        int height,
+        int slope,
+        int waterLevel,
+        int relief,
+        int x,
+        int z,
+        ulong seed)
+    {
+        // Standing water is wet by definition; there is nothing for four bits to decide.
+        if (type is TerrainType.DeepWater or TerrainType.ShallowWater)
+        {
+            return TerrainAttributes.MaxMoisture;
+        }
+
+        int above = IntMath.Clamp(height - waterLevel, 0, relief);
+
+        // 1000 at the waterline, 0 at the highest ground on the map. Measured against the
+        // relief rather than against the map's ceiling, for the reason the surface bands
+        // are: a map that only occupies the bottom of its height range still has to have
+        // both wet ground and dry ground on it.
+        int wetness = 1_000 - ((above * 1_000) / relief);
+
+        wetness -= (slope * MoistureDrainPermille) / 1_000;
+
+        // Half a level of rounding, so wetness does not sit a whole step low because the
+        // division truncated towards zero.
+        int moisture = ((wetness * TerrainAttributes.MaxMoisture) + 500) / 1_000;
+
+        return IntMath.Clamp(
+            moisture + Variation(x, z, seed ^ 0x3501_57A7),
+            0,
+            TerrainAttributes.MaxMoisture);
+    }
+
+    /// <summary>
+    /// Multi-scale noise over the cell lattice, 0..255.
+    /// <para>
+    /// Three feature sizes weighted coarse to fine, because one scale is either a flat
+    /// wash or single-cell speckle and ground is neither: a field has regions, groves and
+    /// grain, and a canopy that does not have all three reads as a texture rather than as
+    /// somewhere.
+    /// </para>
+    /// </summary>
+    private static int Texture(int x, int z, ulong seed)
+        => ((CellNoise(x, z, TextureRegionCells, seed) * 5) +
+            // Each scale gets its own salt: sharing one leaves the scales correlated
+            // wherever their lattices happen to line up, which shows up as a visible grain.
+            (CellNoise(x, z, TextureGroveCells, seed ^ 0x1F1F_1F1F) * 3) +
+            (CellNoise(x, z, 1, seed ^ 0x2F2F_2F2F) * 2)) / 10;
+
+    /// <summary>A small signed swing off the same noise, -2..+2.</summary>
+    private static int Variation(int x, int z, ulong seed) => ((Texture(x, z, seed) * 5) >> 8) - 2;
+
+    /// <summary>
+    /// Smooth value noise over the cell lattice, 0..255, at a given feature size.
+    /// <para>
+    /// Interpolated rather than blocky, through the same Q16 smoothstep the height field
+    /// uses. A per-block roll would put a straight edge through the middle of a wood, and
+    /// the edge would be the thing a player noticed.
+    /// </para>
+    /// </summary>
+    private static int CellNoise(int x, int z, int spacing, ulong seed)
+    {
+        // Lattice coordinates are cell coordinates and therefore never negative, so the
+        // divisions below are the floor of a non-negative value.
+        int gridX = x / spacing;
+        int gridZ = z / spacing;
+        int fractionX = (int)(((long)(x - (gridX * spacing)) << 16) / spacing);
+        int fractionZ = (int)(((long)(z - (gridZ * spacing)) << 16) / spacing);
+
+        int smoothX = Smoothstep(fractionX);
+        int smoothZ = Smoothstep(fractionZ);
+
+        int top = Lerp(Corner(gridX, gridZ, seed), Corner(gridX + 1, gridZ, seed), smoothX);
+        int bottom = Lerp(Corner(gridX, gridZ + 1, seed), Corner(gridX + 1, gridZ + 1, seed), smoothX);
+
+        return Lerp(top, bottom, smoothZ);
+    }
+
+    /// <summary>A lattice corner's value, 0..255.</summary>
+    private static int Corner(int gridX, int gridZ, ulong seed) => (Hash(gridX, gridZ, seed) >> 8) & 0xFF;
+
+    /// <summary>Smoothstep on a Q16 fraction: f*f*(3-2f).</summary>
+    private static int Smoothstep(int fraction)
+    {
+        long f = fraction;
+        long squared = (f * f) >> 16;
+
+        return (int)((squared * ((3L * 65_536) - (2 * f))) >> 16);
+    }
+
+    /// <summary>Interpolates two lattice values by a Q16 fraction.</summary>
+    private static int Lerp(int from, int to, int fraction)
+        => from + (int)(((long)(to - from) * fraction) >> 16);
+
     /// <summary>Surface at a cell index.</summary>
     public TerrainType TypeAt(int index) => (TerrainType)_types[index];
 
@@ -668,6 +930,19 @@ public sealed class TerrainLayer
 
     /// <summary>Raw churn bytes, for hashing. Ground wear is state like any other.</summary>
     public ReadOnlySpan<byte> RawChurn => _churn;
+
+    /// <summary>
+    /// Raw attribute words, for hashing. Canopy density and moisture are state in every
+    /// sense that matters: fire, tracks and regrowth write them, so two machines that
+    /// disagreed about them would disagree about the battle.
+    /// </summary>
+    public ReadOnlySpan<uint> RawAttributes => _attributes;
+
+    /// <summary>
+    /// Attribute word of a cell; a bare default word outside the lattice, as for churn.
+    /// </summary>
+    public TerrainAttributes AttributesAt(int index)
+        => (uint)index < (uint)_attributes.Length ? new TerrainAttributes(_attributes[index]) : default;
 
     /// <summary>True while any cell is under a temporary weather effect.</summary>
     public bool HasWeather => _weatherCells > 0;
@@ -752,6 +1027,26 @@ public sealed class TerrainLayer
 
         _types[index] = (byte)type;
         Revision++;
+        return true;
+    }
+
+    /// <summary>
+    /// Replaces a cell's attributes immediately.
+    /// <para>
+    /// Nothing in this step calls it: generation is the only writer for now. It exists
+    /// because the fields it writes are the ones fire, crushing and regrowth will write,
+    /// and a mutator added after the fact is a mutator that forgets to move the revision.
+    /// </para>
+    /// </summary>
+    public bool SetAttributes(int index, TerrainAttributes attributes)
+    {
+        if ((uint)index >= (uint)_attributes.Length)
+        {
+            return false;
+        }
+
+        _attributes[index] = attributes.Raw;
+        AttributeRevision++;
         return true;
     }
 

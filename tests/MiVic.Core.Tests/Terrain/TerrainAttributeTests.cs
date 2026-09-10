@@ -1,0 +1,677 @@
+using MiVic.Core.Sim;
+using MiVic.Core.Terrain;
+
+namespace MiVic.Core.Tests.Terrain;
+
+/// <summary>
+/// The attribute word: how it is packed, and the two fields this step generates.
+/// <para>
+/// The packing is tested exhaustively because it is a bit-field: a shift one place out
+/// is invisible at the call site and shows up somewhere else entirely, and every field
+/// in it will be written by fire, tracks and regrowth in later steps.
+/// </para>
+/// <para>
+/// Generation is *counted* rather than spot-checked. This project has three times
+/// shipped a feature that existed and never happened — the volcano line, the sand band
+/// and the snow line each sat somewhere no cell could reach, and each was found by
+/// accident. A test that counts is the only kind that notices.
+/// </para>
+/// </summary>
+public sealed class TerrainAttributeTests
+{
+    private const ulong Seed = 20250101;
+
+    /// <summary>
+    /// Density band edges, bare to closed canopy. Coarser at the bottom because that is
+    /// where a silent generation bug would hide: everything falling in one bucket means
+    /// the field is flat.
+    /// </summary>
+    private static readonly int[] BandEdges = [0, 32, 64, 96, 128, 160, 192, 224, 256];
+
+    /// <summary>
+    /// Every numbered field: its name, the largest value its width can hold, how to read
+    /// it and how to write it. A field missing from this list is a field nothing checks.
+    /// </summary>
+    private static readonly (string Name, int Max, Func<TerrainAttributes, int> Read, Func<TerrainAttributes, int, TerrainAttributes> Write)[] Fields =
+    [
+        ("Vegetation", TerrainAttributes.MaxVegetation, a => a.Vegetation, (a, v) => a.WithVegetation(v)),
+        ("Moisture", TerrainAttributes.MaxMoisture, a => a.Moisture, (a, v) => a.WithMoisture(v)),
+
+        // Aspect and landform are step 2's to generate, but the bits are step 1's, so
+        // they are tested at the full width of a four-bit field: 0-15, assigned or not.
+        ("Aspect", 15, a => a.Aspect, (a, v) => a.WithAspect(v)),
+        ("Landform", 15, a => a.Landform, (a, v) => a.WithLandform(v)),
+        ("Fuel", TerrainAttributes.MaxFuel, a => a.Fuel, (a, v) => a.WithFuel(v)),
+    ];
+
+    /// <summary>Every flag, with the accessors step 4 and 5 will read it through.</summary>
+    private static readonly (string Name, Func<TerrainAttributes, bool> Read, Func<TerrainAttributes, bool, TerrainAttributes> Write)[] Flags =
+    [
+        ("Burning", a => a.IsBurning, (a, v) => a.WithBurning(v)),
+        ("Burned", a => a.IsBurned, (a, v) => a.WithBurned(v)),
+        ("Cratered", a => a.IsCratered, (a, v) => a.WithCratered(v)),
+        ("Rubble", a => a.IsRubble, (a, v) => a.WithRubble(v)),
+        ("Flooded", a => a.IsFlooded, (a, v) => a.WithFlooded(v)),
+    ];
+
+    /// <summary>Surfaces a mean vegetation is worth quoting for, in reading order.</summary>
+    private static readonly TerrainType[] Surfaces =
+    [
+        TerrainType.Forest,
+        TerrainType.Grass,
+        TerrainType.Mud,
+        TerrainType.Mine,
+        TerrainType.Sand,
+        TerrainType.Rock,
+        TerrainType.Snow,
+    ];
+
+    /// <summary>
+    /// The word is packed exactly as the schema says: vegetation in the low byte,
+    /// moisture, aspect, landform and fuel in the four bits above it, the five flags
+    /// above those, and the top three bits spare.
+    /// </summary>
+    [Fact]
+    public void TheWordIsPackedAsTheSchemaSays()
+    {
+        Assert.Equal(0x0000_00FFu, new TerrainAttributes().WithVegetation(0xFF).Raw);
+        Assert.Equal(0x0000_0F00u, new TerrainAttributes().WithMoisture(0x0F).Raw);
+        Assert.Equal(0x0000_F000u, new TerrainAttributes().WithAspect(0x0F).Raw);
+        Assert.Equal(0x000F_0000u, new TerrainAttributes().WithLandform(0x0F).Raw);
+        Assert.Equal(0x00F0_0000u, new TerrainAttributes().WithFuel(0x0F).Raw);
+
+        Assert.Equal(0x0100_0000u, new TerrainAttributes().WithBurning(true).Raw);
+        Assert.Equal(0x0200_0000u, new TerrainAttributes().WithBurned(true).Raw);
+        Assert.Equal(0x0400_0000u, new TerrainAttributes().WithCratered(true).Raw);
+        Assert.Equal(0x0800_0000u, new TerrainAttributes().WithRubble(true).Raw);
+        Assert.Equal(0x1000_0000u, new TerrainAttributes().WithFlooded(true).Raw);
+
+        // Everything the word has, at once: 29 bits used, 29 bits no more. Bits 29-31
+        // stay spare, and a field that grows into them will fail here first.
+        TerrainAttributes full = new TerrainAttributes()
+            .WithVegetation(TerrainAttributes.MaxVegetation)
+            .WithMoisture(TerrainAttributes.MaxMoisture)
+            .WithAspect(15)
+            .WithLandform(15)
+            .WithFuel(TerrainAttributes.MaxFuel)
+            .WithBurning(true)
+            .WithBurned(true)
+            .WithCratered(true)
+            .WithRubble(true)
+            .WithFlooded(true);
+
+        Assert.Equal(0x1FFF_FFFFu, full.Raw);
+    }
+
+    /// <summary>
+    /// Every field, every value it can hold, read back — and with every other field
+    /// saturated around it, so that a write reaching into a neighbour has something to
+    /// corrupt.
+    /// </summary>
+    [Fact]
+    public void EveryFieldRoundTripsAndLeavesItsNeighboursAlone()
+    {
+        List<string> failures = [];
+
+        foreach (var field in Fields)
+        {
+            TerrainAttributes saturated = new TerrainAttributes()
+                .WithVegetation(TerrainAttributes.MaxVegetation)
+                .WithMoisture(TerrainAttributes.MaxMoisture)
+                .WithAspect(15)
+                .WithLandform(15)
+                .WithFuel(TerrainAttributes.MaxFuel)
+                .WithBurning(true)
+                .WithBurned(true)
+                .WithCratered(true)
+                .WithRubble(true)
+                .WithFlooded(true);
+
+            for (int value = 0; value <= field.Max; value++)
+            {
+                TerrainAttributes written = field.Write(saturated, value);
+
+                if (field.Read(written) != value)
+                {
+                    failures.Add($"{field.Name} = {value} read back as {field.Read(written)}");
+                }
+
+                foreach (var other in Fields)
+                {
+                    if (other.Name == field.Name || other.Read(written) == other.Read(saturated))
+                    {
+                        continue;
+                    }
+
+                    failures.Add(
+                        $"{field.Name} = {value} moved {other.Name} from {other.Read(saturated)} to {other.Read(written)}");
+                }
+
+                foreach (var flag in Flags)
+                {
+                    if (!flag.Read(written))
+                    {
+                        failures.Add($"{field.Name} = {value} cleared the {flag.Name} flag");
+                    }
+                }
+            }
+
+            // And a field at zero does not leak into its neighbours either, which is the
+            // direction a mask that is too narrow fails in.
+            TerrainAttributes cleared = field.Write(saturated, 0);
+
+            foreach (var other in Fields)
+            {
+                if (other.Name != field.Name && other.Read(cleared) != other.Read(saturated))
+                {
+                    failures.Add($"{field.Name} = 0 moved {other.Name} from {other.Read(saturated)} to {other.Read(cleared)}");
+                }
+            }
+        }
+
+        Assert.True(failures.Count == 0, string.Join("; ", failures));
+    }
+
+    /// <summary>
+    /// Each flag sets and clears on its own, and none of them disturbs a field.
+    /// Five single bits in one word is exactly where an off-by-one hides.
+    /// </summary>
+    [Fact]
+    public void EveryFlagIsIndependent()
+    {
+        List<string> failures = [];
+
+        foreach (var flag in Flags)
+        {
+            TerrainAttributes bare = new TerrainAttributes();
+            TerrainAttributes set = flag.Write(bare, true);
+
+            if (!flag.Read(set))
+            {
+                failures.Add($"{flag.Name} did not set: {set}");
+            }
+
+            foreach (var other in Flags)
+            {
+                if (other.Name != flag.Name && other.Read(set))
+                {
+                    failures.Add($"setting {flag.Name} also set {other.Name}");
+                }
+            }
+
+            if (flag.Write(set, false) != bare)
+            {
+                failures.Add($"clearing {flag.Name} did not return the word to zero: {flag.Write(set, false)}");
+            }
+
+            // Setting a flag must not touch a field, and a saturated field must not touch
+            // a flag.
+            TerrainAttributes loaded = new TerrainAttributes()
+                .WithVegetation(201)
+                .WithMoisture(7)
+                .WithAspect(3)
+                .WithLandform(4)
+                .WithFuel(9);
+            TerrainAttributes withFlag = flag.Write(loaded, true);
+
+            if (withFlag.Vegetation != 201 || withFlag.Moisture != 7 || withFlag.Aspect != 3 ||
+                withFlag.Landform != 4 || withFlag.Fuel != 9)
+            {
+                failures.Add($"{flag.Name} disturbed a field: {withFlag}");
+            }
+        }
+
+        Assert.True(failures.Count == 0, string.Join("; ", failures));
+    }
+
+    /// <summary>
+    /// Vegetation is spread across the map, not one number with a comment attached, and
+    /// some of it is genuinely dense.
+    /// <para>
+    /// Water and lava are left out: they grow nothing by rule, and counting them would
+    /// pad the bare band with cells that were never going to hold a tree.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void VegetationIsNotASingleValue()
+    {
+        TerrainLayer terrain = Build().TerrainTypes;
+        int[] bands = new int[BandEdges.Length - 1];
+        int land = 0;
+        long sum = 0;
+        int lowest = TerrainAttributes.MaxVegetation;
+        int highest = 0;
+
+        for (int cell = 0; cell < terrain.CellCount; cell++)
+        {
+            if (!Grows(terrain.TypeAt(cell)))
+            {
+                continue;
+            }
+
+            int vegetation = terrain.AttributesAt(cell).Vegetation;
+
+            land++;
+            sum += vegetation;
+            lowest = Math.Min(lowest, vegetation);
+            highest = Math.Max(highest, vegetation);
+            bands[BandOf(vegetation)]++;
+        }
+
+        string report = $"{Histogram(bands)}; {land} land cells, mean {(land == 0 ? 0 : (double)sum / land):F1}, " +
+            $"lowest {lowest}, highest {highest}";
+
+        int populated = bands.Count(count => count > 0);
+        int dense = 0;
+
+        for (int band = 0; band < bands.Length; band++)
+        {
+            if (BandEdges[band] >= 160)
+            {
+                dense += bands[band];
+            }
+        }
+
+        Assert.True(land > 0, $"no land on the map to measure at all. {report}");
+        Assert.True(populated >= 4, $"vegetation falls in only {populated} density bands, so the field is flat. {report}");
+        Assert.True(dense * 20 > land, $"only {dense} of {land} land cells are dense, so nothing is wooded. {report}");
+        Assert.True(highest - lowest > 160, $"vegetation ranges only {highest - lowest}, so it barely varies. {report}");
+
+        // The ends of the scale have to be positions the map actually holds, or the top of
+        // it is a number nothing reaches — which is how the volcano line survived.
+        Assert.True(highest >= 224, $"nothing on the map is densely wooded: the highest canopy is {highest}. {report}");
+        Assert.True(lowest == 0, $"nothing on the map is bare ground: the lowest canopy is {lowest}. {report}");
+    }
+
+    /// <summary>
+    /// Woodland is denser than open ground, and open ground is denser than the surfaces
+    /// nothing grows on. This is the ordering the whole attribute model is for: cover
+    /// that is not a terrain type still has to follow the terrain.
+    /// </summary>
+    [Fact]
+    public void WoodlandIsDenserThanOpenGround()
+    {
+        TerrainLayer terrain = Build().TerrainTypes;
+        long[] sums = new long[Surfaces.Length];
+        int[] counts = new int[Surfaces.Length];
+
+        for (int cell = 0; cell < terrain.CellCount; cell++)
+        {
+            int index = Array.IndexOf(Surfaces, terrain.TypeAt(cell));
+
+            if (index < 0)
+            {
+                continue;
+            }
+
+            sums[index] += terrain.AttributesAt(cell).Vegetation;
+            counts[index]++;
+        }
+
+        string report = Means(terrain, sums, counts);
+        int forest = Array.IndexOf(Surfaces, TerrainType.Forest);
+        int grass = Array.IndexOf(Surfaces, TerrainType.Grass);
+        int sand = Array.IndexOf(Surfaces, TerrainType.Sand);
+        int rock = Array.IndexOf(Surfaces, TerrainType.Rock);
+
+        Assert.True(counts[forest] > 0 && counts[grass] > 0 && counts[sand] > 0 && counts[rock] > 0,
+            $"the map needs woodland, open ground, sand and rock to compare them. {report}");
+
+        Assert.True(
+            Mean(sums[forest], counts[forest]) >= Mean(sums[grass], counts[grass]) + 60,
+            $"a wood is not meaningfully denser than open ground. {report}");
+
+        Assert.True(
+            Mean(sums[grass], counts[grass]) >= Mean(sums[sand], counts[sand]) + 20,
+            $"open ground is not meaningfully denser than sand. {report}");
+
+        Assert.True(
+            Mean(sums[grass], counts[grass]) >= Mean(sums[rock], counts[rock]) + 20,
+            $"open ground is not meaningfully denser than rock. {report}");
+    }
+
+    /// <summary>
+    /// Moisture follows the water: the ground by the shore is wet, the tops are dry, and
+    /// every band in between is drier than the one below it — in numbers, not in a claim
+    /// that the field "varies".
+    /// </summary>
+    [Fact]
+    public void MoistureIsWetterLowDownAndVaries()
+    {
+        SimWorld world = Build();
+        TerrainLayer terrain = world.TerrainTypes;
+        const int BandCount = 5;
+
+        int lowest = int.MaxValue;
+        int highest = 0;
+
+        for (int cell = 0; cell < terrain.CellCount; cell++)
+        {
+            int height = world.Navigation.HeightAt(cell);
+            lowest = Math.Min(lowest, height);
+            highest = Math.Max(highest, height);
+        }
+
+        int relief = Math.Max(1, highest - lowest);
+        long[] sums = new long[BandCount];
+        int[] counts = new int[BandCount];
+        bool[] seen = new bool[TerrainAttributes.MaxMoisture + 1];
+        int waterCells = 0;
+        int dryWaterCells = 0;
+
+        for (int cell = 0; cell < terrain.CellCount; cell++)
+        {
+            int moisture = terrain.AttributesAt(cell).Moisture;
+            int height = world.Navigation.HeightAt(cell);
+            int band = Math.Clamp(((height - lowest) * BandCount) / relief, 0, BandCount - 1);
+
+            sums[band] += moisture;
+            counts[band]++;
+            seen[moisture] = true;
+
+            if (terrain.TypeAt(cell) is TerrainType.ShallowWater or TerrainType.DeepWater)
+            {
+                waterCells++;
+
+                if (moisture != TerrainAttributes.MaxMoisture)
+                {
+                    dryWaterCells++;
+                }
+            }
+        }
+
+        string report = Bands(world, sums, counts, lowest, relief, BandCount);
+        int distinct = seen.Count(value => value);
+
+        Assert.True(waterCells > 0, $"the map has no water, so this proves nothing about wet ground. {report}");
+        Assert.True(dryWaterCells == 0, $"{dryWaterCells} water cells are not fully wet. {report}");
+        Assert.True(distinct >= 8, $"moisture takes only {distinct} of 16 values, so the field is nearly flat. {report}");
+
+        // Every band strictly drier than the one below it, which is what "follows the
+        // water" means once it is written down.
+        for (int band = 0; band < BandCount - 1; band++)
+        {
+            Assert.True(
+                Mean(sums[band], counts[band]) > Mean(sums[band + 1], counts[band + 1]),
+                $"height band {band} is not wetter than band {band + 1}. {report}");
+        }
+
+        Assert.True(
+            Mean(sums[0], counts[0]) >= Mean(sums[BandCount - 1], counts[BandCount - 1]) + 8,
+            $"the wettest ground is not meaningfully wetter than the highest. {report}");
+    }
+
+    /// <summary>
+    /// The attribute words are state, so they are hashed: same seed, same hash, and one
+    /// flipped bit on one cell is visible. The surface and the wear are untouched in the
+    /// flip, so nothing else can be responsible for the difference.
+    /// </summary>
+    [Fact]
+    public void AttributesArePartOfTheStateHash()
+    {
+        SimWorld a = Build();
+        SimWorld b = Build();
+
+        Assert.Equal(StateHash.Compute(a), StateHash.Compute(b));
+
+        int cell = FirstCellOfType(a.TerrainTypes, TerrainType.Grass);
+
+        Assert.True(cell >= 0, "no open ground on the map to flip a bit on.");
+
+        TerrainAttributes before = a.TerrainTypes.AttributesAt(cell);
+
+        // Toggling the low bit of the value toggles bit 0 of the word and nothing else.
+        a.TerrainTypes.SetAttributes(cell, before.WithVegetation(before.Vegetation ^ 1));
+
+        Assert.Equal(before.Raw ^ 1u, a.TerrainTypes.AttributesAt(cell).Raw);
+        Assert.Equal(1, a.TerrainTypes.AttributeRevision);
+
+        // Nothing else about the two worlds moved.
+        Assert.True(a.TerrainTypes.RawTypes.SequenceEqual(b.TerrainTypes.RawTypes), "the surfaces differ, so this proves nothing");
+        Assert.True(a.TerrainTypes.RawChurn.SequenceEqual(b.TerrainTypes.RawChurn), "the wear differs, so this proves nothing");
+
+        Assert.NotEqual(StateHash.Compute(a), StateHash.Compute(b));
+    }
+
+    /// <summary>
+    /// Generation is a pure function of the seed: no RNG stream, no iteration order, no
+    /// floating point. Two worlds of the same seed carry the same ground.
+    /// </summary>
+    [Fact]
+    public void AttributesAreReproducible()
+    {
+        TerrainLayer first = Build().TerrainTypes;
+        TerrainLayer second = Build(Seed).TerrainTypes;
+
+        Assert.True(
+            first.RawAttributes.SequenceEqual(second.RawAttributes),
+            "two worlds of the same seed generated different ground attributes");
+    }
+
+    /// <summary>
+    /// Fuel belongs to the fire step and is deliberately left at zero until then.
+    /// <para>
+    /// A field that exists and never happens is what this whole suite is built to catch,
+    /// so an exception has to be an explicit one: this is generated by nobody, on
+    /// purpose, and the test that says so is the one that will be deleted when it is.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void FuelIsLeftUnsetUntilTheFireStep()
+    {
+        TerrainLayer terrain = Build().TerrainTypes;
+
+        for (int cell = 0; cell < terrain.CellCount; cell++)
+        {
+            TerrainAttributes attributes = terrain.AttributesAt(cell);
+
+            Assert.True(
+                attributes.Fuel == 0 && attributes.Aspect == 0 && attributes.Landform == 0 &&
+                !attributes.IsBurning && !attributes.IsBurned && !attributes.IsCratered &&
+                !attributes.IsRubble && !attributes.IsFlooded,
+                $"cell {cell} carries a field step 1 does not generate yet: {attributes}");
+        }
+    }
+
+    /// <summary>
+    /// Water runs off a hillside and so does soil: within one height band, steep ground
+    /// comes out drier and sparser than flat ground at the same altitude.
+    /// <para>
+    /// One height band, because altitude is the other half of both fields and comparing
+    /// a hilltop with a shore would prove nothing. What this is really for is the two
+    /// slope terms in the generator, which are exactly the kind of knob that can be set
+    /// to nothing and never be noticed until a hill looks like a marsh.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void SteepGroundShedsWaterAndSoil()
+    {
+        SimWorld world = Build();
+        TerrainLayer terrain = world.TerrainTypes;
+        const int BandCount = 5;
+        const int Middle = BandCount / 2;
+        const int FlatSlope = 150;
+        const int SteepSlope = 400;
+
+        int lowest = int.MaxValue;
+        int highest = 0;
+
+        for (int cell = 0; cell < terrain.CellCount; cell++)
+        {
+            int height = world.Navigation.HeightAt(cell);
+            lowest = Math.Min(lowest, height);
+            highest = Math.Max(highest, height);
+        }
+
+        int relief = Math.Max(1, highest - lowest);
+        long flatWater = 0;
+        long steepWater = 0;
+        long flatLeaf = 0;
+        long steepLeaf = 0;
+        long flatHeight = 0;
+        long steepHeight = 0;
+        int flat = 0;
+        int steep = 0;
+
+        for (int cell = 0; cell < terrain.CellCount; cell++)
+        {
+            if (!Grows(terrain.TypeAt(cell)))
+            {
+                continue;
+            }
+
+            int height = world.Navigation.HeightAt(cell);
+
+            if (Math.Clamp(((height - lowest) * BandCount) / relief, 0, BandCount - 1) != Middle)
+            {
+                continue;
+            }
+
+            int slope = SlopeAt(world, cell);
+            TerrainAttributes attributes = terrain.AttributesAt(cell);
+
+            if (slope <= FlatSlope)
+            {
+                flat++;
+                flatWater += attributes.Moisture;
+                flatLeaf += attributes.Vegetation;
+                flatHeight += height;
+            }
+            else if (slope >= SteepSlope)
+            {
+                steep++;
+                steepWater += attributes.Moisture;
+                steepLeaf += attributes.Vegetation;
+                steepHeight += height;
+            }
+        }
+
+        string report =
+            $"middle height band, cells of slope <= {FlatSlope}: n={flat}, mean moisture {(flat == 0 ? 0 : (double)flatWater / flat):F2}, " +
+            $"mean vegetation {(flat == 0 ? 0 : (double)flatLeaf / flat):F1}, mean height {(flat == 0 ? 0 : (double)flatHeight / flat):F0} mm; " +
+            $"cells of slope >= {SteepSlope}: n={steep}, mean moisture {(steep == 0 ? 0 : (double)steepWater / steep):F2}, " +
+            $"mean vegetation {(steep == 0 ? 0 : (double)steepLeaf / steep):F1}, mean height {(steep == 0 ? 0 : (double)steepHeight / steep):F0} mm";
+
+        Assert.True(flat >= 50 && steep >= 50, $"this map has too little of one kind of ground to compare. {report}");
+
+        // The two groups sit at the same altitude, so the difference is the slope.
+        Assert.True(
+            Math.Abs((flatHeight / (double)flat) - (steepHeight / (double)steep)) < 1_000,
+            $"the two groups are not at the same height, so this proves nothing. {report}");
+
+        Assert.True(
+            Mean(steepWater, steep) + 1 <= Mean(flatWater, flat),
+            $"steep ground is not meaningfully drier than flat ground at the same height. {report}");
+
+        Assert.True(
+            Mean(steepLeaf, steep) + 20 <= Mean(flatLeaf, flat),
+            $"vegetation does not thin on a slope. {report}");
+    }
+
+    /// <summary>
+    /// The density band a value falls in.
+    /// </summary>
+    private static int BandOf(int vegetation)
+    {
+        for (int band = BandEdges.Length - 2; band >= 0; band--)
+        {
+            if (vegetation >= BandEdges[band])
+            {
+                return band;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>A histogram of the density bands, for failure messages.</summary>
+    private static string Histogram(int[] bands)
+    {
+        List<string> parts = [];
+
+        for (int band = 0; band < bands.Length; band++)
+        {
+            parts.Add($"{BandEdges[band]}-{BandEdges[band + 1] - 1}: {bands[band]}");
+        }
+
+        return "vegetation bands " + string.Join(", ", parts);
+    }
+
+    /// <summary>Mean vegetation per surface, for failure messages.</summary>
+    private static string Means(TerrainLayer terrain, long[] sums, int[] counts)
+    {
+        List<string> parts = [];
+
+        for (int i = 0; i < Surfaces.Length; i++)
+        {
+            parts.Add($"{Surfaces[i]}: n={counts[i]}, mean {(counts[i] == 0 ? 0 : (double)sums[i] / counts[i]):F1}");
+        }
+
+        parts.Add($"water: n={terrain.CountOf(TerrainType.ShallowWater) + terrain.CountOf(TerrainType.DeepWater)}");
+
+        return "mean vegetation per surface — " + string.Join(", ", parts);
+    }
+
+    /// <summary>Mean moisture by height band, for failure messages.</summary>
+    private static string Bands(SimWorld world, long[] sums, int[] counts, int lowest, int relief, int bandCount)
+    {
+        List<string> parts = [];
+
+        for (int band = 0; band < bandCount; band++)
+        {
+            int from = lowest + ((relief * band) / bandCount);
+            int to = lowest + ((relief * (band + 1)) / bandCount);
+
+            parts.Add(
+                $"[{from}..{to} mm]: n={counts[band]}, mean {(counts[band] == 0 ? 0 : (double)sums[band] / counts[band]):F2}");
+        }
+
+        return $"mean moisture by height band ({world.TerrainTypes.CellCount} cells) — " + string.Join(", ", parts);
+    }
+
+    private static int Mean(long sum, int count) => count == 0 ? 0 : (int)(sum / count);
+
+    /// <summary>True for ground that can grow something: water and lava cannot.</summary>
+    private static bool Grows(TerrainType type)
+        => type is not (TerrainType.DeepWater or TerrainType.ShallowWater or TerrainType.Lava);
+
+    /// <summary>
+    /// Slope under a terrain cell, from the height sample the generator read: the layers
+    /// share one lattice, but the height map is the finer one and the slope that decided
+    /// the surface came from it.
+    /// </summary>
+    private static int SlopeAt(SimWorld world, int cell)
+    {
+        TerrainLayer terrain = world.TerrainTypes;
+        int stride = Math.Max(1, terrain.CellSizeMm / world.Terrain.CellSizeMm);
+        int x = Math.Min((cell % terrain.Size) * stride, world.Terrain.Size - 1);
+        int z = Math.Min((cell / terrain.Size) * stride, world.Terrain.Size - 1);
+
+        return world.Terrain.SlopePermille(x, z);
+    }
+
+    private static int FirstCellOfType(TerrainLayer terrain, TerrainType wanted)
+    {
+        for (int cell = 0; cell < terrain.CellCount; cell++)
+        {
+            if (terrain.TypeAt(cell) == wanted)
+            {
+                return cell;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// A real skirmish world: the scenario is what generates the terrain, so a bare
+    /// <see cref="SimWorld"/> has nothing in it to measure.
+    /// </summary>
+    private static SimWorld Build(ulong seed = Seed)
+    {
+        var world = new SimWorld(seed, capacity: 1024);
+        Scenario.Build(world, ScenarioKind.Skirmish);
+
+        return world;
+    }
+}
