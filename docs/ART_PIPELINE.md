@@ -305,11 +305,14 @@ armour is the fastest on dry ground and becomes a liability in the wet season;
 their doctrine anyway. A Western player attacking in mud is making a mistake, and
 the season must be legible in the UI or the penalty reads as a bug.
 
-- **Mud as a dynamic mechanic.** On top of ground pressure, a per-cell *churn*
-  counter rises as units pass and decays over time, so wet ground driven over
-  becomes deep mud. Heavy Western columns churn their own route into a bog while a
-  light Soviet push keeps moving — the asymmetry made physical. Deterministic and
-  hashed.
+- **Mud churn is built.** A per-cell wear counter rises as units drive over it — by
+  the mover's ground pressure, so a heavy hull churns more than a light one — and
+  settles over time. Worn ground costs everyone more, and because the surcharge
+  multiplies the cost a unit already pays, the same churned field is a nuisance to
+  infantry and a bog to a tank. This is what makes ground pressure dynamic rather
+  than a table: a column of armour churns its own route and slows itself down.
+  It is hashed like any other state, and drawn as the ground darkening towards mud,
+  re-meshed on a 1.5 s throttle because churn changes every tick an army moves.
 - **Lakes and rivers.** Lakes are basins below a water level; rivers are channels
   carved along a descent path, widening downstream. Ground units cannot cross
   water, which makes both real geography: either the generator guarantees a

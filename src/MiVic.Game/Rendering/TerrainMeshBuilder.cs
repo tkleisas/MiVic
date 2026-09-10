@@ -64,12 +64,14 @@ public static class TerrainMeshBuilder
             {
                 int height = map.HeightAt(x, z);
                 TerrainType surface = TerrainType.Grass;
+                int terrainCell = -1;
 
                 if (terrain is not null)
                 {
                     int cellX = Math.Min(x / stride, terrain.Size - 1);
                     int cellZ = Math.Min(z / stride, terrain.Size - 1);
                     surface = terrain.TypeAtCell(cellX, cellZ);
+                    terrainCell = (cellZ * terrain.Size) + cellX;
 
                     // Water is drawn at the water line, not at the bottom of the
                     // basin it fills.
@@ -110,6 +112,19 @@ public static class TerrainMeshBuilder
                     (int)(color.R * shade),
                     (int)(color.G * shade),
                     (int)(color.B * shade));
+
+                // Worn ground reads as worn ground: the route an army has driven
+                // over darkens towards mud, so a player can see why their column
+                // slowed down instead of guessing.
+                if (terrain is not null && terrainCell >= 0)
+                {
+                    int churn = terrain.ChurnAt(terrainCell);
+
+                    if (churn > 0)
+                    {
+                        color = Color.Lerp(color, Mud, Math.Clamp(churn / 255f, 0f, 0.85f));
+                    }
+                }
 
                 vertices[(z * size) + x] = new VertexPositionNormal(position, normal, color);
             }

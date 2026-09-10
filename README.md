@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 307 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 312 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 
@@ -150,7 +150,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 33 generated, plus the fetched set |
 | Pick round-trip | 168/168 |
-| Tests | 324 passing (307 core, 17 audio) |
+| Tests | 329 passing (312 core, 17 audio) |
 
 ### Performance
 
@@ -314,6 +314,7 @@ defender, and the light hull kept moving where the heavies sank.
 - **A\* is memoised per search.** A cell is looked at once as a node but up to
   eight times as a neighbour, so the surface lookup is cached; without that, adding
   terrain tripled the test suite's runtime.
+- **The ground wears.** Driving over a cell churns it, by the mover's ground pressure, and it settles over time. Worn ground costs more, and the surcharge multiplies the cost a unit already pays — so the same churned field is a nuisance to infantry and a bog to a tank. A column of armour churns its own route and slows itself down, drawn as the ground darkening towards mud.
 - **Research lightens it.** «Βαθιά Μάχη» multiplies the team's mud and snow penalty
   by 0.5, so a researched Σοβιετικοί tank runs at 375 ‰ of baseline ground pressure
   — the faction that handles mud best is the one that can research its way to

@@ -54,6 +54,32 @@ public static class StateHash
             Mix(ref hash, chunk);
         }
 
+        // Ground wear is state too: two matches that diverged only in how churned
+        // the mud is would otherwise hash the same.
+        ReadOnlySpan<byte> churn = world.TerrainTypes.RawChurn;
+
+        for (int i = 0; i < churn.Length; i += 4)
+        {
+            int chunk = churn[i];
+
+            if (i + 1 < churn.Length)
+            {
+                chunk |= churn[i + 1] << 8;
+            }
+
+            if (i + 2 < churn.Length)
+            {
+                chunk |= churn[i + 2] << 16;
+            }
+
+            if (i + 3 < churn.Length)
+            {
+                chunk |= churn[i + 3] << 24;
+            }
+
+            Mix(ref hash, chunk);
+        }
+
         // The mission's identity and objective progress decide the outcome, so
         // they are as much part of the state as any unit's position.
         Mix(ref hash, world.Mission?.Id);

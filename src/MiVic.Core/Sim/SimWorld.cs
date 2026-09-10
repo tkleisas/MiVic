@@ -619,6 +619,8 @@ public sealed class SimWorld
             }
 
             ConstructionSystem.Tick(this);
+
+            ChurnSystem.Tick(this);
             ResearchSystem.Tick(this);
             Profiler.Mark(ref Profiler.Research, ref Profiler.WorstResearch);
             PrototypeSystem.Tick(this);

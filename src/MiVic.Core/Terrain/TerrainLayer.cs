@@ -29,8 +29,10 @@ public sealed class TerrainLayer
     private readonly byte[] _types;
     private readonly byte[] _original;
     private readonly int[] _weatherExpiry;
+    private readonly byte[] _churn;
 
     private int _weatherCells;
+    private int _churnedCells;
 
     private TerrainLayer(int size, int cellSizeMm, int originMm, int waterLevelMm, int maxHeightMm, byte[] types)
     {
@@ -42,7 +44,14 @@ public sealed class TerrainLayer
         _types = types;
         _original = new byte[types.Length];
         _weatherExpiry = new int[types.Length];
+        _churn = new byte[types.Length];
     }
+
+    /// <summary>Churn above which ground counts as deep mud.</summary>
+    public const int DeepChurn = 160;
+
+    /// <summary>Most a fully churned cell can add to its own cost, in permille.</summary>
+    public const int MaxChurnSurcharge = 600;
 
     /// <summary>Cells per side; matches the navigation grid.</summary>
     public int Size { get; }
@@ -68,6 +77,13 @@ public sealed class TerrainLayer
     /// frame.
     /// </summary>
     public int Revision { get; private set; }
+
+    /// <summary>
+    /// Bumped on every change to ground wear. Separate from <see cref="Revision"/>
+    /// because churn changes every tick an army moves, and re-meshing the ground at
+    /// that rate would cost more than it shows: the client throttles this one.
+    /// </summary>
+    public int ChurnRevision { get; private set; }
 
     /// <summary>
     /// Generates the layer for a height field, aligned to a navigation grid so the
@@ -404,8 +420,72 @@ public sealed class TerrainLayer
     /// <summary>Raw surface bytes, for hashing. Terrain is no longer seed-only once it can be changed.</summary>
     public ReadOnlySpan<byte> RawTypes => _types;
 
+    /// <summary>Raw churn bytes, for hashing. Ground wear is state like any other.</summary>
+    public ReadOnlySpan<byte> RawChurn => _churn;
+
     /// <summary>True while any cell is under a temporary weather effect.</summary>
     public bool HasWeather => _weatherCells > 0;
+
+    /// <summary>True while any cell carries churn, so the decay pass can be skipped.</summary>
+    public bool HasChurn => _churnedCells > 0;
+
+    /// <summary>
+    /// How worn a cell is, 0..255. Ground driven over becomes mud, and mud driven
+    /// over becomes a bog — which is how a heavy push bogs itself down.
+    /// </summary>
+    public int ChurnAt(int index) => (uint)index < (uint)_churn.Length ? _churn[index] : 0;
+
+    /// <summary>
+    /// Adds wear to a cell, saturating. <paramref name="amount"/> is the ground
+    /// pressure that caused it, so a heavy hull churns more than a light one.
+    /// </summary>
+    public void AddChurn(int index, int amount)
+    {
+        if ((uint)index >= (uint)_churn.Length || amount <= 0)
+        {
+            return;
+        }
+
+        int worn = _churn[index];
+        int total = Math.Min(255, worn + amount);
+
+        if (worn == 0 && total > 0)
+        {
+            _churnedCells++;
+        }
+
+        if (total != worn)
+        {
+            _churn[index] = (byte)total;
+            ChurnRevision++;
+        }
+    }
+
+    /// <summary>Lets every worn cell settle a little. Returns cells still worn.</summary>
+    public int DecayChurn()
+    {
+        if (_churnedCells == 0)
+        {
+            return 0;
+        }
+
+        int remaining = 0;
+
+        for (int index = 0; index < _churn.Length; index++)
+        {
+            if (_churn[index] == 0)
+            {
+                continue;
+            }
+
+            _churn[index]--;
+            remaining++;
+        }
+
+        _churnedCells = remaining;
+        ChurnRevision++;
+        return remaining;
+    }
 
     /// <summary>Cell index containing a world coordinate, or -1 when outside.</summary>
     public int IndexOfWorld(int worldX, int worldZ)
@@ -610,6 +690,16 @@ public sealed class TerrainLayer
         {
             int pressure = groundPressurePermille > 0 ? groundPressurePermille : 1_000;
             cost = IntMath.Clamp((cost * pressure) / 1_000, 25, 2_000);
+        }
+
+        // Worn ground is worse for everyone, but it is still worse for a heavy
+        // mover: the surcharge multiplies the cost the unit already pays, so the
+        // same churned field is a nuisance to infantry and a bog to a tank.
+        int churn = ChurnAt(index);
+
+        if (churn > 0 && type is TerrainType.Grass or TerrainType.Sand or TerrainType.Mud)
+        {
+            cost += (cost * ((churn * MaxChurnSurcharge) / 255)) / 1_000;
         }
 
         return cost;

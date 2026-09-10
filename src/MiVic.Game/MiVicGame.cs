@@ -105,6 +105,18 @@ public sealed class MiVicGame : XnaGame
 
     /// <summary>Per slot: whether the structure was still being raised last frame.</summary>
     private bool[] _wasBuilding = [];
+
+    /// <summary>Seconds since the game started, for throttled presentation work.</summary>
+    private double _totalSeconds;
+
+    /// <summary>Ground-wear revision the current mesh was built from.</summary>
+    private int _churnRevision;
+
+    /// <summary>Seconds since the last churn-driven re-mesh.</summary>
+    private double _lastChurnMesh;
+
+    /// <summary>Minimum seconds between churn-driven re-meshes.</summary>
+    private const double ChurnMeshSeconds = 1.5;
     private double _lastClickSeconds;
     private int _lastClickedSlot = -1;
 
@@ -385,7 +397,8 @@ public sealed class MiVicGame : XnaGame
         // Once the battle is decided the player may look around but not fight on.
         if (!uiWantsMouse && _simulation!.World.Outcome == GameOutcome.Ongoing)
         {
-            HandleSelectionInput(keyboard, mouse, gameTime.TotalGameTime.TotalSeconds);
+            _totalSeconds = gameTime.TotalGameTime.TotalSeconds;
+            HandleSelectionInput(keyboard, mouse, _totalSeconds);
         }
 
         if (!uiWantsMouse && !uiWantsKeyboard)
@@ -1406,12 +1419,20 @@ public sealed class MiVicGame : XnaGame
     {
         SimWorld world = _simulation!.World;
 
-        if (world.TerrainTypes.Revision == _terrainRevision)
+        // Ground wear changes every tick an army moves, so it is throttled: a
+        // weathered route is worth showing, but not at the cost of re-meshing
+        // sixteen thousand vertices every frame.
+        bool churnDue = world.TerrainTypes.ChurnRevision != _churnRevision &&
+            _totalSeconds - _lastChurnMesh > ChurnMeshSeconds;
+
+        if (world.TerrainTypes.Revision == _terrainRevision && !churnDue)
         {
             return;
         }
 
         _terrainRevision = world.TerrainTypes.Revision;
+        _churnRevision = world.TerrainTypes.ChurnRevision;
+        _lastChurnMesh = _totalSeconds;
         _terrainMesh?.Dispose();
         _terrainMesh = _renderer!.CreateMesh(
             TerrainMeshBuilder.FromHeightMap(world.Terrain, world.TerrainTypes));
