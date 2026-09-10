@@ -25,6 +25,19 @@ public sealed class ProjectileSystem
 
     private const int CookOffCapacity = 256;
 
+    /// <summary>
+    /// How long an electric arc stays drawn, in seconds.
+    /// <para>
+    /// It is not travelling — it appears along its whole length at once — so this is
+    /// how long it *persists*. A single frame is what lightning physically does and is
+    /// also invisible: at sixty frames a second a one-frame arc is on screen for
+    /// sixteen milliseconds, which the eye reads as a flicker on the monitor rather
+    /// than as a weapon firing. A tenth of a second is long enough to see the shape of
+    /// it and short enough to still read as instantaneous.
+    /// </para>
+    /// </summary>
+    private const float BoltVisibleSeconds = 0.10f;
+
     /// <summary>One round in flight, or one bolt being drawn.</summary>
     private struct Round
     {
@@ -133,7 +146,7 @@ public sealed class ProjectileSystem
         // covers the distance in one frame, which is what lightning does.
         if (profile.Style == FireStyle.Bolt)
         {
-            Spawn(profile, origin, destination, direction, range, Vector3.Zero, flight: 1f / 60f, scale);
+            Spawn(profile, origin, destination, direction, range, Vector3.Zero, BoltVisibleSeconds, scale);
             _particles.SpawnMuzzleFlash(origin, profile.Color, profile.Muzzle * scale);
             _particles.SpawnElectricBurst(destination, scale);
             PendingShake = MathF.Max(PendingShake, profile.Shake);
@@ -196,9 +209,23 @@ public sealed class ProjectileSystem
             _live++;
         }
 
+        // A bolt is not a round travelling: it is an arc that exists along its whole
+        // length at once. Its profile has no length of its own for that reason, and it
+        // is drawn across the entire path from the muzzle to the target rather than at
+        // a point on it. Scaling a zero-length box by its length is a degenerate
+        // sliver, which is exactly what an electric weapon used to look like.
+        float length = profile.Length * MathF.Max(scale, 0.6f);
+        Vector3 position = origin;
+
+        if (profile.Style == FireStyle.Bolt)
+        {
+            length = range;
+            position = (origin + destination) * 0.5f;
+        }
+
         _rounds[index] = new Round
         {
-            Position = origin,
+            Position = position,
             Previous = origin,
             Origin = origin,
             Destination = destination,
@@ -208,7 +235,7 @@ public sealed class ProjectileSystem
             FlightTime = flight,
             TrailTimer = 0f,
             Speed = profile.Speed,
-            Length = profile.Length * MathF.Max(scale, 0.6f),
+            Length = length,
             Width = profile.Width * MathF.Max(scale, 0.6f),
             Arc = profile.Arc,
             Trail = profile.Trail,

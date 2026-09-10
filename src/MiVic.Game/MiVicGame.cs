@@ -2849,7 +2849,11 @@ public sealed class MiVicGame : XnaGame
                     _projectiles.Fire(profile, origin, target, MathF.Max(size / 6.4f, 0.55f));
                 }
 
-                timer += FireDemoInterval;
+                // The bolt is only drawn for a tenth of a second, so on the shared
+                // cycle it is on screen about a fifth of the time and a photograph of
+                // it is a coin toss. Everything else stays on the shared cycle, which
+                // is what makes the line read as a volley.
+                timer += kind == UnitKind.ElectroPrototype ? 0.16f : FireDemoInterval;
             }
 
             _fireDemo[i] = (kind, origin, target, timer);
