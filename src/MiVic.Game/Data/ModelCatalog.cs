@@ -23,6 +23,7 @@ public sealed class ModelCatalog : IDisposable
     private readonly string _baseDirectory;
     private readonly Dictionary<int, InstancedRenderer.Mesh> _cache = [];
     private readonly Dictionary<int, ModelParts> _partsCache = [];
+    private readonly Dictionary<int, InstancedRenderer.Mesh> _wholeCache = [];
     private readonly List<InstancedRenderer.Mesh> _owned = [];
     private readonly List<string> _loaded = [];
     private readonly List<string> _failed = [];
@@ -216,7 +217,38 @@ public sealed class ModelCatalog : IDisposable
 
     private static int CacheKey(Faction faction, UnitKind kind) => ((int)faction << 8) | (int)kind;
 
-    private InstancedRenderer.Mesh LoadOrBuild(Faction faction, UnitKind kind)
+    /// <summary>
+    /// Gets the whole model as a single mesh, for something that draws a role as one
+    /// piece of geometry rather than as the parts the animator moves.
+    /// <para>
+    /// A placement ghost is the caller this exists for: the player is choosing where a
+    /// building will stand, so what has to be on screen is the building, and a ghost
+    /// assembled from a dozen animated parts would be a dozen instances of a mesh none of
+    /// which knows where the others are. This is the loader's own merge of the same file the
+    /// parts come from, with the model's normalisation — alignment, scale, centring,
+    /// grounding — already in the vertices, so the caller has only to place it.
+    /// </para>
+    /// <para>
+    /// It is kept out of <see cref="LoadedModels"/> and <see cref="FailedModels"/> on purpose:
+    /// those are the import report, one line per model slot, and a second line for a file the
+    /// client has already reported reading would read as a model loaded twice.
+    /// </para>
+    /// </summary>
+    public InstancedRenderer.Mesh Whole(Faction faction, UnitKind kind)
+    {
+        int key = CacheKey(faction, kind);
+
+        if (_wholeCache.TryGetValue(key, out InstancedRenderer.Mesh? cached))
+        {
+            return cached;
+        }
+
+        InstancedRenderer.Mesh mesh = LoadOrBuild(faction, kind, report: false);
+        _wholeCache[key] = mesh;
+        return mesh;
+    }
+
+    private InstancedRenderer.Mesh LoadOrBuild(Faction faction, UnitKind kind, bool report = true)
     {
         if (ModelSpec.TryGet(faction, kind, out ModelSpec spec))
         {
@@ -229,15 +261,23 @@ public sealed class ModelCatalog : IDisposable
                     MeshData data = GltfLoader.Load(path, spec.ToImportOptions());
                     InstancedRenderer.Mesh imported = _renderer.CreateMesh(data);
                     _owned.Add(imported);
-                    _loaded.Add($"{spec.Folder}/{spec.FileName}");
+
+                    if (report)
+                    {
+                        _loaded.Add($"{spec.Folder}/{spec.FileName}");
+                    }
+
                     return imported;
                 }
                 catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException)
                 {
-                    _failed.Add($"{spec.Folder}/{spec.FileName}: {exception.Message}");
+                    if (report)
+                    {
+                        _failed.Add($"{spec.Folder}/{spec.FileName}: {exception.Message}");
+                    }
                 }
             }
-            else
+            else if (report)
             {
                 _failed.Add($"{spec.Folder}/{spec.FileName}: file not found");
             }
@@ -412,5 +452,7 @@ public sealed class ModelCatalog : IDisposable
 
         _owned.Clear();
         _cache.Clear();
+        _partsCache.Clear();
+        _wholeCache.Clear();
     }
 }

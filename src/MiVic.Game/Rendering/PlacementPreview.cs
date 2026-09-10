@@ -40,10 +40,21 @@ public sealed class PlacementPreview
     public const float LiftMetres = 0.15f;
 
     /// <summary>Tint of a site the simulation would accept.</summary>
-    private static readonly Vector4 ValidTint = new(0.35f, 1.00f, 0.48f, 0.42f);
+    private static readonly Vector4 ValidTint = new(0.35f, 1.00f, 0.48f, DefaultOpacity);
 
     /// <summary>Tint of a site it would refuse. Red says it will fail; the reason says why.</summary>
-    private static readonly Vector4 InvalidTint = new(1.00f, 0.28f, 0.24f, 0.42f);
+    private static readonly Vector4 InvalidTint = new(1.00f, 0.28f, 0.24f, DefaultOpacity);
+
+    /// <summary>
+    /// How solid a ghost is unless the caller says otherwise.
+    /// <para>
+    /// Four tenths, which is what a flat diagram of the ground needs: the footprint is one surface
+    /// lying on the terrain, and anything more opaque hides the ground the player is choosing
+    /// between. A ghost that is a whole building seen from outside is a different proposition, and
+    /// its caller raises this — see <see cref="Show"/>.
+    /// </para>
+    /// </summary>
+    public const float DefaultOpacity = 0.42f;
 
     private readonly GraphicsDevice _device;
     private readonly InstancedRenderer _renderer;
@@ -76,13 +87,21 @@ public sealed class PlacementPreview
     /// <param name="mesh">The footprint, already uploaded. Owned by the caller.</param>
     /// <param name="transform">Where it would stand.</param>
     /// <param name="valid">Whether the site would be accepted, which is the colour.</param>
-    public void Show(InstancedRenderer.Mesh mesh, in Matrix transform, bool valid)
+    /// <param name="opacity">
+    /// How solid to draw it, or <see cref="DefaultOpacity"/>. A building is a volume: its walls and
+    /// its roof all lie between the eye and the ground, so a tint that reads clearly on one flat
+    /// quad washes out to a pale blur on a model standing over water — and "pale" is not the answer
+    /// a refused site has to give.
+    /// </param>
+    public void Show(InstancedRenderer.Mesh mesh, in Matrix transform, bool valid, float opacity = DefaultOpacity)
     {
         ArgumentNullException.ThrowIfNull(mesh);
 
+        Vector4 tint = valid ? ValidTint : InvalidTint;
+
         _mesh = mesh;
         _transform = transform;
-        _tint = valid ? ValidTint : InvalidTint;
+        _tint = new Vector4(tint.X, tint.Y, tint.Z, opacity);
         _staged = true;
     }
 

@@ -236,6 +236,12 @@ public sealed class ProbeRunner
             case "bridge":
                 Bridge(command);
                 break;
+            case "structure":
+                Structure(command);
+                break;
+            case "structures":
+                Structures(command);
+                break;
             case "bridges":
                 Bridges(command);
                 break;
@@ -264,7 +270,7 @@ public sealed class ProbeRunner
                 throw new ProbeException(
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
                     "surfaces, attributes, units, unit, count, parts, model, visible, events, bridge, " +
-                    "bridges, block, blast, arm, hover, click, hud, expect");
+                    "structure, structures, bridges, block, blast, arm, hover, click, hud, expect");
         }
     }
 
@@ -586,6 +592,127 @@ public sealed class ProbeRunner
     }
 
     /// <summary>
+    /// What the simulation would make of raising a structure at a cell, and — when the script
+    /// asks for it — the order that raises one.
+    /// <para>
+    /// The shape of <c>bridge</c>, because the question is the same question about a different
+    /// thing: would this building be accepted here, and if not, why not. A refusal is an answer
+    /// rather than a failure — the command succeeds, the run's exit code stays zero, and the
+    /// transcript carries the reason the simulation gave — and a script that wants to see the
+    /// structure standing follows the order with the ticks it takes to rise.
+    /// </para>
+    /// </summary>
+    private void Structure(ProbeCommand command)
+    {
+        const string Usage = "structure <kind> <x> <z> [team] [build]";
+
+        UnitKind kind = ParseKind(command.Argument(0, "a role such as Factory, PowerPlant or CommandCentre", Usage));
+
+        float x = command.Number(1, "an x in metres", Usage);
+        float z = command.Number(2, "a z in metres", Usage);
+
+        int team = 0;
+        bool build = false;
+
+        // The team and the word `build` are both optional and either order reads naturally,
+        // so they are taken by what they are rather than by where they are.
+        for (int index = 3; index <= 4; index++)
+        {
+            if (command.Optional(index) is not { } argument)
+            {
+                continue;
+            }
+
+            if (argument.Equals("build", StringComparison.OrdinalIgnoreCase))
+            {
+                build = true;
+                continue;
+            }
+
+            if (!int.TryParse(argument, NumberStyles.Integer, CultureInfo.InvariantCulture, out team) ||
+                (uint)team >= SimConstants.TeamCount)
+            {
+                throw new ProbeException($"'{argument}' is neither a team number nor 'build' — usage: {Usage}");
+            }
+        }
+
+        SimWorld world = _host.Simulation.World;
+        var site = new WorldPos((int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre));
+        int cell = world.TerrainTypes.IndexOfWorld(site.X, site.Z);
+
+        if (cell < 0)
+        {
+            throw new ProbeException($"({x}, {z}) m is off the map — {Usage}, and the map is +-300 m");
+        }
+
+        UnitDefinition definition = UnitCatalog.Get(kind);
+        bool allowed = world.TryPlanStructure(team, kind, site, out WorldPos planned, out string reason);
+
+        Emit($"query: structure {ProbeLabels.KindName(kind)} at (x {x:0.0}, z {z:0.0}) m — {DescribeCell(world, cell)}");
+
+        if (!allowed)
+        {
+            Emit($"query:   verdict    refused — {reason}");
+            Emit($"query:   player     {FactionPalette.UnitLabel(kind)}: {reason}.");
+            return;
+        }
+
+        Emit(
+            $"query:   verdict    accepted for team {team} — it would stand at " +
+            $"{ProbeFormat.Ground(planned)}, {DescribeCell(world, world.TerrainTypes.IndexOfWorld(planned.X, planned.Z))}");
+
+        int ticks = UnitCatalog.BuildTicks(SimWorld.FactionOfTeam(team), kind);
+
+        Emit(
+            $"query:   work       {ProbeFormat.Ticks(ticks)} of construction, rising out of the ground " +
+            $"over the whole of it");
+
+        TeamState state = world.Team(team);
+
+        Emit(
+            $"query:   cost       {UnitCatalog.MaterialCost(SimWorld.FactionOfTeam(team), kind)} Π, " +
+            $"{UnitCatalog.EnergyCost(SimWorld.FactionOfTeam(team), kind)} Ε, " +
+            $"{UnitCatalog.WaterCost(SimWorld.FactionOfTeam(team), kind)} Ν, " +
+            $"{definition.Health} hit points");
+        Emit($"query:   team       {team} has {state.Materials} Π, {state.Energy} Ε, {state.Water} Ν");
+
+        if (!build)
+        {
+            return;
+        }
+
+        long executeTick = world.Tick + 1;
+        world.Enqueue(SimCommand.Structure(kind, planned, executeTick, team));
+
+        Emit(
+            $"ok: {FactionPalette.UnitLabel(kind)} ordered for team {team} at " +
+            $"{ProbeFormat.Ground(planned)}, executing on tick {executeTick} — " +
+            $"`tick {(int)(executeTick - world.Tick)}` starts it and `tick {ticks}` finishes it");
+    }
+
+    /// <summary>
+    /// A role name from a script: the catalogue's own name, or the Greek label the panels show,
+    /// because a script that has just read a panel is likely to type what is on it.
+    /// </summary>
+    private static UnitKind ParseKind(string text)
+    {
+        if (Enum.TryParse(text, ignoreCase: true, out UnitKind kind) && UnitCatalog.TryGet(kind, out _))
+        {
+            return kind;
+        }
+
+        foreach (UnitDefinition definition in UnitCatalog.All)
+        {
+            if (string.Equals(FactionPalette.UnitLabel(definition.Kind), text, StringComparison.OrdinalIgnoreCase))
+            {
+                return definition.Kind;
+            }
+        }
+
+        throw new ProbeException($"'{text}' is not a role the catalogue knows");
+    }
+
+    /// <summary>
     /// Every crossing on the map, with the work done on it. A bridge is built a cell at a time
     /// over several seconds, so "is there a bridge" is not a yes or no question while it is
     /// going up — and this is where a dialogue about nothing appearing on screen gets settled.
@@ -613,6 +740,75 @@ public sealed class ProbeRunner
             Emit(
                 $"query:   #{bridge} {DescribeSpan(world, cells, cells.Length)} — {progress}, " +
                 $"started on tick {state.StartTick}, whole on tick {state.ReadyTick}, from ({first % size},{first / size})");
+        }
+    }
+
+    /// <summary>
+    /// Every structure a team has: what it is, where it stands, and how much of it is up.
+    /// <para>
+    /// The command that answers what a placement did. <c>count</c> says how many of a role exist
+    /// and <c>units</c> buries one line among five hundred, so neither says where the building a
+    /// player ordered ended up or whether it has finished rising — which is why a crossing has
+    /// <c>bridges</c>. A structure ordered at a site is a building site for the whole of its
+    /// construction, and that is a state worth being able to see rather than infer.
+    /// </para>
+    /// </summary>
+    private void Structures(ProbeCommand command)
+    {
+        const string Usage = "structures [team]";
+
+        int team = (int)command.OptionalNumber(0, 0f, "a team number", Usage);
+
+        if ((uint)team >= SimConstants.TeamCount)
+        {
+            throw new ProbeException($"there is no team {team} — usage: {Usage}");
+        }
+
+        SimWorld world = _host.Simulation.World;
+        int found = 0;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (world.IsAliveSlot(slot) && world.GetRefBySlot(slot).TeamId == team &&
+                UnitCatalog.Get(world.GetRefBySlot(slot).Kind).IsBuilding)
+            {
+                found++;
+            }
+        }
+
+        Emit($"query: structures: {ProbeFormat.Count(found, "structure")} for team {team}, tick {world.Tick}");
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId != team || !UnitCatalog.Get(entity.Kind).IsBuilding)
+            {
+                continue;
+            }
+
+            // The cell, not only the metres: a placement is an answer about a cell, and the
+            // question this command is asked is whether the building came up where it was aimed.
+            int cell = world.TerrainTypes.IndexOfWorld(entity.Position.X, entity.Position.Z);
+            int size = world.TerrainTypes.Size;
+
+            string where = cell >= 0 ? $", cell {cell % size},{cell / size}" : ", off the map";
+
+            // A structure that has not finished rising is the state a placement produces, and it
+            // is the one a transcript about placement has to be able to show.
+            string state = entity.ConstructionTicksRemaining > 0
+                ? $"building — {entity.ConstructionTicksRemaining} of {entity.ConstructionTicksTotal} ticks left, " +
+                  $"{ProbeFormat.Seconds(entity.ConstructionTicksRemaining / (double)SimConstants.TickRate)}"
+                : "whole";
+
+            Emit(
+                $"query:   slot {slot,4} {ProbeLabels.KindName(entity.Kind)} at {ProbeFormat.Ground(entity.Position)}" +
+                $"{where} — {state}, {entity.Health} hit points");
         }
     }
 
@@ -719,23 +915,32 @@ public sealed class ProbeRunner
     }
 
     /// <summary>
-    /// Arms the bridge the way the button does, through the client's own HUD path, and says
+    /// Arms a placement the way its button does, through the client's own HUD path, and says
     /// whether the client is now waiting for a site. A script that has to arm a placement
     /// before it can ask what a placement would do has to arm it the way a player does.
+    /// <para>
+    /// <c>bridge</c> is the support panel's button; anything else is a role name and is a row in
+    /// the production panel, which arms a site for that structure rather than ordering one.
+    /// </para>
     /// </summary>
     private void Arm(ProbeCommand command)
     {
-        string what = command.Argument(0, "what to arm, which is 'bridge'", "arm bridge").ToLowerInvariant();
+        string what = command.Argument(0, "what to arm: 'bridge', or a structure role such as Factory", "arm <bridge|role>").ToLowerInvariant();
 
-        if (what != "bridge")
+        if (what == "bridge")
         {
-            throw new ProbeException($"'{what}' is not something that can be armed — usage: arm bridge");
+            bool armed = _host.ArmBridge(out string note);
+
+            Emit($"query: arm bridge — {note}");
+            Emit($"query:   result     {(armed ? "the next left click picks the site" : "nothing is waiting for a click")}");
+            return;
         }
 
-        bool armed = _host.ArmBridge(out string note);
+        UnitKind kind = ParseKind(what);
+        bool structureArmed = _host.ArmStructure(kind, out string structureNote);
 
-        Emit($"query: arm bridge — {note}");
-        Emit($"query:   result     {(armed ? "the next left click picks the site" : "nothing is waiting for a click")}");
+        Emit($"query: arm {what} — {structureNote}");
+        Emit($"query:   result     {(structureArmed ? "the next left click picks the site" : "nothing is waiting for a click")}");
     }
 
     /// <summary>
@@ -787,8 +992,15 @@ public sealed class ProbeRunner
             return;
         }
 
+        // What is armed is part of the answer: a green ghost over a lake means one thing for a
+        // crossing and another for a power plant, and a transcript that only said "accepted"
+        // would leave the reader to guess which rule had just been satisfied.
+        string what = cursor.ArmedKind == UnitKind.None
+            ? "the ghost takes " + ProbeFormat.Count(cursor.Footprint, "cell") + " and is "
+            : $"the ghost is the {FactionPalette.UnitLabel(cursor.ArmedKind)} on one cell and is ";
+
         Emit(cursor.SiteAllowed
-            ? $"query:   placement  accepted — the ghost takes {ProbeFormat.Count(cursor.Footprint, "cell")} and is green"
+            ? $"query:   placement  accepted — {what}green"
             : $"query:   placement  refused — {cursor.SiteReason}; the ghost is red and the panel says so");
     }
 

@@ -280,4 +280,33 @@ public sealed class DeterminismTests
     [Fact]
     public void GoldenScenarioHash_IsStable()
         => Assert.Equal(7472911029308892828UL, HashScenario(20250101));
+
+    [Fact]
+    public void TempAudit()
+    {
+        SimWorld world = RunScenario(20250101, GenerateOrders(20250101));
+        string message = $"hash {StateHash.Compute(world)}";
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (!UnitCatalog.Get(entity.Kind).IsBuilding)
+            {
+                continue;
+            }
+
+            world.CanPlaceStructure(entity.Position, out string reason);
+
+            message += $" | {entity.Kind} team {entity.TeamId} at ({entity.Position.X / 1000}, {entity.Position.Z / 1000}) " +
+                       $"legal={reason.Length == 0} {reason}";
+        }
+
+        Assert.Fail(message);
+    }
 }

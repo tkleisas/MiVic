@@ -100,6 +100,8 @@ shot out/frame-later.png
 | `count <kind>` | how many of a role are alive, per faction |
 | `bridge <x> <z> [team] [build]` | whether a crossing at that cell would be accepted, the reason when it would not, the span it would cover, what it costs and how long the work takes — and with `build`, the order that starts it |
 | `bridges` | every crossing on the map: the cells it spans, how much of it the work has reached, how many of its blocks still stand, whether it has been cut, and the tick it will be whole on |
+| `structure <kind> <x> <z> [team] [build]` | whether a structure could be raised at that cell, the reason when it could not, the cell it would stand on, what it costs and how long it takes to rise — and with `build`, the order that raises it |
+| `structures [team]` | every structure a team has: its role, the cell it stands on, how much of it is up, and its hit points |
 | `block <x> <z>` | what deck stands on one cell: how much is left of it, which team owns it, which way it runs — including whether it is a **junction**, which is a fact about the cell rather than about any crossing — and which crossings pass through it |
 | `blast <x> <z> [radius] [damage] [team]` | drops a blast on the ground, as a salvo or a strike does, and reports how many blocks of deck it knocked out and what is left of the one at the centre |
 
@@ -113,7 +115,8 @@ each of them prints the answer the client itself worked out.
 | Command | Answer |
 |---|---|
 | `arm bridge` | what pressing Γέφυρα does, through the HUD's own command path, and whether the client is now waiting for a site |
-| `hover <x> <z> [y]` | puts the script's cursor on a world point: the pixel it projects to, what the client resolves that pixel back to, how far that is from where it was aimed, and — when a placement is armed — whether the ghost is green or red and how many cells it takes |
+| `arm <role>` | the same for a structure: what pressing its row — `Factory`, `PowerPlant`, `CommandCentre`, `DesignBureau`, `NuclearPlant`, by catalogue name or by the Greek label on the button — does, and whether the client is now waiting for a site to raise one on |
+| `hover <x> <z> [y]` | puts the script's cursor on a world point: the pixel it projects to, what the client resolves that pixel back to, how far that is from where it was aimed, and — when a placement is armed — whether the ghost is green or red, what is being placed, and how many cells it takes |
 | `click [x z]` | releases the left button at the script's cursor, through the client's own click path: what it resolved to, whether an order was issued, and the words the player is shown when it was refused |
 | `hud [on\|off]` | whether probe frames draw the HUD. Off by default; on when the answer *is* the panel, and a shot then carries it |
 
@@ -121,13 +124,16 @@ each of them prints the answer the client itself worked out.
 height field elsewhere — because that is what a cursor is over. Give `y` to aim at something
 that is not on the ground, as `focus` allows.
 
-`build` on `bridge` is the one command in the tool that changes the world the script is
-looking at, and it exists because a crossing cannot be inspected until it has been built: the
-cells it turns into ford are the answer, and there is no other way to ask for them. Everything
-else here reads. A bridge takes time to build, so a script that wants to see it finished
-either advances the ticks itself or asks `bridges` how much work is left.
+`build` on `bridge` is the first of two commands in the tool that change the world the script is
+looking at, and it exists because a crossing cannot be inspected until it has been built: the cells
+it turns into ford are the answer, and there is no other way to ask for them. `build` on
+`structure` is the second, and for the same reason: a structure ordered at a site is a building
+site for the whole of its construction, so a script that wants to know whether the building came up
+where it was aimed has to order one. Everything else here reads. A bridge takes time to build and a
+structure takes time to rise, so a script that wants to see either finished advances the ticks
+itself or asks `bridges` — or `structures` — how much is left.
 
-`blast` is the second, and it is damage rather than an order: a crossing that can be knocked
+`blast` is the third, and it is damage rather than an order: a crossing that can be knocked
 down cannot be inspected either, and there is no other way to ask what a hole in one looks
 like. It calls the same area damage a Κατιούσα salvo and an off-map strike call, so what a
 script breaks is what a battlefield breaks.
@@ -399,6 +405,69 @@ clicked cell reports water at tick 92 only if the deck got there first. `bridges
 command that answers "is anything happening", and it exists because for a while nothing was:
 a crossing used to be a surface change applied in one tick, with no deck on screen and no
 progress anywhere.
+
+## Worked example: where does the building I ordered go?
+
+A structure used to be produced by another structure and to appear at a fixed offset from whatever
+made it, which is a position nobody chose and nobody could see before paying for it.
+`tools/probe/structure.probe`, run against the default skirmish, trimmed to the answers:
+
+```
+cmd: structure Factory -245.3 -95.3
+query: structure Factory (Εργοστάσιο) at (x -245.3, z -95.3) m — cell 5,21 of 65, index 1370, Sand (Άμμος)
+query:   verdict    accepted for team 0 — it would stand at (x -248.4, z -98.5) m, cell 5,21 of 65, index 1370, Sand (Άμμος)
+query:   work       272 ticks (13.6 s) of construction, rising out of the ground over the whole of it
+query:   cost       252 Π, 0 Ε, 108 Ν, 2000 hit points
+cmd: structure Factory -257.0 -210.0
+query: structure Factory (Εργοστάσιο) at (x -257.0, z -210.0) m — cell 4,9 of 65, index 589, DeepWater (Βαθύ νερό)
+query:   verdict    refused — χρειάζεται στεριά
+query:   player     Εργοστάσιο: χρειάζεται στεριά.
+cmd: structure Factory 136.0 -42.2
+query: structure Factory (Εργοστάσιο) at (x 136.0, z -42.2) m — cell 46,27 of 65, index 1801, Lava (Λάβα)
+query:   verdict    refused — λάβα
+query:   player     Εργοστάσιο: λάβα.
+cmd: arm Factory
+query: arm factory — armed Εργοστάσιο — the next left click picks the site
+cmd: hover -245.3 -95.3
+query:   ground     resolved to (-245.0, 6.3, -95.0) m — cell 5,21 of 65, index 1370, Sand (Άμμος), 0.4 m from where it was aimed
+query:   placement  accepted — the ghost is the Εργοστάσιο on one cell and is green
+cmd: hover -253 -199
+query:   ground     resolved to (-253.0, 3.5, -199.0) m — cell 5,10 of 65, index 655, DeepWater (Βαθύ νερό), 0.0 m from where it was aimed
+query:   placement  refused — χρειάζεται στεριά; the ghost is red and the panel says so
+cmd: click
+query:   result     nothing was issued
+query:   notice     the player is told "Εργοστάσιο: χρειάζεται στεριά."
+cmd: click
+query: click — armed yes, resolved (-245.0, 6.3, -95.0) m
+query:   ground     cell 5,21 of 65, index 1370, Sand (Άμμος)
+query:   result     an order was issued
+cmd: tick 1
+cmd: structures 0
+query:   slot  510 Factory (Εργοστάσιο) at (x -248.4, z -98.5) m, cell 5,21 — building — 271 of 272 ticks left, 13.6 s, 2000 hit points
+cmd: tick 160
+cmd: structures 0
+query:   slot  510 Factory (Εργοστάσιο) at (x -248.4, z -98.5) m, cell 5,21 — whole, 2000 hit points
+```
+
+Six facts, and each of them was a different question before this command existed:
+
+- **the simulation's own verdict**, per cell, with the reason: water and lava are refused by name,
+  and so is a role that is not a structure at all (`structure Tank …` answers `δεν είναι κατασκευή`
+  in the full transcript);
+- **the cell it would stand on**, which is the cell centre rather than the millimetre the cursor
+  resolved to, because the patch of ground that was judged is the cell's — the click at
+  `(-245.3, -95.3)` becomes a building at `(-248.4, -98.5)`, the centre of cell 5,21;
+- **the ghost**, which is the building's own model rather than a footprint rectangle, green where
+  the plan accepts and red where it refuses — including over the water, which is the case a player
+  most needs to see refused;
+- **the refusal the player reads**, in the notice a refused click raises and beside the armed row
+  in the panel, which is what `hud on` photographs;
+- **the order**, which is issued by the same click path a mouse release takes and changes nothing
+  until it is; and
+- **the building site**, standing on the cell the plan named on the next tick and rising there over
+  the thirteen seconds the catalogue quotes. `structures` is the command for that last one: `count`
+  says how many factories a team has and `units` buries one line among five hundred, so neither
+  answers "where did it go, and is it up yet".
 
 ## `parts <slot>` in full
 

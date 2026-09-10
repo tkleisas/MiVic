@@ -702,6 +702,13 @@ public sealed class SimWorld
             return TryBuildBridge(command.Destination, command.IssuerTeam);
         }
 
+        // Nor is a structure: it is raised on a site the player picked, so it names no target
+        // and the building it is raised from is only what unlocked it.
+        if (command.Kind == SimCommandKind.BuildStructure)
+        {
+            return TryBuildStructure(command.UnitKind, command.Destination, command.IssuerTeam);
+        }
+
         if (!TryResolve(command.Target, out int slot))
         {
             return false;
@@ -1622,10 +1629,9 @@ public sealed class SimWorld
     /// <para>
     /// A cliff is dry ground and still no place for a headquarters, and a mover that
     /// cannot enter the cell cannot leave it either — which is why walkability is part
-    /// of the question rather than left to the surface type. The two grids are not the
-    /// same size, so the cell's own centre locates the terrain cell underneath it:
-    /// indexing one grid with the other's number is the kind of mistake that reads as
-    /// working code on a square map.
+    /// of the question rather than left to the surface type. Which piece of ground is
+    /// under the cell is <see cref="SurfaceUnder"/>'s question, because two grids of
+    /// different sizes are easy to index with each other's numbers.
     /// </para>
     /// </summary>
     private bool IsSolidGround(int navCell)
@@ -1635,17 +1641,304 @@ public sealed class SimWorld
             return false;
         }
 
+        TerrainType type = SurfaceUnder(navCell);
+
+        return type is not (TerrainType.ShallowWater or TerrainType.DeepWater or TerrainType.Lava);
+    }
+
+    /// <summary>
+    /// The surface of the terrain cell under a navigation cell's own centre.
+    /// <para>
+    /// The two grids are not the same size, so this is the one place the conversion is made:
+    /// indexing one grid with the other's number is the kind of mistake that reads as working
+    /// code on a square map. A cell with no terrain under it answers deep water, which is the
+    /// answer that keeps everything asking "may something stand here" saying no.
+    /// </para>
+    /// </summary>
+    private TerrainType SurfaceUnder(int navCell)
+    {
         WorldPos centre = Navigation.CentreOf(navCell);
         int terrainCell = TerrainTypes.IndexOfWorld(centre.X, centre.Z);
 
-        if (terrainCell < 0)
+        return terrainCell < 0 ? TerrainType.DeepWater : TerrainTypes.TypeAt(terrainCell);
+    }
+
+    // ----------------------------------------------------------- structures on a chosen site
+
+    /// <summary>
+    /// True when a team could raise a structure of this role anywhere at all, and why not if it
+    /// could not: the half of the placement rule that does not depend on where the player
+    /// clicked.
+    /// <para>
+    /// It exists so that the panel's row and the command cannot disagree. A row that worked the
+    /// resources and the tech tier out for itself would be a second copy of this rule, and the
+    /// first thing a copy does is drift: a row that looks available and does nothing when
+    /// pressed is the bug this shape prevents, and the bridge button is greyed by
+    /// <see cref="CanBuildAnyBridge"/> for exactly this reason.
+    /// </para>
+    /// <para>
+    /// The building a structure is raised from is an <em>unlock</em> rather than the place the
+    /// work happens: a team needs a finished one, and after that it may raise the structure
+    /// wherever it likes. A build radius — "within so many metres of something of your own" —
+    /// was considered and deliberately left out: this is a feature about choosing a site, and a
+    /// build radius is a rule about not choosing one.
+    /// </para>
+    /// </summary>
+    /// <param name="team">Team paying for the work.</param>
+    /// <param name="kind">Role to raise.</param>
+    /// <param name="reason">Empty when allowed, otherwise why not.</param>
+    public bool CanBuildStructure(int team, UnitKind kind, out string reason)
+    {
+        reason = string.Empty;
+
+        if ((uint)team >= SimConstants.TeamCount)
+        {
+            reason = "άγνωστη ομάδα";
+            return false;
+        }
+
+        if (!UnitCatalog.TryGet(kind, out UnitDefinition definition) || !definition.IsBuilding)
+        {
+            reason = "δεν είναι κατασκευή";
+            return false;
+        }
+
+        // Nothing raises itself: without a finished building of the role that makes this one,
+        // the team has no yard to raise it from. An unfinished one does not count, which is what
+        // HasStructure already says about a building site.
+        if (!HasStructure(team, definition.ProducedAt))
+        {
+            reason = $"χρειάζεται {UnitCatalog.GreekName(definition.ProducedAt)}";
+            return false;
+        }
+
+        // The tech tier, a licence, the per-role cap and the Σοβιετικοί prototype rule are all
+        // one question, and it is asked in one place; only the words come from here.
+        if (!CanBuild(team, kind))
+        {
+            reason = ReasonUnbuildable(team, kind);
+            return false;
+        }
+
+        // There is one finite thing left that a plan can know about, and it is the world itself:
+        // an order that cannot be recorded must be refused rather than half carried out, which is
+        // the same reason Bridgeworks.HasRoom exists. Spawning is what would fail, and a command
+        // that throws instead of refusing would take the client down with it.
+        if (AliveCount >= Capacity)
+        {
+            reason = "ο χάρτης είναι γεμάτος";
+            return false;
+        }
+
+        ref TeamState state = ref _teams[team];
+        Faction faction = FactionOfTeam(team);
+
+        // Naming the resource and the shortfall rather than saying "resources" is what the
+        // build panel has always done, and it is the same three sentences a crossing is
+        // refused with.
+        int materials = UnitCatalog.MaterialCost(faction, kind);
+        int energy = UnitCatalog.EnergyCost(faction, kind);
+        int water = UnitCatalog.WaterCost(faction, kind);
+
+        if (state.Materials < materials)
+        {
+            reason = $"λείπουν {materials - state.Materials} Π";
+            return false;
+        }
+
+        if (state.Energy < energy)
+        {
+            reason = $"λείπουν {energy - state.Energy} Ε";
+            return false;
+        }
+
+        if (state.Water < water)
+        {
+            reason = $"λείπουν {water - state.Water} Ν";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whatever <see cref="CanBuild"/> refused a role for, said in the words the build panel
+    /// uses. The verdict is <see cref="CanBuild"/>'s; this only reads back which of its clauses
+    /// said no, in the same order, so that the first one to fail is the one named.
+    /// </summary>
+    private string ReasonUnbuildable(int team, UnitKind kind)
+    {
+        UnitDefinition definition = UnitCatalog.Get(kind);
+        TeamState state = _teams[team];
+        uint bit = 1u << (int)kind;
+
+        if (!UnitCatalog.IsUnlocked(FactionOfTeam(team), kind, state.TechTier, state.TechMask) &&
+            (state.LicenceMask & bit) == 0)
+        {
+            return definition.RequiredTech != TechId.None &&
+                   !TechCatalog.IsCompleted(state.TechMask, definition.RequiredTech)
+                ? "χρειάζεται έρευνα"
+                : $"χρειάζεται τεχνολογία {definition.RequiredTechTier}";
+        }
+
+        // A capped design is a capability rather than a type: the team may field a limited
+        // number, counting whatever is already standing or on the way.
+        if (definition.MaxAlive > 0 && CountOf(team, kind) >= definition.MaxAlive)
+        {
+            return $"όριο {definition.MaxAlive}";
+        }
+
+        // What is left is the Σοβιετικοί rule that a factory design be proven first.
+        return "χρειάζεται πρωτότυπο στο σχεδιαστικό γραφείο";
+    }
+
+    /// <summary>
+    /// True when a patch of ground will hold a structure, and why not if it will not.
+    /// <para>
+    /// This is the site half of the rule — the same split as <see cref="CanBuildAnyBridge"/>
+    /// against the span it is followed by — and it asks the question of the predicate a
+    /// scenario already asks before it stands a base up, rather than inventing a second notion
+    /// of good enough ground: a structure needs a footprint, and <see cref="IsBaseSite"/> is
+    /// where this game says what one is.
+    /// </para>
+    /// <para>
+    /// The clauses are in the order a player meets them. The cell they are pointing at comes
+    /// first, and each way it can be wrong has its own words — water, lava, a cliff — because
+    /// "the ground here will not do" is not something a player can act on, and the cell under
+    /// the cursor is the only part of the answer they can move. What is left is the patch
+    /// around it, which is a question about the footprint rather than about the click.
+    /// </para>
+    /// </summary>
+    /// <param name="site">Where the structure would stand.</param>
+    /// <param name="reason">Empty when allowed, otherwise why not.</param>
+    public bool CanPlaceStructure(WorldPos site, out string reason)
+    {
+        reason = string.Empty;
+
+        // Asked of the terrain layer rather than of the navigation grid, because the navigation
+        // grid clamps a position to its own edge: a site a hundred metres off the map would come
+        // back as the corner cell and be judged as ground. The bridge's own site check asks the
+        // same question the same way.
+        if (TerrainTypes.IndexOfWorld(site.X, site.Z) < 0)
+        {
+            reason = "έξω από τον χάρτη";
+            return false;
+        }
+
+        int cell = Navigation.IndexOfWorld(site);
+
+        // The cell itself, in the order a player would recognise it: the surface they can see,
+        // and then whether anything can reach the cell at all. The three of them are the ways a
+        // single cell is not solid ground — the same question IsSolidGround asks — and asking it
+        // in three sentences is the difference between "not here" and "not on the lake".
+        TerrainType surface = SurfaceUnder(cell);
+
+        if (surface is TerrainType.ShallowWater or TerrainType.DeepWater)
+        {
+            reason = "χρειάζεται στεριά";
+            return false;
+        }
+
+        if (surface == TerrainType.Lava)
+        {
+            reason = "λάβα";
+            return false;
+        }
+
+        // A cliff is dry ground and still no place for a building: a mover that cannot enter the
+        // cell cannot reach whatever stands on it.
+        if (!Navigation.IsWalkable(cell))
+        {
+            reason = "πολύ απότομο έδαφος";
+            return false;
+        }
+
+        // And the footprint: the cell is good, the ground around it is not.
+        if (!IsBaseSite(site))
+        {
+            reason = "ανώμαλο έδαφος";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The structure a site would produce: whether it is allowed, why not when it is not, and
+    /// where it would stand.
+    /// <para>
+    /// <b>The one place the rule lives.</b> The panel that arms the row, the ghost the player
+    /// aims with, and the command that spends the resources all ask this same question, so a
+    /// ghost that promises a building the order would refuse is not a thing that can happen —
+    /// and a refusal can always name its reason, because the reason is computed here rather
+    /// than thrown away at the call site.
+    /// </para>
+    /// <para>
+    /// The site it returns is the <em>cell centre</em> rather than the millimetre the cursor
+    /// resolved to. The footprint that was judged is the cell's, so the cell centre is the
+    /// position that was judged; a building stood four metres off the patch it was checked
+    /// against would be a second, unasked question about the ground. It also means the ghost
+    /// sits exactly where the structure will for every pixel inside one cell, which is what
+    /// makes a plan and its order comparable cell for cell.
+    /// </para>
+    /// </summary>
+    /// <param name="team">Team paying for the work.</param>
+    /// <param name="kind">Role to raise.</param>
+    /// <param name="site">Cell the player clicked, in millimetres.</param>
+    /// <param name="planned">Where the structure would stand; default when refused.</param>
+    /// <param name="reason">Empty when allowed, otherwise why not.</param>
+    public bool TryPlanStructure(int team, UnitKind kind, WorldPos site, out WorldPos planned, out string reason)
+    {
+        planned = default;
+
+        if (!CanBuildStructure(team, kind, out reason))
         {
             return false;
         }
 
-        TerrainType type = TerrainTypes.TypeAt(terrainCell);
+        if (!CanPlaceStructure(site, out reason))
+        {
+            return false;
+        }
 
-        return type is not (TerrainType.ShallowWater or TerrainType.DeepWater or TerrainType.Lava);
+        planned = Navigation.CentreOf(Navigation.IndexOfWorld(site));
+        return true;
+    }
+
+    /// <summary>
+    /// Raises a structure at a site the player chose: the ground is surveyed, the resources are
+    /// spent, and the structure starts there rather than at an offset from whatever made it.
+    /// <para>
+    /// It arrives as a building site and rises over the time the catalogue quotes for it, doing
+    /// nothing until it is up — the same shape a produced structure has, and the same shape a
+    /// crossing has. The cost is the order and the construction is a period the player can see,
+    /// which is what makes the site worth having chosen: a building that appeared finished would
+    /// hide the one stretch of the game where the choice could still be judged.
+    /// </para>
+    /// </summary>
+    private bool TryBuildStructure(UnitKind kind, WorldPos site, int team)
+    {
+        if (!TryPlanStructure(team, kind, site, out WorldPos planned, out _))
+        {
+            return false;
+        }
+
+        // Raised before it is paid for, for the same reason a crossing's span is recorded before
+        // the resources are taken: a step that cannot happen must not have cost anything. The
+        // plan has already refused a world with no room in it, so nothing here can fail.
+        Faction faction = FactionOfTeam(team);
+        EntityId created = Spawn(faction, team, kind, planned, Fix32.Zero, UnitCatalog.Get(kind).Health);
+        ref Entity structure = ref _entities[created.Slot];
+
+        int ticks = UnitCatalog.BuildTicks(faction, kind);
+        structure.ConstructionTicksTotal = ticks;
+        structure.ConstructionTicksRemaining = ticks;
+
+        ref TeamState state = ref _teams[team];
+        state.Materials -= UnitCatalog.MaterialCost(faction, kind);
+        state.Energy -= UnitCatalog.EnergyCost(faction, kind);
+        state.Water -= UnitCatalog.WaterCost(faction, kind);
+        return true;
     }
 
     /// <summary>Cost and time of a prototype run, as a multiple of the unit's own.</summary>

@@ -129,6 +129,18 @@ public sealed partial class MiVicGame : XnaGame
     /// <summary>True while the next click places a bridge.</summary>
     private bool _pendingBridge;
 
+    /// <summary>
+    /// The structure the player is choosing a site for, or <see cref="UnitKind.None"/>.
+    /// <para>
+    /// A structure used to be ordered from the panel and to arrive at a fixed offset from
+    /// whatever made it, which is a position the player neither chose nor saw before paying
+    /// for it. The kind is carried here rather than a flag, because a placement is a placement
+    /// <em>of something</em>: the ghost is that building's model, the plan is that role's rule,
+    /// and the order names it.
+    /// </para>
+    /// </summary>
+    private UnitKind _pendingStructure = UnitKind.None;
+
     /// <summary>The ghost of the placement the player has not committed to yet.</summary>
     private PlacementPreview? _placementPreview;
 
@@ -146,6 +158,12 @@ public sealed partial class MiVicGame : XnaGame
 
     /// <summary>Whether the site under the cursor would be accepted, which colours the ghost.</summary>
     private bool _bridgeSiteAllowed;
+
+    /// <summary>Whether the structure under the cursor would be accepted, which colours its ghost.</summary>
+    private bool _structureSiteAllowed;
+
+    /// <summary>Why the structure site under the cursor would be refused, for the panel and the probe.</summary>
+    private string _structureSiteReason = string.Empty;
 
     /// <summary>Why not, when it would not. Shown beside the armed button, where the player is looking.</summary>
     private string _bridgeSiteReason = string.Empty;
@@ -784,10 +802,11 @@ public sealed partial class MiVicGame : XnaGame
         // which it did not.
         if (Pressed(keyboard, Keys.Escape) && !_options.IsSelfTest)
         {
-            if (_pendingBridge || _pendingAbility != AbilityId.None)
+            if (_pendingBridge || _pendingAbility != AbilityId.None || _pendingStructure != UnitKind.None)
             {
                 _pendingBridge = false;
                 _pendingAbility = AbilityId.None;
+                _pendingStructure = UnitKind.None;
                 _hud.Notify("Ακυρώθηκε.");
             }
             else
@@ -862,6 +881,7 @@ public sealed partial class MiVicGame : XnaGame
         // Before the HUD is drawn, because the panel beside the armed bridge button reports the
         // same verdict the ghost is coloured by, and two answers on one frame must be one answer.
         VerifyPendingBridge();
+        VerifyPendingStructure();
         UpdatePlacementPreview();
 
         _previousScrollWheel = mouse.ScrollWheelValue;
@@ -1949,7 +1969,18 @@ public sealed partial class MiVicGame : XnaGame
 
             // A pending ability turns the next click into a target, not a
             // selection. Escape cancels it; see the keyboard handler.
-            if (_pendingBridge)
+            if (_pendingStructure != UnitKind.None)
+            {
+                if (Vector2.Distance(_dragStart, end) < 6f)
+                {
+                    IssueStructureAtCursor(end);
+                }
+                else
+                {
+                    _pendingStructure = UnitKind.None;
+                }
+            }
+            else if (_pendingBridge)
             {
                 if (Vector2.Distance(_dragStart, end) < 6f)
                 {
@@ -2497,6 +2528,130 @@ public sealed partial class MiVicGame : XnaGame
     private long _bridgeAwaitingTick = -1;
 
     /// <summary>
+    /// Raises the armed structure at the site under the cursor. The simulation decides whether
+    /// the ground will take it — water, lava, a cliff, a patch too rough for a building, or a
+    /// team that cannot pay — and refuses without charging, so a misplaced click costs nothing
+    /// but the click.
+    /// <para>
+    /// The site is <em>asked about</em> here before the order is sent, with the same call the
+    /// order will be answered by, for two reasons. The player is told why in the same frame
+    /// rather than a tick later, and a refusal they can act on — move the cursor a cell and try
+    /// again — is worth more than one discovered after the fact. The answer cannot drift from
+    /// the command's because it is the same function on the same world, and what is enqueued is
+    /// the position the plan named rather than the millimetre the cursor resolved to.
+    /// </para>
+    /// <para>
+    /// A refused click leaves placement armed, exactly as the bridge's does: the player is in
+    /// the middle of choosing a site, has just been told what is wrong with the one they chose,
+    /// and the next thing they will do is point somewhere else.
+    /// </para>
+    /// </summary>
+    private void IssueStructureAtCursor(Vector2 cursor)
+    {
+        if (IsPlayback || _simulation is null)
+        {
+            _pendingStructure = UnitKind.None;
+            return;
+        }
+
+        UnitKind kind = _pendingStructure;
+        string name = FactionPalette.UnitLabel(kind);
+
+        if (!TryPlacementTarget(cursor, out WorldPos target))
+        {
+            _hud.Notify($"{name}: ο δείκτης δεν δείχνει έδαφος.");
+            return;
+        }
+
+        SimWorld world = _simulation.World;
+
+        if (!world.TryPlanStructure(PlayerTeam, kind, target, out WorldPos planned, out string reason))
+        {
+            _hud.Notify($"{name}: {reason}.");
+            return;
+        }
+
+        _pendingStructure = UnitKind.None;
+        world.Enqueue(SimCommand.Structure(kind, planned, world.Tick + 1, PlayerTeam));
+
+        // The command lands on the next tick, and the world can move in between. Remembering what
+        // was asked for is what lets the arrival be checked rather than assumed: a building that
+        // never appeared is otherwise the same silence this whole path was fixed for, and the
+        // bridge carries the identical note beside it.
+        _structureAwaitingKind = kind;
+        _structureAwaitingCell = world.Navigation.IndexOfWorld(planned);
+        _structureAwaitingTick = world.Tick + 1;
+    }
+
+    /// <summary>The structure order waiting to be seen standing, or <see cref="UnitKind.None"/>.</summary>
+    private UnitKind _structureAwaitingKind = UnitKind.None;
+
+    /// <summary>The cell that order named, and the tick it was asked to execute on.</summary>
+    private int _structureAwaitingCell = -1;
+    private long _structureAwaitingTick = -1;
+
+    /// <summary>
+    /// Checks on the tick after a structure was ordered that it is actually standing there, and
+    /// says why not when it is not. A site that was legal at the click and refused one tick later
+    /// is rare — the resources moved, or the team's last command centre was lost — but it is the
+    /// same silent failure by a different route, and a player who has just paid for a building is
+    /// entitled to hear about it.
+    /// </summary>
+    private void VerifyPendingStructure()
+    {
+        if (_structureAwaitingKind == UnitKind.None || _simulation is null ||
+            _simulation.World.Tick < _structureAwaitingTick)
+        {
+            return;
+        }
+
+        UnitKind kind = _structureAwaitingKind;
+        int cell = _structureAwaitingCell;
+        SimWorld world = _simulation.World;
+
+        _structureAwaitingKind = UnitKind.None;
+        _structureAwaitingCell = -1;
+        _structureAwaitingTick = -1;
+
+        if (cell < 0 || IsStructureAt(world, PlayerTeam, kind, cell))
+        {
+            return;
+        }
+
+        // Asking again reports whichever of the rules refused it this time; a plan that would now
+        // accept leaves only one thing unsaid, and that is that the order never ran.
+        _hud.Notify(world.TryPlanStructure(PlayerTeam, kind, world.Navigation.CentreOf(cell), out _, out string reason)
+            ? $"{FactionPalette.UnitLabel(kind)}: η εντολή δεν εκτελέστηκε."
+            : $"{FactionPalette.UnitLabel(kind)}: {reason}.");
+    }
+
+    /// <summary>True when a live structure of a role for a team stands on a cell.</summary>
+    private static bool IsStructureAt(SimWorld world, int team, UnitKind kind, int cell)
+    {
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId != team || entity.Kind != kind)
+            {
+                continue;
+            }
+
+            if (world.Navigation.IndexOfWorld(entity.Position) == cell)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Where on the ground the player is pointing, in simulation millimetres. Between the
     /// cursor and the simulation sits the client's projection, and this is the one place it is
     /// converted, so a preview and the order it previews cannot be aimed at different cells.
@@ -2538,11 +2693,21 @@ public sealed partial class MiVicGame : XnaGame
             return;
         }
 
+        // One ghost at a time, and the structure's is the newer of the two modes: arming a row
+        // clears the other two, so both being armed at once is not a state this can be in.
+        if (_pendingStructure != UnitKind.None)
+        {
+            UpdateStructurePreview();
+            return;
+        }
+
         if (!_pendingBridge || IsPlayback)
         {
             _placementPreview.Hide();
             _bridgeSiteAllowed = false;
             _bridgeSiteReason = string.Empty;
+            _structureSiteAllowed = false;
+            _structureSiteReason = string.Empty;
             return;
         }
 
@@ -2595,6 +2760,89 @@ public sealed partial class MiVicGame : XnaGame
 
         _placementPreview.Show(_bridgePreviewMesh, Matrix.Identity, _bridgeSiteAllowed);
     }
+
+    /// <summary>
+    /// Stages the ghost of the structure the player is about to place: the building itself,
+    /// translucent, standing on the site the simulation says it would take — tinted by whether
+    /// it would take it.
+    /// <para>
+    /// The ghost is the model rather than a footprint because that is the question the player is
+    /// asking. A rectangle of ground says which cells are being spent; the building says what is
+    /// being built, how big it is and which way round it lands, which is what choosing a site
+    /// between two hills is actually about. Colour is the verdict — green when the plan accepts,
+    /// red when it does not — and the reason is written beside the armed row and in the notice a
+    /// refused click raises.
+    /// </para>
+    /// <para>
+    /// Presentation only. Nothing here enqueues, spends or edits anything — the simulation is
+    /// asked a question and the answer is drawn, which is what lets the ghost be as bold as it
+    /// likes without a mis-click being able to change the world. The mesh is the catalogue's and
+    /// is cached there; only the transform changes from frame to frame.
+    /// </para>
+    /// <para>
+    /// A refused site still gets a ghost, standing on the cell under the cursor. Water, lava and
+    /// rough ground are exactly the sites a player needs to see refused — a red building over
+    /// the lake says the lake is the problem, and a preview that vanished there would be the
+    /// silence this whole path exists to end.
+    /// </para>
+    /// </summary>
+    private void UpdateStructurePreview()
+    {
+        SimWorld world = _simulation!.World;
+
+        if (IsPlayback)
+        {
+            _placementPreview!.Hide();
+            _structureSiteAllowed = false;
+            _structureSiteReason = string.Empty;
+            return;
+        }
+
+        if (!TryPlacementTarget(CursorPosition, out WorldPos target))
+        {
+            // The cursor is not over the ground at all, so there is nothing to stand a ghost on
+            // and nothing to promise.
+            _placementPreview!.Hide();
+            _structureSiteAllowed = false;
+            _structureSiteReason = "ο δείκτης δεν δείχνει έδαφος";
+            return;
+        }
+
+        _structureSiteAllowed = world.TryPlanStructure(
+            PlayerTeam,
+            _pendingStructure,
+            target,
+            out WorldPos planned,
+            out _structureSiteReason);
+
+        // Where it would stand: the cell the plan chose, or the cell under the cursor when the
+        // plan refused it, so that the red building is over the ground that is wrong.
+        WorldPos stand = _structureSiteAllowed
+            ? planned
+            : world.Navigation.CentreOf(world.Navigation.IndexOfWorld(target));
+
+        float x = stand.X / (float)WorldPos.MmPerMetre;
+        float z = stand.Z / (float)WorldPos.MmPerMetre;
+        float y = DrawnHeightAtMetres(world, world.TerrainTypes, x, z) + PlacementPreview.LiftMetres;
+
+        InstancedRenderer.Mesh ghost = _catalog!.Whole(SimWorld.FactionOfTeam(PlayerTeam), _pendingStructure);
+
+        // No rotation: a structure is raised facing its model's own forward, which is what the
+        // entity transform does with a heading of zero.
+        _placementPreview!.Show(ghost, Matrix.CreateTranslation(x, y, z), _structureSiteAllowed, StructureGhostOpacity);
+    }
+
+    /// <summary>
+    /// How solid the ghost of a building is drawn.
+    /// <para>
+    /// Higher than the footprint's own opacity because a building is a volume rather than a
+    /// diagram: its near wall, its far wall and its roof all lie between the eye and the ground, so
+    /// the tint is diluted three times over and a red refusal at the footprint's four tenths reads
+    /// as a pale pink blur — which is indistinguishable from a preview that has not made up its
+    /// mind. Two thirds still shows the ground through the building and still says red.
+    /// </para>
+    /// </summary>
+    private const float StructureGhostOpacity = 0.66f;
 
     /// <summary>
     /// Calls the pending ability in at the ground point under the cursor. The
@@ -3139,17 +3387,27 @@ public sealed partial class MiVicGame : XnaGame
         }
 
         // The support panel is not about a building; it is about the map. Neither of these
-        // commands is issued by an entity, so neither has any use for a selected one.
+        // commands is issued by an entity, so neither has any use for a selected one. Nor is a
+        // structure placement: what it needs from the panel is the role whose row was pressed,
+        // and the site comes from the click that follows.
         switch (command.Kind)
         {
             case HudCommandKind.UseAbility:
                 _pendingAbility = command.Ability;
                 _pendingBridge = false;
+                _pendingStructure = UnitKind.None;
                 return;
 
             case HudCommandKind.BuildBridge:
                 _pendingAbility = AbilityId.None;
                 _pendingBridge = true;
+                _pendingStructure = UnitKind.None;
+                return;
+
+            case HudCommandKind.PlaceStructure:
+                _pendingAbility = AbilityId.None;
+                _pendingBridge = false;
+                _pendingStructure = command.Unit;
                 return;
         }
 
@@ -5247,7 +5505,9 @@ public sealed partial class MiVicGame : XnaGame
             _simulation!.IsPlaybackFinished,
             _pendingBridge,
             _pendingBridge && !_bridgeSiteAllowed ? _bridgeSiteReason : string.Empty,
-            _pendingBridge && _bridgeSiteAllowed ? _bridgeSiteCells : 0);
+            _pendingBridge && _bridgeSiteAllowed ? _bridgeSiteCells : 0,
+            _pendingStructure,
+            _pendingStructure != UnitKind.None && !_structureSiteAllowed ? _structureSiteReason : string.Empty);
 
     private bool Pressed(KeyboardState keyboard, Keys key)
         => keyboard.IsKeyDown(key) && !_previousKeyboard.IsKeyDown(key);

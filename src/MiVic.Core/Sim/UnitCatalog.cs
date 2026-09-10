@@ -312,5 +312,38 @@ public static class UnitCatalog
         }
     }
 
+    /// <summary>
+    /// The player-facing name of a role, in Greek, as the panels write it.
+    /// <para>
+    /// It lives here because the simulation needs it too: a refusal that names what is missing
+    /// — "χρειάζεται κέντρο διοίκησης" — is a refusal in the same voice as "λείπουν 120 Π",
+    /// and a reason assembled from an enum name would be the only English sentence in the
+    /// player's interface. The client's own labels come from here as well, so there is one
+    /// list of names rather than two that can drift apart.
+    /// </para>
+    /// </summary>
+    public static string GreekName(UnitKind kind) => kind switch
+    {
+        UnitKind.Infantry => "Πεζικό",
+        UnitKind.Tank => "Άρμα",
+        UnitKind.Artillery => "Πυροβολικό",
+        UnitKind.RocketArtillery => "Κατιούσα",
+        UnitKind.Commissar => "Κομισάριος",
+        UnitKind.AntiAir => "Αντιαεροπορικό",
+        UnitKind.Aircraft => "Αεροσκάφος",
+        UnitKind.Drone => "Ντρόουν",
+        UnitKind.RobotInfantry => "Ρομποτικό Πεζικό",
+        UnitKind.Mercenary => "Μισθοφόρος",
+        UnitKind.StealthRecon => "Καταδρομέας",
+        UnitKind.ElectroPrototype => "Ηλεκτροπυροβόλο",
+        UnitKind.Harvester => "Συλλέκτης",
+        UnitKind.CommandCentre => "Κέντρο Διοίκησης",
+        UnitKind.PowerPlant => "Σταθμός Παραγωγής",
+        UnitKind.NuclearPlant => "Πυρηνικός Σταθμός",
+        UnitKind.Factory => "Εργοστάσιο",
+        UnitKind.DesignBureau => "Γραφείο Σχεδιασμού",
+        _ => "Άγνωστο",
+    };
+
     private static int Scale(int value, int permille) => (value * permille) / 1_000;
 }

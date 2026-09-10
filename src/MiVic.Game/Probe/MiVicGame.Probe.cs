@@ -323,7 +323,8 @@ public sealed partial class MiVicGame : IProbeHost
 
         // The footprint is the client's own, counted from the cells the ghost was built from:
         // a preview that reported a different span from the one it drew would be a second
-        // answer to the question this command exists to ask.
+        // answer to the question this command exists to ask. A structure stands on one cell —
+        // the cell whose patch the plan judged — so its footprint is that cell.
         int footprint = 0;
 
         if (resolved)
@@ -331,15 +332,18 @@ public sealed partial class MiVicGame : IProbeHost
             _simulation!.World.TryPlanBridge(PlayerTeam, target, _bridgePreviewCells, out footprint, out _);
         }
 
+        bool structure = _pendingStructure != UnitKind.None;
+
         return new ProbeCursor(
             pixel,
             resolved,
             resolved ? GroundAt(target) : default,
             cell,
-            _pendingBridge,
-            _bridgeSiteAllowed,
-            _bridgeSiteReason,
-            _pendingBridge ? footprint : 0);
+            structure || _pendingBridge,
+            structure ? _structureSiteAllowed : _bridgeSiteAllowed,
+            structure ? _structureSiteReason : _bridgeSiteReason,
+            structure ? (resolved ? 1 : 0) : _pendingBridge ? footprint : 0,
+            structure ? _pendingStructure : UnitKind.None);
     }
 
     /// <summary>The drawn surface height at a simulation position, which is where a ghost sits.</summary>
@@ -377,6 +381,32 @@ public sealed partial class MiVicGame : IProbeHost
     }
 
     /// <summary>
+    /// Presses a structure row in the production panel, through the HUD's own command path
+    /// rather than by setting the flag here. The row is the one the panel draws for the role, so
+    /// what a script arms is what a player would press.
+    /// </summary>
+    bool IProbeHost.ArmStructure(UnitKind kind, out string note)
+    {
+        if (!UnitCatalog.TryGet(kind, out UnitDefinition definition) || !definition.IsBuilding)
+        {
+            note = $"{kind} is not a structure, so no row offers it — the panel arms CommandCentre, " +
+                   "PowerPlant, Factory, DesignBureau or NuclearPlant";
+            return false;
+        }
+
+        ApplyHudCommand(new HudCommand(HudCommandKind.PlaceStructure, kind));
+
+        if (_pendingStructure == kind)
+        {
+            note = $"armed {FactionPalette.UnitLabel(kind)} — the next left click picks the site";
+            return true;
+        }
+
+        note = "the client did not arm a placement: pressing the row had no effect";
+        return false;
+    }
+
+    /// <summary>
     /// Releases the left button at the script's cursor, down the same branch a real release
     /// takes in <see cref="HandleSelectionInput"/>.
     /// </summary>
@@ -384,11 +414,15 @@ public sealed partial class MiVicGame : IProbeHost
     {
         Vector2 pixel = CursorPosition;
         bool resolved = TryPlacementTarget(pixel, out WorldPos target);
-        bool armed = _pendingBridge || _pendingAbility != AbilityId.None;
+        bool armed = _pendingBridge || _pendingStructure != UnitKind.None || _pendingAbility != AbilityId.None;
         int commandsBefore = _simulation!.World.PendingCommandCount;
         string noticeBefore = _hud.Notice;
 
-        if (_pendingBridge)
+        if (_pendingStructure != UnitKind.None)
+        {
+            IssueStructureAtCursor(pixel);
+        }
+        else if (_pendingBridge)
         {
             IssueBridgeAtCursor(pixel);
         }

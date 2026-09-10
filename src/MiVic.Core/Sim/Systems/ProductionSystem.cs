@@ -86,6 +86,20 @@ public static class ProductionSystem
     /// Places a finished unit just outside its factory. The offset varies with
     /// the tick so a batch does not stack on one point, and it is derived from
     /// the tick rather than a random source so replays stay identical.
+    /// <para>
+    /// The AI has no way to choose a site and does not need one, so structures it orders still
+    /// arrive at this offset — but the offset no longer has the last word. What is on the ground
+    /// is the same question a player's click is answered with (<see cref="SimWorld.CanPlaceStructure"/>),
+    /// asked here rather than in a second copy of the rule, so an AI structure cannot end up
+    /// standing where the game would have refused the player's. When the offset is somewhere a
+    /// structure may not stand, the site is searched outwards for the nearest patch that will
+    /// hold it, exactly as a scenario searches for the ground its bases stand on.
+    /// </para>
+    /// <para>
+    /// An offset that is already good is kept to the millimetre rather than snapped: this path
+    /// is the one every AI structure has always taken, and moving them all by half a cell to
+    /// tidy the arithmetic would be a change to the game rather than a fix to it.
+    /// </para>
     /// </summary>
     private static void SpawnProduced(SimWorld world, int slot, UnitKind kind)
     {
@@ -104,6 +118,16 @@ public static class ProductionSystem
         // eventually put its next building in the lake. Nothing is ever placed on
         // water or lava.
         spawn = world.LegalSpawnSite(spawn);
+
+        // A cell of solid ground is not yet a site: a structure needs a footprint, and this is
+        // the same predicate the player's own placement is judged by. The search reports false
+        // when it finds nothing within reach, and still answers with the nearest solid ground,
+        // so a structure the team has paid for is never lost.
+        if (definition.IsBuilding && !world.CanPlaceStructure(spawn, out _))
+        {
+            world.TryFindBaseSite(spawn, out WorldPos legal);
+            spawn = legal;
+        }
 
         EntityId created = world.Spawn(
             building.Faction,

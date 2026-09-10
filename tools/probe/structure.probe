@@ -1,0 +1,101 @@
+# Q: can a player choose where a structure is built, and is he told why not when he cannot?
+#
+# Run against the default skirmish, which is the map the feature is for:
+#
+#   MiVic.Game.exe --probe tools/probe/structure.probe --probe-out artifacts/probe/structure.txt
+#
+# A structure used to be produced by another structure and to appear at a fixed offset from
+# whatever made it: a position the player did not choose, could not see before paying for it, and
+# found out about by watching a building pop up somewhere they did not intend. It is now raised on
+# a site the player picks, so the questions are the ones a click raises: would the game take this
+# site, is the player told why not, and did the building come up where they aimed.
+#
+# The player's base is at (-248.4, -117.2) m — `base-ground.probe` is where those numbers come
+# from — and the ground the base-site search settled on is the ground a structure may stand on, so
+# the cells just north of the headquarters are the accepted case. The lake south-west of the base
+# and the volcano in the north-east are the refusals.
+
+# Frame the base, so the pixels below are on screen and the shots are of the ghost.
+focus -240 -110
+zoom 170
+pitch -0.90
+
+# The simulation's own answer about a factory at five sites, before the interface is involved at
+# all. Two accepted sites a player would choose, and three refusals that name their rule: water,
+# lava, and something that is not a structure in the first place.
+structure Factory -245.3 -95.3
+structure Factory -254.7 -86.0
+structure Factory -257.0 -210.0
+structure Factory 136.0 -42.2
+structure Tank -245.3 -95.3
+
+# Select the headquarters, which is the building whose panel carries the structure rows. The click
+# is an ordinary selection: nothing is armed yet, so it picks what is under the cursor.
+hover -248.4 -117.2
+click
+units soviet 1
+
+# What pressing the Εργοστάσιο row does. This is the HUD's own command path, not a flag set by the
+# script: a row that orders a building at an offset instead of asking for a site is the bug, and
+# this line is where it would show.
+arm Factory
+
+# The cursor over ground the rule accepts. `hover` reports the pixel a world point projects to and
+# then what the client resolves that pixel back to — the round trip every click makes — and, with a
+# placement armed, whether the ghost is green or red.
+hover -245.3 -95.3
+
+# The ghost is the building itself rather than a footprint rectangle, so a shot of it says what is
+# being placed as well as where, and the panel carries the armed row.
+hud on
+shot artifacts/probe/structure-ghost-green.png
+
+# Water: the ghost goes red on the cell under the cursor, and the row in the panel says which rule
+# refused it. The click that follows is refused in the same frame and leaves placement armed — the
+# player is aiming, and a refusal that disarmed them would mean pressing the row again for every
+# cell they try.
+hover -257.0 -210.0
+hover -253 -199
+shot artifacts/probe/structure-ghost-water.png
+click
+structures 0
+
+# Lava, four hundred metres away: the same red ghost, a different sentence. The camera moves, the
+# cursor is put down again where the point now projects to, and the refusal is asked for at the new
+# pixel.
+focus 136.0 -42.2
+zoom 120
+hover 136.0 -42.2
+hud off
+shot artifacts/probe/structure-ghost-lava.png
+click
+structures 0
+
+# And the site the player actually wants, twenty metres north of their own headquarters: accepted,
+# an order issued, and a building site standing there on the next tick.
+focus -240 -110
+zoom 170
+hover -245.3 -95.3
+hud on
+click
+
+tick 1
+structures 0
+
+# Rising: a structure is a building site for the whole of its construction, which is what makes the
+# site the player chose worth having chosen — they can see it going up where they put it.
+tick 120
+structures 0
+hud off
+shot artifacts/probe/structure-rising.png
+
+tick 160
+structures 0
+shot artifacts/probe/structure-built.png
+
+# The ledger: this seed's accepted site for a factory north of the Soviet base is cell 5,21, and the
+# building site was raised on that cell rather than at an offset. A change to the placement rule
+# that moved it would show up here as a failure.
+expect "the factory's site stands at x -245.3 m" -245.3 -245.3 0.1
+expect "the factory's site stands at z -95.3 m" -95.3 -95.3 0.1
+expect "the factory takes 272 ticks to rise" 272 272

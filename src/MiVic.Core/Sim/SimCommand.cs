@@ -40,6 +40,9 @@ public enum SimCommandKind : byte
 
     /// <summary>Build a crossing over the water at a ground position.</summary>
     BuildBridge = 10,
+
+    /// <summary>Raise a structure at a ground position the player chose.</summary>
+    BuildStructure = 11,
 }
 
 /// <summary>
@@ -129,6 +132,19 @@ public readonly record struct SimCommand(
     /// <summary>Spans the water at <paramref name="target"/> so ground units can cross.</summary>
     public static SimCommand Bridge(WorldPos target, long executeTick, int issuerTeam)
         => new(SimCommandKind.BuildBridge, EntityId.None, target, executeTick, issuerTeam);
+
+    /// <summary>
+    /// Raises a structure of <paramref name="kind"/> at <paramref name="site"/>.
+    /// <para>
+    /// The site is the order rather than a place the simulation works out for itself: a
+    /// structure raised from another structure used to appear at a fixed offset from whatever
+    /// made it, which is a position the player did not choose and cannot see before paying for
+    /// it. <see cref="Target"/> is unused — a structure is raised <em>on the map</em>, not by
+    /// an entity, and which building it is raised from is an unlock rather than a producer.
+    /// </para>
+    /// </summary>
+    public static SimCommand Structure(UnitKind kind, WorldPos site, long executeTick, int issuerTeam)
+        => new(SimCommandKind.BuildStructure, EntityId.None, site, executeTick, issuerTeam, kind);
 }
 
 /// <summary>

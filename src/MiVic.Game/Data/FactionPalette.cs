@@ -56,27 +56,6 @@ public static class FactionPalette
         };
     }
 
-    /// <summary>Player-facing Greek label for a unit role.</summary>
-    public static string UnitLabel(UnitKind kind) => kind switch
-    {
-        UnitKind.Infantry => "Πεζικό",
-        UnitKind.Tank => "Άρμα",
-        UnitKind.Artillery => "Πυροβολικό",
-        UnitKind.RocketArtillery => "Κατιούσα",
-        UnitKind.Commissar => "Κομισάριος",
-        UnitKind.AntiAir => "Αντιαεροπορικό",
-        UnitKind.Aircraft => "Αεροσκάφος",
-        UnitKind.Drone => "Ντρόουν",
-        UnitKind.RobotInfantry => "Ρομποτικό Πεζικό",
-        UnitKind.Mercenary => "Μισθοφόρος",
-        UnitKind.StealthRecon => "Καταδρομέας",
-        UnitKind.ElectroPrototype => "Ηλεκτροπυροβόλο",
-        UnitKind.Harvester => "Συλλέκτης",
-        UnitKind.CommandCentre => "Κέντρο Διοίκησης",
-        UnitKind.PowerPlant => "Σταθμός Παραγωγής",
-        UnitKind.NuclearPlant => "Πυρηνικός Σταθμός",
-        UnitKind.Factory => "Εργοστάσιο",
-        UnitKind.DesignBureau => "Γραφείο Σχεδιασμού",
-        _ => "Άγνωστο",
-    };
+    /// <summary>Player-facing Greek label for a unit role, from the catalogue's own names.</summary>
+    public static string UnitLabel(UnitKind kind) => UnitCatalog.GreekName(kind);
 }

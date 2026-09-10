@@ -108,6 +108,14 @@ public interface IProbeHost
     bool ArmBridge(out string note);
 
     /// <summary>
+    /// Presses a structure row in the production panel, through the HUD's own path, and says
+    /// whether the client is now waiting for a site. A structure row arms a placement rather
+    /// than ordering anything, so a script that wants to ask what placing one would do has to
+    /// arm it the way a player does.
+    /// </summary>
+    bool ArmStructure(UnitKind kind, out string note);
+
+    /// <summary>
     /// Releases the left button at the script's cursor, through the same path a real release
     /// takes, and reports what the client did with it.
     /// </summary>
@@ -147,6 +155,11 @@ public readonly record struct ProbeClick(
 /// <param name="SiteAllowed">Whether the armed placement would be accepted at this cursor.</param>
 /// <param name="SiteReason">Why it would not, or an empty string.</param>
 /// <param name="Footprint">Cells the armed placement would take.</param>
+/// <param name="ArmedKind">
+/// The structure being placed, or <see cref="UnitKind.None"/> when nothing is armed or what is
+/// armed is a bridge. A placement is a placement of something, and a transcript that only said
+/// "accepted" would not say what was accepted.
+/// </param>
 public readonly record struct ProbeCursor(
     Vector2 Pixel,
     bool Resolved,
@@ -155,7 +168,8 @@ public readonly record struct ProbeCursor(
     bool Armed,
     bool SiteAllowed,
     string SiteReason,
-    int Footprint);
+    int Footprint,
+    UnitKind ArmedKind = UnitKind.None);
 
 /// <summary>The camera's pose, as a probe reports it.</summary>
 /// <param name="Target">The point it orbits, in metres.</param>

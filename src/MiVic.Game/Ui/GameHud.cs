@@ -33,11 +33,17 @@ public enum HudCommandKind
 
     /// <summary>Place a bridge; the client then asks for a target.</summary>
     BuildBridge = 6,
+
+    /// <summary>Place a structure; the client then asks the player for a site.</summary>
+    PlaceStructure = 7,
 }
 
 /// <summary>A request raised by a HUD button, applied by the client as a command.</summary>
 /// <param name="Kind">What to do.</param>
-/// <param name="Unit">Role to queue, for <see cref="HudCommandKind.QueueUnit"/>.</param>
+/// <param name="Unit">
+/// Role to queue, for <see cref="HudCommandKind.QueueUnit"/>, or the structure to place, for
+/// <see cref="HudCommandKind.PlaceStructure"/>.
+/// </param>
 /// <param name="Tech">Project to start, for <see cref="HudCommandKind.Research"/>.</param>
 /// <param name="Ability">Off-map support to call in, for <see cref="HudCommandKind.UseAbility"/>.</param>
 public readonly record struct HudCommand(
@@ -72,6 +78,14 @@ public readonly record struct HudCommand(
 /// Cells the crossing under the cursor would span, or zero when there is no site. The price of
 /// a bridge depends on its length, so this is what the panel quotes.
 /// </param>
+/// <param name="StructureArmed">
+/// The structure the player is choosing a site for, or <see cref="UnitKind.None"/>. A structure
+/// row arms a placement rather than ordering anything, and this is the row that is armed.
+/// </param>
+/// <param name="StructureSiteReason">
+/// Why the site under the cursor would be refused, or an empty string when it would be taken or
+/// nothing is being placed. The ghost says <em>that</em> a site fails; this is the words for why.
+/// </param>
 public readonly record struct HudSnapshot(
     SimBridge Simulation,
     RtsCamera Camera,
@@ -91,7 +105,9 @@ public readonly record struct HudSnapshot(
     bool PlaybackFinished,
     bool BridgeArmed = false,
     string BridgeSiteReason = "",
-    int BridgeSiteCells = 0);
+    int BridgeSiteCells = 0,
+    UnitKind StructureArmed = UnitKind.None,
+    string StructureSiteReason = "");
 
 /// <summary>
 /// The in-game HUD. Every player-facing string is Greek, which is also the
@@ -645,16 +661,39 @@ public sealed class GameHud
 
         foreach (BuildOption option in options)
         {
+            // A structure is not produced at the building that unlocks it: it is placed, and the
+            // player chooses the site. Pressing the row therefore arms a placement — the same
+            // shape the bridge button has — and the words beside it are the simulation's own
+            // verdict on the cell under the cursor, or its reason for having refused the row.
+            //
+            // The armed marker is a bullet rather than a play triangle because the font atlas
+            // covers Latin, Greek, punctuation, arrows and box drawing but not the geometric
+            // shapes block, where a triangle lives: it would be drawn as the missing-glyph box.
+            bool placing = option.PlacesSite && snapshot.StructureArmed == option.Kind;
+
             ImGui.BeginDisabled(!option.Enabled);
 
-            if (ImGui.Button(option.Label))
+            if (ImGui.Button(placing ? $"• {option.Label}" : option.Label))
             {
-                command = new HudCommand(HudCommandKind.QueueUnit, option.Kind);
+                command = option.PlacesSite
+                    ? new HudCommand(HudCommandKind.PlaceStructure, option.Kind)
+                    : new HudCommand(HudCommandKind.QueueUnit, option.Kind);
             }
 
             ImGui.EndDisabled();
 
-            if (option.Reason.Length > 0)
+            if (placing)
+            {
+                string note = snapshot.StructureSiteReason.Length > 0
+                    ? $"× {snapshot.StructureSiteReason}"
+                    : "διαλέξτε σημείο — Esc ακυρώνει";
+
+                ImGui.SameLine();
+                ImGui.TextColored(
+                    snapshot.StructureSiteReason.Length > 0 ? WarningColor : new NVec4(0.55f, 0.95f, 0.60f, 1f),
+                    note);
+            }
+            else if (option.Reason.Length > 0)
             {
                 ImGui.SameLine();
                 ImGui.TextColored(MutedColor, option.Reason);
@@ -788,7 +827,16 @@ public sealed class GameHud
     /// <param name="Label">Button text with cost and build time.</param>
     /// <param name="Enabled">Whether the player may click it now.</param>
     /// <param name="Reason">Why it is disabled, in Greek; empty when enabled.</param>
-    public readonly record struct BuildOption(UnitKind Kind, string Label, bool Enabled, string Reason);
+    /// <param name="PlacesSite">
+    /// True for a structure, which the row arms a placement for rather than ordering: pressing it
+    /// asks the player where the building goes, and nothing is enqueued until they click.
+    /// </param>
+    public readonly record struct BuildOption(
+        UnitKind Kind,
+        string Label,
+        bool Enabled,
+        string Reason,
+        bool PlacesSite = false);
 
     /// <summary>
     /// What a building can produce, and why each option is or is not available.
@@ -816,6 +864,27 @@ public sealed class GameHud
         {
             if (definition.ProducedAt != building.Kind)
             {
+                continue;
+            }
+
+            if (definition.IsBuilding)
+            {
+                // A structure's row is not a queue and not a price list: it arms a placement, and
+                // whether it may be pressed at all is the simulation's own answer — the same call
+                // the order will be answered by, with the site question put to whatever cell the
+                // player then points at. Copying the rule here is how a greyed-out row and a
+                // working one disagree, which is what the bridge button's rule was split out to
+                // prevent.
+                int structureTicks = UnitCatalog.BuildTicks(building.Faction, definition.Kind);
+                bool canRaise = world.CanBuildStructure(building.TeamId, definition.Kind, out string structureReason);
+
+                string structureLabel =
+                    $"{FactionPalette.UnitLabel(definition.Kind),-20} " +
+                    $"{UnitCatalog.MaterialCost(building.Faction, definition.Kind),4}Π " +
+                    $"{UnitCatalog.EnergyCost(building.Faction, definition.Kind),3}Ε " +
+                    $"{UnitCatalog.WaterCost(building.Faction, definition.Kind),3}Ν {structureTicks / 20f,5:0.0}δ";
+
+                options.Add(new BuildOption(definition.Kind, structureLabel, canRaise, structureReason, PlacesSite: true));
                 continue;
             }
 
