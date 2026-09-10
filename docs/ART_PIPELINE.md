@@ -103,6 +103,18 @@ Three tiers of animation, cheapest first:
    distance travelled ÷ radius. Both are pure functions of simulation state.
    Buildings get the same treatment: rotating radar dish, factory crane and
    doors, power-plant fans.
+**Tier 2 is built.** Limbs are matched by contract name — anything ending in
+`Legs`, `Feet`, `Body` or `Head` — so the borrowed Quaternius soldiers walk without
+being re-authored, and a generated rig would walk on the same terms. The phase
+comes from the odometer, so the legs keep step with the ground rather than with the
+frame rate, and a unit that has stopped stands still. Limbs swing about the **top
+of their own mesh**, measured at load: an imported rig has no skeleton to query, so
+measuring where the joint is beats assuming the mesh origin is the hip.
+
+Honest limitation: the borrowed soldier ships one `Legs` mesh for *both* legs, so
+the gait reads as a march rather than a stride. Alternating legs needs either a
+generated two-part rig or a skinned mesh, which is tier 3.
+
 2. **Parts-rigged infantry.** Torso, head, arms and legs as separate nodes with a
    procedural walk cycle driven by `world.Tick` phase. No skinning, no weight
    painting, and it reads as a late-80s/90s RTS.

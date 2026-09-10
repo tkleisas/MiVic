@@ -109,7 +109,10 @@ public sealed class ModelCatalog : IDisposable
             // No model: the procedural mesh becomes the whole model, with an
             // identity transform, so the renderer has exactly one shape to handle.
             InstancedRenderer.Mesh fallback = Get(faction, kind);
-            return new ModelParts([new PartMesh("model", fallback, Matrix.Identity, -1)], Matrix.Identity, 0f);
+            return new ModelParts(
+                [new PartMesh("model", fallback, Matrix.Identity, -1, Vector3.Zero)],
+                Matrix.Identity,
+                0f);
         }
 
         PartMesh[] parts = new PartMesh[model.Value.Parts.Count];
@@ -123,13 +126,14 @@ public sealed class ModelCatalog : IDisposable
             InstancedRenderer.Mesh mesh = _renderer.CreateMesh(part.Mesh);
             _owned.Add(mesh);
 
+            (Vector3 min, Vector3 max) = MeshBounds(part.Mesh);
+
             // Parent-relative, so the renderer can compose the chain per entity and
             // rotate one part without freezing its children in place.
-            parts[i] = new PartMesh(part.Name, mesh, part.LocalTransform, part.ParentIndex);
+            parts[i] = new PartMesh(part.Name, mesh, part.LocalTransform, part.ParentIndex, max);
 
             if (wheelRadius <= 0f && part.Name.StartsWith("wheel_", StringComparison.Ordinal))
             {
-                (Vector3 min, Vector3 max) = MeshBounds(part.Mesh);
                 Vector3 size = max - min;
 
                 // A wheel is a disc: its radius is half of whichever cross-section
@@ -179,11 +183,17 @@ public sealed class ModelCatalog : IDisposable
     /// <param name="Mesh">The geometry to draw.</param>
     /// <param name="LocalTransform">Placement inside the parent's space.</param>
     /// <param name="ParentIndex">Index of the enclosing part, or -1 for a root part.</param>
+    /// <param name="BoundsMax">
+    /// Top of the part in its own space. A limb swings from the joint at its top,
+    /// and since an imported asset does not come with a skeleton, measuring where
+    /// the top is beats assuming the mesh origin is the hip.
+    /// </param>
     public readonly record struct PartMesh(
         string Name,
         InstancedRenderer.Mesh Mesh,
         Matrix LocalTransform,
-        int ParentIndex);
+        int ParentIndex,
+        Vector3 BoundsMax);
 
     /// <summary>
     /// Radius of this role's road wheels in metres, measured from the model, or

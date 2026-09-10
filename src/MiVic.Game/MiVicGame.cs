@@ -891,9 +891,73 @@ public sealed class MiVicGame : XnaGame
             float sweep = world.Tick * 0.02f;
             return Matrix.CreateRotationZ(sweep) * part.LocalTransform;
         }
+        else if (IsLimb(name))
+        {
+            return SwingLimb(part, name, ref entity);
+        }
 
         return part.LocalTransform;
     }
+
+    /// <summary>Parts that belong to a walking rig, matched by the contract name.</summary>
+    private static bool IsLimb(string name)
+        => name.EndsWith("Legs", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("Feet", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("Body", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("Head", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A procedural walk cycle for a parts-rigged figure.
+    /// <para>
+    /// The phase comes from the distance the unit has actually covered, so the legs
+    /// keep step with the ground rather than with the frame rate, and a unit that
+    /// has stopped stands still. Limbs swing about the top of their own mesh, which
+    /// is where the joint is on an imported rig with no skeleton to query.
+    /// </para>
+    /// <para>
+    /// A single <c>Legs</c> mesh cannot alternate legs, so this reads as a march
+    /// rather than a stride. It is sized for the normal camera distance, where a
+    /// unit is a dozen pixels tall.
+    /// </para>
+    /// </summary>
+    private static Matrix SwingLimb(PartBatch part, string name, ref Entity entity)
+    {
+        if (!entity.HasMoveGoal || entity.DistanceTravelledMm <= 0)
+        {
+            return part.LocalTransform;
+        }
+
+        // One full cycle every 1.4 m of ground covered — roughly a stride.
+        const float StrideMm = 1_400f;
+        float phase = ((entity.DistanceTravelledMm % (long)StrideMm) / StrideMm) * MathF.Tau;
+
+        float pivot = part.BoundsMax.Y;
+
+        if (name.EndsWith("Legs", StringComparison.OrdinalIgnoreCase))
+        {
+            float swing = MathF.Sin(phase) * 0.28f;
+            return Pivot(pivot / 2f, Matrix.CreateRotationZ(swing)) * part.LocalTransform;
+        }
+
+        if (name.EndsWith("Feet", StringComparison.OrdinalIgnoreCase))
+        {
+            float swing = MathF.Sin(phase + 1.2f) * 0.18f;
+            return Pivot(pivot / 2f, Matrix.CreateRotationZ(swing)) * part.LocalTransform;
+        }
+
+        // Body and head ride the same bounce, at half the rate: two footfalls per
+        // cycle rather than one.
+        float bob = MathF.Abs(MathF.Sin(phase)) * 0.05f;
+        float roll = MathF.Sin(phase) * 0.03f;
+
+        return Matrix.CreateTranslation(0f, bob, 0f)
+            * Matrix.CreateRotationZ(roll)
+            * part.LocalTransform;
+    }
+
+    /// <summary>A rotation about a point on the vertical axis, rather than the origin.</summary>
+    private static Matrix Pivot(float y, Matrix rotation)
+        => Matrix.CreateTranslation(0f, -y, 0f) * rotation * Matrix.CreateTranslation(0f, y, 0f);
 
     /// <summary>
     /// Turret angle relative to the hull, in radians, aiming at whatever the unit is
@@ -2537,6 +2601,7 @@ public sealed class MiVicGame : XnaGame
             Name = part.Name;
             LocalTransform = part.LocalTransform;
             ParentIndex = part.ParentIndex;
+            BoundsMax = part.BoundsMax;
             Instances = new InstanceData[capacity];
         }
 
@@ -2544,6 +2609,9 @@ public sealed class MiVicGame : XnaGame
 
         /// <summary>The part contract name, which is what animation keys on.</summary>
         public string Name { get; }
+
+        /// <summary>Top of the part in its own space, used as the joint for a limb.</summary>
+        public Vector3 BoundsMax { get; }
 
         /// <summary>Where the part sits inside its parent, before animation.</summary>
         public Matrix LocalTransform { get; }
