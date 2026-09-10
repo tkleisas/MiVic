@@ -94,6 +94,9 @@ public sealed record LaunchOptions
     /// <summary>Spawns a burst of explosions at startup, so a screenshot can show the particle system.</summary>
     public bool ParticleDemo { get; init; }
 
+    /// <summary>Detonates a tactical nuke at startup, framed for a screenshot.</summary>
+    public bool NukeDemo { get; init; }
+
     /// <summary>When set, export one WAV per faction theme and exit.</summary>
     public string? RenderAudioPath { get; init; }
 
@@ -312,6 +315,11 @@ public sealed record LaunchOptions
                 case "--particle-demo":
                     // The fireball is brightest a third of a second in.
                     options = options with { ParticleDemo = true, ShowHelp = false, ScreenshotFrame = 20 };
+                    break;
+
+                case "--nuke-demo":
+                    // Late enough that the column has climbed and the cap has formed.
+                    options = options with { NukeDemo = true, ShowHelp = false, ScreenshotFrame = 150 };
                     break;
 
                 case "--combat-demo":

@@ -176,6 +176,11 @@ public sealed class SimBridge
             (Faction.Soviet, 0, UnitKind.RocketArtillery, -70, -24),
             (Faction.Soviet, 0, UnitKind.AntiAir, -46, 28),
 
+            // One flyer a side, so the missile trails are in the picture too. Aircraft
+            // are fast and die quickly if they close, so they are held back at the
+            // edge of their range.
+            (Faction.Soviet, 0, UnitKind.Aircraft, -74, 6),
+
             (Faction.Western, 2, UnitKind.Infantry, 42, -16),
             (Faction.Western, 2, UnitKind.Infantry, 42, -6),
             (Faction.Western, 2, UnitKind.Infantry, 42, 4),

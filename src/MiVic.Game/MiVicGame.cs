@@ -387,6 +387,15 @@ public sealed class MiVicGame : XnaGame
                 0f,
                 mission.PlayerBase.Z / (float)WorldPos.MmPerMetre));
         }
+        else if (_options.NukeDemo)
+        {
+            // Far enough out for a two-hundred-metre cloud, at an angle that shows the
+            // column rather than looking straight down on it.
+            _camera.ZoomTo(560f);
+            _camera.TiltTo(-0.42f);
+            _camera.Yaw = 0.35f;
+            _camera.FocusOn(new Vector3(0f, 0f, 20f));
+        }
         else if (_options.ParticleDemo)
         {
             // Straight down over the effect grid, close enough that a muzzle flash is
@@ -395,7 +404,6 @@ public sealed class MiVicGame : XnaGame
             _camera.ZoomTo(150f);
             _camera.TiltTo(-1.36f);
             _camera.Yaw = 0f;
-            _camera.FocusOn(new Vector3(0f, 0f, 12f));
         }
         else if (_options.CombatDemo)
         {
@@ -477,6 +485,11 @@ public sealed class MiVicGame : XnaGame
         if (_options.ParticleDemo)
         {
             SpawnParticleDemo();
+        }
+
+        if (_options.NukeDemo)
+        {
+            SpawnNukeDemo();
         }
 
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Content", "Fonts", "NotoSans-Regular.ttf");
@@ -2713,37 +2726,128 @@ public sealed class MiVicGame : XnaGame
 
         float Ground(float x, float z) => terrain.SampleHeightMm((int)(x * 1000f), (int)(z * 1000f)) / 1000f;
 
-        // A grid rather than rows: the effects are of wildly different sizes, and one
-        // frame has to hold all of them at a camera distance where the smallest is
-        // still more than a few pixels. Twenty-five metres apart puts eight of them
-        // inside a hundred-metre square, which a single overhead view can frame.
+        // Somewhere the player can actually see. Particles are drawn under the fog
+        // overlay — an explosion on ground the player cannot see must not give away
+        // that something is there — so a demo laid out on unseen ground is a demo of
+        // the fog, and looks like nothing at all.
+        _effectGridCentre = FindVisibleFixtureCentre();
+
         void At(int column, int row, Action<Vector3> spawn)
         {
-            float x = (column - 1) * EffectGridPitch;
-            float z = (row - 1) * EffectGridPitch;
+            float x = _effectGridCentre.X + ((column - 1) * EffectGridPitch);
+            float z = _effectGridCentre.Z + ((row - 1) * EffectGridPitch);
 
             spawn(new Vector3(x, Ground(x, z), z));
         }
 
         _effectGridSpawn = At;
 
-        // The nuke gets its own quarter of the map. It is five seconds long and two
-        // hundred metres across, and drawn anywhere near the rest it would hide them.
-        _particles.SpawnNuke(
-            new Vector3(0f, Ground(0f, 220f) + 1f, 220f),
-            AbilityRadiusMetres(AbilityId.TacticalNuke));
+        // The camera was set up before the world existed, so it could not be pointed at
+        // the grid then. Pointed now, once the grid knows where it is.
+        _camera?.FocusOn(_effectGridCentre);
 
         SpawnEffectGrid();
+    }
+
+    /// <summary>
+    /// The tactical nuke on its own, for the fixture.
+    /// <para>
+    /// It is not part of the effect grid and never can be: its cloud is two hundred
+    /// metres across and climbs a hundred metres, so from any camera that frames a
+    /// muzzle flash it fills the entire screen. A catalogue and a catastrophe do not
+    /// belong in the same photograph.
+    /// </para>
+    /// </summary>
+    private void SpawnNukeDemo()
+    {
+        if (_particles is null || _simulation is null)
+        {
+            return;
+        }
+
+        MiVic.Core.Terrain.HeightMap terrain = _simulation.World.Terrain;
+        float ground = terrain.SampleHeightMm(0, 0) / 1000f;
+
+        _particles.SpawnNuke(
+            new Vector3(0f, ground + 1f, 0f),
+            AbilityRadiusMetres(AbilityId.TacticalNuke));
     }
 
     /// <summary>Distance between the effect grid's cells, in metres.</summary>
     private const float EffectGridPitch = 25f;
 
+    /// <summary>
+    /// How long one cell of the effect grid runs before restarting. Longer than the
+    /// longest short-lived effect, so a cell is never empty for long.
+    /// </summary>
+    private const float EffectCellCycle = 2.4f;
+
     /// <summary>The ground-height lookup the grid was built against.</summary>
     private Action<int, int, Action<Vector3>>? _effectGridSpawn;
 
-    /// <summary>Counts down to the next re-run of the effect grid in the demo fixture.</summary>
-    private float _effectDemoTimer = 1f;
+    /// <summary>Where the effect grid is centred: near the player, so it is not fogged.</summary>
+    private Vector3 _effectGridCentre;
+
+    /// <summary>
+    /// Finds a spot the player's team can see, to lay the effect grid on. The first
+    /// unit of the player's team is the honest answer: its surroundings are visible by
+    /// definition, and the demo needs no special case in the fog rules.
+    /// </summary>
+    private Vector3 FindVisibleFixtureCentre()
+    {
+        if (_simulation is null)
+        {
+            return Vector3.Zero;
+        }
+
+        SimWorld world = _simulation.World;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId != PlayerTeam)
+            {
+                continue;
+            }
+
+            // A ground unit, not a flyer. An aircraft's position is tens of metres up
+            // and moving, so a grid laid out around one is a grid laid out in the sky.
+            if (entity.Kind is UnitKind.Aircraft or UnitKind.Drone)
+            {
+                continue;
+            }
+
+            // One cell diagonally from the unit itself: far enough that the grid is not
+            // drawn on top of it, near enough that the whole grid is inside the vision
+            // that unit provides — which is the only reason the effects will be visible
+            // rather than fogged.
+            Vector3 position = _simulation.GetRenderPosition(slot, interpolate: false);
+
+            return new Vector3(position.X + EffectGridPitch, 0f, position.Z + EffectGridPitch);
+        }
+
+        return Vector3.Zero;
+    }
+
+    /// <summary>
+    /// One cell of the demo grid: where it is, what it spawns, and how long until it
+    /// spawns it again.
+    /// <para>
+    /// Per cell, and staggered, because the alternative is a fixture that can only be
+    /// photographed by luck. These effects last between a tenth of a second and four
+    /// seconds, and a headless run's frame times are not predictable, so a single
+    /// shared timer means every screenshot lands with either everything or nothing
+    /// alive. Offsetting each cell by a slice of the cycle guarantees that whatever
+    /// frame is taken, some cells are mid-effect.
+    /// </para>
+    /// </summary>
+    private (int Column, int Row, Action<Vector3> Spawn, float Timer)[] _effectCells = [];
 
     /// <summary>
     /// Lays out one of every weapon effect the game has, in a grid: the effects are
@@ -2757,56 +2861,64 @@ public sealed class MiVicGame : XnaGame
             return;
         }
 
-        // Row one: damage.
-        at(-1, -1, p => _particles.SpawnExplosion(p + new Vector3(0f, 1.5f, 0f), 2.2f));
-        at(0, -1, p => _particles.SpawnShellBurst(p + new Vector3(0f, 1f, 0f), 1.5f));
-        at(1, -1, p => _particles.SpawnGroundBurst(p + new Vector3(0f, 1f, 0f), 2.6f));
-
-        // Row two: the weapon effects that are not explosions.
-        at(-1, 0, p => _particles.SpawnMuzzleFlash(p + new Vector3(0f, 1.4f, 0f), new Vector3(1f, 0.86f, 0.48f), 1.1f));
-        at(0, 0, p => _particles.SpawnImpactSparks(p + new Vector3(0f, 1.2f, 0f), new Vector3(1f, 0.86f, 0.48f), 0.45f));
-        at(1, 0, p => _particles.SpawnSmallBurst(p + new Vector3(0f, 1f, 0f), 0.9f));
-
-        // Row three: the air, the odd ones out, and the two that outlive their blast.
-        at(-1, 1, p => _particles.SpawnAirburst(p + new Vector3(0f, 12f, 0f), 1.3f, new Vector3(1f, 0.94f, 0.62f)));
-        at(0, 1, p => _particles.SpawnElectricBurst(p + new Vector3(0f, 1.6f, 0f), 1.2f));
-        at(1, 1, p => _particles.SpawnShockwave(p + new Vector3(0f, 0f, 0f), 3.4f));
-
-        at(-1, 2, p => _particles.SpawnScorch(p + new Vector3(0f, 0.2f, 0f), 2.2f));
-
-        for (int i = 0; i < 3; i++)
+        var cells = new List<(int Column, int Row, Action<Vector3> Spawn)>
         {
-            at(i, 2, p => _particles.SpawnSmokePlume(p + new Vector3(0f, 3f, 0f), 0.8f));
+            // Row one: damage.
+            (-1, -1, p => _particles.SpawnExplosion(p + new Vector3(0f, 1.5f, 0f), 2.2f)),
+            (0, -1, p => _particles.SpawnShellBurst(p + new Vector3(0f, 1f, 0f), 1.5f)),
+            (1, -1, p => _particles.SpawnGroundBurst(p + new Vector3(0f, 1f, 0f), 2.6f)),
+
+            // Row two: the weapon effects that are not explosions.
+            (-1, 0, p => _particles.SpawnMuzzleFlash(p + new Vector3(0f, 1.4f, 0f), new Vector3(1f, 0.86f, 0.48f), 1.1f)),
+            (0, 0, p => _particles.SpawnImpactSparks(p + new Vector3(0f, 1.2f, 0f), new Vector3(1f, 0.86f, 0.48f), 0.45f)),
+            (1, 0, p => _particles.SpawnSmallBurst(p + new Vector3(0f, 1f, 0f), 0.9f)),
+
+            // Row three: the air, the odd ones out, and the two that outlive their blast.
+            (-1, 1, p => _particles.SpawnAirburst(p + new Vector3(0f, 12f, 0f), 1.3f, new Vector3(1f, 0.94f, 0.62f))),
+            (0, 1, p => _particles.SpawnElectricBurst(p + new Vector3(0f, 1.6f, 0f), 1.2f)),
+            (1, 1, p => _particles.SpawnShockwave(p + new Vector3(0f, 0f, 0f), 3.4f)),
+
+            (-1, 2, p => _particles.SpawnScorch(p + new Vector3(0f, 0.2f, 0f), 2.2f)),
+            (0, 2, p => _particles.SpawnSmokePlume(p + new Vector3(0f, 3f, 0f), 0.8f)),
+            (1, 2, p => _particles.SpawnSmokePlume(p + new Vector3(0f, 3f, 0f), 1.1f)),
+        };
+
+        _effectCells = new (int, int, Action<Vector3>, float)[cells.Count];
+
+        for (int i = 0; i < cells.Count; i++)
+        {
+            // Staggered across the cycle, so the grid is never all-alive or all-dead.
+            float offset = EffectCellCycle * i / cells.Count;
+
+            _effectCells[i] = (cells[i].Column, cells[i].Row, cells[i].Spawn, offset);
         }
     }
 
     /// <summary>
-    /// Re-runs the effect grid, for the demo fixture only.
-    /// <para>
-    /// Most of these effects last a tenth of a second, so spawning them once at
-    /// startup means the only frame that shows them all is a frame nobody can
-    /// predict — the first few frames of a run are slow enough that everything short
-    /// is already gone. Re-running the grid on a timer makes any frame a valid one to
-    /// photograph.
-    /// </para>
+    /// Advances every cell of the effect grid, restarting each one on its own cycle.
+    /// Demo fixture only.
     /// </summary>
     private void UpdateEffectDemo(float elapsedSeconds)
     {
-        if (!_options.ParticleDemo || _particles is null || _simulation is null)
+        if (!_options.ParticleDemo || _particles is null || _effectGridSpawn is not { } at || _effectCells.Length == 0)
         {
             return;
         }
 
-        _effectDemoTimer -= elapsedSeconds;
-
-        if (_effectDemoTimer > 0f)
+        for (int i = 0; i < _effectCells.Length; i++)
         {
-            return;
+            (int column, int row, Action<Vector3> spawn, float timer) = _effectCells[i];
+
+            timer -= elapsedSeconds;
+
+            if (timer <= 0f)
+            {
+                at(column, row, spawn);
+                timer += EffectCellCycle;
+            }
+
+            _effectCells[i] = (column, row, spawn, timer);
         }
-
-        _effectDemoTimer = 1.6f;
-
-        SpawnEffectGrid();
     }
 
     /// <summary>Ages the move-order rings and drops the expired ones.</summary>
