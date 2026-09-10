@@ -1345,7 +1345,8 @@ public sealed class MiVicGame : XnaGame
             // a limb inherit its motion through the parent chain and must not be
             // animated twice.
             || name.StartsWith("Leg", StringComparison.OrdinalIgnoreCase)
-            || name.StartsWith("Arm", StringComparison.OrdinalIgnoreCase);
+            || name.StartsWith("Arm", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("Shin", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// A procedural walk cycle for a parts-rigged figure.
@@ -1391,6 +1392,17 @@ public sealed class MiVicGame : XnaGame
             float direction = name.EndsWith("Right", StringComparison.OrdinalIgnoreCase) ? 1f : -1f;
             float swing = MathF.Sin(phase * -direction) * 0.22f;
             return Pivot(pivot, Matrix.CreateRotationZ(swing)) * part.LocalTransform;
+        }
+
+        // A shin bends at the knee, behind the thigh that carries it, and only
+        // while that leg is swinging forward: a stiff-legged walk is the single
+        // most obvious way for a low-poly figure to look wrong. Its mesh hangs
+        // below its own origin, so the pivot is the knee with no offset at all.
+        if (name.StartsWith("Shin", StringComparison.OrdinalIgnoreCase))
+        {
+            float direction = name.EndsWith("Right", StringComparison.OrdinalIgnoreCase) ? 1f : -1f;
+            float bend = MathF.Max(0f, MathF.Sin(phase * direction)) * 0.55f;
+            return Pivot(0f, Matrix.CreateRotationZ(-bend)) * part.LocalTransform;
         }
 
         if (name.EndsWith("Legs", StringComparison.OrdinalIgnoreCase))
