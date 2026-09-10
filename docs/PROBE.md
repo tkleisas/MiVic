@@ -101,6 +101,7 @@ shot out/frame-later.png
 | `bridge <x> <z> [team] [build]` | whether a crossing at that cell would be accepted, the reason when it would not, the span it would cover, what it costs and how long the work takes — and with `build`, the order that starts it |
 | `bridges` | every crossing on the map: the cells it spans, how much of it the work has reached, how many of its blocks still stand, whether it has been cut, and the tick it will be whole on |
 | `structure <kind> <x> <z> [team] [build]` | whether a structure could be raised at that cell, the reason when it could not, the cell it would stand on, what it costs and how long it takes to rise — and with `build`, the order that raises it |
+| `sites <kind> <x> <z> [radius m] [team]` | a census of the placement rule around a point: how many cells on the map would take that building, how many the ground refuses and for which reasons, how many the buildings already standing there refuse, and the nearest cell that would take it |
 | `structures [team]` | every structure a team has: its role, the cell it stands on, how much of it is up, and its hit points |
 | `block <x> <z>` | what deck stands on one cell: how much is left of it, which team owns it, which way it runs — including whether it is a **junction**, which is a fact about the cell rather than about any crossing — and which crossings pass through it |
 | `blast <x> <z> [radius] [damage] [team]` | drops a blast on the ground, as a salvo or a strike does, and reports how many blocks of deck it knocked out and what is left of the one at the centre |
@@ -413,61 +414,116 @@ made it, which is a position nobody chose and nobody could see before paying for
 `tools/probe/structure.probe`, run against the default skirmish, trimmed to the answers:
 
 ```
-cmd: structure Factory -245.3 -95.3
-query: structure Factory (Εργοστάσιο) at (x -245.3, z -95.3) m — cell 5,21 of 65, index 1370, Sand (Άμμος)
-query:   verdict    accepted for team 0 — it would stand at (x -248.4, z -98.5) m, cell 5,21 of 65, index 1370, Sand (Άμμος)
+cmd: structure Factory -248.4 -89.1
+query: structure Factory (Εργοστάσιο) at (x -248.4, z -89.1) m — cell 5,22 of 65, index 1435, Sand (Άμμος)
+query:   verdict    accepted for team 0 — it would stand at (x -248.4, z -89.1) m, cell 5,22 of 65, index 1435, Sand (Άμμος)
 query:   work       272 ticks (13.6 s) of construction, rising out of the ground over the whole of it
 query:   cost       252 Π, 0 Ε, 108 Ν, 2000 hit points
 cmd: structure Factory -257.0 -210.0
 query: structure Factory (Εργοστάσιο) at (x -257.0, z -210.0) m — cell 4,9 of 65, index 589, DeepWater (Βαθύ νερό)
 query:   verdict    refused — χρειάζεται στεριά
 query:   player     Εργοστάσιο: χρειάζεται στεριά.
-cmd: structure Factory 136.0 -42.2
-query: structure Factory (Εργοστάσιο) at (x 136.0, z -42.2) m — cell 46,27 of 65, index 1801, Lava (Λάβα)
-query:   verdict    refused — λάβα
-query:   player     Εργοστάσιο: λάβα.
+cmd: structure Factory -248.4 -117.2
+query: structure Factory (Εργοστάσιο) at (x -248.4, z -117.2) m — cell 5,19 of 65, index 1240, Forest (Δάσος)
+query:   verdict    refused — επικαλύπτεται με Κέντρο Διοίκησης
+query:   player     Εργοστάσιο: επικαλύπτεται με Κέντρο Διοίκησης.
 cmd: arm Factory
 query: arm factory — armed Εργοστάσιο — the next left click picks the site
+cmd: hover -248.4 -89.1
+query:   ground     resolved to (-248.0, 7.5, -89.0) m — cell 5,22 of 65, index 1435, Sand (Άμμος), 0.4 m from where it was aimed
+query:   placement  accepted — the ghost is the Εργοστάσιο on 9 cells of ground and is green
 cmd: hover -245.3 -95.3
 query:   ground     resolved to (-245.0, 6.3, -95.0) m — cell 5,21 of 65, index 1370, Sand (Άμμος), 0.4 m from where it was aimed
-query:   placement  accepted — the ghost is the Εργοστάσιο on one cell and is green
-cmd: hover -253 -199
-query:   ground     resolved to (-253.0, 3.5, -199.0) m — cell 5,10 of 65, index 655, DeepWater (Βαθύ νερό), 0.0 m from where it was aimed
-query:   placement  refused — χρειάζεται στεριά; the ghost is red and the panel says so
+query:   placement  refused — επικαλύπτεται με Κέντρο Διοίκησης; the ghost is red and the panel says so
 cmd: click
 query:   result     nothing was issued
-query:   notice     the player is told "Εργοστάσιο: χρειάζεται στεριά."
+query:   notice     the player is told "Εργοστάσιο: επικαλύπτεται με Κέντρο Διοίκησης."
 cmd: click
-query: click — armed yes, resolved (-245.0, 6.3, -95.0) m
-query:   ground     cell 5,21 of 65, index 1370, Sand (Άμμος)
+query: click — armed yes, resolved (-248.0, 7.5, -89.0) m
+query:   ground     cell 5,22 of 65, index 1435, Sand (Άμμος)
 query:   result     an order was issued
 cmd: tick 1
 cmd: structures 0
-query:   slot  510 Factory (Εργοστάσιο) at (x -248.4, z -98.5) m, cell 5,21 — building — 271 of 272 ticks left, 13.6 s, 2000 hit points
+query:   slot  510 Factory (Εργοστάσιο) at (x -248.4, z -89.1) m, cell 5,22 — building — 271 of 272 ticks left, 13.6 s, 2000 hit points
 cmd: tick 160
 cmd: structures 0
-query:   slot  510 Factory (Εργοστάσιο) at (x -248.4, z -98.5) m, cell 5,21 — whole, 2000 hit points
+query:   slot  510 Factory (Εργοστάσιο) at (x -248.4, z -89.1) m, cell 5,22 — whole, 2000 hit points
 ```
 
-Six facts, and each of them was a different question before this command existed:
+Seven facts, and each of them was a different question before this command existed:
 
 - **the simulation's own verdict**, per cell, with the reason: water and lava are refused by name,
-  and so is a role that is not a structure at all (`structure Tank …` answers `δεν είναι κατασκευή`
-  in the full transcript);
+  so is a role that is not a structure at all (`structure Tank …` answers `δεν είναι κατασκευή`
+  in the full transcript), and so is a cell a building is already standing on
+  (`επικαλύπτεται με Κέντρο Διοίκησης`);
 - **the cell it would stand on**, which is the cell centre rather than the millimetre the cursor
   resolved to, because the patch of ground that was judged is the cell's — the click at
-  `(-245.3, -95.3)` becomes a building at `(-248.4, -98.5)`, the centre of cell 5,21;
+  `(-248.4, -89.1)` is a building on cell 5,22;
 - **the ghost**, which is the building's own model rather than a footprint rectangle, green where
-  the plan accepts and red where it refuses — including over the water, which is the case a player
-  most needs to see refused;
+  the plan accepts and red where it refuses — over the water, and over the headquarters, which are
+  the two cases a player most needs to see refused. `hover` reports the ground it stands on, 9 cells
+  for a factory, because that is what the plan asked about and what it refuses on;
 - **the refusal the player reads**, in the notice a refused click raises and beside the armed row
   in the panel, which is what `hud on` photographs;
 - **the order**, which is issued by the same click path a mouse release takes and changes nothing
-  until it is; and
+  until it is;
 - **the building site**, standing on the cell the plan named on the next tick and rising there over
   the thirteen seconds the catalogue quotes. `structures` is the command for that last one: `count`
   says how many factories a team has and `units` buries one line among five hundred, so neither
-  answers "where did it go, and is it up yet".
+  answers "where did it go, and is it up yet"; and
+- **the two refusals that are not about the map**. Eighteen metres north of the headquarters is the
+  site this script used to build on: the ground there is sand and the plan still refuses it, because
+  a cell is 9.4 m and a building is 28 m of ground — two of them eighteen metres apart are two
+  buildings sharing a wall. `sites` is the command that says how much ground is left.
+
+## Worked example: is the placement rule usable near a base?
+
+"No site near my own base is ever accepted" is not a question any single `structure` line can
+answer: one cell is refused, and why *that* cell is refused says nothing about the other four
+hundred. `sites` asks the rule about a neighbourhood and prints the census — the same script, the
+first command in it:
+
+```
+cmd: sites Factory -248.4 -117.2 100
+query: sites for Factory (Εργοστάσιο) within 100.0 m of (x -248.4, z -117.2) m — 391 cells on the map at 9.4 m each
+query:   accepted   81 of 391 (20.7%) would take Εργοστάσιο, for team 0
+query:   nearest    (x -220.3, z -117.2) m, 28.1 m from the centre of the search
+query:   footprint  140 of 391 cells pass the ground rule for a 3 x 3 footprint (9 cells of ground, radius 1)
+query:      168 cells  χρειάζεται στεριά
+query:       83 cells  ανώμαλο έδαφος
+query:   standing   59 of the 140 would find a structure already on the ground
+query:       25 cells  επικαλύπτεται με Κέντρο Διοίκησης
+query:       18 cells  επικαλύπτεται με Σταθμός Παραγωγής
+query:       10 cells  επικαλύπτεται με Εργοστάσιο
+query:        6 cells  επικαλύπτεται με Γραφείο Σχεδιασμού
+```
+
+Five numbers, and each one answers a different half of the question:
+
+- **81 of 391** is the answer, and the number to watch. The same box accepted **15** cells while a
+  structure was judged on a base's yard — an 11 × 11 patch with 90% of it solid and a solid 2 × 2
+  core — and all fifteen of them were inside the base's own yard, because the only ground within a
+  hundred metres that would hold an entire base was the base. Every other direction was
+  `ανώμαλο έδαφος`, which is how a factory twenty metres west of the player's own headquarters came
+  to be refused for failing a test meant for a base;
+- **168 cells are water** and 83 are ground with a hole in it, so 251 of the 391 are the map's
+  answer rather than the rule's: a base beside a lake has a lake beside it, and no rule makes a
+  lake buildable;
+- **140** is what the rule thinks of the 140 cells that are ground: the footprint is the building's
+  own, three cells by three, and all nine of them have to be solid. That is what "a building needs
+  its own ground" means, and it is why this number is not 391;
+- **59 of those 140 are standing on a building**: 25 cells are inside the headquarters' own
+  footprint, and the rest belong to the power plant, the factory and the design bureau the scenario
+  planted around it. A base is a crowded place by design, and the census names which building is in
+  the way rather than saying "occupied";
+- and **28.1 m** is how close the base's own headquarters will let a factory come. Three cells is
+  the distance at which two 28 m footprints stop sharing a cell, and it is the number a player
+  discovers by moving the cursor.
+
+Which clause is doing the work is the whole reason for printing a census rather than a total: a
+change to the footprint moves the third line, a change to the occupancy rule moves the fourth, and
+the first two are the map.
+
 
 ## `parts <slot>` in full
 

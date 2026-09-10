@@ -242,6 +242,9 @@ public sealed class ProbeRunner
             case "structures":
                 Structures(command);
                 break;
+            case "sites":
+                Sites(command);
+                break;
             case "bridges":
                 Bridges(command);
                 break;
@@ -813,6 +816,170 @@ public sealed class ProbeRunner
     }
 
     /// <summary>
+    /// How much of the ground around a point would take a structure: a census of the placement rule,
+    /// cell by cell, with the reason each refusal gives.
+    /// <para>
+    /// <c>structure</c> answers the question about one cell, which is what a player aiming asks. This
+    /// answers it about a neighbourhood, which is what "is this rule usable" is: a rule that accepts
+    /// fifteen cells within a hundred metres of a base is a rule a player cannot build under, and no
+    /// single <c>structure</c> line can say so. The count is the instrument the footprint change was
+    /// measured with, and it is here so that the next change to the rule is measured the same way
+    /// rather than argued about.
+    /// </para>
+    /// <para>
+    /// It is a census rather than a total, because a total hides which clause is doing the work: the
+    /// ground the rule will not have, the buildings already standing there, and the cells that are
+    /// not ground at all are three different problems with three different answers, and only one of
+    /// them is the rule's fault. The simulation's own predicates are asked one cell at a time —
+    /// <see cref="SimWorld.CanPlaceStructure"/> for the ground and <see cref="SimWorld.IsSiteClear"/>
+    /// for what stands on it — so a transcript cannot disagree with a click.
+    /// </para>
+    /// </summary>
+    private void Sites(ProbeCommand command)
+    {
+        const string Usage = "sites <kind> <x> <z> [radius in metres] [team]";
+
+        UnitKind kind = ParseKind(command.Argument(0, "a role such as Factory, PowerPlant or CommandCentre", Usage));
+
+        float x = command.Number(1, "an x in metres", Usage);
+        float z = command.Number(2, "a z in metres", Usage);
+
+        float radiusMetres = command.OptionalNumber(3, 100f, "a radius in metres", Usage);
+        int team = (int)command.OptionalNumber(4, 0f, "a team number", Usage);
+
+        if ((uint)team >= SimConstants.TeamCount)
+        {
+            throw new ProbeException($"there is no team {team} — usage: {Usage}");
+        }
+
+        if (radiusMetres <= 0f)
+        {
+            throw new ProbeException($"a radius of {radiusMetres} m is not a neighbourhood — usage: {Usage}");
+        }
+
+        SimWorld world = _host.Simulation.World;
+        var centre = new WorldPos((int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre));
+        int centreCell = world.Navigation.IndexOfWorld(centre);
+        int centreX = world.Navigation.CellX(centreCell);
+        int centreZ = world.Navigation.CellZ(centreCell);
+        int radiusCells = (int)MathF.Round(radiusMetres * WorldPos.MmPerMetre / world.Navigation.CellSizeMm);
+
+        int cells = 0;
+        int accepted = 0;
+        int ground = 0;
+        var groundReasons = new List<(string Reason, int Count)>();
+        var occupiedReasons = new List<(string Reason, int Count)>();
+
+        int nearest = int.MaxValue;
+        WorldPos nearestSite = default;
+
+        for (int dz = -radiusCells; dz <= radiusCells; dz++)
+        {
+            for (int dx = -radiusCells; dx <= radiusCells; dx++)
+            {
+                int cell = world.Navigation.IndexOf(centreX + dx, centreZ + dz);
+
+                if (cell < 0)
+                {
+                    continue;
+                }
+
+                WorldPos site = world.Navigation.CentreOf(cell);
+
+                cells++;
+
+                if (!world.CanPlaceStructure(kind, site, out string groundReason))
+                {
+                    Tally(groundReasons, groundReason);
+                    continue;
+                }
+
+                ground++;
+
+                if (!world.IsSiteClear(kind, site, out string occupiedReason))
+                {
+                    Tally(occupiedReasons, occupiedReason);
+                    continue;
+                }
+
+                accepted++;
+
+                int distance = site.HorizontalDistanceTo(centre);
+
+                if (distance < nearest)
+                {
+                    nearest = distance;
+                    nearestSite = site;
+                }
+            }
+        }
+
+        string percent = cells > 0
+            ? string.Create(CultureInfo.InvariantCulture, $" ({accepted * 100.0 / cells:0.0}%)")
+            : string.Empty;
+
+        int side = (2 * UnitCatalog.FootprintRadiusCells(kind)) + 1;
+
+        Emit(
+            $"query: sites for {ProbeLabels.KindName(kind)} within {ProbeFormat.Metres(radiusMetres)} of " +
+            $"{ProbeFormat.Ground(centre)} — {ProbeFormat.Count(cells, "cell")} on the map at {ProbeFormat.Metres(world.Navigation.CellSizeMm / (float)WorldPos.MmPerMetre)} each");
+
+        Emit($"query:   accepted   {accepted} of {cells}{percent} would take {FactionPalette.UnitLabel(kind)}, for team {team}");
+
+        if (accepted > 0)
+        {
+            Emit(
+                $"query:   nearest    {ProbeFormat.Ground(nearestSite)}, {ProbeFormat.Millimetres(nearest)} from the centre of the search");
+        }
+
+        // The two rules, one after the other, because the numbers have to add up for the transcript
+        // to be evidence: every cell is either refused for its ground, refused for what is standing
+        // on it, or accepted, and the census says which and how many.
+        Emit(
+            $"query:   footprint  {ground} of {cells} cells pass the ground rule for a {side} x {side} footprint " +
+            $"({side * side} cells of ground, radius {UnitCatalog.FootprintRadiusCells(kind)})");
+
+        foreach ((string reason, int count) in Sorted(groundReasons))
+        {
+            Emit($"query:     {count,4} cells  {reason}");
+        }
+
+        Emit($"query:   standing   {ground - accepted} of the {ground} would find a structure already on the ground");
+
+        foreach ((string reason, int count) in Sorted(occupiedReasons))
+        {
+            Emit($"query:     {count,4} cells  {reason}");
+        }
+    }
+
+    /// <summary>Counts one more cell against a reason.</summary>
+    private static void Tally(List<(string Reason, int Count)> tallies, string reason)
+    {
+        for (int i = 0; i < tallies.Count; i++)
+        {
+            if (tallies[i].Reason == reason)
+            {
+                tallies[i] = (reason, tallies[i].Count + 1);
+                return;
+            }
+        }
+
+        tallies.Add((reason, 1));
+    }
+
+    /// <summary>
+    /// A census in a fixed order: most cells first, and the reason's own words to break a tie. A
+    /// transcript that listed its reasons in whatever order they turned up would be a different file
+    /// for the same world, which is the one thing a probe may not be.
+    /// </summary>
+    private static List<(string Reason, int Count)> Sorted(List<(string Reason, int Count)> tallies)
+    {
+        var copy = new List<(string Reason, int Count)>(tallies);
+        copy.Sort((a, b) => a.Count != b.Count ? b.Count - a.Count : string.CompareOrdinal(a.Reason, b.Reason));
+        return copy;
+    }
+
+    /// <summary>
     /// What deck stands on one cell: how much is left of it, whose it is, and which way it runs —
     /// including whether it is a junction, which is a fact about the cell rather than about any
     /// crossing and is therefore not in the <c>bridges</c> list.
@@ -994,10 +1161,13 @@ public sealed class ProbeRunner
 
         // What is armed is part of the answer: a green ghost over a lake means one thing for a
         // crossing and another for a power plant, and a transcript that only said "accepted"
-        // would leave the reader to guess which rule had just been satisfied.
+        // would leave the reader to guess which rule had just been satisfied. A structure's cells
+        // are the ground its own footprint covers, which is what the plan judged and what its
+        // refusal names.
         string what = cursor.ArmedKind == UnitKind.None
             ? "the ghost takes " + ProbeFormat.Count(cursor.Footprint, "cell") + " and is "
-            : $"the ghost is the {FactionPalette.UnitLabel(cursor.ArmedKind)} on one cell and is ";
+            : $"the ghost is the {FactionPalette.UnitLabel(cursor.ArmedKind)} on " +
+              ProbeFormat.Count(cursor.Footprint, "cell") + " of ground and is ";
 
         Emit(cursor.SiteAllowed
             ? $"query:   placement  accepted — {what}green"

@@ -42,7 +42,12 @@ public sealed class ScenarioTests
     /// deliberate change to the starting layout: this is what catches a refactor
     /// that quietly moves a unit, which a replay would then reproduce wrongly.
     /// <para>
-    /// Last changed by the crossings a team builds becoming state: the span of each one, the tick
+    /// Last changed by the production queues becoming state: what each building is making, how far
+    /// along it is and how long the job always was are hashed now, for every live slot whether or
+    /// not its queue is empty. A starting skirmish has every queue empty, and every hash moved
+    /// anyway — which is the point of mixing a field unconditionally rather than only when it has
+    /// something in it.
+    /// Before that it was the crossings a team builds becoming state: the span of each one, the tick
     /// its work started on and how much of the deck is up are hashed now, because a bridge is
     /// engineering work that takes time rather than a surface edit that happens in one tick.
     /// Before that it was the bases moving onto ground that can hold them: the three base
@@ -58,7 +63,7 @@ public sealed class ScenarioTests
     /// </summary>
     [Fact]
     public void SkirmishInitialHash_IsStable()
-        => Assert.Equal(10807918322043874866UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
+        => Assert.Equal(7771467923509982711UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
 
     [Fact]
     public void SkirmishLaysOutThreeForcesOfTheRightSize()

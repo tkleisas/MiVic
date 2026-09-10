@@ -170,6 +170,37 @@ public static class StateHash
             Mix(ref hash, e.ConstructionTicksRemaining);
         }
 
+        // What every building is making, and how far along it is. None of the entity fields above
+        // says it: QueueLength says how many jobs there are and nothing about which, so two peers
+        // that disagreed about what is on the pad — the wrong role, the same role further along,
+        // or a queue that was cancelled on one machine and not the other — would agree on every
+        // hash above and diverge in plain sight on the next tick.
+        //
+        // Every live slot is folded in, whether or not it is building anything: an empty queue is
+        // the number zero rather than an absence, and the crossings above are hashed
+        // unconditionally for exactly this reason. Ascending slot order, and job order within a
+        // slot, because that is the order the rest of this file and the simulation itself use —
+        // never the order a dictionary would hand them over in.
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ReadOnlySpan<ProductionJob> queue = world.JobsOf(slot);
+
+            Mix(ref hash, slot);
+            Mix(ref hash, queue.Length);
+
+            for (int job = 0; job < queue.Length; job++)
+            {
+                Mix(ref hash, (byte)queue[job].Kind);
+                Mix(ref hash, queue[job].TotalTicks);
+                Mix(ref hash, queue[job].RemainingTicks);
+            }
+        }
+
         for (int team = 0; team < SimConstants.TeamCount; team++)
         {
             ref TeamState state = ref world.TeamRef(team);

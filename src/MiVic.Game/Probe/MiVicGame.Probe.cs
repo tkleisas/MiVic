@@ -321,10 +321,13 @@ public sealed partial class MiVicGame : IProbeHost
         bool resolved = TryPlacementTarget(pixel, out WorldPos target);
         int cell = resolved ? _simulation!.World.TerrainTypes.IndexOfWorld(target.X, target.Z) : -1;
 
-        // The footprint is the client's own, counted from the cells the ghost was built from:
-        // a preview that reported a different span from the one it drew would be a second
-        // answer to the question this command exists to ask. A structure stands on one cell —
-        // the cell whose patch the plan judged — so its footprint is that cell.
+        // The footprint is the span the client drew from: for a crossing, the cells
+        // TryPlanBridge says would become ford — a preview that reported a different span from
+        // the one it drew would be a second answer to the question this command exists to ask.
+        // For a structure it is the ground its own footprint covers, which is the number the
+        // placement rule asks about and the one its refusal is about. That used to be reported as
+        // the single cell the ghost's model stands on, which was true while a structure was judged
+        // on the cell it was clicked on rather than on the ground a building of its role needs.
         int footprint = 0;
 
         if (resolved)
@@ -334,6 +337,12 @@ public sealed partial class MiVicGame : IProbeHost
 
         bool structure = _pendingStructure != UnitKind.None;
 
+        if (structure)
+        {
+            int side = (2 * UnitCatalog.FootprintRadiusCells(_pendingStructure)) + 1;
+            footprint = side * side;
+        }
+
         return new ProbeCursor(
             pixel,
             resolved,
@@ -342,7 +351,7 @@ public sealed partial class MiVicGame : IProbeHost
             structure || _pendingBridge,
             structure ? _structureSiteAllowed : _bridgeSiteAllowed,
             structure ? _structureSiteReason : _bridgeSiteReason,
-            structure ? (resolved ? 1 : 0) : _pendingBridge ? footprint : 0,
+            structure || _pendingBridge ? (resolved ? footprint : 0) : 0,
             structure ? _pendingStructure : UnitKind.None);
     }
 

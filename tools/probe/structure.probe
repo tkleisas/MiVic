@@ -11,23 +11,41 @@
 # site, is the player told why not, and did the building come up where they aimed.
 #
 # The player's base is at (-248.4, -117.2) m — `base-ground.probe` is where those numbers come
-# from — and the ground the base-site search settled on is the ground a structure may stand on, so
-# the cells just north of the headquarters are the accepted case. The lake south-west of the base
-# and the volcano in the north-east are the refusals.
+# from. The refusals are the lake south-west of the base, the volcano in the north-east, and the
+# two rules that are about the building rather than about the map: the ground it needs under its own
+# footprint, and the ground another structure is already standing on.
 
 # Frame the base, so the pixels below are on screen and the shots are of the ghost.
 focus -240 -110
 zoom 170
 pitch -0.90
 
+# The census first, because it is the question the whole rule exists to answer: how much of the
+# ground around this base would take a factory at all. It used to be fifteen cells within a hundred
+# metres, every one of them inside the base's own yard — a factory twenty metres west of the player's
+# own headquarters was refused as ανώμαλο έδαφος for failing a test meant for a base — and it is now
+# most of the ground that is ground. The line below breaks the refusals down by the sentence each one
+# gets, so a change to the rule is measured rather than argued about: `footprint` is the ground rule,
+# `standing` is what is already built there, and the rest is the map.
+sites Factory -248.4 -117.2 100
+
 # The simulation's own answer about a factory at five sites, before the interface is involved at
 # all. Two accepted sites a player would choose, and three refusals that name their rule: water,
 # lava, and something that is not a structure in the first place.
-structure Factory -245.3 -95.3
+structure Factory -248.4 -89.1
 structure Factory -254.7 -86.0
 structure Factory -257.0 -210.0
 structure Factory 136.0 -42.2
 structure Tank -245.3 -95.3
+
+# And the two refusals that are about buildings rather than about the ground. The first is the cell
+# the headquarters itself stands on; the second is eighteen metres north of it, which is the site
+# this script used to build on and which is now inside the headquarters' own footprint — a cell is
+# 9.4 m, a building is 28 m of ground, and two of them eighteen metres apart are two buildings
+# sharing a wall. The ground at both is fine, which is the point: these are not ανώμαλο έδαφος, and
+# the player reads which rule refused them.
+structure Factory -248.4 -117.2
+structure Factory -245.3 -95.3
 
 # Select the headquarters, which is the building whose panel carries the structure rows. The click
 # is an ordinary selection: nothing is armed yet, so it picks what is under the cursor.
@@ -40,29 +58,34 @@ units soviet 1
 # this line is where it would show.
 arm Factory
 
-# The cursor over ground the rule accepts. `hover` reports the pixel a world point projects to and
-# then what the client resolves that pixel back to — the round trip every click makes — and, with a
-# placement armed, whether the ghost is green or red.
-hover -245.3 -95.3
+# The cursor over ground the rule accepts, three cells north of the headquarters: the pixel a world
+# point projects to, what the client resolves that pixel back to, and whether the ghost is green.
+hover -248.4 -89.1
 
 # The ghost is the building itself rather than a footprint rectangle, so a shot of it says what is
 # being placed as well as where, and the panel carries the armed row.
 hud on
 shot artifacts/probe/structure-ghost-green.png
 
-# Water: the ghost goes red on the cell under the cursor, and the row in the panel says which rule
-# refused it. The click that follows is refused in the same frame and leaves placement armed — the
-# player is aiming, and a refusal that disarmed them would mean pressing the row again for every
-# cell they try.
+# The site inside the headquarters' footprint: the ghost goes red and the row in the panel says
+# which rule refused it. The click that follows is refused in the same frame and leaves placement
+# armed — the player is aiming, and a refusal that disarmed them would mean pressing the row again
+# for every cell they try.
+hover -245.3 -95.3
+shot artifacts/probe/structure-ghost-occupied.png
+click
+structures 0
+
+# Water, further out: the same red ghost, a different sentence.
 hover -257.0 -210.0
 hover -253 -199
 shot artifacts/probe/structure-ghost-water.png
 click
 structures 0
 
-# Lava, four hundred metres away: the same red ghost, a different sentence. The camera moves, the
-# cursor is put down again where the point now projects to, and the refusal is asked for at the new
-# pixel.
+# Lava, four hundred metres away: the same red ghost, a different sentence again. The camera moves,
+# the cursor is put down again where the point now projects to, and the refusal is asked for at the
+# new pixel.
 focus 136.0 -42.2
 zoom 120
 hover 136.0 -42.2
@@ -71,11 +94,11 @@ shot artifacts/probe/structure-ghost-lava.png
 click
 structures 0
 
-# And the site the player actually wants, twenty metres north of their own headquarters: accepted,
-# an order issued, and a building site standing there on the next tick.
+# And the site the player actually wants, three cells north of their own headquarters: accepted, an
+# order issued, and a building site standing there on the next tick.
 focus -240 -110
 zoom 170
-hover -245.3 -95.3
+hover -248.4 -89.1
 hud on
 click
 
@@ -93,9 +116,11 @@ tick 160
 structures 0
 shot artifacts/probe/structure-built.png
 
-# The ledger: this seed's accepted site for a factory north of the Soviet base is cell 5,21, and the
-# building site was raised on that cell rather than at an offset. A change to the placement rule
-# that moved it would show up here as a failure.
-expect "the factory's site stands at x -245.3 m" -245.3 -245.3 0.1
-expect "the factory's site stands at z -95.3 m" -95.3 -95.3 0.1
+# The ledger: what the census above answered, and the site this seed gives for a factory north of
+# the Soviet base. The number is the whole reason the census exists — the same box accepted fifteen
+# cells before a building's footprint replaced a base's yard as the thing a structure was judged on
+# — and cell 5,22 is where the building site was raised, rather than at an offset from anything.
+expect "cells within 100 m of the Soviet base that take a factory" 81 81
+expect "the factory's site stands at x -248.4 m" -248.4 -248.4 0.1
+expect "the factory's site stands at z -89.1 m" -89.1 -89.1 0.1
 expect "the factory takes 272 ticks to rise" 272 272

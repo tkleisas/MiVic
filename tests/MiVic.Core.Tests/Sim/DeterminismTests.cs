@@ -38,10 +38,20 @@ public sealed class DeterminismTests
             world.Spawn(faction, team, UnitKind.Tank, start, Fix32.FromInt(speed), 100 + i);
         }
 
-        // Each team gets an economy, so the golden hash actually depends on income,
-        // costs and build times. Without buildings the scenario spawns units
+        // Each team gets an economy, so the golden hash covers income, costs, build times and the
+        // production queues as well as movement. Without buildings the scenario spawns units
         // directly and the whole production system is invisible to this test — the
         // production-ordering change did not move the hash at all.
+        //
+        // What that economy actually turns out is units, not structures, and this comment used to
+        // claim otherwise. Measured over the five hundred ticks below: the building count is this
+        // scenario's own six on every single tick, because no team's materials ever clear a factory
+        // plus the reserve the AI keeps, while the two AI teams do produce infantry — 18 and 15 of
+        // them, once the armour they start with has been shot away. So the queue half of the hash is
+        // exercised here and the structure half is not. The AI's structure path is covered where it
+        // can be watched instead: StructurePlacementTests gives a bare base an economy and then
+        // checks every structure the AI raises against the placement rule
+        // (TheAiStillRaisesStructuresOnItsOffsetPath, EveryStructureTheAiRaisesStandsSomewhereTheRuleAllows).
         for (int team = 0; team < FactionProfile.All.Length; team++)
         {
             Faction faction = FactionProfile.All[team].Faction;
@@ -251,6 +261,92 @@ public sealed class DeterminismTests
         Assert.NotEqual(before, StateHash.Compute(world));
     }
 
+    /// <summary>
+    /// The production queues are state, so they are hashed: two worlds that agree about everything
+    /// else must disagree the moment one of them is building something the other is not.
+    /// <para>
+    /// Every other input to the hash is checked to be identical first, and that check is the test:
+    /// a hash that moved for some other reason would prove nothing about the queues. What is left
+    /// different between the two worlds when the assertion is made is a queue length, a job's role,
+    /// and how far along that job is — the four things a queue is, one at a time.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void ProductionQueuesArePartOfTheStateHash()
+    {
+        static SimWorld Build(out int factory)
+        {
+            SimWorld world = new(seed: 4242, capacity: 8);
+
+            factory = world.Spawn(
+                Faction.Soviet, 0, UnitKind.Factory, WorldPos.GroundMetres(10, 10), Fix32.Zero, 2_000).Slot;
+
+            return world;
+        }
+
+        SimWorld a = Build(out int slotA);
+        SimWorld b = Build(out int slotB);
+
+        Assert.Equal(StateHash.Compute(a), StateHash.Compute(b));
+
+        // One job at the factory in `a`, and nothing at all in `b`. The queue length and the job are
+        // what differ; the building itself is at the same place with the same hit points, which the
+        // checks below pin down rather than assume.
+        Assert.True(a.AddJob(slotA, UnitKind.Tank, totalTicks: 120));
+        Assert.Equal(1, a.GetRefBySlot(slotA).QueueLength);
+        Assert.Equal(0, b.GetRefBySlot(slotB).QueueLength);
+
+        Assert.Equal(UnitKind.Tank, a.JobsOf(slotA)[0].Kind);
+        Assert.Equal(120, a.JobsOf(slotA)[0].RemainingTicks);
+        Assert.Empty(b.JobsOf(slotB).ToArray());
+
+        // Nothing else moved: not the clock, not the RNG, not the resources, not the ground, and not
+        // the building the job is queued at.
+        Assert.Equal(a.Tick, b.Tick);
+        Assert.Equal(a.Rng.State, b.Rng.State);
+        Assert.Equal(a.AliveCount, b.AliveCount);
+        Assert.Equal(a.PendingCommandCount, b.PendingCommandCount);
+        Assert.Equal(a.Outcome, b.Outcome);
+        Assert.Equal(a.Team(0).Materials, b.Team(0).Materials);
+        Assert.Equal(a.Team(0).Energy, b.Team(0).Energy);
+        Assert.Equal(a.Team(0).Water, b.Team(0).Water);
+        Assert.Equal(a.Team(0).TechTier, b.Team(0).TechTier);
+        Assert.Equal(a.GetRefBySlot(slotA).Position, b.GetRefBySlot(slotB).Position);
+        Assert.Equal(a.GetRefBySlot(slotA).Kind, b.GetRefBySlot(slotB).Kind);
+        Assert.Equal(a.GetRefBySlot(slotA).Health, b.GetRefBySlot(slotB).Health);
+        Assert.Equal(a.GetRefBySlot(slotA).ConstructionTicksRemaining, b.GetRefBySlot(slotB).ConstructionTicksRemaining);
+        Assert.True(a.TerrainTypes.RawTypes.SequenceEqual(b.TerrainTypes.RawTypes), "the surfaces differ, so this proves nothing");
+        Assert.True(a.TerrainTypes.RawChurn.SequenceEqual(b.TerrainTypes.RawChurn), "the wear differs, so this proves nothing");
+        Assert.True(a.TerrainTypes.RawAttributes.SequenceEqual(b.TerrainTypes.RawAttributes), "the attributes differ, so this proves nothing");
+
+        Assert.NotEqual(StateHash.Compute(a), StateHash.Compute(b));
+
+        // And a queue is not merely how long it is. Two worlds with one job each, differing only in
+        // which role is on the pad, are different states; so are two that differ only in how far
+        // along the same job is.
+        static SimWorld WithJob(UnitKind kind, int remainingTicks)
+        {
+            SimWorld world = Build(out int factory);
+            world.AddJob(factory, kind, totalTicks: 120);
+            world.JobRef(factory, 0).RemainingTicks = remainingTicks;
+            return world;
+        }
+
+        ulong tank = StateHash.Compute(WithJob(UnitKind.Tank, 120));
+        ulong artillery = StateHash.Compute(WithJob(UnitKind.Artillery, 120));
+        ulong halfBuilt = StateHash.Compute(WithJob(UnitKind.Tank, 60));
+
+        Assert.NotEqual(tank, artillery);
+        Assert.NotEqual(tank, halfBuilt);
+
+        // And a second job in the queue is another state again: how many are waiting is part of it.
+        SimWorld two = Build(out int queued);
+        two.AddJob(queued, UnitKind.Tank, totalTicks: 120);
+        two.AddJob(queued, UnitKind.Tank, totalTicks: 120);
+
+        Assert.NotEqual(tank, StateHash.Compute(two));
+    }
+
     [Fact]
     public void EmptyWorld_HashIsStable()
         => Assert.Equal(StateHash.Compute(new SimWorld(1, 8)), StateHash.Compute(new SimWorld(1, 8)));
@@ -259,7 +355,15 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by the crossings a team builds becoming state: a bridge is engineering work
+    /// Last changed by the production queues becoming state: which role a building is making, how
+    /// long the job was always going to take, how far along it is and how many are waiting are
+    /// folded in for every live slot — whether or not it is building anything, because an empty
+    /// queue is the number zero rather than an absence, the same rule the crossings carry. This
+    /// scenario's queues do move: the AI fills them from its starting command centres, so this is
+    /// not merely a shifted stream. What the scenario does not exercise is the AI raising a
+    /// <em>structure</em> — see <see cref="BuildScenario"/>, where the measured counts are written
+    /// down — so that path is covered by StructurePlacementTests instead.
+    /// Before that it was the crossings a team builds becoming state: a bridge is engineering work
     /// now — the span is recorded when it is ordered, its deck goes up a cell at a time, and the
     /// ford appears as the work reaches it — so the spans, their start ticks and how much of each
     /// is up are folded into the hash. Nothing in this scenario builds one, which is precisely
@@ -279,5 +383,5 @@ public sealed class DeterminismTests
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(7472911029308892828UL, HashScenario(20250101));
+        => Assert.Equal(16140099771963057552UL, HashScenario(20250101));
 }

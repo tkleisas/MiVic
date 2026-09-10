@@ -1494,18 +1494,78 @@ public sealed class SimWorld
     public static int BaseSitePatchCells
         => ((BaseSiteRadiusCells * 2) + 1) * ((BaseSiteRadiusCells * 2) + 1);
 
+    /// <summary>
+    /// How much of the core of a base's patch has to be solid, in permille: all of it. The patch
+    /// itself may carry a pond at its edge, and the ground the headquarters stands on may not.
+    /// </summary>
+    public const int BaseSiteCoreSolidPermille = 1_000;
+
     /// <summary>How many cells of a base's patch are solid ground.</summary>
-    public int BaseSiteSolidCells(WorldPos centre) => SolidPatchCells(centre, out _);
+    public int BaseSiteSolidCells(WorldPos centre) => SolidPatchCells(centre, BaseSiteRadiusCells);
 
     /// <summary>
-    /// True when the ground around a position will hold a base: a solid core, and most
-    /// of the patch around it solid too.
+    /// True when the ground around a position will hold a base: a solid core, and most of the
+    /// patch around it solid too.
+    /// <para>
+    /// The two clauses are the same question asked twice with different numbers — a square patch of
+    /// ground that is solid enough, to a threshold — which is why they are two calls to
+    /// <see cref="IsSolidPatch"/> rather than a walk with a special case in it. A base needs a big
+    /// yard and it needs the middle of that yard to be ground: the yard is five cells of radius
+    /// because the four structures a scenario plants stand 45 m from the centre, and the core is two
+    /// cells of radius, all solid, because that is where the headquarters itself stands.
+    /// </para>
     /// </summary>
     public bool IsBaseSite(WorldPos centre)
-    {
-        int solid = SolidPatchCells(centre, out bool coreSolid);
+        => IsSolidPatch(centre, BaseSiteRadiusCells, BaseSiteMinSolidPermille)
+        && IsSolidPatch(centre, BaseSiteCoreCells, BaseSiteCoreSolidPermille);
 
-        return coreSolid && (solid * 1_000) >= (BaseSitePatchCells * BaseSiteMinSolidPermille);
+    /// <summary>
+    /// How many cells of the square patch of this radius around a position are solid ground.
+    /// </summary>
+    public int SolidPatchCells(WorldPos centre, int radiusCells)
+    {
+        int cell = Navigation.IndexOfWorld(centre);
+        int centreX = Navigation.CellX(Math.Max(cell, 0));
+        int centreZ = Navigation.CellZ(Math.Max(cell, 0));
+        int solid = 0;
+
+        for (int dz = -radiusCells; dz <= radiusCells; dz++)
+        {
+            for (int dx = -radiusCells; dx <= radiusCells; dx++)
+            {
+                if (IsSolidGround(Navigation.IndexOf(centreX + dx, centreZ + dz)))
+                {
+                    solid++;
+                }
+            }
+        }
+
+        return solid;
+    }
+
+    /// <summary>
+    /// True when a square patch of ground of this radius around a position is solid enough, to this
+    /// permille.
+    /// <para>
+    /// <b>The one primitive under every placement rule.</b> A base and a factory ask different
+    /// questions about the ground — how big a yard, and how much of it may be broken — but they are
+    /// the same question, and this is where it is asked. Two predicates that each walked their own
+    /// patch would be two notions of buildable ground, and the first thing a second notion does is
+    /// disagree with the first: a cell a scenario calls a base and a player's click calls rough.
+    /// </para>
+    /// <para>
+    /// A threshold rather than "all of it" because the caller is the one that knows whether a pond
+    /// at the edge matters: a base's 11 × 11 yard may carry one, a building's own footprint may not.
+    /// </para>
+    /// </summary>
+    /// <param name="centre">Middle of the patch.</param>
+    /// <param name="radiusCells">Half-width of the patch, in navigation cells.</param>
+    /// <param name="minSolidPermille">How much of the patch has to be solid, in permille.</param>
+    private bool IsSolidPatch(WorldPos centre, int radiusCells, int minSolidPermille)
+    {
+        int total = ((radiusCells * 2) + 1) * ((radiusCells * 2) + 1);
+
+        return (SolidPatchCells(centre, radiusCells) * 1_000) >= (total * minSolidPermille);
     }
 
     /// <summary>
@@ -1590,37 +1650,6 @@ public sealed class SimWorld
         // the patch it wanted was not there.
         site = LegalSpawnSite(wanted);
         return false;
-    }
-
-    /// <summary>
-    /// Counts the solid cells of the patch around a position, and reports whether its
-    /// core was solid in full.
-    /// </summary>
-    private int SolidPatchCells(WorldPos centre, out bool coreSolid)
-    {
-        int cell = Navigation.IndexOfWorld(centre);
-        int centreX = Navigation.CellX(Math.Max(cell, 0));
-        int centreZ = Navigation.CellZ(Math.Max(cell, 0));
-        int solid = 0;
-
-        coreSolid = true;
-
-        for (int dz = -BaseSiteRadiusCells; dz <= BaseSiteRadiusCells; dz++)
-        {
-            for (int dx = -BaseSiteRadiusCells; dx <= BaseSiteRadiusCells; dx++)
-            {
-                if (IsSolidGround(Navigation.IndexOf(centreX + dx, centreZ + dz)))
-                {
-                    solid++;
-                }
-                else if (Math.Abs(dx) <= BaseSiteCoreCells && Math.Abs(dz) <= BaseSiteCoreCells)
-                {
-                    coreSolid = false;
-                }
-            }
-        }
-
-        return solid;
     }
 
     /// <summary>
@@ -1793,25 +1822,50 @@ public sealed class SimWorld
     }
 
     /// <summary>
-    /// True when a patch of ground will hold a structure, and why not if it will not.
+    /// How much of a structure's own footprint has to be solid ground, in permille: all of it.
+    /// <para>
+    /// Unlike a base's yard, a building has nowhere to put a pond. A base is four buildings and the
+    /// ground between them, and its patch is allowed to carry water at the edge for the reason the
+    /// constant above gives; the ground a factory itself stands on is either ground or it is not,
+    /// and a factory with one corner in the lake is a factory in the lake. The footprint is small
+    /// for the same reason the threshold is total — the question is what is under this building,
+    /// not whether the neighbourhood is pleasant.
+    /// </para>
+    /// </summary>
+    public const int StructureFootprintMinSolidPermille = 1_000;
+
+    /// <summary>
+    /// True when a patch of ground will hold a structure of this role, and why not if it will not.
     /// <para>
     /// This is the site half of the rule — the same split as <see cref="CanBuildAnyBridge"/>
-    /// against the span it is followed by — and it asks the question of the predicate a
-    /// scenario already asks before it stands a base up, rather than inventing a second notion
-    /// of good enough ground: a structure needs a footprint, and <see cref="IsBaseSite"/> is
-    /// where this game says what one is.
+    /// against the span it is followed by — and it asks the question of the same primitive a
+    /// scenario asks before it stands a base up, rather than inventing a second notion of good
+    /// enough ground: <see cref="IsSolidPatch"/> is where this game says what a square patch of
+    /// ground is worth. What differs is the patch, not the rule. A base keeps its eleven-cell yard,
+    /// and a building asks for its own footprint — a factory the size of a factory rather than a
+    /// parade square — because a player standing a building next to their own headquarters was
+    /// being refused as <c>ανώμαλο έδαφος</c> for failing a test meant for a base.
     /// </para>
     /// <para>
     /// The clauses are in the order a player meets them. The cell they are pointing at comes
     /// first, and each way it can be wrong has its own words — water, lava, a cliff — because
     /// "the ground here will not do" is not something a player can act on, and the cell under
-    /// the cursor is the only part of the answer they can move. What is left is the patch
-    /// around it, which is a question about the footprint rather than about the click.
+    /// the cursor is the only part of the answer they can move. What is left is the footprint
+    /// around it, which is a question about the building rather than about the click.
+    /// </para>
+    /// <para>
+    /// What stands on the ground is a different question with a different answer and is asked
+    /// separately: <see cref="IsSiteClear"/>. This predicate is what "the ground here would hold
+    /// this building" means, and it has to keep meaning that for a building that is already
+    /// standing — the client asks it about a structure it has just paid for to see whether the
+    /// order arrived, and a rule that refused a building its own site would answer no to every
+    /// one of them.
     /// </para>
     /// </summary>
+    /// <param name="kind">Role that would stand there, which is what decides the footprint.</param>
     /// <param name="site">Where the structure would stand.</param>
     /// <param name="reason">Empty when allowed, otherwise why not.</param>
-    public bool CanPlaceStructure(WorldPos site, out string reason)
+    public bool CanPlaceStructure(UnitKind kind, WorldPos site, out string reason)
     {
         reason = string.Empty;
 
@@ -1853,8 +1907,10 @@ public sealed class SimWorld
             return false;
         }
 
-        // And the footprint: the cell is good, the ground around it is not.
-        if (!IsBaseSite(site))
+        // And the footprint: the cell is good, the ground around it is not. How much ground that is
+        // comes from the role — a nuclear plant needs more of it than a power plant — and it is a
+        // radius in cells, so the patch is a square of (2r+1)² cells centred on the one clicked.
+        if (!IsSolidPatch(site, UnitCatalog.FootprintRadiusCells(kind), StructureFootprintMinSolidPermille))
         {
             reason = "ανώμαλο έδαφος";
             return false;
@@ -1862,6 +1918,184 @@ public sealed class SimWorld
 
         return true;
     }
+
+    /// <summary>
+    /// The lowest-numbered structure already standing on ground this site would take, or -1 when
+    /// there is none.
+    /// <para>
+    /// Two footprints overlap when they share a cell, which is the same arithmetic a patch of ground
+    /// is counted with: a building occupies the square of cells its own role asks for, and a site is
+    /// refused when any of them is occupied. Two buildings in the same cell were possible before
+    /// this, and two models rendering inside each other is what that looked like.
+    /// </para>
+    /// <para>
+    /// Ascending slot order, like every other scan in this file, and the first structure found is
+    /// the one named — so two orders in the same tick resolve the same way on every machine, and the
+    /// refusal a player reads does not depend on the order the entities happen to be stored in.
+    /// </para>
+    /// </summary>
+    private int StructureUnderSite(UnitKind kind, WorldPos site)
+    {
+        int radius = UnitCatalog.FootprintRadiusCells(kind);
+        int cell = Navigation.IndexOfWorld(site);
+        int x = Navigation.CellX(Math.Max(cell, 0));
+        int z = Navigation.CellZ(Math.Max(cell, 0));
+
+        for (int slot = 0; slot < Capacity; slot++)
+        {
+            if (!IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref _entities[slot];
+
+            if (!UnitCatalog.Get(entity.Kind).IsBuilding)
+            {
+                continue;
+            }
+
+            // An unfinished structure is a structure: it has been paid for, its model is standing on
+            // the ground, and a second building raised through it would be the same two models in
+            // one place.
+            int other = Navigation.IndexOfWorld(entity.Position);
+            int reach = radius + UnitCatalog.FootprintRadiusCells(entity.Kind);
+
+            if (Math.Abs(Navigation.CellX(other) - x) <= reach && Math.Abs(Navigation.CellZ(other) - z) <= reach)
+            {
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// True when nothing is already standing where a structure of this role would go, and why not
+    /// if something is.
+    /// <para>
+    /// The other half of the placement rule, and the half that took a bug to notice: the site rule
+    /// judged the ground and never what was standing on it, so a building could be ordered on top of
+    /// another one and the two models rendered inside each other. The refusal names the structure in
+    /// the way, because that is the part a player can act on — "there is a factory there" is a
+    /// sentence you can move away from, and "the site is occupied" is not.
+    /// </para>
+    /// <para>
+    /// <b>Mobile units do not block construction, and none is harmed by it.</b> A unit is the one
+    /// thing on the map that is on its way somewhere: a tank standing on a site today is a tank
+    /// twenty metres away in ten seconds, and a rule that refused the site until it moved would make
+    /// placement a question about the traffic of the moment — the player would have to order units
+    /// out of the way of their own building, one cell at a time, for no gain. Units do not block
+    /// movement anywhere else in this game either, and nothing is destroyed or pushed: the building
+    /// rises around whoever is standing there and they drive out from under it when they are next
+    /// ordered. What is refused is the one thing that will still be there tomorrow.
+    /// </para>
+    /// </summary>
+    /// <param name="kind">Role that would stand there, which is what decides the footprint.</param>
+    /// <param name="site">Where the structure would stand.</param>
+    /// <param name="reason">Empty when clear, otherwise what is standing there.</param>
+    public bool IsSiteClear(UnitKind kind, WorldPos site, out string reason)
+    {
+        reason = string.Empty;
+
+        int blocker = StructureUnderSite(kind, site);
+
+        if (blocker < 0)
+        {
+            return true;
+        }
+
+        reason = $"επικαλύπτεται με {UnitCatalog.GreekName(_entities[blocker].Kind)}";
+        return false;
+    }
+
+    /// <summary>
+    /// The nearest site to <paramref name="wanted"/> where a structure of this role may actually be
+    /// raised: the ground rule and the occupancy rule both.
+    /// <para>
+    /// The AI has no way to choose a site and does not need one — it keeps the offset placement,
+    /// where a finished structure appears just outside whatever made it — but an offset is now a
+    /// site like any other and has to pass both halves of the rule. An offset of fourteen metres
+    /// from a factory is inside that factory's own footprint, so the offset alone is no longer
+    /// enough: the site is searched outwards for the nearest patch that will hold the building,
+    /// exactly as a scenario searches for the ground its bases stand on.
+    /// </para>
+    /// <para>
+    /// A site that is already good is kept to the millimetre rather than snapped to a cell centre:
+    /// this is the path every AI structure has always taken, and moving them all by half a cell to
+    /// tidy the arithmetic would be a change to the game rather than a fix to it.
+    /// </para>
+    /// <para>
+    /// Deterministic: it reads the terrain, the grid and the standing structures and nothing else —
+    /// no RNG, no clock — so the same seed rebuilds the same sites in the same places.
+    /// </para>
+    /// </summary>
+    /// <param name="kind">Role that would stand there, which is what decides the footprint.</param>
+    /// <param name="wanted">Where the offset put it.</param>
+    /// <param name="site">
+    /// Where it can stand. When the answer is false this is the nearest solid ground rather than the
+    /// offset it was asked for, which is what the rest of the game falls back to.
+    /// </param>
+    public bool TryFindStructureSite(UnitKind kind, WorldPos wanted, out WorldPos site)
+    {
+        if (CanPlaceStructure(kind, wanted, out _) && IsSiteClear(kind, wanted, out _))
+        {
+            site = wanted;
+            return true;
+        }
+
+        int cell = Navigation.IndexOfWorld(wanted);
+        int centreX = Navigation.CellX(Math.Max(cell, 0));
+        int centreZ = Navigation.CellZ(Math.Max(cell, 0));
+
+        for (int radius = 1; radius <= StructureSearchRadiusCells; radius++)
+        {
+            for (int dz = -radius; dz <= radius; dz++)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    // The ring only: everything inside it was searched already.
+                    if (Math.Abs(dx) != radius && Math.Abs(dz) != radius)
+                    {
+                        continue;
+                    }
+
+                    int candidate = Navigation.IndexOf(centreX + dx, centreZ + dz);
+
+                    if (candidate < 0)
+                    {
+                        continue;
+                    }
+
+                    WorldPos centre = Navigation.CentreOf(candidate);
+
+                    if (CanPlaceStructure(kind, centre, out _) && IsSiteClear(kind, centre, out _))
+                    {
+                        site = centre;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Nowhere with room within reach. Falling back to the nearest solid cell keeps the structure
+        // out of the water, and returning false is the caller's notice that the site it wanted was
+        // not there — the same promise TryFindBaseSite makes.
+        site = LegalSpawnSite(wanted);
+        return false;
+    }
+
+    /// <summary>
+    /// How far a structure site may be pushed from the offset that produced it, in navigation cells.
+    /// <para>
+    /// Twenty-four cells is 225 m: far enough to walk out of a built-up base and find open ground,
+    /// and no further. The offset is always within thirty metres of the building that made it, so a
+    /// search that reaches this far has already passed every plausible site; past it something else
+    /// is wrong, and the caller is told so rather than handed a position on the other side of the
+    /// map.
+    /// </para>
+    /// </summary>
+    public const int StructureSearchRadiusCells = 24;
 
     /// <summary>
     /// The structure a site would produce: whether it is allowed, why not when it is not, and
@@ -1881,6 +2115,13 @@ public sealed class SimWorld
     /// sits exactly where the structure will for every pixel inside one cell, which is what
     /// makes a plan and its order comparable cell for cell.
     /// </para>
+    /// <para>
+    /// Both halves of the site are asked, in the order a player meets them: the ground
+    /// (<see cref="CanPlaceStructure"/>) and then what is standing on it
+    /// (<see cref="IsSiteClear"/>). The second one is what makes two orders for the same cell in one
+    /// tick resolve the way they read: commands are applied in the order they were issued, and the
+    /// first raises its building on the spot, so the second finds it there and is refused by name.
+    /// </para>
     /// </summary>
     /// <param name="team">Team paying for the work.</param>
     /// <param name="kind">Role to raise.</param>
@@ -1896,7 +2137,12 @@ public sealed class SimWorld
             return false;
         }
 
-        if (!CanPlaceStructure(site, out reason))
+        if (!CanPlaceStructure(kind, site, out reason))
+        {
+            return false;
+        }
+
+        if (!IsSiteClear(kind, site, out reason))
         {
             return false;
         }

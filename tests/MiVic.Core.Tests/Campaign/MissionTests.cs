@@ -302,7 +302,10 @@ public sealed class MissionTests
         // catches a change to the mission layouts that a replay would otherwise
         // reproduce faithfully but wrongly.
         //
-        // Last changed by the crossings a team builds becoming state: a bridge records its span,
+        // Last changed by the production queues becoming state: a mission's starting buildings have
+        // empty queues and their hashes moved anyway, which is exactly why the queue field is mixed
+        // for every live slot rather than only for the ones with something in them. Before that it
+        // was the crossings a team builds becoming state: a bridge records its span,
         // the tick its work started and how much of the deck is up, and all three are hashed, so
         // every world's hash moved with the new field. Before that it was the bases moving onto
         // ground that can hold them: a mission lays
@@ -316,9 +319,9 @@ public sealed class MissionTests
         // cell.
         ulong[] expected =
         [
-            13455289978335290768UL,
-            11658923710920883436UL,
-            17860173042412434573UL,
+            3325266512074465616UL,
+            12294173242831419616UL,
+            741485423866759929UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)

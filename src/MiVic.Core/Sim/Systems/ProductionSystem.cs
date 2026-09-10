@@ -89,11 +89,14 @@ public static class ProductionSystem
     /// <para>
     /// The AI has no way to choose a site and does not need one, so structures it orders still
     /// arrive at this offset — but the offset no longer has the last word. What is on the ground
-    /// is the same question a player's click is answered with (<see cref="SimWorld.CanPlaceStructure"/>),
-    /// asked here rather than in a second copy of the rule, so an AI structure cannot end up
-    /// standing where the game would have refused the player's. When the offset is somewhere a
-    /// structure may not stand, the site is searched outwards for the nearest patch that will
-    /// hold it, exactly as a scenario searches for the ground its bases stand on.
+    /// is the same rule a player's click is answered with, asked through
+    /// <see cref="SimWorld.TryFindStructureSite"/> rather than in a second copy of the rule, so an
+    /// AI structure cannot end up standing where the game would have refused the player's. That
+    /// rule has two halves — the ground will hold a building of this role, and nothing is standing
+    /// there already — and the second one is why an offset alone is not enough: fourteen metres from
+    /// the factory that made it is inside that factory's own footprint, so a site is searched
+    /// outwards for the nearest patch that will hold the building, exactly as a scenario searches
+    /// for the ground its bases stand on.
     /// </para>
     /// <para>
     /// An offset that is already good is kept to the millimetre rather than snapped: this path
@@ -119,14 +122,12 @@ public static class ProductionSystem
         // water or lava.
         spawn = world.LegalSpawnSite(spawn);
 
-        // A cell of solid ground is not yet a site: a structure needs a footprint, and this is
-        // the same predicate the player's own placement is judged by. The search reports false
-        // when it finds nothing within reach, and still answers with the nearest solid ground,
-        // so a structure the team has paid for is never lost.
-        if (definition.IsBuilding && !world.CanPlaceStructure(spawn, out _))
+        // The search reports false when it finds nothing within reach, and still answers with the
+        // nearest solid ground, so a structure the team has paid for is never lost.
+        if (definition.IsBuilding)
         {
-            world.TryFindBaseSite(spawn, out WorldPos legal);
-            spawn = legal;
+            world.TryFindStructureSite(kind, spawn, out WorldPos site);
+            spawn = site;
         }
 
         EntityId created = world.Spawn(

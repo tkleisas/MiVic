@@ -48,6 +48,13 @@ using MiVic.Core.Terrain;
 /// cannot be mass-produced, so losing one is a real loss.
 /// </param>
 /// <param name="RequiredTech">Project a team must have completed before it may build this role.</param>
+/// <param name="FootprintRadiusCells">
+/// The ground the role needs around the cell it is placed on, as a radius in navigation cells: the
+/// building is judged on a square patch <c>(2r+1)</c> cells on a side, and two structures may not
+/// share one. Zero for anything that drives or flies — a unit needs no ground of its own, and a
+/// structure that asked for none would be a building standing on a single cell with its walls in
+/// the next one.
+/// </param>
 public readonly record struct UnitDefinition(
     UnitKind Kind,
     int MaterialCost,
@@ -73,7 +80,8 @@ public readonly record struct UnitDefinition(
     int WagePerTick = 0,
     bool Stealthy = false,
     int MaxAlive = 0,
-    TechId RequiredTech = TechId.None)
+    TechId RequiredTech = TechId.None,
+    int FootprintRadiusCells = 0)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -176,15 +184,35 @@ public static class UnitCatalog
         // Structures are unarmed for now; defensive buildings come with M3 balance.
         // Industry needs a great deal of water, which is what makes a second
         // command centre or power plant a real economic decision.
-        new(UnitKind.CommandCentre, 600, 0, 400, 5_000, 0, 1, UnitKind.CommandCentre, true, WaterCost: 180),
-        new(UnitKind.PowerPlant, 160, 0, 200, 1_200, 0, 1, UnitKind.CommandCentre, true, WaterCost: 90),
-        new(UnitKind.Factory, 280, 0, 300, 2_000, 0, 1, UnitKind.CommandCentre, true, WaterCost: 120),
-        new(UnitKind.DesignBureau, 320, 0, 320, 1_500, 0, 1, UnitKind.CommandCentre, true, WaterCost: 100),
+        //
+        // The last number on each of them is its footprint: the radius, in navigation cells, of the
+        // square of ground the building stands on. The number comes from how big the buildings
+        // actually are. A navigation cell is 9 375 mm across, and the models were fitted to longest
+        // sides of 12 m (a power plant), 14 m (a design bureau), 16 m (a factory) and 20 to 22 m (a
+        // command centre) — so one cell is not enough for any of them: a 16 m factory is wider than
+        // the 9.4 m cell it would stand on. One cell of radius is 28 m of ground, the smallest square
+        // of cells that contains every building in the game, and it is what they get; anything more
+        // would be a parade square rather than the ground under a building. Only the nuclear plant
+        // asks for more, and not because of its walls — see below.
+        new(UnitKind.CommandCentre, 600, 0, 400, 5_000, 0, 1, UnitKind.CommandCentre, true, WaterCost: 180,
+            FootprintRadiusCells: 1),
+        new(UnitKind.PowerPlant, 160, 0, 200, 1_200, 0, 1, UnitKind.CommandCentre, true, WaterCost: 90,
+            FootprintRadiusCells: 1),
+        new(UnitKind.Factory, 280, 0, 300, 2_000, 0, 1, UnitKind.CommandCentre, true, WaterCost: 120,
+            FootprintRadiusCells: 1),
+        new(UnitKind.DesignBureau, 320, 0, 320, 1_500, 0, 1, UnitKind.CommandCentre, true, WaterCost: 100,
+            FootprintRadiusCells: 1),
 
         // The nuclear plant is the one structure whose value is not its income: it
         // is the prerequisite for a tactical nuclear weapon, so it is worth raiding.
-        // The Κινέζοι can never build it — their ceiling stops at era III.
-        new(UnitKind.NuclearPlant, 900, 0, 600, 4_000, 0, 4, UnitKind.CommandCentre, true, WaterCost: 320),
+        // The Κινέζοι can never build it — their ceiling stops at era III. It is also the one
+        // building whose footprint is larger than its own walls, which is the whole difference
+        // between it and the power plant it is an upgrade of: a reactor is 22 m of containment
+        // ring, cooling pond and exclusion zone, and the ground that has to be clear around it is
+        // 5 × 5 cells. That is why a nuclear plant and a power plant are not interchangeable sites
+        // even though both are one building with one job.
+        new(UnitKind.NuclearPlant, 900, 0, 600, 4_000, 0, 4, UnitKind.CommandCentre, true, WaterCost: 320,
+            FootprintRadiusCells: 2),
     ];
 
     /// <summary>Every defined role.</summary>
@@ -263,6 +291,19 @@ public static class UnitCatalog
     /// <summary>True when a role is airborne: it flies over terrain and only anti-air can hit it.</summary>
     public static bool Flies(UnitKind kind) => TryGet(kind, out UnitDefinition definition)
         && definition.Movement == MovementClass.Air;
+
+    /// <summary>
+    /// How much ground a role needs around the cell it is placed on, as a radius in navigation
+    /// cells — the footprint the placement rule and the occupancy rule are both measured with.
+    /// <para>
+    /// It lives in the catalogue because it is a per-role fact, like cost and speed: a nuclear plant
+    /// and a power plant are not the same undertaking, and a table of footprint numbers in the
+    /// placement code would be a second roster that could disagree with this one. An unknown role
+    /// answers zero, which is what a unit's footprint is: none.
+    /// </para>
+    /// </summary>
+    public static int FootprintRadiusCells(UnitKind kind)
+        => TryGet(kind, out UnitDefinition definition) ? definition.FootprintRadiusCells : 0;
 
     /// <summary>True when a role is unmanned: no morale, no crews, no water.</summary>
     public static bool IsAutomaton(UnitKind kind) => TryGet(kind, out UnitDefinition definition)
