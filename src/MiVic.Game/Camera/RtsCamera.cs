@@ -214,6 +214,21 @@ public sealed class RtsCamera
     /// <summary>Moves the target directly, e.g. when jumping to a selected unit.</summary>
     public void FocusOn(Vector3 groundPosition) => Target = new Vector3(groundPosition.X, 0f, groundPosition.Z);
 
+    /// <summary>
+    /// Aims at a point **keeping its height**.
+    /// <para>
+    /// <see cref="FocusOn"/> flattens the target to the ground plane, which is right
+    /// for a camera that follows the battlefield and wrong for one that has to look
+    /// at a particular object: the terrain rises tens of metres, so aiming at sea
+    /// level puts whatever stands on the hill above the frame — or off it entirely.
+    /// </para>
+    /// </summary>
+    public void LookAt(Vector3 position)
+        => Target = new Vector3(
+            MathHelper.Clamp(position.X, -MapHalfExtent, MapHalfExtent),
+            position.Y,
+            MathHelper.Clamp(position.Z, -MapHalfExtent, MapHalfExtent));
+
     /// <summary>Sets the zoom distance, clamped to the configured range.</summary>
     public void ZoomTo(float distance)
     {

@@ -73,7 +73,10 @@ public static class FactionPalette
         UnitKind.ElectroPrototype => "Ηλεκτροπυροβόλο",
         UnitKind.Harvester => "Συλλέκτης",
         UnitKind.CommandCentre => "Κέντρο Διοίκησης",
+        UnitKind.PowerPlant => "Σταθμός Παραγωγής",
         UnitKind.NuclearPlant => "Πυρηνικός Σταθμός",
+        UnitKind.Factory => "Εργοστάσιο",
+        UnitKind.DesignBureau => "Γραφείο Σχεδιασμού",
         _ => "Άγνωστο",
     };
 }

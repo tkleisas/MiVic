@@ -83,21 +83,30 @@ public static class Scenario
     }
 
     /// <summary>
+    /// The roles the gallery lays out, one column each, in this order. Public
+    /// because the renderer labels the grid with the same column indices, and a
+    /// legend that could drift out of step with the layout would be worse than no
+    /// legend at all.
+    /// </summary>
+    public static readonly UnitKind[] GalleryKinds =
+    [
+        UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
+        UnitKind.AntiAir, UnitKind.Commissar, UnitKind.RobotInfantry, UnitKind.Drone, UnitKind.Mercenary,
+        UnitKind.StealthRecon, UnitKind.ElectroPrototype,
+        UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.NuclearPlant,
+        UnitKind.Factory, UnitKind.DesignBureau,
+    ];
+
+    /// <summary>Metres between gallery columns, and twice that between its rows.</summary>
+    public const int GallerySpacingMm = 26_000;
+
+    /// <summary>
     /// One unit of every faction and role, laid out in a grid with even spacing
     /// so each model can be looked at individually.
     /// </summary>
     private static void BuildGallery(SimWorld world, List<SpawnedEntity> spawned)
     {
-        const int SpacingMm = 26_000;
-
-        UnitKind[] kinds =
-        [
-            UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
-            UnitKind.AntiAir, UnitKind.Commissar, UnitKind.RobotInfantry, UnitKind.Drone, UnitKind.Mercenary,
-            UnitKind.StealthRecon, UnitKind.ElectroPrototype,
-            UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.NuclearPlant,
-            UnitKind.Factory, UnitKind.DesignBureau,
-        ];
+        UnitKind[] kinds = GalleryKinds;
 
         int row = 0;
 
@@ -105,8 +114,8 @@ public static class Scenario
         {
             for (int column = 0; column < kinds.Length; column++)
             {
-                int x = (column - (kinds.Length / 2)) * SpacingMm;
-                int z = (row - 1) * SpacingMm * 2;
+                int x = (column - (kinds.Length / 2)) * GallerySpacingMm;
+                int z = (row - 1) * GallerySpacingMm * 2;
 
                 UnitDefinition definition = UnitCatalog.Get(kinds[column]);
 

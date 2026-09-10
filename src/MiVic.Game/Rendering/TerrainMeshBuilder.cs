@@ -126,7 +126,13 @@ public static class TerrainMeshBuilder
                     }
                 }
 
-                vertices[(z * size) + x] = new VertexPositionNormal(position, normal, color);
+                // Alpha 0 is the faction paint mask saying "no faction tint": the
+                // ground carries its own colours and must not be repainted by
+                // whichever team happens to be drawing it.
+                vertices[(z * size) + x] = new VertexPositionNormal(
+                    position,
+                    normal,
+                    new Color(color.R, color.G, color.B, (byte)0));
             }
         }
 

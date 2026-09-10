@@ -894,7 +894,7 @@ public sealed class GameHud
         ImGui.TextUnformatted("Ctrl + 1..9 — αποθήκευση ομάδας    1..9 — ανάκληση");
         ImGui.Separator();
         ImGui.TextUnformatted("Παραγωγή: κλικ σε ένα κτίριο, μετά κουμπί στον πίνακα «Παραγωγή».");
-        ImGui.TextUnformatted("F1 — απόκρυψη    M — σίγαση    Esc — έξοδος");
+        ImGui.TextUnformatted("F1 — απόκρυψη    M — σίγαση    F11 — πλήρης οθόνη    Esc — έξοδος");
 
         ImGui.End();
     }

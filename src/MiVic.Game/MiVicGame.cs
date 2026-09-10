@@ -263,12 +263,13 @@ public sealed class MiVicGame : XnaGame
 
         _graphics = new GraphicsDeviceManager(this)
         {
-            PreferredBackBufferWidth = 1280,
-            PreferredBackBufferHeight = 720,
+            PreferredBackBufferWidth = options.WindowWidth,
+            PreferredBackBufferHeight = options.WindowHeight,
             PreferredDepthStencilFormat = DepthFormat.Depth24,
             PreferMultiSampling = true,
             // Vertical sync would cap the self-test at the display refresh rate.
             SynchronizeWithVerticalRetrace = !options.IsSelfTest,
+            IsFullScreen = options.FullScreen,
         };
 
         IsFixedTimeStep = false;
@@ -277,6 +278,17 @@ public sealed class MiVicGame : XnaGame
         Window.AllowUserResizing = true;
 
         // The title is deliberately NOT set here. See Initialize.
+    }
+
+    /// <summary>
+    /// Toggles fullscreen. Worth a key rather than a launch flag alone: the
+    /// difference between judging a model and guessing at it is how many pixels
+    /// it gets, and that is a decision made while looking at it.
+    /// </summary>
+    private void ToggleFullScreen()
+    {
+        _graphics.HardwareModeSwitch = false;
+        _graphics.ToggleFullScreen();
     }
 
     protected override void Initialize()
@@ -301,6 +313,12 @@ public sealed class MiVicGame : XnaGame
         {
             Target = Vector3.Zero,
             MapHalfExtent = SimBridge.MapHalfExtentMetres,
+
+            // A match never lets the camera inside a unit — it is 25 m out or it is
+            // unusable. The model fixture has to get closer than that: an
+            // infantryman is under two metres tall and a headless review of one has
+            // to be able to see his helmet.
+            MinDistance = _options.Viewer ? 2f : 25f,
         };
 
         // A screenshot wants the whole battlefield in frame.
@@ -334,10 +352,13 @@ public sealed class MiVicGame : XnaGame
         }
         else if (_options.IsModelGallery)
         {
-            _camera.ZoomTo(300f);
-            _camera.TiltTo(-1.42f);
+            // Far enough out that all seventeen columns fit with the labels
+            // legible; the pitch is re-applied every frame by ApplyGalleryCamera.
+            _camera.ZoomTo(420f);
+            _camera.TiltTo(-1.44f);
             _camera.Yaw = 0f;
             _camera.FocusOn(Vector3.Zero);
+            PrintGalleryLegend();
         }
         else if (_options.WatchPath is not null)
         {
@@ -521,6 +542,11 @@ public sealed class MiVicGame : XnaGame
             _hud.ShowHelp = !_hud.ShowHelp;
         }
 
+        if (Pressed(keyboard, Keys.F11))
+        {
+            ToggleFullScreen();
+        }
+
         if (Pressed(keyboard, Keys.M))
         {
             _audio?.ToggleMute();
@@ -582,6 +608,10 @@ public sealed class MiVicGame : XnaGame
         {
             ApplyViewerCamera();
         }
+        else if (_options.IsModelGallery)
+        {
+            ApplyGalleryCamera();
+        }
 
         _selection.PruneDead(_simulation.World);
         UpdateOrderMarkers((float)gameTime.ElapsedGameTime.TotalSeconds);
@@ -601,7 +631,10 @@ public sealed class MiVicGame : XnaGame
             DrawViewerPanel();
         }
 
-        HudCommand? command = _options.Viewer ? null : _hud.Draw(BuildSnapshot());
+        // The gallery and the model viewer are inspection fixtures, not a game: a
+        // HUD over a contact sheet hides half the models, and the victory banner
+        // that a team with no opposition triggers covers the rest.
+        HudCommand? command = _options.Viewer || _options.IsModelGallery ? null : _hud.Draw(BuildSnapshot());
 
         if (command is HudCommand requested && !IsPlayback)
         {
@@ -745,7 +778,10 @@ public sealed class MiVicGame : XnaGame
 
         var environment = new InstancedRenderer.Environment(
             LightDirection: new Vector3(-0.58f, -0.62f, -0.52f),
-            AmbientColor: new Color(84, 88, 96),
+            // Bright enough that a unit's own material contrast survives the
+            // hemisphere term: a tank read from an RTS camera is mostly side
+            // faces, and those sit at the dark end of the ambient ramp.
+            AmbientColor: new Color(96, 101, 110),
             FogColor: BackgroundColor,
             FogStart: 620f,
             FogEnd: 2000f);
@@ -1301,7 +1337,15 @@ public sealed class MiVicGame : XnaGame
         => name.EndsWith("Legs", StringComparison.OrdinalIgnoreCase)
             || name.EndsWith("Feet", StringComparison.OrdinalIgnoreCase)
             || name.EndsWith("Body", StringComparison.OrdinalIgnoreCase)
-            || name.EndsWith("Head", StringComparison.OrdinalIgnoreCase);
+            || name.EndsWith("Head", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("Shoulders", StringComparison.OrdinalIgnoreCase)
+            // The generated figures ship one part per leg — LegLeft and LegRight —
+            // which is what makes a real alternating stride possible. Arms swing
+            // against the leg on the same side. Feet and anything else hanging off
+            // a limb inherit its motion through the parent chain and must not be
+            // animated twice.
+            || name.StartsWith("Leg", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("Arm", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// A procedural walk cycle for a parts-rigged figure.
@@ -1329,6 +1373,25 @@ public sealed class MiVicGame : XnaGame
         float phase = ((entity.DistanceTravelledMm % (long)StrideMm) / StrideMm) * MathF.Tau;
 
         float pivot = part.BoundsMax.Y;
+
+        // A two-part leg rig: one part per leg, swinging in antiphase about its own
+        // top, which is where the hip is on a mesh with no skeleton to query.
+        if (name.StartsWith("Leg", StringComparison.OrdinalIgnoreCase)
+            && !name.EndsWith("Legs", StringComparison.OrdinalIgnoreCase))
+        {
+            float direction = name.EndsWith("Right", StringComparison.OrdinalIgnoreCase) ? 1f : -1f;
+            float stride = MathF.Sin(phase * direction) * 0.34f;
+            return Pivot(pivot, Matrix.CreateRotationZ(stride)) * part.LocalTransform;
+        }
+
+        // Arms swing against the leg on the same side. A figure whose arms hang
+        // still while its legs walk looks like it is being pushed along.
+        if (name.StartsWith("Arm", StringComparison.OrdinalIgnoreCase))
+        {
+            float direction = name.EndsWith("Right", StringComparison.OrdinalIgnoreCase) ? 1f : -1f;
+            float swing = MathF.Sin(phase * -direction) * 0.22f;
+            return Pivot(pivot, Matrix.CreateRotationZ(swing)) * part.LocalTransform;
+        }
 
         if (name.EndsWith("Legs", StringComparison.OrdinalIgnoreCase))
         {
@@ -1415,20 +1478,26 @@ public sealed class MiVicGame : XnaGame
         {
             SimWorld gallery = _simulation.World;
 
-            for (int slot = 0; slot < gallery.Capacity; slot++)
+            // Grid coordinates rather than names. Seventeen labels across a
+            // contact sheet have to fit the column spacing, and "Σοβιετικοί
+            // Ρομποτικό Πεζικό" is four times wider than the gap between two
+            // models. The legend is printed to the console instead.
+            int faction = 0;
+
+            foreach (FactionProfile profile in FactionProfile.All)
             {
-                if (!gallery.IsAliveSlot(slot))
+                for (int column = 0; column < Scenario.GalleryKinds.Length; column++)
                 {
-                    continue;
+                    int x = (column - (Scenario.GalleryKinds.Length / 2)) * Scenario.GallerySpacingMm;
+                    int z = (faction - 1) * Scenario.GallerySpacingMm * 2;
+
+                    _labelBuffer.Add(new WorldLabel(
+                        SimBridge.ToMetres(new WorldPos(x, 0, z)) + new Vector3(0f, 26f, 0f),
+                        $"{faction + 1}{column + 1:00}",
+                        Color.Lerp(FactionPalette.Primary(profile.Faction), Color.White, 0.35f)));
                 }
 
-                ref Entity item = ref gallery.GetRefBySlot(slot);
-                Vector3 anchor = SimBridge.ToMetres(item.Position) + new Vector3(0f, 22f, 0f);
-
-                _labelBuffer.Add(new WorldLabel(
-                    anchor,
-                    $"{FactionProfile.For(item.Faction).GreekName} {FactionPalette.UnitLabel(item.Kind)}",
-                    Color.White));
+                faction++;
             }
         }
         else
@@ -1595,8 +1664,47 @@ public sealed class MiVicGame : XnaGame
 
         if (TryViewerTarget(out Vector3 target))
         {
-            _camera.FocusOn(target);
+            // Aim at the model, not at the ground under it: FocusOn flattens the
+            // target to the ground plane, and the terrain rises tens of metres, so a
+            // flattened target leaves the model above the frame — or off it.
+            _camera.LookAt(target + new Vector3(0f, 1.5f, 0f));
         }
+    }
+
+    /// <summary>
+    /// Writes the contact sheet's legend to the console: which faction is which
+    /// row, and which role is which column. The image can only carry two digits
+    /// per model, so the rest has to live somewhere.
+    /// </summary>
+    private static void PrintGalleryLegend()
+    {
+        Console.WriteLine("gallery: rows 1=Σοβιετικοί 2=Κινέζοι 3=Δυτικοί, columns:");
+
+        for (int i = 0; i < Scenario.GalleryKinds.Length; i++)
+        {
+            Console.WriteLine($"  {i + 1:00}  {FactionPalette.UnitLabel(Scenario.GalleryKinds[i])}");
+        }
+    }
+
+    /// <summary>
+    /// Pins the contact sheet's camera straight down over the grid.
+    /// <para>
+    /// The RTS camera eases its pitch towards the ideal angle for its distance,
+    /// and that ideal is a shallow, cinematic tilt — which foreshortens the far
+    /// rows of a grid into an unreadable band. Same fix as the viewer's, for the
+    /// same reason: set the angle after the camera's own update, not before.
+    /// </para>
+    /// </summary>
+    private void ApplyGalleryCamera()
+    {
+        if (_camera is null)
+        {
+            return;
+        }
+
+        _camera.Yaw = 0f;
+        _camera.TiltTo(-1.44f);
+        _camera.FocusOn(Vector3.Zero);
     }
 
     /// <summary>

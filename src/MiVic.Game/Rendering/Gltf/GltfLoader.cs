@@ -98,6 +98,7 @@ public static class GltfLoader
         var positions = new List<Vector3>(4096);
         var normals = new List<Vector3>(4096);
         var colors = new List<Vector3>(4096);
+        var masks = new List<float>(4096);
         var indices = new List<ushort>(8192);
 
         int[]? sceneNodes = root.Scenes is { Length: > 0 }
@@ -114,14 +115,14 @@ public static class GltfLoader
             // No scene graph: treat every node as a root.
             for (int i = 0; i < (root.Nodes?.Length ?? 0); i++)
             {
-                AppendNode(root, buffers, i, rootTransform, options, positions, normals, colors, indices);
+                AppendNode(root, buffers, i, rootTransform, options, positions, normals, colors, masks, indices);
             }
         }
         else
         {
             foreach (int node in sceneNodes)
             {
-                AppendNode(root, buffers, node, rootTransform, options, positions, normals, colors, indices);
+                AppendNode(root, buffers, node, rootTransform, options, positions, normals, colors, masks, indices);
             }
         }
 
@@ -130,7 +131,7 @@ public static class GltfLoader
             throw new InvalidDataException($"'{path}' contains no renderable triangle geometry.");
         }
 
-        return BuildMesh(positions, normals, colors, indices, options);
+        return BuildMesh(positions, normals, colors, masks, indices, options);
     }
 
     /// <summary>
@@ -213,24 +214,24 @@ public static class GltfLoader
             * Matrix.CreateScale(scale)
             * Matrix.CreateTranslation(-centre * scale);
 
-        float maxChannel = 0f;
-
-        foreach (PartBuilder builder in parts)
-        {
-            foreach (Vector3 color in builder.Colors)
-            {
-                maxChannel = MathF.Max(maxChannel, MathF.Max(color.X, MathF.Max(color.Y, color.Z)));
-            }
-        }
-
-        float colorScale = maxChannel > 0.001f ? 1f / maxChannel : 1f;
-
         ModelPart[] built = new ModelPart[parts.Count];
 
         for (int i = 0; i < parts.Count; i++)
         {
             PartBuilder builder = parts[i];
             VertexPositionNormal[] vertices = new VertexPositionNormal[builder.Positions.Count];
+
+            // Per part, not per model: normalising across the whole model would
+            // let one bright plate drag every other part's palette with it, which
+            // is exactly how a tank ends up as a single flat colour.
+            float brightest = 0f;
+
+            foreach (Vector3 color in builder.Colors)
+            {
+                brightest = MathF.Max(brightest, MathF.Max(color.X, MathF.Max(color.Y, color.Z)));
+            }
+
+            float colorScale = brightest < 0.02f ? 0.5f / MathF.Max(brightest, 0.001f) : 1f;
 
             for (int v = 0; v < vertices.Length; v++)
             {
@@ -239,7 +240,11 @@ public static class GltfLoader
                 vertices[v] = new VertexPositionNormal(
                     builder.Positions[v],
                     builder.Normals[v],
-                    new Color(Channel(color.X), Channel(color.Y), Channel(color.Z)));
+                    new Color(
+                        Channel(color.X),
+                        Channel(color.Y),
+                        Channel(color.Z),
+                        PaintMask(builder.Masks[v])));
             }
 
             built[i] = new ModelPart(
@@ -267,6 +272,9 @@ public static class GltfLoader
         public List<Vector3> Normals { get; } = new(512);
 
         public List<Vector3> Colors { get; } = new(512);
+
+        /// <summary>Faction paint mask per vertex: 1 team colour, 0 bare material.</summary>
+        public List<float> Masks { get; } = new(512);
 
         public List<ushort> Indices { get; } = new(1024);
     }
@@ -315,6 +323,7 @@ public static class GltfLoader
                 builder.Positions,
                 builder.Normals,
                 builder.Colors,
+                builder.Masks,
                 builder.Indices);
 
             if (builder.Positions.Count > 0)
@@ -474,6 +483,7 @@ public static class GltfLoader
         List<Vector3> positions,
         List<Vector3> normals,
         List<Vector3> colors,
+        List<float> masks,
         List<ushort> indices)
     {
         GltfNode[] nodes = root.Nodes ?? [];
@@ -487,7 +497,7 @@ public static class GltfLoader
 
         if (node.Mesh is int meshIndex && root.Meshes is not null && (uint)meshIndex < (uint)root.Meshes.Length)
         {
-            AppendMesh(root, buffers, root.Meshes[meshIndex], transform, options, positions, normals, colors, indices);
+            AppendMesh(root, buffers, root.Meshes[meshIndex], transform, options, positions, normals, colors, masks, indices);
         }
 
         if (node.Children is null)
@@ -497,7 +507,7 @@ public static class GltfLoader
 
         foreach (int child in node.Children)
         {
-            AppendNode(root, buffers, child, transform, options, positions, normals, colors, indices);
+            AppendNode(root, buffers, child, transform, options, positions, normals, colors, masks, indices);
         }
     }
 
@@ -529,6 +539,7 @@ public static class GltfLoader
         List<Vector3> positions,
         List<Vector3> normals,
         List<Vector3> colors,
+        List<float> masks,
         List<ushort> indices)
     {
         if (mesh.Primitives is null)
@@ -594,11 +605,13 @@ public static class GltfLoader
                     normals.Add(Vector3.Up);
                 }
 
-                // Colour is kept as RGB rather than collapsed to one shade. A
-                // generated model's own palette is the point of generating it, and
-                // the faction tint is applied on top at draw time — discarding the
-                // model's colours here would throw half the art away.
+                // Colour is kept as RGB plus the paint mask in alpha rather than
+                // collapsed to one shade. The mask is what lets the faction tint
+                // cover the armour plates while leaving the tracks black and the
+                // gun barrel gunmetal; throwing it away would flatten the model
+                // into a single hue.
                 Vector3 vertexColor = Vector3.One;
+                float paintMask = 1f;
 
                 if (rawColors is not null)
                 {
@@ -613,9 +626,15 @@ public static class GltfLoader
                     {
                         vertexColor = Vector3.One;
                     }
+
+                    if (colorComponents >= 4)
+                    {
+                        paintMask = Math.Clamp(rawColors[(v * colorComponents) + 3], 0f, 1f);
+                    }
                 }
 
                 colors.Add(vertexColor * materialShade);
+                masks.Add(paintMask);
             }
 
             if (primitive.Indices is int indexAccessor)
@@ -640,6 +659,7 @@ public static class GltfLoader
         List<Vector3> positions,
         List<Vector3> normals,
         List<Vector3> colors,
+        List<float> masks,
         List<ushort> indices,
         ModelImportOptions options)
     {
@@ -689,16 +709,20 @@ public static class GltfLoader
 
         Vector3 centre = new((min.X + max.X) * 0.5f, min.Y, (min.Z + max.Z) * 0.5f);
 
-        // Normalise the palette so a model's darkest material still reads as that
-        // material rather than as black.
-        float maxChannel = 0f;
+        // A mesh that is entirely black is a broken export rather than a
+        // deliberate choice, so it is lifted; anything else is left exactly as
+        // the modeller authored it. Normalising every mesh to its brightest
+        // channel — which this used to do — silently erased the difference
+        // between dark tracks and light armour and made every vehicle one flat
+        // colour.
+        float brightest = 0f;
 
         foreach (Vector3 color in colors)
         {
-            maxChannel = MathF.Max(maxChannel, MathF.Max(color.X, MathF.Max(color.Y, color.Z)));
+            brightest = MathF.Max(brightest, MathF.Max(color.X, MathF.Max(color.Y, color.Z)));
         }
 
-        float colorScale = maxChannel > 0.001f ? 1f / maxChannel : 1f;
+        float colorScale = brightest < 0.02f ? 0.5f / MathF.Max(brightest, 0.001f) : 1f;
 
         VertexPositionNormal[] vertices = new VertexPositionNormal[positions.Count];
 
@@ -710,15 +734,19 @@ public static class GltfLoader
             vertices[i] = new VertexPositionNormal(
                 position,
                 normals[i],
-                new Color(Channel(color.X), Channel(color.Y), Channel(color.Z)));
+                new Color(Channel(color.X), Channel(color.Y), Channel(color.Z), PaintMask(masks[i])));
         }
 
         return new MeshData(vertices, [.. indices]);
     }
 
-    /// <summary>Clamps a linear channel into the range the shader can show.</summary>
+    /// <summary>Converts a 0..1 channel into a vertex colour byte.</summary>
     private static byte Channel(float value)
-        => (byte)Math.Clamp((int)MathF.Round(Math.Clamp(value, 0.35f, 1f) * 255f), 0, 255);
+        => (byte)Math.Clamp((int)MathF.Round(Math.Clamp(value, 0f, 1f) * 255f), 0, 255);
+
+    /// <summary>The faction paint mask byte, as the mesh shader reads it.</summary>
+    private static byte PaintMask(float value)
+        => (byte)Math.Clamp((int)MathF.Round(Math.Clamp(value, 0f, 1f) * 255f), 0, 255);
 
     private static Vector3 Size(List<Vector3> positions)
     {

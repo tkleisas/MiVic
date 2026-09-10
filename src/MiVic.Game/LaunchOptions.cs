@@ -21,6 +21,15 @@ public sealed record LaunchOptions
     /// <summary>Optional camera yaw for a screenshot, in radians.</summary>
     public float? ScreenshotYaw { get; init; }
 
+    /// <summary>Back buffer width, in pixels.</summary>
+    public int WindowWidth { get; init; } = 1280;
+
+    /// <summary>Back buffer height, in pixels.</summary>
+    public int WindowHeight { get; init; } = 720;
+
+    /// <summary>Starts fullscreen, filling the display's current mode.</summary>
+    public bool FullScreen { get; init; }
+
     /// <summary>Optional camera pitch for a screenshot, in radians.</summary>
     public float? ScreenshotPitch { get; init; }
 
@@ -206,6 +215,26 @@ public sealed record LaunchOptions
                     options = options with { Viewer = true, ShowHelp = false };
                     break;
 
+                case "--fullscreen":
+                    options = options with { FullScreen = true, ShowHelp = false };
+                    break;
+
+                case "--width":
+                    // The default 1280x720 is a size to play at, not a size to
+                    // inspect a model at: a soldier is forty pixels tall in it.
+                    options = options with
+                    {
+                        WindowWidth = int.Parse(NextValue(args, ref i, arg), System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    break;
+
+                case "--height":
+                    options = options with
+                    {
+                        WindowHeight = int.Parse(NextValue(args, ref i, arg), System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    break;
+
                 case "--viewer-model":
                     options = options with { Viewer = true, ViewerModel = NextValue(args, ref i, arg), ShowHelp = false };
                     break;
@@ -224,6 +253,18 @@ public sealed record LaunchOptions
                     {
                         Viewer = true,
                         ViewerPitch = float.Parse(NextValue(args, ref i, arg), System.Globalization.CultureInfo.InvariantCulture),
+                        ShowHelp = false,
+                    };
+                    break;
+
+                case "--viewer-distance":
+                    // A structure twenty metres long does not fit in a frame
+                    // framed for a tank, and the RTS camera clamps how close it
+                    // will come, so the fixture has to say how far back to stand.
+                    options = options with
+                    {
+                        Viewer = true,
+                        ViewerDistance = float.Parse(NextValue(args, ref i, arg), System.Globalization.CultureInfo.InvariantCulture),
                         ShowHelp = false,
                     };
                     break;
