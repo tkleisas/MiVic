@@ -259,13 +259,11 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by <c>LegalSpawnSite</c>: produced structures and units are now
-    /// moved to the nearest solid ground instead of being placed at a fixed offset
-    /// that could land in a lake, which changes where they end up and therefore the
-    /// world's state.
+    /// Last changed by the volcano line: lava now appears on the standard map where
+    /// before there was none, and impassable ground changes where everything walks.
     /// </para>
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(3549733204526663041UL, HashScenario(20250101));
+        => Assert.Equal(4103227895744666646UL, HashScenario(20250101));
 }

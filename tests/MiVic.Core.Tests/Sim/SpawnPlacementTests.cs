@@ -80,6 +80,41 @@ public sealed class SpawnPlacementTests
         Assert.Equal(wanted, world.LegalSpawnSite(wanted));
     }
 
+    /// <summary>
+    /// The standard map has volcanoes on it.
+    /// <para>
+    /// This is not a truism. The volcano line was once the top twelfth of the map's
+    /// highest <em>value</em> rather than of its relief, which on this map sat above
+    /// every square of ground: a volcano feature, a lava hazard and a lava surface
+    /// shader, with no lava anywhere to reach any of them. A test that counts is the
+    /// only kind that notices a feature which exists and never happens.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TheStandardMapHasVolcanoes()
+    {
+        SimWorld world = Build();
+        int lava = CountSurface(world, TerrainType.Lava);
+
+        Assert.True(lava > 0, "no lava on the map at all, so the volcano line is above the ground");
+    }
+
+    private static int CountSurface(SimWorld world, TerrainType wanted)
+    {
+        TerrainLayer terrain = world.TerrainTypes;
+        int count = 0;
+
+        for (int cell = 0; cell < terrain.Size * terrain.Size; cell++)
+        {
+            if (terrain.TypeAt(cell) == wanted)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     /// <summary>How many cells of each surface a world has. For test failure messages.</summary>
     private static string Histogram(SimWorld world)
     {

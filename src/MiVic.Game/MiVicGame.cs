@@ -2996,20 +2996,21 @@ public sealed class MiVicGame : XnaGame
                 0f,
                 (terrain.OriginMm + (z * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre);
 
-            // Close, and at a shallow angle: lava is judged by how its surface reads
-            // across the flow, not from directly above.
-            _camera.ZoomTo(90f);
-            _camera.TiltTo(-0.45f);
+            // Steeper and further back than a river needs: lava sits on a peak, and a
+            // shallow camera aimed at a peak is aimed at the sky.
+            _camera.ZoomTo(190f);
+            _camera.TiltTo(-0.95f);
             _camera.Yaw = 0.5f;
             _camera.FocusOn(centre);
 
             // Vision comes from units, and liquids are drawn under the fog, so lava
-            // nobody can see is lava drawn as fog. One observer stands far enough away
-            // to watch it and — this being a volcano — on solid ground found by the same
-            // rule the simulation uses for everything else it places.
+            // nobody can see is lava drawn as fog. The observer stands a good way off —
+            // a volcano's own slopes are what it covers in lava, so a watcher next to it
+            // is a watcher standing in it, and would be moved down the mountain by the
+            // same rule that keeps everything else off impassable ground.
             UnitDefinition observer = UnitCatalog.Get(UnitKind.Infantry);
 
-            WorldPos wanting = WorldPos.FromMetres((int)centre.X + 22, 0, (int)centre.Z + 22);
+            WorldPos wanting = WorldPos.FromMetres((int)centre.X + 45, 0, (int)centre.Z + 45);
 
             _simulation.World.Spawn(
                 Faction.Soviet,

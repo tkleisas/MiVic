@@ -184,15 +184,32 @@ public sealed class TerrainLayer
     /// </summary>
     private static void RaiseVolcanoes(byte[] types, int size, NavGrid grid, ulong seed)
     {
-        int snowLine = grid.HeightAt(0);
+        // The volcano line is a fraction of the map's *relief* — its highest point
+        // above its lowest — rather than of its highest value.
+        //
+        // Those are the same number only when the terrain starts at zero. Measured
+        // against the maximum instead, the band is the top twelfth of a range the
+        // terrain may only occupy the bottom of, and on a map with gentle relief that
+        // band can contain no cells at all. It did: a map with a volcano feature, lava
+        // hazard damage and a lava surface shader had zero lava cells, because the
+        // line the volcanoes were asked to clear sat above every square of ground.
+        int lowest = int.MaxValue;
+        int highest = 0;
 
         for (int index = 0; index < size * size; index++)
         {
-            snowLine = Math.Max(snowLine, grid.HeightAt(index));
+            int height = grid.HeightAt(index);
+
+            lowest = Math.Min(lowest, height);
+            highest = Math.Max(highest, height);
         }
 
-        // Only the very tops, so a map has a handful of volcanoes rather than a range.
-        snowLine = snowLine - (snowLine / 12);
+        if (highest <= lowest)
+        {
+            return;
+        }
+
+        int snowLine = highest - ((highest - lowest) / 5);
 
         for (int z = 0; z < size; z++)
         {
@@ -201,8 +218,11 @@ public sealed class TerrainLayer
                 int index = (z * size) + x;
 
                 // Rare enough that a map has a few volcanoes rather than a lava
-                // field, and only on the very highest ground.
-                if (grid.HeightAt(index) < snowLine || Hash(x, z, seed ^ 0x5EED) % 23 != 0)
+                // field, and only on the high ground. One in thirteen of the cells
+                // above the line: at one in twenty-three the roll came up empty often
+                // enough that a map could have a single volcano or none, and a hazard
+                // that appears once on one map in three is not a feature.
+                if (grid.HeightAt(index) < snowLine || Hash(x, z, seed ^ 0x5EED) % 13 != 0)
                 {
                     continue;
                 }
