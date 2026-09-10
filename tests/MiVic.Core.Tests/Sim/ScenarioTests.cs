@@ -42,15 +42,20 @@ public sealed class ScenarioTests
     /// deliberate change to the starting layout: this is what catches a refactor
     /// that quietly moves a unit, which a replay would then reproduce wrongly.
     /// <para>
-    /// Last changed by aspect and landform: the ground's second word now carries the way each
-    /// cell faces and what shape it is as well as its canopy density and moisture, and the
-    /// whole word is state. Before that it was the terrain attributes themselves — canopy
-    /// density and moisture, so far — which is why the word is hashed at all.
+    /// Last changed by the bases moving onto ground that can hold them: the three base
+    /// positions are hardcoded and the terrain comes from the seed, so each is now
+    /// searched for, and on this seed all three moved — Σοβιετικοί by 92.9 m, Κινέζοι by
+    /// 88.6 m and Δυτικοί by 9.2 m — with the four structures and the starting force of
+    /// each following the base. Before that it was aspect and landform: the ground's
+    /// second word now carries the way each cell faces and what shape it is as well as its
+    /// canopy density and moisture, and the whole word is state. Before that it was the
+    /// terrain attributes themselves — canopy density and moisture, so far — which is why
+    /// the word is hashed at all.
     /// </para>
     /// </summary>
     [Fact]
     public void SkirmishInitialHash_IsStable()
-        => Assert.Equal(9114383798800727978UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
+        => Assert.Equal(4907108487286676242UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
 
     [Fact]
     public void SkirmishLaysOutThreeForcesOfTheRightSize()

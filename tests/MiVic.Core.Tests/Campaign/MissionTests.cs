@@ -125,7 +125,23 @@ public sealed class MissionTests
     [Fact]
     public void HoldingAnAreaNeedsTheFullDuration()
     {
-        MissionDefinition mission = MissionCatalog.Require("m2_ridge");
+        MissionDefinition source = MissionCatalog.Require("m2_ridge");
+        ObjectiveDefinition hold = source.Objectives[0];
+
+        // The circle is put over the player's own base rather than over the middle of the
+        // map. What is under test is the hold clock — half the required time is not enough
+        // and the full time is — and answering that needs units still alive at the end of
+        // it: the middle of the map is where the two sides meet, and a dozen units dropped
+        // into it are dead inside ten seconds, which measures the battle rather than the
+        // clock. The base position comes from a first build, because the scenario puts the
+        // base on the nearest ground that will hold it rather than where it is asked for.
+        WorldPos playerBase = Scenario.BuildMission(new SimWorld(source.Seed, Capacity), source).BaseSites[0].Placed;
+
+        MissionDefinition mission = source with
+        {
+            Objectives = [hold with { CentreX = playerBase.X, CentreZ = playerBase.Z }],
+        };
+
         ObjectiveDefinition definition = mission.Objectives[0];
 
         var world = new SimWorld(mission.Seed, Capacity);
@@ -185,10 +201,28 @@ public sealed class MissionTests
     [Fact]
     public void MissingADeadlineFailsTheMission()
     {
-        SimWorld world = Mission("m1_bridgehead");
+        // The primary objective asks for ninety-nine enemy structures, so no amount of
+        // fighting can satisfy it and the clock is the only thing that can decide the
+        // mission — which is what this test is about.
+        //
+        // The catalog's own m1 used to serve, on the assumption that a match left alone
+        // destroys nothing. That assumption was a symptom rather than a fact: both bases
+        // stood in deep water, nothing could reach anything, and the alliance spent six
+        // minutes doing precisely nothing. With the bases on ground the alliance takes a
+        // Western structure inside half a minute, so the deadline is tested where the
+        // deadline is the only thing that can end it.
+        MissionDefinition source = MissionCatalog.Require("m1_bridgehead");
 
-        // Nothing is destroyed, so the primary objective runs out of time.
-        world.RunTicks(world.Mission!.TimeLimitTicks + MissionSystem.CheckInterval);
+        MissionDefinition mission = source with
+        {
+            Objectives = [source.Objectives[0] with { TargetCount = 99, DeadlineTick = 200 }],
+            TimeLimitTicks = 400,
+        };
+
+        var world = new SimWorld(mission.Seed, Capacity);
+        Scenario.BuildMission(world, mission);
+
+        world.RunTicks(mission.TimeLimitTicks + MissionSystem.CheckInterval);
 
         Assert.True(world.Objectives[0].IsFailed);
         Assert.Equal(GameOutcome.WesternVictory, world.Outcome);
@@ -268,15 +302,20 @@ public sealed class MissionTests
         // catches a change to the mission layouts that a replay would otherwise
         // reproduce faithfully but wrongly.
         //
-        // Last changed by aspect and landform: every cell of every mission's ground now carries
-        // the way it faces and the shape it is, and both are part of the state hash. Before
-        // that it was the terrain attributes, which put canopy density and moisture in a second
-        // word per cell.
+        // Last changed by the bases moving onto ground that can hold them: a mission lays
+        // its three bases out through the same search the skirmish uses, and seven of the
+        // nine moved — 92.9 m, 88.6 m and 9.2 m in the first mission, 166.6 m and 28.7 m in
+        // the second, 142.0 m and 66.8 m in the third — with the structures and the
+        // starting force of each following its base. Before that it was aspect and
+        // landform: every cell of every mission's ground now carries the way it faces and
+        // the shape it is, and both are part of the state hash. Before that it was the
+        // terrain attributes, which put canopy density and moisture in a second word per
+        // cell.
         ulong[] expected =
         [
-            17638114715606790532UL,
-            386865953345905344UL,
-            15572084829334274781UL,
+            18016454080196418928UL,
+            10604447477301797516UL,
+            11326387368445595021UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)

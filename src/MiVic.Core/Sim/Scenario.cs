@@ -29,12 +29,48 @@ public enum ScenarioKind : byte
 /// </param>
 public readonly record struct SpawnedEntity(EntityId Id, WorldPos RequestedPosition);
 
+/// <summary>
+/// What became of one faction's base position: where it was asked to stand, where it
+/// stands, and how good the ground under it is.
+/// <para>
+/// A base is the one thing in a scenario that cannot be moved afterwards — the whole
+/// opening is played from it, and a headquarters the player cannot reach is a match
+/// that cannot be played — so the search reports what it found rather than leaving the
+/// caller to assume it worked.
+/// </para>
+/// </summary>
+/// <param name="Faction">The faction whose base this is.</param>
+/// <param name="Requested">The position the scenario asked for.</param>
+/// <param name="Placed">
+/// The site the search settled on. The same value as <paramref name="Requested"/> when
+/// that position already had room for a base, so that a seed whose hardcoded spot is
+/// good keeps the layout it always had.
+/// </param>
+/// <param name="PatchFound">
+/// False when nothing within <see cref="SimWorld.BaseSearchRadiusCells"/> had enough
+/// solid ground, and the fallback — the nearest single solid cell — was used. A false
+/// here is the report the search owes its caller: the base is out of the water but not
+/// standing on the area it needs.
+/// </param>
+/// <param name="SolidCells">
+/// Solid cells in the patch around <paramref name="Placed"/>, out of
+/// <see cref="SimWorld.BaseSitePatchCells"/>.
+/// </param>
+public readonly record struct BaseSitePlacement(
+    Faction Faction,
+    WorldPos Requested,
+    WorldPos Placed,
+    bool PatchFound,
+    int SolidCells);
+
 /// <summary>What a scenario build produced, for the caller to keep track of.</summary>
 /// <param name="CommandCentres">Command centre of each faction, in spawn order.</param>
 /// <param name="Spawned">Every entity spawned, in spawn order.</param>
+/// <param name="BaseSites">Where each faction's base ended up, and on what ground.</param>
 public readonly record struct ScenarioSetup(
     IReadOnlyList<EntityId> CommandCentres,
-    IReadOnlyList<SpawnedEntity> Spawned);
+    IReadOnlyList<SpawnedEntity> Spawned,
+    IReadOnlyList<BaseSitePlacement> BaseSites);
 
 /// <summary>
 /// Builds the starting world for a scenario.
@@ -65,6 +101,7 @@ public static class Scenario
 
         var commandCentres = new List<EntityId>(3);
         var spawned = new List<SpawnedEntity>(4 + (UnitsPerFaction * 3));
+        var baseSites = new List<BaseSitePlacement>(3);
 
         if (kind == ScenarioKind.ModelGallery)
         {
@@ -76,10 +113,10 @@ public static class Scenario
         }
         else
         {
-            BuildSkirmish(world, commandCentres, spawned);
+            BuildSkirmish(world, commandCentres, spawned, baseSites);
         }
 
-        return new ScenarioSetup(commandCentres, spawned);
+        return new ScenarioSetup(commandCentres, spawned, baseSites);
     }
 
     /// <summary>
@@ -117,15 +154,16 @@ public static class Scenario
                 int x = (column - (kinds.Length / 2)) * GallerySpacingMm;
                 int z = (row - 1) * GallerySpacingMm * 2;
 
-                UnitDefinition definition = UnitCatalog.Get(kinds[column]);
+                UnitKind kind = kinds[column];
+                UnitDefinition definition = UnitCatalog.Get(kind);
 
                 // Everything in the gallery belongs to team 0 so fog of war never
                 // hides a model the player is trying to inspect.
-                Spawn(
+                SpawnPlaced(
                     world,
                     profile.Faction,
                     0,
-                    kinds[column],
+                    kind,
                     new WorldPos(x, 0, z),
                     definition.SpeedMmPerTick,
                     definition.Health,
@@ -141,11 +179,26 @@ public static class Scenario
     /// against Δυτικοί (team 2). This mirrors the game's premise — the two
     /// socialist powers must cooperate to defeat the Western empire.
     /// </summary>
-    private static void BuildSkirmish(SimWorld world, List<EntityId> commandCentres, List<SpawnedEntity> spawned)
+    private static void BuildSkirmish(
+        SimWorld world,
+        List<EntityId> commandCentres,
+        List<SpawnedEntity> spawned,
+        List<BaseSitePlacement> baseSites)
     {
-        SpawnForce(world, commandCentres, spawned, Faction.Soviet, teamId: 0, centre: new WorldPos(-180_000, 0, -180_000));
-        SpawnForce(world, commandCentres, spawned, Faction.Chinese, teamId: 1, centre: new WorldPos(180_000, 0, -180_000));
-        SpawnForce(world, commandCentres, spawned, Faction.Western, teamId: 2, centre: new WorldPos(0, 0, 200_000));
+        SpawnForce(
+            world, commandCentres, spawned, baseSites,
+            Faction.Soviet, teamId: 0, centre: new WorldPos(-180_000, 0, -180_000),
+            unitCount: UnitsPerFaction, fullBase: true, materials: 2_500, energy: 400, water: 400);
+
+        SpawnForce(
+            world, commandCentres, spawned, baseSites,
+            Faction.Chinese, teamId: 1, centre: new WorldPos(180_000, 0, -180_000),
+            unitCount: UnitsPerFaction, fullBase: true, materials: 2_500, energy: 400, water: 400);
+
+        SpawnForce(
+            world, commandCentres, spawned, baseSites,
+            Faction.Western, teamId: 2, centre: new WorldPos(0, 0, 200_000),
+            unitCount: UnitsPerFaction, fullBase: true, materials: 2_500, energy: 400, water: 400);
     }
 
     /// <summary>
@@ -160,44 +213,72 @@ public static class Scenario
 
         var commandCentres = new List<EntityId>(3);
         var spawned = new List<SpawnedEntity>(mission.PlayerUnits + mission.AllyUnits + mission.EnemyUnits + 11);
+        var baseSites = new List<BaseSitePlacement>(3);
 
-        SpawnForce(world, commandCentres, spawned, Faction.Soviet, teamId: 0, mission.PlayerBase, mission.PlayerUnits, fullBase: true);
-        SpawnForce(world, commandCentres, spawned, Faction.Chinese, teamId: 1, mission.AllyBase, mission.AllyUnits, fullBase: false);
-        SpawnForce(world, commandCentres, spawned, Faction.Western, teamId: 2, mission.EnemyBase, mission.EnemyUnits, fullBase: true);
+        SpawnForce(
+            world, commandCentres, spawned, baseSites,
+            Faction.Soviet, teamId: 0, centre: mission.PlayerBase,
+            unitCount: mission.PlayerUnits, fullBase: true, materials: 1_500, energy: 300, water: 250);
+
+        SpawnForce(
+            world, commandCentres, spawned, baseSites,
+            Faction.Chinese, teamId: 1, centre: mission.AllyBase,
+            unitCount: mission.AllyUnits, fullBase: false, materials: 1_500, energy: 300, water: 250);
+
+        SpawnForce(
+            world, commandCentres, spawned, baseSites,
+            Faction.Western, teamId: 2, centre: mission.EnemyBase,
+            unitCount: mission.EnemyUnits, fullBase: true, materials: 1_500, energy: 300, water: 250);
 
         world.AttachMission(mission);
 
-        return new ScenarioSetup(commandCentres, spawned);
+        return new ScenarioSetup(commandCentres, spawned, baseSites);
     }
 
     private static void SpawnForce(
         SimWorld world,
         List<EntityId> commandCentres,
         List<SpawnedEntity> spawned,
+        List<BaseSitePlacement> baseSites,
         Faction faction,
         int teamId,
         WorldPos centre,
         int unitCount,
-        bool fullBase)
+        bool fullBase,
+        int materials,
+        int energy,
+        int water)
     {
-        commandCentres.Add(Spawn(world, faction, teamId, UnitKind.CommandCentre, centre, 0, health: 5000, spawned));
+        // The position is a wish rather than a fact. Terrain comes from the seed, so
+        // whether a hardcoded base site is on land is luck, and on the standard seed the
+        // luck runs out: the headquarters, the power plant, the factory and the design
+        // bureau all stand in deep water, which is a base nothing can reach. The site is
+        // therefore searched for, and the search says whether it found what it wanted.
+        bool patchFound = world.TryFindBaseSite(centre, out WorldPos site);
+
+        baseSites.Add(new BaseSitePlacement(faction, centre, site, patchFound, world.BaseSiteSolidCells(site)));
+
+        commandCentres.Add(SpawnStructure(world, faction, teamId, UnitKind.CommandCentre, site, health: 5000, spawned));
 
         // A starting base so every faction can act from the first tick: power for
-        // energy, a factory for vehicles and a design bureau for research.
-        Spawn(world, faction, teamId, UnitKind.PowerPlant, Offset(centre, 45_000, 45_000), 0, health: 1200, spawned);
-        Spawn(world, faction, teamId, UnitKind.Factory, Offset(centre, -45_000, 45_000), 0, health: 2000, spawned);
+        // energy, a factory for vehicles and a design bureau for research. The offsets
+        // put them inside the patch the site was chosen for — and each one is checked
+        // anyway, because the patch is allowed to be mostly solid rather than entirely
+        // solid, and a structure gets no relocation of its own.
+        SpawnStructure(world, faction, teamId, UnitKind.PowerPlant, Offset(site, 45_000, 45_000), health: 1200, spawned);
+        SpawnStructure(world, faction, teamId, UnitKind.Factory, Offset(site, -45_000, 45_000), health: 2000, spawned);
 
         if (fullBase)
         {
-            Spawn(world, faction, teamId, UnitKind.DesignBureau, Offset(centre, 45_000, -45_000), 0, health: 1500, spawned);
+            SpawnStructure(world, faction, teamId, UnitKind.DesignBureau, Offset(site, 45_000, -45_000), health: 1500, spawned);
         }
 
         ref TeamState economy = ref world.TeamRef(teamId);
-        economy.Materials = 1_500;
-        economy.Energy = 300;
-        economy.Water = 250;
+        economy.Materials = materials;
+        economy.Energy = energy;
+        economy.Water = water;
 
-        SpawnFormation(world, faction, teamId, centre, unitCount, spawned);
+        SpawnFormation(world, faction, teamId, site, unitCount, spawned);
     }
 
     /// <summary>
@@ -214,8 +295,8 @@ public static class Scenario
         List<SpawnedEntity> spawned)
     {
         const int Columns = 14;
-        const float ColumnSpacingMetres = 5.5f;
-        const float RowSpacingMetres = 6.5f;
+        const int ColumnSpacingMm = 5_500;
+        const int RowSpacingMm = 6_500;
 
         int rows = ((unitCount + Columns) - 1) / Columns;
 
@@ -224,16 +305,21 @@ public static class Scenario
             int column = i % Columns;
             int row = i / Columns;
 
-            float offsetX = (column - ((Columns - 1) * 0.5f)) * ColumnSpacingMetres;
-            float offsetZ = (row - ((rows - 1) * 0.5f)) * RowSpacingMetres;
+            // Integer millimetres, with the half-step written as a half rather than as
+            // a fraction: an even column count puts the centre of the rank between two
+            // units, and multiplying by two before dividing by two keeps that exact.
+            // The offsets are the ones the float arithmetic produced, to the millimetre,
+            // so nothing about the formation moved except the arithmetic that found it.
+            int offsetX = ((((2 * column) - (Columns - 1)) * ColumnSpacingMm) / 2);
+            int offsetZ = ((((2 * row) - (rows - 1)) * RowSpacingMm) / 2);
 
             int jitterX = world.Rng.NextInt(-1400, 1401);
             int jitterZ = world.Rng.NextInt(-1400, 1401);
 
             WorldPos position = new(
-                centre.X + (int)(offsetX * 1000f) + jitterX,
+                centre.X + offsetX + jitterX,
                 0,
-                centre.Z + (int)(offsetZ * 1000f) + jitterZ);
+                centre.Z + offsetZ + jitterZ);
 
             (UnitKind kind, int speed) = (i % 12) switch
             {
@@ -251,36 +337,56 @@ public static class Scenario
                 position = new WorldPos(position.X, 60_000, position.Z);
             }
 
-            Spawn(world, faction, teamId, kind, position, speed, health: 100, spawned);
+            SpawnPlaced(world, faction, teamId, kind, position, speed, health: 100, spawned);
         }
-    }
-
-    private static void SpawnForce(
-        SimWorld world,
-        List<EntityId> commandCentres,
-        List<SpawnedEntity> spawned,
-        Faction faction,
-        int teamId,
-        WorldPos centre)
-    {
-        commandCentres.Add(Spawn(world, faction, teamId, UnitKind.CommandCentre, centre, 0, health: 5000, spawned));
-
-        // A starting base so every faction can act from the first tick: power for
-        // energy, a factory for vehicles and a design bureau for research.
-        Spawn(world, faction, teamId, UnitKind.PowerPlant, Offset(centre, 45_000, 45_000), 0, health: 1200, spawned);
-        Spawn(world, faction, teamId, UnitKind.Factory, Offset(centre, -45_000, 45_000), 0, health: 2000, spawned);
-        Spawn(world, faction, teamId, UnitKind.DesignBureau, Offset(centre, 45_000, -45_000), 0, health: 1500, spawned);
-
-        ref TeamState economy = ref world.TeamRef(teamId);
-        economy.Materials = 2_500;
-        economy.Energy = 400;
-        economy.Water = 400;
-
-        SpawnFormation(world, faction, teamId, centre, UnitsPerFaction, spawned);
     }
 
     private static WorldPos Offset(WorldPos centre, int dx, int dz)
         => new(centre.X + dx, centre.Y, centre.Z + dz);
+
+    /// <summary>
+    /// Spawns something the scenario places, on ground it can occupy.
+    /// </summary>
+    private static EntityId SpawnPlaced(
+        SimWorld world,
+        Faction faction,
+        int teamId,
+        UnitKind kind,
+        WorldPos position,
+        int speedMmPerTick,
+        int health,
+        List<SpawnedEntity> spawned)
+    {
+        // Aircraft are the exception and the reason this is not simply a call to
+        // LegalSpawnSite: they fly, so water under them is nothing, and a wing pushed
+        // onto the nearest shore to satisfy a rule about ground would be a formation
+        // pulled out of shape for no reason.
+        if (!UnitCatalog.Flies(kind))
+        {
+            position = world.LegalSpawnSite(position);
+        }
+
+        return Spawn(world, faction, teamId, kind, position, speedMmPerTick, health, spawned);
+    }
+
+    /// <summary>
+    /// Plants a structure where it can stand.
+    /// <para>
+    /// A structure is the one thing <see cref="SimWorld.Spawn"/> deliberately leaves where
+    /// it is put — a building in the sea should stay visible rather than be quietly moved,
+    /// which is the whole reason this placement exists — so the ground under a structure
+    /// the scenario places is checked here instead.
+    /// </para>
+    /// </summary>
+    private static EntityId SpawnStructure(
+        SimWorld world,
+        Faction faction,
+        int teamId,
+        UnitKind kind,
+        WorldPos position,
+        int health,
+        List<SpawnedEntity> spawned)
+        => Spawn(world, faction, teamId, kind, world.LegalSpawnSite(position), speedMmPerTick: 0, health, spawned);
 
     private static EntityId Spawn(
         SimWorld world,

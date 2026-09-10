@@ -1,0 +1,45 @@
+# Q: where do the three bases stand now, and on what ground?
+#
+# The bases are asked for hardcoded positions and the terrain comes from the seed, so
+# whether a faction's headquarters lands on land is luck. On the standard seed the luck
+# ran out: the Soviet base and its power plant, factory and design bureau all stood in
+# deep water, with the starting force shoved onto the nearest shore and the base itself
+# unreachable for the whole match. The scenario now searches for a patch of ground with
+# room for a base, and this is where the search leaves the three of them.
+
+units soviet 8
+units chinese 1
+units western 1
+unit 0
+
+# The ground under each headquarters, one cell at a time: the surface, the height against
+# the water line, and what every movement class pays to stand on it. A base cell that says
+# "deepwater impassable" is the bug; a forest a tank crosses at 280 per mille is a base a
+# tank can drive to.
+attributes -248.4 -117.2
+attributes 145.3 -98.5
+attributes -4.7 192.1
+
+# The cell a Soviet tank starts on, taken from the formation in the units list above: the
+# starting force stands around its base, on ground its own movement class can occupy.
+attributes -215.4 -98.5
+
+# And the map as a whole, because a base on land is worth nothing if the land is an island.
+surfaces
+
+# The same answer as a picture: the Soviet base on its patch of ground, from 150 m up.
+focus -248.4 -117.2
+zoom 150
+shot artifacts/probe/base-ground.png
+
+# The numbers above are a ledger: these are the sites the search settles on for this seed,
+# and the costs under them are what says the bases are usable at all — a cost of zero is
+# water or lava, and a base standing in either is a base nobody can reach.
+expect "the Soviet base is at x -248.4 m" -248.4 -248.4 0.1
+expect "the Soviet base is at z -117.2 m" -117.2 -117.2 0.1
+expect "the Chinese base is at x 145.3 m" 145.3 145.3 0.1
+expect "the Western base is at z 192.1 m" 192.1 192.1 0.1
+expect "foot pays 140 per mille on the Soviet base" 140 140
+expect "tracks pay 280 per mille on the Soviet base" 280 280
+expect "tracks pay 100 per mille on the Chinese base" 100 100
+expect "the map has deep water on it still" 866 866

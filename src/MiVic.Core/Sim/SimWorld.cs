@@ -1222,7 +1222,8 @@ public sealed class SimWorld
 
     /// <summary>
     /// Moves a spawn position onto solid ground: the nearest cell that is neither
-    /// water nor lava, searched outwards from where it was wanted.
+    /// water, nor lava, nor a cliff too steep for the navigation grid, searched
+    /// outwards from where it was wanted.
     /// <para>
     /// Produced structures and units are placed at a fixed offset from whatever made
     /// them, and that offset knows nothing about the map — so a factory on a shoreline
@@ -1281,16 +1282,207 @@ public sealed class SimWorld
     }
 
     /// <summary>
-    /// True when a navigation cell is ground rather than water or lava.
+    /// Radius of the patch of ground a base is judged on, in navigation cells.
     /// <para>
-    /// The two grids are not the same size, so this goes through world coordinates:
-    /// the navigation cell's own centre locates the terrain cell underneath it.
-    /// Indexing one grid with the other's number is the kind of mistake that reads as
+    /// Five cells, and the number comes from the base rather than from taste: the four
+    /// structures a scenario plants around a base stand 45 m from its centre, and a
+    /// navigation cell is 9 375 mm across, so the factory and the power plant are 4.8
+    /// cells out. A patch of radius five is the smallest square that holds all four of
+    /// them, the ground between them, and a cell of margin around the outside — which
+    /// is the room a player needs for what they will build next.
+    /// </para>
+    /// </summary>
+    public const int BaseSiteRadiusCells = 5;
+
+    /// <summary>
+    /// Radius of the core of that patch, in cells, which must be solid all through.
+    /// <para>
+    /// The patch is allowed to carry a pond at its edge; the yard is not. Two cells is
+    /// 18.75 m of ground in every direction from the centre — where the headquarters
+    /// itself stands and where its units deploy — and a base with water in the middle
+    /// of that is a base whose buildings cannot be reached even though "most" of its
+    /// surroundings are dry.
+    /// </para>
+    /// </summary>
+    public const int BaseSiteCoreCells = 2;
+
+    /// <summary>
+    /// How much of the patch has to be solid, in permille.
+    /// <para>
+    /// Nine tenths. Requiring every one of the 121 cells was tried first, and it fails
+    /// outright on two bases out of the hundred and twenty a forty-seed sweep builds:
+    /// where the intended corner is a large lake there is no all-land patch within reach
+    /// at all, and a base that finds nothing is worse off than one with a pond at the
+    /// edge of its yard. At the other end, a threshold loose enough to let a lake run
+    /// through the middle of the patch is how a base ends up split in two by water it
+    /// cannot cross. The core above is what keeps water off the base itself.
+    /// </para>
+    /// </summary>
+    public const int BaseSiteMinSolidPermille = 900;
+
+    /// <summary>
+    /// How far a base site may be pushed to find that patch, in navigation cells.
+    /// <para>
+    /// Thirty-two cells is 300 m, half the map: far enough to clear the widest lake the
+    /// generator makes, and no further. Past that the base is no longer where the
+    /// faction is supposed to be, and a search that keeps walking would quietly redraw
+    /// the match — which is why it stops and says so instead.
+    /// </para>
+    /// </summary>
+    public const int BaseSearchRadiusCells = 32;
+
+    /// <summary>Cells in the patch a base is judged on.</summary>
+    public static int BaseSitePatchCells
+        => ((BaseSiteRadiusCells * 2) + 1) * ((BaseSiteRadiusCells * 2) + 1);
+
+    /// <summary>How many cells of a base's patch are solid ground.</summary>
+    public int BaseSiteSolidCells(WorldPos centre) => SolidPatchCells(centre, out _);
+
+    /// <summary>
+    /// True when the ground around a position will hold a base: a solid core, and most
+    /// of the patch around it solid too.
+    /// </summary>
+    public bool IsBaseSite(WorldPos centre)
+    {
+        int solid = SolidPatchCells(centre, out bool coreSolid);
+
+        return coreSolid && (solid * 1_000) >= (BaseSitePatchCells * BaseSiteMinSolidPermille);
+    }
+
+    /// <summary>
+    /// Finds a site where a base can actually stand, searching outwards from
+    /// <paramref name="wanted"/> ring by ring, and returns false when there is none
+    /// within <see cref="BaseSearchRadiusCells"/>.
+    /// <para>
+    /// A scenario asks for a base at a hardcoded position, and the terrain underneath
+    /// it comes from the seed — so whether the faction's headquarters stands on land
+    /// is a matter of luck, and on the standard seed the luck runs out: the Soviet
+    /// base and its power plant, factory and design bureau all stand in deep water,
+    /// which is a base the player can neither reach nor use. Nearest first, so a base
+    /// pushed off a shoreline lands as close to where it was meant to be as the ground
+    /// allows.
+    /// </para>
+    /// <para>
+    /// Deterministic: it reads the terrain, the navigation grid and nothing else — no
+    /// RNG, no clock — so the same seed rebuilds the same bases in the same places.
+    /// </para>
+    /// </summary>
+    /// <param name="wanted">Where the base was asked to stand.</param>
+    /// <param name="site">
+    /// Where it can stand. When the answer is false this is the nearest single cell of
+    /// solid ground rather than the water it was asked for, which is what the rest of
+    /// the game falls back to.
+    /// </param>
+    public bool TryFindBaseSite(WorldPos wanted, out WorldPos site)
+        => TryFindBaseSite(wanted, BaseSearchRadiusCells, out site);
+
+    /// <summary>
+    /// The same search with an explicit reach, for callers that want to say how far a
+    /// base may be moved — and for the test that checks what happens when nothing is
+    /// found.
+    /// </summary>
+    public bool TryFindBaseSite(WorldPos wanted, int searchRadiusCells, out WorldPos site)
+    {
+        if (IsBaseSite(wanted))
+        {
+            // The position asked for is good, so it is kept exactly: a base nudged to
+            // the nearest cell centre for no reason is a scenario that moves for every
+            // seed, and a hash that moves with it.
+            site = wanted;
+            return true;
+        }
+
+        int cell = Navigation.IndexOfWorld(wanted);
+        int centreX = Navigation.CellX(Math.Max(cell, 0));
+        int centreZ = Navigation.CellZ(Math.Max(cell, 0));
+
+        for (int radius = 1; radius <= searchRadiusCells; radius++)
+        {
+            for (int dz = -radius; dz <= radius; dz++)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    // The ring only: everything inside it was searched already.
+                    if (Math.Abs(dx) != radius && Math.Abs(dz) != radius)
+                    {
+                        continue;
+                    }
+
+                    int candidate = Navigation.IndexOf(centreX + dx, centreZ + dz);
+
+                    if (candidate < 0)
+                    {
+                        continue;
+                    }
+
+                    WorldPos centre = Navigation.CentreOf(candidate);
+
+                    if (IsBaseSite(centre))
+                    {
+                        site = centre;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Nowhere with room within reach. Falling back to the nearest solid cell keeps
+        // the base out of the water, and returning false is the caller's notice that
+        // the patch it wanted was not there.
+        site = LegalSpawnSite(wanted);
+        return false;
+    }
+
+    /// <summary>
+    /// Counts the solid cells of the patch around a position, and reports whether its
+    /// core was solid in full.
+    /// </summary>
+    private int SolidPatchCells(WorldPos centre, out bool coreSolid)
+    {
+        int cell = Navigation.IndexOfWorld(centre);
+        int centreX = Navigation.CellX(Math.Max(cell, 0));
+        int centreZ = Navigation.CellZ(Math.Max(cell, 0));
+        int solid = 0;
+
+        coreSolid = true;
+
+        for (int dz = -BaseSiteRadiusCells; dz <= BaseSiteRadiusCells; dz++)
+        {
+            for (int dx = -BaseSiteRadiusCells; dx <= BaseSiteRadiusCells; dx++)
+            {
+                if (IsSolidGround(Navigation.IndexOf(centreX + dx, centreZ + dz)))
+                {
+                    solid++;
+                }
+                else if (Math.Abs(dx) <= BaseSiteCoreCells && Math.Abs(dz) <= BaseSiteCoreCells)
+                {
+                    coreSolid = false;
+                }
+            }
+        }
+
+        return solid;
+    }
+
+    /// <summary>
+    /// True when a navigation cell is ground a unit can stand on: not water, not lava,
+    /// and not a cliff.
+    /// <para>
+    /// A cliff is dry ground and still no place for a headquarters, and a mover that
+    /// cannot enter the cell cannot leave it either — which is why walkability is part
+    /// of the question rather than left to the surface type. The two grids are not the
+    /// same size, so the cell's own centre locates the terrain cell underneath it:
+    /// indexing one grid with the other's number is the kind of mistake that reads as
     /// working code on a square map.
     /// </para>
     /// </summary>
     private bool IsSolidGround(int navCell)
     {
+        if (navCell < 0 || !Navigation.IsWalkable(navCell))
+        {
+            return false;
+        }
+
         WorldPos centre = Navigation.CentreOf(navCell);
         int terrainCell = TerrainTypes.IndexOfWorld(centre.X, centre.Z);
 

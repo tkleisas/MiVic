@@ -77,7 +77,7 @@ at it — scripted queries, screenshots and checks in one process — is in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 368 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 374 determinism, terrain, placement and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # optional: the old borrowed models, no longer used
 
@@ -368,6 +368,11 @@ screenshot could have shown: which axis a rotating part turns about, whether a t
 the shot it fired, how many cells of each surface exist, how many of them are in frame. The
 command set, the output format and worked transcripts are in
 [docs/PROBE.md](docs/PROBE.md).
+
+`tools/probe/base-ground.probe` is the same idea asked of the map: where each faction's base
+ends up on the standard seed, and what the ground under it costs every movement class to
+cross — which is how a base standing in a lake is told apart from one on a shore without
+looking at either.
 
 ### Victory and defeat
 
