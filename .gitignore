@@ -29,7 +29,7 @@ src/MiVic.Game/Content/Models/**/*.gltf
 src/MiVic.Game/Content/Models/**/*.bin
 
 # ...except the ones we generate ourselves, which are ours to commit.
-# Regenerate with tools/blender/build_vehicles.py.
+# Regenerate with tools/blender/build_all.ps1.
 !src/MiVic.Game/Content/Models/Generated/
 !src/MiVic.Game/Content/Models/Generated/*.glb
 
@@ -39,3 +39,6 @@ src/MiVic.Game/Content/obj/
 
 # Blender scratch output
 tools/blender/out/
+
+# Model review sheets, and the shots they are built from
+artifacts/
