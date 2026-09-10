@@ -1,7 +1,9 @@
+using MiVic.Core.Numerics;
 using MiVic.Core.Sim;
 using MiVic.Game.Data;
 using MiVic.Game.Probe;
 using MiVic.Game.Sim;
+using MiVic.Game.Ui;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -119,8 +121,33 @@ public sealed partial class MiVicGame : IProbeHost
         GraphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
         GraphicsDevice.BlendState = BlendState.Opaque;
 
+        // The ghost of a placement is staged for the frame being composed, exactly as it is on
+        // a played frame: the same update, from the same cursor, so a photographed preview is
+        // the preview the player would have seen.
+        UpdatePlacementPreview();
+
         DrawScene();
         DrawWorldLabels();
+
+        // The HUD is off unless the script asked for it, and its commands are never applied
+        // here: a probe observes, and a button pressed by the person watching the window would
+        // otherwise be able to write a command into the middle of a transcript. ImGui is
+        // composited into the shot itself, because the panels are drawn into ImGui's own draw
+        // list and would otherwise be recorded and never rendered — a screenshot is a file, and
+        // a probe frame never goes through the client's back buffer.
+        //
+        // Drawn twice on purpose: ImGui lays a window out on the frame it first appears in and
+        // draws nothing in it until the next, so a single pass photographs empty panels. Played,
+        // that first frame is 16 ms; photographed on demand, it is the whole picture.
+        if (_hudDrawnInProbeFrames)
+        {
+            _hud.Draw(BuildSnapshot());
+            _imgui!.Render();
+
+            _imgui.BeginAnotherFrame();
+            _hud.Draw(BuildSnapshot());
+            _imgui.Render();
+        }
 
         GraphicsDevice.SetRenderTarget(null);
 
@@ -260,4 +287,148 @@ public sealed partial class MiVicGame : IProbeHost
         _particles?.LiveCount ?? 0,
         _projectiles?.LiveCount ?? 0,
         _healthFillBatch?.Count ?? 0);
+
+    // ------------------------------------------------------- placement and clicking
+    //
+    // These answer the questions the bridge report could not be diagnosed without: what the
+    // client makes of a pixel over water, what the button does when it is pressed, and what
+    // happens when the player clicks. Every one of them goes through the client's own code —
+    // the projection that resolves clicks, the HUD path that arms a placement, the click path
+    // that issues it — because a probe that worked out any of it for itself could disagree with
+    // the game, and a report that disagrees with the game sends someone to the wrong file.
+
+    bool IProbeHost.TryGroundAtPixel(Vector2 pixel, out Vector3 ground, out string ray)
+    {
+        bool hit = TryScreenToGround(pixel, out ground);
+        ray = _groundRayDebug;
+        return hit;
+    }
+
+    bool IProbeHost.TryGroundToPixel(Vector3 ground, out Vector2 pixel) => TryProjectToScreen(ground, out pixel);
+
+    float IProbeHost.DrawnHeightMetres(float x, float z)
+        => DrawnHeightAtMetres(_simulation!.World, _simulation.World.TerrainTypes, x, z);
+
+    /// <summary>
+    /// Puts the script's cursor down and answers what the client makes of it, including whether
+    /// an armed placement would be accepted there and how many cells the ghost would cover.
+    /// </summary>
+    ProbeCursor IProbeHost.SetCursor(Vector2 pixel)
+    {
+        _scriptedCursor = pixel;
+        UpdatePlacementPreview();
+
+        bool resolved = TryPlacementTarget(pixel, out WorldPos target);
+        int cell = resolved ? _simulation!.World.TerrainTypes.IndexOfWorld(target.X, target.Z) : -1;
+
+        // The footprint is the client's own, counted from the cells the ghost was built from:
+        // a preview that reported a different span from the one it drew would be a second
+        // answer to the question this command exists to ask.
+        int footprint = 0;
+
+        if (resolved)
+        {
+            _simulation!.World.TryPlanBridge(PlayerTeam, target, _bridgePreviewCells, out footprint, out _);
+        }
+
+        return new ProbeCursor(
+            pixel,
+            resolved,
+            resolved ? GroundAt(target) : default,
+            cell,
+            _pendingBridge,
+            _bridgeSiteAllowed,
+            _bridgeSiteReason,
+            _pendingBridge ? footprint : 0);
+    }
+
+    /// <summary>The drawn surface height at a simulation position, which is where a ghost sits.</summary>
+    private Vector3 GroundAt(WorldPos target)
+    {
+        SimWorld world = _simulation!.World;
+
+        return new Vector3(
+            target.X / (float)WorldPos.MmPerMetre,
+            DrawnHeightAtMetres(world, world.TerrainTypes, target.X / (float)WorldPos.MmPerMetre, target.Z / (float)WorldPos.MmPerMetre),
+            target.Z / (float)WorldPos.MmPerMetre);
+    }
+
+    /// <summary>
+    /// Presses the bridge button in the support panel, through the HUD's own command path
+    /// rather than by setting the flag here.
+    /// </summary>
+    bool IProbeHost.ArmBridge(out string note)
+    {
+        bool wasArmed = _pendingBridge;
+
+        ApplyHudCommand(new HudCommand(HudCommandKind.BuildBridge));
+
+        if (_pendingBridge)
+        {
+            note = "armed — the next left click picks the site";
+            return true;
+        }
+
+        note = wasArmed
+            ? "still armed from before"
+            : "the client did not arm a bridge: clicking the button had no effect";
+
+        return wasArmed;
+    }
+
+    /// <summary>
+    /// Releases the left button at the script's cursor, down the same branch a real release
+    /// takes in <see cref="HandleSelectionInput"/>.
+    /// </summary>
+    ProbeClick IProbeHost.ClickAtCursor()
+    {
+        Vector2 pixel = CursorPosition;
+        bool resolved = TryPlacementTarget(pixel, out WorldPos target);
+        bool armed = _pendingBridge || _pendingAbility != AbilityId.None;
+        int commandsBefore = _simulation!.World.PendingCommandCount;
+        string noticeBefore = _hud.Notice;
+
+        if (_pendingBridge)
+        {
+            IssueBridgeAtCursor(pixel);
+        }
+        else if (_pendingAbility != AbilityId.None)
+        {
+            IssueAbilityAtCursor(pixel);
+        }
+        else
+        {
+            SelectSingle(pixel, additive: false, _totalSeconds);
+        }
+
+        // What the player was told, which is the point of the click being reported at all: the
+        // old path produced a refused order and not one word about it.
+        string message = _hud.Notice;
+        bool queued = _simulation.World.PendingCommandCount > commandsBefore;
+
+        return new ProbeClick(
+            resolved,
+            resolved ? GroundAt(target) : default,
+            resolved ? target : default,
+            armed,
+            queued,
+            message == noticeBefore ? string.Empty : message);
+    }
+
+    bool IProbeHost.HudDrawn
+    {
+        get => _hudDrawnInProbeFrames;
+        set => _hudDrawnInProbeFrames = value;
+    }
+
+    string IProbeHost.HudNotice => _hud.Notice;
+
+    bool IProbeHost.BridgeArmed => _pendingBridge;
+
+    /// <summary>
+    /// Whether probe frames draw the HUD. Off by default: a probe reads the world, and a panel
+    /// over the frame is a panel over the answer. On when the answer <em>is</em> the panel — the
+    /// line of text a refused order now puts in front of the player, for instance.
+    /// </summary>
+    private bool _hudDrawnInProbeFrames;
 }

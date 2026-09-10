@@ -1070,11 +1070,22 @@ public sealed class SimWorld
     public const int MaxBridgeSpan = 24;
 
     /// <summary>
-    /// True when a team could build a crossing at this position, and why not if it
-    /// could not. Split out from the work so the interface can grey a button out for
-    /// the right reason.
+    /// Most cells one crossing can cover: the site itself, plus a full span in each
+    /// direction. The size of the buffer <see cref="TryPlanBridge"/> fills.
     /// </summary>
-    public bool CanBuildBridge(int team, WorldPos target, out string reason)
+    public const int MaxBridgeCells = (2 * MaxBridgeSpan) + 1;
+
+    /// <summary>
+    /// True when a team could build a crossing anywhere at all, and why not if it could
+    /// not: the half of the rule that does not depend on where the player clicks.
+    /// <para>
+    /// It exists so that the button and the command cannot disagree. A panel that tested
+    /// the resources itself would be a second copy of this rule, and the first thing a
+    /// copy does is drift: the button that looks available and does nothing when pressed
+    /// is the bug this shape prevents.
+    /// </para>
+    /// </summary>
+    public bool CanBuildAnyBridge(int team, out string reason)
     {
         reason = string.Empty;
 
@@ -1088,6 +1099,57 @@ public sealed class SimWorld
         if (!HasStructure(team, UnitKind.Factory))
         {
             reason = "χρειάζεται εργοστάσιο";
+            return false;
+        }
+
+        ref TeamState state = ref _teams[team];
+
+        if (state.Materials < BridgeMaterials || state.Energy < BridgeEnergy || state.Water < BridgeWater)
+        {
+            reason = "λείπουν πόροι";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// True when a team could build a crossing at this position, and why not if it
+    /// could not. Split out from the work so the interface can grey a button out for
+    /// the right reason.
+    /// </summary>
+    public bool CanBuildBridge(int team, WorldPos target, out string reason)
+        => TryPlanBridge(team, target, default, out _, out reason);
+
+    /// <summary>
+    /// The crossing a site would produce: whether it is allowed, why not when it is
+    /// not, and the cells a span placed here would turn into ford.
+    /// <para>
+    /// <b>The one place the rule lives.</b> Validation, the command that spends the
+    /// resources and carves the ground, and the client's preview of it all ask this same
+    /// question, so a ghost that promises a crossing the command would refuse is not a
+    /// thing that can happen — and a refusal can always name its reason, because the
+    /// reason is computed here rather than thrown away at the call site.
+    /// </para>
+    /// <para>
+    /// <paramref name="cells"/> may be empty, in which case only the verdict is
+    /// answered. Otherwise the first <paramref name="count"/> entries are the cells, in
+    /// the order they are walked, and a caller offering a shorter span than
+    /// <see cref="MaxBridgeCells"/> simply gets a prefix — enough to ask where the
+    /// crossing starts, not enough to draw all of it.
+    /// </para>
+    /// </summary>
+    /// <param name="team">Team paying for the work.</param>
+    /// <param name="target">Cell the player clicked.</param>
+    /// <param name="cells">Where the span's cells are written, if there is room.</param>
+    /// <param name="count">How many cells the span would cover.</param>
+    /// <param name="reason">Empty when allowed, otherwise why not.</param>
+    public bool TryPlanBridge(int team, WorldPos target, Span<int> cells, out int count, out string reason)
+    {
+        count = 0;
+
+        if (!CanBuildAnyBridge(team, out reason))
+        {
             return false;
         }
 
@@ -1105,12 +1167,59 @@ public sealed class SimWorld
             return false;
         }
 
-        ref TeamState state = ref _teams[team];
+        int x = Navigation.CellX(cell);
+        int z = Navigation.CellZ(cell);
 
-        if (state.Materials < BridgeMaterials || state.Energy < BridgeEnergy || state.Water < BridgeWater)
+        int across = 1 + SpanAlong(x, z, 1, 0) + SpanAlong(x, z, -1, 0);
+        int down = 1 + SpanAlong(x, z, 0, 1) + SpanAlong(x, z, 0, -1);
+
+        // Span the narrow way: a crossing should cross.
+        bool horizontal = across <= down;
+        int stepX = horizontal ? 1 : 0;
+        int stepZ = horizontal ? 0 : 1;
+
+        count = horizontal ? across : down;
+
+        // The span is measured from where the player clicked, both ways, so a site in
+        // open water asks for a bridge that would end in open water. Refusing here is
+        // the difference between a crossing and a pier, and the reason has to say so:
+        // it is the one refusal a player is likely to meet on a lake as opposed to a
+        // river, and without the words it is indistinguishable from a click that never
+        // arrived.
+        if (count > MaxBridgeSpan)
         {
-            reason = "λείπουν πόροι";
+            reason = "πολύ φαρδύ πέρασμα";
             return false;
+        }
+
+        if (cells.Length == 0)
+        {
+            return true;
+        }
+
+        int written = 0;
+
+        // The target first, because both arms are measured from it and it is still one cell.
+        cells[written++] = cell;
+
+        for (int direction = -1; direction <= 1; direction += 2)
+        {
+            int cx = x + (stepX * direction);
+            int cz = z + (stepZ * direction);
+
+            for (int step = 0; step < MaxBridgeSpan && written < cells.Length; step++)
+            {
+                int index = Navigation.IndexOf(cx, cz);
+
+                if (index < 0 || !IsWater(TerrainTypes.TypeAt(index)))
+                {
+                    break;
+                }
+
+                cells[written++] = index;
+                cx += stepX * direction;
+                cz += stepZ * direction;
+            }
         }
 
         return true;
@@ -1125,6 +1234,13 @@ public sealed class SimWorld
     /// own crossings — a bridge is a ford a player chose the site of.
     /// </para>
     /// <para>
+    /// The cells carved are the cells <see cref="TryPlanBridge"/> returned, rather than
+    /// a walk repeated here. The walk was duplicated once and the two copies disagreed:
+    /// the width of the span was checked in this method but not in the check the button
+    /// and the preview read, so a site that the interface offered was quietly refused
+    /// here with nothing to tell the player why.
+    /// </para>
+    /// <para>
     /// Permanent once built. A bridge is engineering work, not a unit: there is
     /// nothing to shoot that would put the river back, and modelling demolition would
     /// need the original depths stored per span for no gameplay the design asks for.
@@ -1132,25 +1248,9 @@ public sealed class SimWorld
     /// </summary>
     private bool TryBuildBridge(WorldPos target, int team)
     {
-        if (!CanBuildBridge(team, target, out _))
-        {
-            return false;
-        }
+        Span<int> cells = stackalloc int[MaxBridgeCells];
 
-        int cell = TerrainTypes.IndexOfWorld(target.X, target.Z);
-        int x = Navigation.CellX(cell);
-        int z = Navigation.CellZ(cell);
-
-        int across = 1 + SpanAlong(x, z, 1, 0) + SpanAlong(x, z, -1, 0);
-        int down = 1 + SpanAlong(x, z, 0, 1) + SpanAlong(x, z, 0, -1);
-
-        // Span the narrow way: a crossing should cross.
-        bool horizontal = across <= down;
-        int stepX = horizontal ? 1 : 0;
-        int stepZ = horizontal ? 0 : 1;
-        int cells = horizontal ? across : down;
-
-        if (cells > MaxBridgeSpan)
+        if (!TryPlanBridge(team, target, cells, out int count, out _))
         {
             return false;
         }
@@ -1160,25 +1260,9 @@ public sealed class SimWorld
         state.Energy -= BridgeEnergy;
         state.Water -= BridgeWater;
 
-        for (int direction = -1; direction <= 1; direction += 2)
+        for (int i = 0; i < count; i++)
         {
-            int cx = x;
-            int cz = z;
-
-            for (int step = 0; step <= MaxBridgeSpan; step++)
-            {
-                int index = Navigation.IndexOf(cx, cz);
-
-                if (index < 0 || !IsWater(TerrainTypes.TypeAt(index)))
-                {
-                    break;
-                }
-
-                TerrainTypes.SetType(index, TerrainType.ShallowWater);
-
-                cx += stepX * direction;
-                cz += stepZ * direction;
-            }
+            TerrainTypes.SetType(cells[i], TerrainType.ShallowWater);
         }
 
         return true;

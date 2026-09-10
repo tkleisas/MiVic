@@ -129,6 +129,31 @@ public sealed partial class MiVicGame : XnaGame
     /// <summary>True while the next click places a bridge.</summary>
     private bool _pendingBridge;
 
+    /// <summary>The ghost of the placement the player has not committed to yet.</summary>
+    private PlacementPreview? _placementPreview;
+
+    /// <summary>Footprint mesh of the crossing currently being previewed; owned here.</summary>
+    private InstancedRenderer.Mesh? _bridgePreviewMesh;
+
+    /// <summary>Cells of that footprint, reused every frame rather than reallocated per frame.</summary>
+    private readonly int[] _bridgePreviewCells = new int[SimWorld.MaxBridgeCells];
+
+    /// <summary>Cell the current footprint mesh was built for, so it is rebuilt only on a move.</summary>
+    private int _bridgePreviewCell = -1;
+
+    /// <summary>Whether the site under the cursor would be accepted, which colours the ghost.</summary>
+    private bool _bridgeSiteAllowed;
+
+    /// <summary>Why not, when it would not. Shown beside the armed button, where the player is looking.</summary>
+    private string _bridgeSiteReason = string.Empty;
+
+    /// <summary>
+    /// Where the client believes the pointer is, when a script rather than a mouse is driving it.
+    /// A probe has no mouse, and the preview and the click path both have to be askable about a
+    /// point on the screen.
+    /// </summary>
+    private Vector2? _scriptedCursor;
+
     /// <summary>Health bars submitted on the last frame, for the self-test report.</summary>
     private int _healthBarsDrawn;
 
@@ -533,6 +558,11 @@ public sealed partial class MiVicGame : XnaGame
         _axisMesh = _renderer.CreateMesh(MeshBuilder.Box(1f, 1f, 1f));
         _axisBatch = new SingleBatch(_axisMesh, _simulation.World.Capacity * 4);
 
+        // The ghost of a placement the player has not committed to yet. It owns no mesh of
+        // its own: the footprint is built from the cells the simulation says would be taken,
+        // and rebuilt only when the site moves to another cell.
+        _placementPreview = new PlacementPreview(GraphicsDevice, _renderer);
+
         // Particles are billboards: a unit quad the CPU orients per particle.
         _particleMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
 
@@ -737,9 +767,23 @@ public sealed partial class MiVicGame : XnaGame
             }
         }
 
+        // Escape backs out of a pending order before it does anything more drastic. The two had
+        // been the same keystroke, so a player who armed a bridge and changed their mind either
+        // left the game or had to place it somewhere to be rid of it — and the comment beside
+        // the click path had claimed for some time that Escape cancelled the pending ability,
+        // which it did not.
         if (Pressed(keyboard, Keys.Escape) && !_options.IsSelfTest)
         {
-            Exit();
+            if (_pendingBridge || _pendingAbility != AbilityId.None)
+            {
+                _pendingBridge = false;
+                _pendingAbility = AbilityId.None;
+                _hud.Notify("Ακυρώθηκε.");
+            }
+            else
+            {
+                Exit();
+            }
         }
 
         long elapsedMicroseconds = gameTime.ElapsedGameTime.Ticks / 10L;
@@ -804,6 +848,11 @@ public sealed partial class MiVicGame : XnaGame
 
         _selection.PruneDead(_simulation.World);
         UpdateOrderMarkers((float)gameTime.ElapsedGameTime.TotalSeconds);
+
+        // Before the HUD is drawn, because the panel beside the armed bridge button reports the
+        // same verdict the ghost is coloured by, and two answers on one frame must be one answer.
+        VerifyPendingBridge();
+        UpdatePlacementPreview();
 
         _previousScrollWheel = mouse.ScrollWheelValue;
         _previousKeyboard = keyboard;
@@ -1144,6 +1193,18 @@ public sealed partial class MiVicGame : XnaGame
             }
 
             _fog.Draw(view, projection);
+            _drawCalls++;
+        }
+
+        // The placement ghost goes over the fog, not under it, which is the opposite of every
+        // other thing on the ground. It is not part of the world: it is the interface pointing
+        // at a place, and what it is for is being read while the player decides. Under the fog
+        // — where it sat first — a site on remembered ground was dimmed to the point of being
+        // invisible, which is the same nothing-happened silence the ghost exists to end. It
+        // gives away nothing either: whether a site would be accepted depends on the water
+        // under it and on the player's own resources, never on anything hidden.
+        if (_placementPreview?.Draw() == true)
+        {
             _drawCalls++;
         }
 
@@ -2144,6 +2205,18 @@ public sealed partial class MiVicGame : XnaGame
     /// march returns the first point where the ray meets the ground, and falls
     /// back to the plane when the ray never does (clicking beyond the map edge).
     /// </para>
+    /// <para>
+    /// It marches the surface the player can <em>see</em>, which is not the height
+    /// field over water: a lake is drawn on the water line, and the bed beneath it is
+    /// as much as three and a half metres lower. Marched against the bed, a ray aimed
+    /// at the water carries on past the surface it visibly hit and comes to rest
+    /// further away — and at a shoreline that is far enough to land on the bank
+    /// instead of the water, so the click arrives as "no water here" on ground the
+    /// player did not point at. Every order that targets water was misplaced by up to
+    /// a quarter of a cell because of it, which is exactly the size of error that only
+    /// shows up at the one place it matters: the edge of the water, where a bridge
+    /// gets built.
+    /// </para>
     /// </summary>
     private bool TryScreenToGround(Vector2 screen, out Vector3 ground)
     {
@@ -2161,7 +2234,8 @@ public sealed partial class MiVicGame : XnaGame
             return false;
         }
 
-        HeightMap terrain = _simulation.World.Terrain;
+        SimWorld world = _simulation.World;
+        TerrainLayer surfaces = world.TerrainTypes;
         Vector3 direction = far - near;
         const float Step = 2f;
         float length = direction.Length();
@@ -2176,7 +2250,7 @@ public sealed partial class MiVicGame : XnaGame
         _groundRayDebug =
             $"near {near.X:0},{near.Y:0},{near.Z:0} far {far.X:0},{far.Y:0},{far.Z:0} " +
             $"dir {direction.X:0.00},{direction.Y:0.00},{direction.Z:0.00} len {length:0} " +
-            $"gap {near.Y - HeightAtMetres(terrain, near.X, near.Z):0.0}";
+            $"gap {near.Y - DrawnHeightAtMetres(world, surfaces, near.X, near.Z):0.0}";
 
         // A ray pointing at the sky never meets the ground: reject it rather than
         // inventing a destination behind the camera.
@@ -2187,12 +2261,12 @@ public sealed partial class MiVicGame : XnaGame
 
         float maxDistance = Math.Min(length, 4000f);
         Vector3 previous = near;
-        float previousGap = near.Y - HeightAtMetres(terrain, near.X, near.Z);
+        float previousGap = near.Y - DrawnHeightAtMetres(world, surfaces, near.X, near.Z);
 
         for (float travelled = Step; travelled <= maxDistance; travelled += Step)
         {
             Vector3 point = near + (direction * travelled);
-            float gap = point.Y - HeightAtMetres(terrain, point.X, point.Z);
+            float gap = point.Y - DrawnHeightAtMetres(world, surfaces, point.X, point.Z);
 
             if (gap <= 0f)
             {
@@ -2205,7 +2279,7 @@ public sealed partial class MiVicGame : XnaGame
                 {
                     Vector3 mid = (low + high) * 0.5f;
 
-                    if (mid.Y - HeightAtMetres(terrain, mid.X, mid.Z) <= 0f)
+                    if (mid.Y - DrawnHeightAtMetres(world, surfaces, mid.X, mid.Z) <= 0f)
                     {
                         high = mid;
                     }
@@ -2238,9 +2312,37 @@ public sealed partial class MiVicGame : XnaGame
 
     private string _groundRayDebug = string.Empty;
 
-    /// <summary>Terrain height in metres at a world position, clamped to the map.</summary>
-    private static float HeightAtMetres(HeightMap terrain, float x, float z)
-        => terrain.SampleHeightMm((int)(x * WorldPos.MmPerMetre), (int)(z * WorldPos.MmPerMetre)) / (float)WorldPos.MmPerMetre;
+    /// <summary>
+    /// Height of the surface the renderer draws at a world position, in metres.
+    /// <para>
+    /// The same rule <see cref="TerrainMeshBuilder"/> builds both the ground mesh and the
+    /// liquid quads with: water is drawn on the water line rather than on the bed it fills, and
+    /// everything else is drawn on the height field. Sharing the rule is the point — a click
+    /// has to land on the surface the player aimed at, and the only authority on where that
+    /// surface is is the code that draws it.
+    /// </para>
+    /// </summary>
+    private static float DrawnHeightAtMetres(SimWorld world, TerrainLayer surfaces, float x, float z)
+    {
+        int worldX = (int)(x * WorldPos.MmPerMetre);
+        int worldZ = (int)(z * WorldPos.MmPerMetre);
+
+        return DrawnHeightMm(
+            world,
+            surfaces,
+            surfaces.IndexOfWorld(worldX, worldZ),
+            new WorldPos(worldX, 0, worldZ)) / (float)WorldPos.MmPerMetre;
+    }
+
+    /// <summary>
+    /// Height the renderer draws at, in millimetres, for a cell and a position in it: water on
+    /// the water line, because a lake is drawn as a surface rather than as the basin it fills,
+    /// and everything else on the height field.
+    /// </summary>
+    private static int DrawnHeightMm(SimWorld world, TerrainLayer surfaces, int cell, WorldPos position)
+        => cell >= 0 && surfaces.TypeAt(cell) is TerrainType.ShallowWater or TerrainType.DeepWater
+            ? surfaces.WaterLevelMm
+            : world.Terrain.SampleHeightMm(position.X, position.Z);
 
     /// <summary>
     /// Right-click: attack the enemy under the cursor, otherwise move there.
@@ -2282,19 +2384,192 @@ public sealed partial class MiVicGame : XnaGame
     /// Spans the water under the cursor. The simulation decides whether the site is
     /// any good — not water, too wide, no factory, no resources — and refuses without
     /// charging, so a misplaced click costs nothing but the click.
+    /// <para>
+    /// The site is <em>asked about</em> here before the order is sent, with the same call the
+    /// order will be answered by, for two reasons. The player is told why in the same frame
+    /// rather than a tick later, and a refusal that the player can act on — move the cursor a
+    /// cell and try again — is worth more than a refusal discovered after the fact. The answer
+    /// cannot drift from the command's because it is the same function on the same world.
+    /// </para>
+    /// <para>
+    /// A refused click leaves the placement armed. The player is in the middle of choosing a
+    /// site, has just been told what is wrong with the one they chose, and the next thing they
+    /// will do is point somewhere else; disarming there would make them press the button again
+    /// for every cell they try. Escape, or a site that is accepted, ends the mode.
+    /// </para>
     /// </summary>
     private void IssueBridgeAtCursor(Vector2 cursor)
     {
-        _pendingBridge = false;
+        if (IsPlayback || _simulation is null)
+        {
+            _pendingBridge = false;
+            return;
+        }
 
-        if (IsPlayback || _simulation is null || !TryScreenToGround(cursor, out Vector3 ground))
+        WorldPos target;
+
+        if (!TryPlacementTarget(cursor, out target))
+        {
+            // The ray never met the ground: the player is pointing at the sky or past the edge
+            // of the map, which is a refusal like any other and is now said rather than done.
+            _hud.Notify("Γέφυρα: ο δείκτης δεν δείχνει έδαφος.");
+            _bridgeAwaitingTick = -1;
+            return;
+        }
+
+        SimWorld world = _simulation.World;
+
+        if (!world.CanBuildBridge(PlayerTeam, target, out string reason))
+        {
+            _hud.Notify($"Γέφυρα: {reason}.");
+            _bridgeAwaitingTick = -1;
+            return;
+        }
+
+        _pendingBridge = false;
+        world.Enqueue(SimCommand.Bridge(target, world.Tick + 1, PlayerTeam));
+
+        // The command lands on the next tick, and the world can move in between. Remembering
+        // the cell it was asked for is what lets the arrival be checked rather than assumed:
+        // a bridge that never appeared is otherwise the same silence this path was fixed for.
+        _bridgeAwaitingCell = world.TerrainTypes.IndexOfWorld(target.X, target.Z);
+        _bridgeAwaitingTick = world.Tick + 1;
+    }
+
+    /// <summary>
+    /// Checks on the tick after a bridge was ordered that the crossing actually exists, and
+    /// says why not when it does not. A site that was legal at the click and refused one tick
+    /// later is rare, but it is the same silent failure by a different route.
+    /// </summary>
+    private void VerifyPendingBridge()
+    {
+        if (_bridgeAwaitingTick < 0 || _simulation is null || _simulation.World.Tick < _bridgeAwaitingTick)
         {
             return;
         }
 
-        WorldPos target = WorldPos.FromMetres((int)ground.X, 0, (int)ground.Z);
+        int cell = _bridgeAwaitingCell;
+        SimWorld world = _simulation.World;
+        _bridgeAwaitingTick = -1;
+        _bridgeAwaitingCell = -1;
 
-        _simulation.World.Enqueue(SimCommand.Bridge(target, _simulation.World.Tick + 1, PlayerTeam));
+        if (cell < 0 || world.TerrainTypes.TypeAt(cell) == TerrainType.ShallowWater)
+        {
+            return;
+        }
+
+        // The site was legal when it was asked for and is not now: the resources went, or the
+        // ground under it changed. Asking again reports whichever of those it was.
+        WorldPos target = world.Navigation.CentreOf(cell);
+
+        _hud.Notify(world.CanBuildBridge(PlayerTeam, target, out string reason)
+            ? "Γέφυρα: η εντολή δεν εκτελέστηκε."
+            : $"Γέφυρα: {reason}.");
+    }
+
+    /// <summary>Cell the last bridge order is waiting to see built, or -1.</summary>
+    private int _bridgeAwaitingCell = -1;
+
+    /// <summary>Tick that order was asked to execute on, or -1.</summary>
+    private long _bridgeAwaitingTick = -1;
+
+    /// <summary>
+    /// Where on the ground the player is pointing, in simulation millimetres. Between the
+    /// cursor and the simulation sits the client's projection, and this is the one place it is
+    /// converted, so a preview and the order it previews cannot be aimed at different cells.
+    /// </summary>
+    private bool TryPlacementTarget(Vector2 cursor, out WorldPos target)
+    {
+        target = default;
+
+        if (!TryScreenToGround(cursor, out Vector3 ground))
+        {
+            return false;
+        }
+
+        target = WorldPos.FromMetres((int)ground.X, 0, (int)ground.Z);
+        return true;
+    }
+
+    /// <summary>
+    /// Where the pointer is. A probe script sets this, because it has no mouse; otherwise it is
+    /// ImGui's own idea of the pointer, which is the one the panels are drawn against.
+    /// </summary>
+    private Vector2 CursorPosition => _scriptedCursor ?? new Vector2(_imgui?.MousePosition.X ?? 0f, _imgui?.MousePosition.Y ?? 0f);
+
+    /// <summary>
+    /// Stages the ghost of the crossing the player is about to place: the cells the simulation
+    /// says a span here would turn into ford, tinted by whether it would take them.
+    /// <para>
+    /// Presentation only. Nothing here enqueues, spends or edits anything — the simulation is
+    /// asked a question and the answer is drawn, which is what lets the whole preview be as
+    /// bold as it likes without a mis-click being able to change the world. The mesh is rebuilt
+    /// only when the site moves to another cell, because the footprint is a function of that
+    /// cell and re-uploading it per frame would allocate on the render path for nothing.
+    /// </para>
+    /// </summary>
+    private void UpdatePlacementPreview()
+    {
+        if (_placementPreview is null || _simulation is null)
+        {
+            return;
+        }
+
+        if (!_pendingBridge || IsPlayback)
+        {
+            _placementPreview.Hide();
+            _bridgeSiteAllowed = false;
+            _bridgeSiteReason = string.Empty;
+            return;
+        }
+
+        SimWorld world = _simulation.World;
+
+        if (!TryPlacementTarget(CursorPosition, out WorldPos target))
+        {
+            // The cursor is not over the ground at all, so there is nothing to diagram and
+            // nothing to promise.
+            _placementPreview.Hide();
+            _bridgeSiteAllowed = false;
+            _bridgeSiteReason = "ο δείκτης δεν δείχνει έδαφος";
+            _bridgePreviewCell = -1;
+            return;
+        }
+
+        int site = world.TerrainTypes.IndexOfWorld(target.X, target.Z);
+
+        _bridgeSiteAllowed = world.TryPlanBridge(PlayerTeam, target, _bridgePreviewCells, out int count, out _bridgeSiteReason);
+
+        if (site != _bridgePreviewCell || _bridgePreviewMesh is null)
+        {
+            // A refused site still gets a footprint, of the one cell under the cursor: a red
+            // patch on the cell the player is pointing at is the clearest possible statement
+            // that it is that cell which is wrong, and a site refused because it is dry land
+            // has no span at all to draw.
+            if (!_bridgeSiteAllowed || count == 0)
+            {
+                _bridgePreviewCells[0] = site >= 0 ? site : 0;
+                count = site >= 0 ? 1 : 0;
+            }
+
+            _bridgePreviewMesh?.Dispose();
+            _bridgePreviewMesh = count == 0
+                ? null
+                : _renderer!.CreateMesh(PlacementPreview.Footprint(
+                    world.Navigation,
+                    _bridgePreviewCells.AsSpan(0, count),
+                    cell => DrawnHeightMm(world, world.TerrainTypes, cell, world.Navigation.CentreOf(cell))));
+
+            _bridgePreviewCell = site;
+        }
+
+        if (_bridgePreviewMesh is null)
+        {
+            _placementPreview.Hide();
+            return;
+        }
+
+        _placementPreview.Show(_bridgePreviewMesh, Matrix.Identity, _bridgeSiteAllowed);
     }
 
     /// <summary>
@@ -2820,12 +3095,43 @@ public sealed partial class MiVicGame : XnaGame
     private static bool IsBuilding(UnitKind kind)
         => kind is UnitKind.CommandCentre or UnitKind.PowerPlant or UnitKind.Factory or UnitKind.DesignBureau;
 
-    /// <summary>Turns a HUD button press into a simulation command.</summary>
+    /// <summary>
+    /// Turns a HUD button press into a simulation command.
+    /// <para>
+    /// What needs a selected building is looked up inside the case that needs it, rather than
+    /// once at the top for every case. Demanding a selection up front meant the two buttons
+    /// that do not belong to a building — the off-map abilities and the bridge, both of which
+    /// are drawn in the support panel whenever the player has a factory — did nothing at all
+    /// unless a structure happened to be selected. The button lit up under the cursor and then
+    /// silently did nothing, which is the report this path was fixed for: a player is entitled
+    /// to assume that a button that looks pressable is one.
+    /// </para>
+    /// </summary>
     private void ApplyHudCommand(HudCommand command)
     {
+        if (_simulation is null)
+        {
+            return;
+        }
+
+        // The support panel is not about a building; it is about the map. Neither of these
+        // commands is issued by an entity, so neither has any use for a selected one.
+        switch (command.Kind)
+        {
+            case HudCommandKind.UseAbility:
+                _pendingAbility = command.Ability;
+                _pendingBridge = false;
+                return;
+
+            case HudCommandKind.BuildBridge:
+                _pendingAbility = AbilityId.None;
+                _pendingBridge = true;
+                return;
+        }
+
         int slot = SelectedBuildingSlot();
 
-        if (slot < 0 || _simulation is null)
+        if (slot < 0)
         {
             return;
         }
@@ -2846,15 +3152,6 @@ public sealed partial class MiVicGame : XnaGame
 
             case HudCommandKind.ApproveDesign:
                 _simulation.World.Enqueue(SimCommand.ApproveDesign(id, command.Unit, executeTick, building.TeamId));
-                break;
-
-            case HudCommandKind.UseAbility:
-                _pendingAbility = command.Ability;
-                break;
-
-            case HudCommandKind.BuildBridge:
-                _pendingAbility = AbilityId.None;
-                _pendingBridge = true;
                 break;
 
             case HudCommandKind.Licence:
@@ -4459,10 +4756,15 @@ public sealed partial class MiVicGame : XnaGame
         // Geometric check first: project a point on the ground, then unproject
         // that pixel. If the two disagree, every click lands somewhere else — the
         // bug that made right-click orders go nowhere.
-        HeightMap terrain = world.Terrain;
+        //
+        // The point is put on the surface the renderer draws, not on the height field: a
+        // destination may be a ford, which is passable ground the client draws at the water
+        // line, and a probe point left on the bed under it is a point two and a half metres
+        // from anywhere the click mapping could return. The check then measures the mapping
+        // rather than the depth of the water it was aimed through.
         WorldPos destination = world.Navigation.CentreOf(destinationCell);
         Vector3 probe = new(destination.X / 1000f, 0f, destination.Z / 1000f);
-        probe.Y = HeightAtMetres(terrain, probe.X, probe.Z);
+        probe.Y = DrawnHeightAtMetres(world, world.TerrainTypes, probe.X, probe.Z);
 
         if (!TryProjectToScreen(probe, out Vector2 probePixel))
         {
@@ -4918,7 +5220,9 @@ public sealed partial class MiVicGame : XnaGame
             AllyBuildingSlot(),
             _imgui!.LargeFont,
             _simulation!.IsPlayback,
-            _simulation!.IsPlaybackFinished);
+            _simulation!.IsPlaybackFinished,
+            _pendingBridge,
+            _pendingBridge && !_bridgeSiteAllowed ? _bridgeSiteReason : string.Empty);
 
     private bool Pressed(KeyboardState keyboard, Keys key)
         => keyboard.IsKeyDown(key) && !_previousKeyboard.IsKeyDown(key);
@@ -4942,6 +5246,7 @@ public sealed partial class MiVicGame : XnaGame
         _healthBackMesh?.Dispose();
         _healthFillMesh?.Dispose();
         _axisMesh?.Dispose();
+        _bridgePreviewMesh?.Dispose();
         _fog?.Dispose();
 
         _catalog?.Dispose();

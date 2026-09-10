@@ -132,6 +132,17 @@ public static class TerrainMeshBuilder
     /// <summary>
     /// One liquid cell: a flat quad wound to face upwards, matching the terrain's own
     /// winding — get this backwards and the whole surface is culled and invisible.
+    /// <para>
+    /// It was backwards, and the whole surface was invisible. The quad's four corners are
+    /// added in grid order — the same order <see cref="FromHeightMap"/> adds them — so it has
+    /// to carry the same two triangles the terrain does, <c>(0, 2, 3)</c> and <c>(0, 1, 2)</c>.
+    /// It carried <c>(0, 3, 2)</c> and <c>(0, 2, 1)</c> instead, which is the same quad wound
+    /// the other way, and every water cell in the game was discarded by the cull stage before
+    /// it reached the shader. The lake still looked like a lake, because the terrain mesh
+    /// paints water cells in the water palette and draws them at the water line — which is
+    /// exactly why a culled surface went unnoticed: what was missing was the movement, the
+    /// grazing reflection and the sun glint, and a flat blue lake is not obviously wrong.
+    /// </para>
     /// </summary>
     private static void AppendLiquidQuad(
         List<VertexPositionNormal> vertices,
@@ -150,12 +161,12 @@ public static class TerrainMeshBuilder
         vertices.Add(new VertexPositionNormal(new Vector3(x0, y, z0 + cell), Vector3.Up, color));
 
         indices.Add(index);
-        indices.Add((ushort)(index + 3));
         indices.Add((ushort)(index + 2));
+        indices.Add((ushort)(index + 3));
 
         indices.Add(index);
-        indices.Add((ushort)(index + 2));
         indices.Add((ushort)(index + 1));
+        indices.Add((ushort)(index + 2));
     }
 
     /// <summary>

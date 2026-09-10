@@ -98,6 +98,30 @@ shot out/frame-later.png
 | `units [faction\|team] [limit]` | one line per live entity: slot, faction, kind, team, position, heading, health, target, whether it is a building |
 | `unit <slot>` | the same in detail: move goal and distance to go, path state, what it is attacking and from how far, cooldown, morale, distance travelled, construction, and whether the client is drawing it |
 | `count <kind>` | how many of a role are alive, per faction |
+| `bridge <x> <z> [team] [build]` | whether a crossing at that cell would be accepted, the reason when it would not, the span it would cover and what it costs — and with `build`, the order that places it |
+
+### What the player would see
+
+A question about a click cannot be answered from the world: the world only knows that nothing
+happened, and *why* is spread across the client's projection, the interface and the rules.
+These four commands walk that path in the order a player does — arm, aim, click, look — and
+each of them prints the answer the client itself worked out.
+
+| Command | Answer |
+|---|---|
+| `arm bridge` | what pressing Γέφυρα does, through the HUD's own command path, and whether the client is now waiting for a site |
+| `hover <x> <z> [y]` | puts the script's cursor on a world point: the pixel it projects to, what the client resolves that pixel back to, how far that is from where it was aimed, and — when a placement is armed — whether the ghost is green or red and how many cells it takes |
+| `click [x z]` | releases the left button at the script's cursor, through the client's own click path: what it resolved to, whether an order was issued, and the words the player is shown when it was refused |
+| `hud [on\|off]` | whether probe frames draw the HUD. Off by default; on when the answer *is* the panel, and a shot then carries it |
+
+`hover` aims at the surface the renderer draws at that point — the water line over water, the
+height field elsewhere — because that is what a cursor is over. Give `y` to aim at something
+that is not on the ground, as `focus` allows.
+
+`build` on `bridge` is the one command in the tool that changes the world the script is
+looking at, and it exists because a crossing cannot be inspected until it has been built: the
+cells it turns into ford are the answer, and there is no other way to ask for them. Everything
+else here reads.
 
 ### Render-state queries
 
@@ -276,6 +300,62 @@ without asking whether anything can stand on it, and a route that never arrives 
 unit stuck rather than dropped. That is what this query is for — a screenshot of a tank
 standing on mud says nothing at all.)
 
+## Worked example: why did clicking on the water do nothing?
+
+The report was "I click on Γέφυρα and then on the water, and nothing happens", and nothing
+happening has three possible authors: the button never armed, the click never resolved to a
+cell, or the simulation refused the site. All three look exactly like a lake in a screenshot.
+`tools/probe/bridge.probe` walks the player's own path against the default skirmish — the
+lake south-west of the player's base, whose shoreline is at x = -262 m — and this is what it
+answered while the bug was live:
+
+```
+cmd: bridge -257 -210
+query: bridge at (x -257.0, z -210.0) m — cell 4,9 of 65, index 589, DeepWater (Βαθύ νερό)
+query:   verdict    accepted for team 0 — 7 cells would become ford
+cmd: arm bridge
+query: arm bridge — the client did not arm a bridge: clicking the button had no effect
+query:   result     nothing is waiting for a click
+cmd: hover -257 -210
+query: hover at (x -257.0, z -210.0) m on the drawn surface (3.5 m) — pixel (640.0, 348.7) of 1280x720
+query:   ground     resolved to (-258.0, 3.5, -211.0) m — cell 4,9 of 65, index 589, DeepWater (Βαθύ νερό), 1.4 m from where it was aimed
+query:   placement  nothing armed, so no ghost is drawn
+cmd: click
+query: click — armed no, resolved (-258.0, 3.5, -211.0) m
+query:   result     nothing was issued
+query:   notice     the player is told nothing
+cmd: attributes -257 -210
+query:   surface    DeepWater (Βαθύ νερό), churn 0/255
+query:   going      foot impassable, tracked impassable, wheeled impassable, air 100 ‰
+```
+
+Three answers, and the first is the one that mattered: **the simulation would have taken the
+site** — every water cell within ninety metres of that base is one it accepts. The refusal was
+the interface's, and the `click` line says it in full: nothing was issued and the player was
+told nothing. Four lines of transcript and the question is settled, which is the entire point
+of the tool; the same four questions cost four launches, four screenshots and an argument.
+
+The `hover` line is the other half. The click resolved 1.4 m from where it was aimed, because
+the client marched its ray against the lake bed instead of the water surface the player can
+see — one to three metres of error on every click on water, always towards the bank. Aimed at
+the surface, the same pixel comes back to the metre:
+
+```
+cmd: hover -257 -210
+query:   ground     resolved to (-257.0, 3.5, -210.0) m — cell 4,9 of 65, index 589, DeepWater (Βαθύ νερό), 0.0 m from where it was aimed
+query:   placement  accepted — the ghost takes 7 cells and is green
+cmd: click
+query: click — armed yes, resolved (-257.0, 3.5, -210.0) m
+query:   result     an order was issued
+cmd: tick 2
+cmd: attributes -257 -210
+query:   surface    ShallowWater (Νερό), churn 0/255
+query:   going      foot 250 ‰, tracked 300 ‰, wheeled 450 ‰, air 100 ‰
+```
+
+The cell the click landed on is a ford, and a ford is ground a tracked vehicle can drive over:
+that is the bridge, built by a script, out of the same three calls a mouse makes.
+
 ## `parts <slot>` in full
 
 ### A tank's turret
@@ -332,12 +412,16 @@ script written for `--turret-demo` answers for the two tanks that fixture places
 - **No reactivity.** `expect` compares literals; it cannot compare two query results. A
   script that needs "is the turret's bearing the same as the shot's" writes the bearing into
   the script as an expected value.
-- **No orders.** A probe cannot make a unit move, attack or build. It observes; the fixtures
-  and the AI are what put the world in a state worth observing.
+- **No general orders.** A probe cannot march a column anywhere or make a unit attack. It can
+  do exactly one thing the player can do — arm a placement and click — and only through the
+  functions the mouse itself goes through, which is why `arm`/`hover`/`click` are three
+  commands rather than one and why none of them writes a command of its own. Everything else
+  the fixtures and the AI put into the world.
 - **No `MiVic.Core` knowledge of its own.** The probe is a client tool: it reads the
-  simulation and the renderer and changes neither.
+  simulation and the renderer and changes neither. `bridge … build` is the one command that
+  enqueues anything, and it enqueues the command a click would.
 - **Not a game.** It skips the HUD, as the fixtures do, because a panel over the frame is a
-  panel over the answer.
+  panel over the answer — unless a script asks for it with `hud on`.
 
 ## Design note: the probe asks the renderer
 

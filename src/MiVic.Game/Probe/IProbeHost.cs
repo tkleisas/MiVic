@@ -76,7 +76,86 @@ public interface IProbeHost
     /// own code path. False when the slot holds nothing alive.
     /// </summary>
     bool TryDescribeParts(int slot, out ProbeEntityParts parts);
+
+    /// <summary>
+    /// The client's own projection of a screen pixel onto the battlefield: the first point where
+    /// the ray meets the surface the renderer draws. False when the ray never meets it at all.
+    /// </summary>
+    /// <param name="ray">The ray's own numbers, for a transcript that has to explain a miss.</param>
+    bool TryGroundAtPixel(Vector2 pixel, out Vector3 ground, out string ray);
+
+    /// <summary>The pixel a world point projects to, through the camera's own matrices.</summary>
+    bool TryGroundToPixel(Vector3 ground, out Vector2 pixel);
+
+    /// <summary>
+    /// Height in metres of the surface the renderer draws at a ground position: the water line
+    /// over water, the height field everywhere else. A cursor is over a surface rather than over
+    /// a coordinate, and this is that surface's height.
+    /// </summary>
+    float DrawnHeightMetres(float x, float z);
+
+    /// <summary>
+    /// Puts the script's cursor at a screen pixel and reports what the client makes of it. A
+    /// probe has no mouse, and the preview and the click path both need a pointer to be
+    /// answerable at all.
+    /// </summary>
+    ProbeCursor SetCursor(Vector2 pixel);
+
+    /// <summary>
+    /// Clicks the bridge button in the support panel, through the HUD's own path, and says
+    /// whether the client is now waiting for a site.
+    /// </summary>
+    bool ArmBridge(out string note);
+
+    /// <summary>
+    /// Releases the left button at the script's cursor, through the same path a real release
+    /// takes, and reports what the client did with it.
+    /// </summary>
+    ProbeClick ClickAtCursor();
+
+    /// <summary>Whether probe frames include the HUD, which they do not by default.</summary>
+    bool HudDrawn { get; set; }
+
+    /// <summary>The transient notice the HUD is showing, or an empty string.</summary>
+    string HudNotice { get; }
+
+    /// <summary>Whether a bridge is armed right now.</summary>
+    bool BridgeArmed { get; }
 }
+
+/// <summary>What a scripted click resolved to and what the client did with it.</summary>
+/// <param name="Resolved">False when the ray never met the ground — the cursor was in the sky.</param>
+/// <param name="Ground">Where it resolved to, in metres.</param>
+/// <param name="GroundMm">Where it resolved to, in simulation millimetres.</param>
+/// <param name="Armed">True when a placement was waiting for a target at the moment of the click.</param>
+/// <param name="Queued">True when the click enqueued a command.</param>
+/// <param name="Message">What the player was told, or an empty string when nothing needed saying.</param>
+public readonly record struct ProbeClick(
+    bool Resolved,
+    Vector3 Ground,
+    MiVic.Core.Numerics.WorldPos GroundMm,
+    bool Armed,
+    bool Queued,
+    string Message);
+
+/// <summary>Where a scripted cursor is, and what the client resolves it to.</summary>
+/// <param name="Pixel">The pixel the script put the cursor on.</param>
+/// <param name="Resolved">False when the ray never met the ground.</param>
+/// <param name="Ground">Where the client resolves that pixel to, in metres.</param>
+/// <param name="Cell">Cell the resolved point falls in, or -1 when it is off the map.</param>
+/// <param name="Armed">True when a placement is waiting for a target.</param>
+/// <param name="SiteAllowed">Whether the armed placement would be accepted at this cursor.</param>
+/// <param name="SiteReason">Why it would not, or an empty string.</param>
+/// <param name="Footprint">Cells the armed placement would take.</param>
+public readonly record struct ProbeCursor(
+    Vector2 Pixel,
+    bool Resolved,
+    Vector3 Ground,
+    int Cell,
+    bool Armed,
+    bool SiteAllowed,
+    string SiteReason,
+    int Footprint);
 
 /// <summary>The camera's pose, as a probe reports it.</summary>
 /// <param name="Target">The point it orbits, in metres.</param>

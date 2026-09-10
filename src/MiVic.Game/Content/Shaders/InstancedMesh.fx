@@ -900,3 +900,33 @@ technique Foliage
         PixelShader  = compile PS_SHADERMODEL FoliagePS();
     }
 };
+
+// -----------------------------------------------------------------------------
+// Ghosts: the footprint of something the player is about to place.
+//
+// Deliberately unlit and deliberately flat. A footprint is a diagram of the ground about
+// to be taken, and lighting it would make it read as a thing already standing there —
+// which is exactly the wrong signal from a preview the player has not committed to. The
+// colour and the opacity both come from the instance tint, so one mesh is a green promise
+// or a red refusal without being rebuilt, and fog still applies so a ghost a long way off
+// sits in the haze like everything else rather than glowing through it.
+//
+// It sits at the end of the file because it is the only technique that borrows ApplyFog
+// from the liquid section above it.
+// -----------------------------------------------------------------------------
+
+float4 GhostPS(VertexOutput input) : COLOR0
+{
+    float3 color = input.Material.rgb * input.Tint.rgb;
+
+    return float4(ApplyFog(color, input.WorldPos), input.Material.a * input.Tint.a);
+}
+
+technique Ghost
+{
+    pass P0
+    {
+        VertexShader = compile VS_SHADERMODEL MainVS();
+        PixelShader  = compile PS_SHADERMODEL GhostPS();
+    }
+};

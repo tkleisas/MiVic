@@ -1,4 +1,5 @@
 using MiVic.Core.Numerics;
+using MiVic.Core.Pathfinding;
 using MiVic.Core.Sim;
 using MiVic.Core.Terrain;
 
@@ -164,5 +165,306 @@ public sealed class BridgeTests
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// A crossing on the generated map: a run of water with drivable land at both ends of it,
+    /// which is what a player clicks on when they want a bridge and what the report was about.
+    /// </summary>
+    /// <param name="Site">Where the click would land.</param>
+    /// <param name="Span">The cells the crossing would convert, ends included.</param>
+    /// <param name="NearBank">Drivable land at one end.</param>
+    /// <param name="FarBank">Drivable land at the other, beyond the water.</param>
+    private static bool TryFindCrossing(SimWorld world, out WorldPos site, out int[] span, out int nearBank, out int farBank)
+    {
+        NavGrid grid = world.Navigation;
+        TerrainLayer terrain = world.TerrainTypes;
+        int[] cells = new int[SimWorld.MaxBridgeCells];
+
+        for (int index = 0; index < terrain.CellCount; index++)
+        {
+            if (terrain.TypeAt(index) is not (TerrainType.ShallowWater or TerrainType.DeepWater))
+            {
+                continue;
+            }
+
+            site = grid.CentreOf(index);
+
+            if (!world.TryPlanBridge(0, site, cells, out int count, out _) || count < 3)
+            {
+                continue;
+            }
+
+            int size = terrain.Size;
+            int low = cells[0];
+            int high = cells[0];
+
+            for (int i = 1; i < count; i++)
+            {
+                low = Math.Min(low, cells[i]);
+                high = Math.Max(high, cells[i]);
+            }
+
+            // The span runs along one axis, so the cells just outside it are the two banks.
+            bool alongX = high - low < size;
+            int before = alongX ? low - 1 : low - size;
+            int after = alongX ? high + 1 : high + size;
+
+            if (before < 0 || after >= terrain.CellCount)
+            {
+                continue;
+            }
+
+            if (!Drivable(terrain, before) || !Drivable(terrain, after))
+            {
+                continue;
+            }
+
+            span = cells[..count];
+            nearBank = before;
+            farBank = after;
+            return true;
+        }
+
+        site = default;
+        span = [];
+        nearBank = -1;
+        farBank = -1;
+        return false;
+    }
+
+    /// <summary>True when a tank could stand there: solid ground it can cross.</summary>
+    private static bool Drivable(TerrainLayer terrain, int cell)
+        => terrain.TypeAt(cell) is not (TerrainType.DeepWater or TerrainType.ShallowWater)
+            && terrain.IsPassable(cell, MovementClass.Tracked);
+
+    /// <summary>
+    /// The whole point of a bridge: a genuine crossing becomes ground a vehicle can drive
+    /// over, and every cell the span covers is part of it. The report that started this was a
+    /// player clicking on water; what they were asking for is this.
+    /// </summary>
+    [Fact]
+    public void ABridgeTurnsANarrowCrossingIntoDrivableGround()
+    {
+        SimWorld world = WithFactory(out _);
+
+        Assert.True(
+            TryFindCrossing(world, out WorldPos site, out int[] span, out int nearBank, out int farBank),
+            "No crossing with drivable land at both ends for this seed.");
+
+        // Before: the water is impassable, and the two banks are not connected.
+        foreach (int cell in span)
+        {
+            Assert.Equal(0, world.TerrainTypes.CostPermille(cell, MovementClass.Tracked, 1_000));
+        }
+
+        Assert.True(world.CanBuildBridge(0, site, out _));
+
+        world.Enqueue(SimCommand.Bridge(site, world.Tick + 1, 0));
+        world.Step();
+
+        foreach (int cell in span)
+        {
+            Assert.Equal(TerrainType.ShallowWater, world.TerrainTypes.TypeAt(cell));
+            Assert.True(
+                world.TerrainTypes.IsPassable(cell, MovementClass.Tracked),
+                $"The span left cell {cell} impassable.");
+        }
+
+        Assert.True(Drivable(world.TerrainTypes, nearBank) && Drivable(world.TerrainTypes, farBank));
+    }
+
+    /// <summary>
+    /// And the crossing is usable: a tank on one bank drives to the other. The same order
+    /// without the bridge leaves it standing at the water, which is what makes this a test of
+    /// the bridge rather than of the map.
+    /// </summary>
+    [Fact]
+    public void AUnitDrivesAcrossTheBridgeAndNotWithoutIt()
+    {
+        Assert.True(CrossesTheWater(bridge: true), "The tank did not cross the bridge it was given.");
+        Assert.False(CrossesTheWater(bridge: false), "The tank crossed water it had no bridge over.");
+    }
+
+    /// <summary>Orders a tank from one bank of the crossing to the other and reports whether it arrives.</summary>
+    private static bool CrossesTheWater(bool bridge)
+    {
+        SimWorld world = WithFactory(out _);
+
+        Assert.True(TryFindCrossing(world, out WorldPos site, out _, out int nearBank, out int farBank));
+
+        if (bridge)
+        {
+            world.Enqueue(SimCommand.Bridge(site, world.Tick + 1, 0));
+            world.Step();
+        }
+
+        WorldPos start = world.Navigation.CentreOf(nearBank);
+        WorldPos goal = world.Navigation.CentreOf(farBank);
+        EntityId tank = world.Spawn(Faction.Soviet, 0, UnitKind.Tank, start, Fix32.FromInt(400), 1_000);
+
+        world.OrderMove(tank, goal, 0);
+        world.RunTicks(800);
+
+        Assert.True(world.TryGet(tank, out Entity entity));
+
+        return entity.Position.HorizontalDistanceTo(goal) <= SimConstants.ArrivalRadiusMm;
+    }
+
+    /// <summary>
+    /// A refusal has to explain itself. The reason is what the interface puts in front of the
+    /// player, so a refusal that returns false with nothing to say is the bug the bug report
+    /// was made of — four different rules, four different sentence.
+    /// </summary>
+    [Fact]
+    public void EveryRefusalNamesTheRuleThatRefusedIt()
+    {
+        SimWorld world = WithFactory(out int waterCell);
+        Assert.True(waterCell >= 0, "No water to bridge for this seed.");
+
+        WorldPos water = world.Navigation.CentreOf(waterCell);
+
+        // Dry ground is not a crossing.
+        int dry = world.Navigation.IndexOfWorld(WorldPos.Origin);
+        WorldPos plain = world.Navigation.CentreOf(world.Navigation.NearestWalkable(dry));
+
+        Assert.False(world.CanBuildBridge(0, plain, out string dryReason));
+        Assert.Contains("νερό", dryReason);
+
+        // Off the map entirely.
+        Assert.False(world.CanBuildBridge(0, new WorldPos(SimConstants.MapExtentMm, 0, 0), out string offMapReason));
+        Assert.Contains("χάρτη", offMapReason);
+
+        // No industry.
+        Assert.False(world.CanBuildBridge(1, water, out string industryReason));
+        Assert.Contains("εργοστάσιο", industryReason);
+
+        // Each resource on its own, because a player looking at a greyed-out button needs to
+        // know which one they are short of.
+        ref TeamState state = ref world.TeamRef(0);
+
+        state.Materials = SimWorld.BridgeMaterials - 1;
+        Assert.False(world.CanBuildBridge(0, water, out string materialsReason));
+        Assert.Contains("πόροι", materialsReason);
+
+        state.Materials = 10_000;
+        state.Energy = SimWorld.BridgeEnergy - 1;
+        Assert.False(world.CanBuildBridge(0, water, out string energyReason));
+        Assert.Contains("πόροι", energyReason);
+
+        state.Energy = 10_000;
+        state.Water = SimWorld.BridgeWater - 1;
+        Assert.False(world.CanBuildBridge(0, water, out string waterReason));
+        Assert.Contains("πόροι", waterReason);
+
+        state.Water = 10_000;
+
+        // And water too wide to span, which is the one refusal a site can earn on its own.
+        Assert.True(TryFindWideWater(world, out WorldPos middle, out int width));
+        Assert.True(width > SimWorld.MaxBridgeSpan, "The wide site is not wider than a span.");
+        Assert.False(world.CanBuildBridge(0, middle, out string widthReason));
+        Assert.Contains("φαρδύ", widthReason);
+    }
+
+    /// <summary>
+    /// Water wider than any span, with the width the rule measured, so the test can say what
+    /// "too wide" means rather than trusting that some site somewhere is refused.
+    /// </summary>
+    private static bool TryFindWideWater(SimWorld world, out WorldPos site, out int width)
+    {
+        NavGrid grid = world.Navigation;
+        TerrainLayer terrain = world.TerrainTypes;
+
+        for (int index = 0; index < terrain.CellCount; index++)
+        {
+            if (terrain.TypeAt(index) is not (TerrainType.ShallowWater or TerrainType.DeepWater))
+            {
+                continue;
+            }
+
+            WorldPos candidate = grid.CentreOf(index);
+
+            if (world.CanBuildBridge(0, candidate, out string reason) || !reason.Contains("φαρδύ"))
+            {
+                continue;
+            }
+
+            // The width the plan measured, taken from the plan itself.
+            world.TryPlanBridge(0, candidate, default, out width, out _);
+            site = candidate;
+            return true;
+        }
+
+        site = default;
+        width = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// The plan a preview is drawn from is the plan the command carries out. The client ghosts
+    /// the cells it was promised and the simulation converts the cells it walked: if the two
+    /// lists can differ, the ghost can promise a crossing that is not the one built.
+    /// </summary>
+    [Fact]
+    public void ThePlanIsExactlyTheGroundTheCommandCarves()
+    {
+        SimWorld world = WithFactory(out _);
+
+        Assert.True(TryFindCrossing(world, out WorldPos site, out int[] span, out _, out _));
+
+        int[] planned = new int[SimWorld.MaxBridgeCells];
+        Assert.True(world.TryPlanBridge(0, site, planned, out int count, out _));
+        Assert.Equal(span.Length, count);
+
+        TerrainType[] before = new TerrainType[world.TerrainTypes.CellCount];
+
+        for (int cell = 0; cell < before.Length; cell++)
+        {
+            before[cell] = world.TerrainTypes.TypeAt(cell);
+        }
+
+        world.Enqueue(SimCommand.Bridge(site, world.Tick + 1, 0));
+        world.Step();
+
+        for (int cell = 0; cell < before.Length; cell++)
+        {
+            bool plannedCell = planned.AsSpan(0, count).Contains(cell);
+            bool changed = before[cell] != world.TerrainTypes.TypeAt(cell);
+
+            Assert.True(
+                plannedCell == changed,
+                plannedCell
+                    ? $"Cell {cell} was planned but not carved."
+                    : $"Cell {cell} was carved but was never planned.");
+        }
+    }
+
+    /// <summary>
+    /// The button and the command answer the same question. The interface greys the button out
+    /// with <see cref="SimWorld.CanBuildAnyBridge"/> and the order is accepted or refused with
+    /// <see cref="SimWorld.CanBuildBridge"/>: a button that looks available and does nothing is
+    /// the same bug as a refusal with no words, and this is the pair staying in step.
+    /// </summary>
+    [Fact]
+    public void TheButtonRuleIsTheCommandsRule()
+    {
+        SimWorld world = WithFactory(out int waterCell);
+        WorldPos water = world.Navigation.CentreOf(waterCell);
+
+        Assert.True(world.CanBuildAnyBridge(0, out string allowed));
+        Assert.Equal(string.Empty, allowed);
+        Assert.True(world.CanBuildBridge(0, water, out _));
+
+        // A team with no factory: neither answer may be yes, and both say the same thing.
+        Assert.False(world.CanBuildAnyBridge(1, out string noIndustry));
+        Assert.False(world.CanBuildBridge(1, water, out string noIndustrySite));
+        Assert.Equal(noIndustry, noIndustrySite);
+
+        // And out of resources, which is the half of the rule the button has to know.
+        world.TeamRef(0).Materials = 0;
+        Assert.False(world.CanBuildAnyBridge(0, out string noMaterials));
+        Assert.False(world.CanBuildBridge(0, water, out string noMaterialsSite));
+        Assert.Equal(noMaterials, noMaterialsSite);
+        Assert.Contains("πόροι", noMaterials);
     }
 }

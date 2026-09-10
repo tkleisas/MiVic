@@ -1,0 +1,65 @@
+# Q: can a player build a bridge, and if not, is he told why?
+#
+# Run against the default skirmish, which is the map the report came from:
+#
+#   MiVic.Game.exe --probe tools/probe/bridge.probe --probe-out artifacts/probe/bridge.txt
+#
+# The report: "I click on Γέφυρα and then on the water, and nothing happens." Nothing
+# happening has three possible authors — the button never armed, the click never resolved to
+# a cell, or the simulation refused the site — and a screenshot cannot tell them apart,
+# because all three look exactly like a lake.
+#
+# The lake south-west of the player's base at (-248, -117) m has its shoreline at x = -262 m:
+# the ground the base stands on is west of it, water east of it, and every water cell within
+# ninety metres of that base is a site the simulation accepts.
+
+# Frame the shoreline, so the pixels below are on screen and the shots are of the crossing.
+focus -257 -210
+zoom 170
+pitch -0.90
+
+# The simulation's own answer about a crossing here, and about two sites it refuses.
+bridge -257 -210
+bridge -173 -257
+bridge 0 0
+
+# What pressing Γέφυρα does. This is the HUD's own path, not a flag set by the script: if the
+# button cannot arm a bridge, this line is the bug and says so.
+arm bridge
+
+# The cursor over the water. `hover` reports the pixel a world point projects to and then what
+# the client resolves that pixel back to, which is the round trip every click makes — and the
+# cell it lands in, which over water has to be the water the player is looking at. The last of
+# the three is half a metre inside the water's edge, where a march against the lake bed instead
+# of the surface the player can see lands on the bank behind it and refuses a click on water.
+hover -257 -210
+hover -261 -210
+hover -261.5 -210
+
+# The ghost of the crossing, coloured by whether the site would be taken.
+hud on
+shot artifacts/probe/bridge-ghost.png
+
+# A site the simulation refuses: the water at (-173, -257) m is 25 cells across, wider than any
+# span. The ghost goes red and the panel beside the button says which rule refused it.
+hover -173 -257
+click
+shot artifacts/probe/bridge-refused.png
+
+# The player's click on the water, through the same path a mouse release takes.
+hover -257 -210
+click
+tick 2
+
+# What that did to the ground. The cell was deep water in the `bridge` line above; it is a ford
+# now, and a ford is ground a tracked vehicle can drive over.
+attributes -257 -210
+attributes -257 -201
+
+# And the crossing itself: seven cells of ford through the water, where the deep water was.
+hud off
+shot artifacts/probe/bridge-built.png
+
+# The round trip over water is exact, which is the regression guard on the projection: marched
+# against the bed instead of the surface the player sees, this lands metres away.
+expect "a click on water resolves to the water it was aimed at" 0.0 0.0 0.3

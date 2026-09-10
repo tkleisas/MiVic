@@ -213,6 +213,29 @@ public sealed unsafe class ImGuiController : IDisposable
         RenderDrawData(ImGui.GetDrawData());
     }
 
+    /// <summary>
+    /// Starts another frame in the same update, without re-reading the input devices.
+    /// <para>
+    /// ImGui gives a window it has never seen before no geometry on its first frame: it does
+    /// not know how big the window is until its contents have been laid out once, so the first
+    /// frame of a panel is a frame in which the panel draws nothing at all. Played, that is one
+    /// frame of sixteen milliseconds and invisible. A probe, though, draws the HUD only when a
+    /// script asks for it — so the first photographed frame with the HUD in it was a
+    /// photograph of an empty one, and the panels turned up in the next shot as if they had
+    /// needed warming up.
+    /// </para>
+    /// </summary>
+    public void BeginAnotherFrame()
+    {
+        if (_frameBegun)
+        {
+            ImGui.Render();
+        }
+
+        ImGui.NewFrame();
+        _frameBegun = true;
+    }
+
     private void LoadFont(string fontPath, float fontSizePixels)
     {
         if (!File.Exists(fontPath))

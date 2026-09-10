@@ -137,6 +137,7 @@ public sealed class InstancedRenderer : IDisposable
 
     private ParticleBlend _particleBlend = ParticleBlend.Alpha;
     private bool _particles;
+    private bool _ghost;
 
     /// <summary>Uploads a CPU mesh and returns a handle that must be disposed.</summary>
     public Mesh CreateMesh(MeshData data)
@@ -158,6 +159,7 @@ public sealed class InstancedRenderer : IDisposable
         _timeParameter?.SetValue(environment.Time);
 
         _particles = false;
+        _ghost = false;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -192,6 +194,28 @@ public sealed class InstancedRenderer : IDisposable
     public void EndParticles()
     {
         _particles = false;
+        _ghost = false;
+        _effect.CurrentTechnique = _effect.Techniques["Instanced"];
+        _effect.CurrentTechnique.Passes[0].Apply();
+    }
+
+    /// <summary>
+    /// Switches to the ghost technique, which draws a translucent untinted surface for a
+    /// placement preview. The caller must call <see cref="Begin"/> first;
+    /// <see cref="EndGhost"/> switches back.
+    /// </summary>
+    public void BeginGhost()
+    {
+        _particles = false;
+        _ghost = true;
+        _effect.CurrentTechnique = _effect.Techniques["Ghost"];
+        _effect.CurrentTechnique.Passes[0].Apply();
+    }
+
+    /// <summary>Returns to the lit technique after a ghost pass.</summary>
+    public void EndGhost()
+    {
+        _ghost = false;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -204,6 +228,7 @@ public sealed class InstancedRenderer : IDisposable
     public void BeginLiquids(LiquidPass pass)
     {
         _particles = false;
+        _ghost = false;
         _effect.CurrentTechnique = _effect.Techniques[pass == LiquidPass.Lava ? "Lava" : "Water"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -218,6 +243,7 @@ public sealed class InstancedRenderer : IDisposable
     public void BeginTerrain()
     {
         _particles = false;
+        _ghost = false;
         _effect.CurrentTechnique = _effect.Techniques["Terrain"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -226,6 +252,7 @@ public sealed class InstancedRenderer : IDisposable
     public void EndTerrain()
     {
         _particles = false;
+        _ghost = false;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -253,6 +280,7 @@ public sealed class InstancedRenderer : IDisposable
     public void EndFoliage()
     {
         _particles = false;
+        _ghost = false;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -281,19 +309,26 @@ public sealed class InstancedRenderer : IDisposable
         BlendState? previous = null;
         RasterizerState? previousRasterizer = null;
 
-        if (_particles)
+        if (_particles || _ghost)
         {
             // The shader returns unmultiplied colour, so the alpha pass is
-            // NonPremultiplied rather than MonoGame's premultiplied AlphaBlend.
+            // NonPremultiplied rather than MonoGame's premultiplied AlphaBlend. Additive
+            // belongs to the particle pass alone: a ghost is a shade over the ground, not
+            // a light on it.
             previous = _device.BlendState;
             previousRasterizer = _device.RasterizerState;
-            _device.BlendState = _particleBlend == ParticleBlend.Additive
+            _device.BlendState = _particles && _particleBlend == ParticleBlend.Additive
                 ? BlendState.Additive
                 : BlendState.NonPremultiplied;
 
-            // Billboards are single-sided and their winding depends on the
-            // camera basis, so culling them would make half of them vanish.
-            _device.RasterizerState = RasterizerState.CullNone;
+            if (_particles)
+            {
+                // Billboards are single-sided and their winding depends on the
+                // camera basis, so culling them would make half of them vanish. A ghost
+                // is a flat quad on the ground, wound to be seen from above, and is left
+                // culled so that it cannot be drawn through the ground it lies on.
+                _device.RasterizerState = RasterizerState.CullNone;
+            }
         }
 
         _device.SetVertexBuffers(

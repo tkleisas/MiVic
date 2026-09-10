@@ -234,13 +234,29 @@ public sealed class ProbeRunner
             case "events":
                 Events(command);
                 break;
+            case "bridge":
+                Bridge(command);
+                break;
+            case "arm":
+                Arm(command);
+                break;
+            case "hover":
+                Hover(command);
+                break;
+            case "click":
+                Click(command);
+                break;
+            case "hud":
+                Hud(command);
+                break;
             case "expect":
                 Expect(command);
                 break;
             default:
                 throw new ProbeException(
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
-                    "surfaces, attributes, units, unit, count, parts, model, visible, events, expect");
+                    "surfaces, attributes, units, unit, count, parts, model, visible, events, bridge, " +
+                    "arm, hover, click, hud, expect");
         }
     }
 
@@ -473,9 +489,264 @@ public sealed class ProbeRunner
         return string.Join(", ", parts);
     }
 
-    /// <summary>One line per live entity, which is the answer to "what is on the map at all".</summary>
-    private void Units(ProbeCommand command)
+    // --------------------------------------------------- placement and clicking
+
+    /// <summary>
+    /// What the simulation would make of a crossing at a cell, and — when the script asks for
+    /// it — the command that builds one.
+    /// <para>
+    /// A refusal is an answer rather than a failure: the command succeeds, the run's exit code
+    /// stays zero, and the transcript carries the reason the simulation gave. That is the point
+    /// of the query. Before it, the only way to find out why a click on water had done nothing
+    /// was to read the rule and guess which clause had fired.
+    /// </para>
+    /// </summary>
+    private void Bridge(ProbeCommand command)
     {
+        const string Usage = "bridge <x> <z> [team] [build]";
+
+        float x = command.Number(0, "an x in metres", Usage);
+        float z = command.Number(1, "a z in metres", Usage);
+
+        int team = 0;
+        bool build = false;
+
+        // The team and the word `build` are both optional and either order reads naturally,
+        // so they are taken by what they are rather than by where they are.
+        for (int index = 2; index <= 3; index++)
+        {
+            if (command.Optional(index) is not { } argument)
+            {
+                continue;
+            }
+
+            if (argument.Equals("build", StringComparison.OrdinalIgnoreCase))
+            {
+                build = true;
+                continue;
+            }
+
+            if (!int.TryParse(argument, NumberStyles.Integer, CultureInfo.InvariantCulture, out team) || (uint)team >= SimConstants.TeamCount)
+            {
+                throw new ProbeException($"'{argument}' is neither a team number nor 'build' — usage: {Usage}");
+            }
+        }
+
+        SimWorld world = _host.Simulation.World;
+        var target = new WorldPos((int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre));
+        int cell = world.TerrainTypes.IndexOfWorld(target.X, target.Z);
+
+        if (cell < 0)
+        {
+            throw new ProbeException($"({x}, {z}) m is off the map — {Usage}, and the map is +-300 m");
+        }
+
+        Span<int> cells = stackalloc int[SimWorld.MaxBridgeCells];
+        bool allowed = world.TryPlanBridge(team, target, cells, out int count, out string reason);
+
+        Emit($"query: bridge at (x {x:0.0}, z {z:0.0}) m — {DescribeCell(world, cell)}");
+
+        if (!allowed)
+        {
+            Emit($"query:   verdict    refused — {reason}");
+            Emit($"query:   player     Γέφυρα: {reason}.");
+            return;
+        }
+
+        Emit($"query:   verdict    accepted for team {team} — {ProbeFormat.Count(count, "cell")} would become ford");
+        Emit($"query:   span       {DescribeSpan(world, cells, count)}");
+
+        TeamState state = world.Team(team);
+        Emit(
+            $"query:   cost       {SimWorld.BridgeMaterials} Π, {SimWorld.BridgeEnergy} Ε, {SimWorld.BridgeWater} Ν; " +
+            $"team {team} has {state.Materials} Π, {state.Energy} Ε, {state.Water} Ν");
+
+        if (!build)
+        {
+            return;
+        }
+
+        long executeTick = world.Tick + 1;
+        world.Enqueue(SimCommand.Bridge(target, executeTick, team));
+        Emit($"ok: bridge ordered for team {team}, executing on tick {executeTick} — `tick {(int)(executeTick - world.Tick)}` builds it");
+    }
+
+    /// <summary>
+    /// Arms the bridge the way the button does, through the client's own HUD path, and says
+    /// whether the client is now waiting for a site. A script that has to arm a placement
+    /// before it can ask what a placement would do has to arm it the way a player does.
+    /// </summary>
+    private void Arm(ProbeCommand command)
+    {
+        string what = command.Argument(0, "what to arm, which is 'bridge'", "arm bridge").ToLowerInvariant();
+
+        if (what != "bridge")
+        {
+            throw new ProbeException($"'{what}' is not something that can be armed — usage: arm bridge");
+        }
+
+        bool armed = _host.ArmBridge(out string note);
+
+        Emit($"query: arm bridge — {note}");
+        Emit($"query:   result     {(armed ? "the next left click picks the site" : "nothing is waiting for a click")}");
+    }
+
+    /// <summary>
+    /// Puts the script's cursor over a world point. It reports the pixel that point projects to
+    /// and then what the client resolves that pixel back to, which is the round trip every click
+    /// makes — and when a placement is armed, the verdict and footprint of the ghost the player
+    /// would be looking at.
+    /// <para>
+    /// The point is aimed at the surface the renderer draws, the water line included, because
+    /// that is what a cursor is over: a player pointing at a lake is pointing at the water, not
+    /// at the bed under it. A height can be given for something that is not on the ground, as
+    /// <c>focus</c> allows.
+    /// </para>
+    /// </summary>
+    private void Hover(ProbeCommand command)
+    {
+        const string Usage = "hover <x> <z> [y]";
+
+        float x = command.Number(0, "an x in metres", Usage);
+        float z = command.Number(1, "a z in metres", Usage);
+        float y = command.OptionalNumber(2, _host.DrawnHeightMetres(x, z), "a y in metres", Usage);
+
+        SimWorld world = _host.Simulation.World;
+
+        if (!_host.TryGroundToPixel(new Vector3(x, y, z), out Vector2 pixel))
+        {
+            throw new ProbeException($"({x}, {z}) m does not project onto the screen — {Usage}");
+        }
+
+        Emit($"query: hover at (x {x:0.0}, z {z:0.0}) m on the drawn surface ({y:0.0} m) — pixel ({pixel.X:0.0}, {pixel.Y:0.0}) of {_host.ReadCamera().Width}x{_host.ReadCamera().Height}");
+
+        ProbeCursor cursor = _host.SetCursor(pixel);
+
+        if (!cursor.Resolved)
+        {
+            Emit("query:   ground     the client finds no ground under that pixel");
+            return;
+        }
+
+        int cell = cursor.Cell;
+
+        Emit(
+            $"query:   ground     resolved to {ProbeFormat.Point(cursor.Ground)} — {DescribeCell(world, cell)}, " +
+            $"{ProbeFormat.Metres(Vector2.Distance(new Vector2(cursor.Ground.X, cursor.Ground.Z), new Vector2(x, z)))} from where it was aimed");
+
+        if (!cursor.Armed)
+        {
+            Emit("query:   placement  nothing armed, so no ghost is drawn");
+            return;
+        }
+
+        Emit(cursor.SiteAllowed
+            ? $"query:   placement  accepted — the ghost takes {ProbeFormat.Count(cursor.Footprint, "cell")} and is green"
+            : $"query:   placement  refused — {cursor.SiteReason}; the ghost is red and the panel says so");
+    }
+
+    /// <summary>
+    /// Releases the left button at the script's cursor, down the client's own click path, and
+    /// reports what the player would have seen: the order that was issued, or the reason it was
+    /// not. This is the query that answers "I clicked on the water and nothing happened".
+    /// </summary>
+    private void Click(ProbeCommand command)
+    {
+        // An optional world point is a courtesy: the script can aim and click in one line
+        // instead of hovering first. The click itself always happens at the script's cursor,
+        // which is the point of the command being separate from `hover` at all.
+        if (command.Optional(0) is not null)
+        {
+            Hover(command);
+        }
+
+        ProbeClick click = _host.ClickAtCursor();
+        SimWorld world = _host.Simulation.World;
+
+        Emit($"query: click — armed {(click.Armed ? "yes" : "no")}, resolved {(click.Resolved ? ProbeFormat.Point(click.Ground) : "nothing")}");
+
+        if (click.Resolved)
+        {
+            Emit($"query:   ground     {DescribeCell(world, world.TerrainTypes.IndexOfWorld(click.GroundMm.X, click.GroundMm.Z))}");
+        }
+
+        Emit($"query:   result     {(click.Queued ? "an order was issued" : "nothing was issued")}");
+        Emit($"query:   notice     {(click.Message.Length > 0 ? $"the player is told \"{click.Message}\"" : "the player is told nothing")}");
+    }
+
+    /// <summary>
+    /// Whether probe frames draw the HUD. Off by default, because a probe reads the world and a
+    /// panel over the frame is a panel over the answer — and on when the answer is the panel.
+    /// </summary>
+    private void Hud(ProbeCommand command)
+    {
+        string? state = command.Optional(0);
+
+        if (state is null)
+        {
+            Emit($"query: hud — the HUD is {( _host.HudDrawn ? "drawn into probe frames" : "not drawn")}, notice \"{_host.HudNotice}\"");
+            return;
+        }
+
+        bool on = state.ToLowerInvariant() switch
+        {
+            "on" => true,
+            "off" => false,
+            _ => throw new ProbeException($"'{state}' is not on or off — usage: hud [on|off]"),
+        };
+
+        _host.HudDrawn = on;
+        Emit($"ok: the HUD is {(on ? "now" : "no longer")} drawn into probe frames");
+    }
+
+    /// <summary>A cell as the transcript names it: index, coordinate, surface.</summary>
+    private static string DescribeCell(SimWorld world, int cell)
+    {
+        if (cell < 0)
+        {
+            return "off the map";
+        }
+
+        TerrainLayer terrain = world.TerrainTypes;
+        TerrainType type = terrain.TypeAt(cell);
+
+        return $"cell {cell % terrain.Size},{cell / terrain.Size} of {terrain.Size}, index {cell}, " +
+               $"{ProbeLabels.Surface(type)}";
+    }
+
+    /// <summary>
+    /// The two ends of a span and the axis it runs along. The ends are the extremes of the
+    /// footprint rather than its first and last entry, because a span is written from the cell
+    /// the player clicked — an end of it in neither direction.
+    /// </summary>
+    private static string DescribeSpan(SimWorld world, ReadOnlySpan<int> cells, int count)
+    {
+        if (count == 0)
+        {
+            return "no cells";
+        }
+
+        int size = world.TerrainTypes.Size;
+        int low = cells[0];
+        int high = cells[0];
+
+        for (int i = 1; i < count; i++)
+        {
+            low = Math.Min(low, cells[i]);
+            high = Math.Max(high, cells[i]);
+        }
+
+        // A span runs along one axis, so the two extremes share a row when it runs along x and
+        // are a row apart when it runs along z.
+        bool alongX = high - low < size;
+
+        return $"{ProbeFormat.Count(count, "cell")} along {(alongX ? "x" : "z")}, " +
+               $"({low % size},{low / size}) to ({high % size},{high / size}), " +
+               $"{ProbeFormat.Ground(world.Navigation.CentreOf(low))} to {ProbeFormat.Ground(world.Navigation.CentreOf(high))}";
+    }
+
+    /// <summary>One line per live entity, which is the answer to "what is on the map at all".</summary>
+    private void Units(ProbeCommand command)    {
         string? filter = command.Optional(0);
         string? limitText = command.Optional(1);
 

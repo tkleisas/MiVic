@@ -1,0 +1,186 @@
+using MiVic.Core.Numerics;
+using MiVic.Core.Pathfinding;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+namespace MiVic.Game.Rendering;
+
+/// <summary>
+/// The ghost of something the player is about to place: a mesh, where it would stand, and
+/// whether the site would be accepted.
+/// <para>
+/// There is one of these because there is one question. A player choosing a site needs to
+/// see the footprint they are about to commit to and whether the game will take it, and
+/// until now the client had no way to say either: a site the simulation refused produced
+/// nothing at all on screen, which is indistinguishable from a click that never arrived.
+/// The ghost is the answer, and it is coloured rather than merely drawn — a red footprint
+/// where the player expected green teaches the rule, which a line of text alone does not.
+/// </para>
+/// <para>
+/// It takes a mesh and a transform rather than knowing anything about bridges, because
+/// structure placement needs exactly this: a footprint on the ground, a validity flag, and
+/// some way to see both before paying for them. Nothing here reads or writes the
+/// simulation — the caller decides what the mesh is and what "valid" means, and this
+/// component only draws it — which is what keeps a preview from being able to change the
+/// world it is previewing.
+/// </para>
+/// <para>
+/// The mesh is the caller's, and stays uploaded: a preview that rebuilt and re-uploaded its
+/// geometry every frame would allocate on the render path for no reason, and a footprint
+/// changes only when the cell under the cursor does.
+/// </para>
+/// </summary>
+public sealed class PlacementPreview
+{
+    /// <summary>
+    /// How far above the surface the ghost floats, in metres. The liquid surfaces are lifted
+    /// five centimetres so they clear the terrain, so this has to beat that as well as depth
+    /// precision, or a bridge preview z-fights with the water it is spanning.
+    /// </summary>
+    public const float LiftMetres = 0.15f;
+
+    /// <summary>Tint of a site the simulation would accept.</summary>
+    private static readonly Vector4 ValidTint = new(0.35f, 1.00f, 0.48f, 0.42f);
+
+    /// <summary>Tint of a site it would refuse. Red says it will fail; the reason says why.</summary>
+    private static readonly Vector4 InvalidTint = new(1.00f, 0.28f, 0.24f, 0.42f);
+
+    private readonly GraphicsDevice _device;
+    private readonly InstancedRenderer _renderer;
+    private readonly InstanceData[] _instance = new InstanceData[1];
+
+    private InstancedRenderer.Mesh? _mesh;
+    private Matrix _transform = Matrix.Identity;
+    private Vector4 _tint = ValidTint;
+    private bool _staged;
+
+    public PlacementPreview(GraphicsDevice device, InstancedRenderer renderer)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(renderer);
+
+        _device = device;
+        _renderer = renderer;
+    }
+
+    /// <summary>True while there is a ghost to draw.</summary>
+    public bool IsShowing => _staged && _mesh is not null;
+
+    /// <summary>The mesh currently ghosted, for a caller that has to know whether to rebuild it.</summary>
+    public InstancedRenderer.Mesh? Mesh => _mesh;
+
+    /// <summary>
+    /// Stages a ghost for this frame. Calling it every frame is the intended use: a preview
+    /// follows the cursor, so where it is has to be re-stated rather than latched.
+    /// </summary>
+    /// <param name="mesh">The footprint, already uploaded. Owned by the caller.</param>
+    /// <param name="transform">Where it would stand.</param>
+    /// <param name="valid">Whether the site would be accepted, which is the colour.</param>
+    public void Show(InstancedRenderer.Mesh mesh, in Matrix transform, bool valid)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+
+        _mesh = mesh;
+        _transform = transform;
+        _tint = valid ? ValidTint : InvalidTint;
+        _staged = true;
+    }
+
+    /// <summary>Stages nothing, so nothing is drawn. Used when the player is not placing.</summary>
+    public void Hide() => _staged = false;
+
+    /// <summary>
+    /// Draws the staged ghost. Call inside a begun pass, after the terrain and the liquids,
+    /// so a footprint over water is drawn over the water rather than under it.
+    /// </summary>
+    /// <returns>True when a draw call was issued.</returns>
+    public bool Draw()
+    {
+        if (!IsShowing)
+        {
+            return false;
+        }
+
+        _instance[0] = new InstanceData(_transform, _tint);
+
+        // Depth read but not written: a ghost behind a hill is hidden, as it should be, but
+        // two cells of the same footprint overlapping must not take bites out of each other.
+        DepthStencilState depth = _device.DepthStencilState;
+        _device.DepthStencilState = DepthStencilState.DepthRead;
+
+        _renderer.BeginGhost();
+        _renderer.Draw(_mesh!, _instance, 1);
+        _renderer.EndGhost();
+
+        _device.DepthStencilState = depth;
+        return true;
+    }
+
+    /// <summary>
+    /// A flat quad per cell of a footprint: the ground a placement would take up, which is
+    /// what the player is actually choosing between.
+    /// <para>
+    /// One quad per cell and no outline or volume, because this is a diagram of a footprint
+    /// rather than a picture of the thing going on it. A bridge crosses several cells and the
+    /// rule that decides whether it may be built is about the whole span, so previewing a
+    /// single tile would show a shape that is not the one being built.
+    /// </para>
+    /// </summary>
+    /// <param name="navigation">The lattice the cells are indices into.</param>
+    /// <param name="cells">Cells the footprint covers, in the order they will be taken.</param>
+    /// <param name="heightOfCell">
+    /// Height to lay each cell's quad at, in millimetres. A bridge passes the water line for
+    /// every cell, because that is the surface the player can see and the one the water is
+    /// drawn on; something standing on the land would pass the terrain height of each cell
+    /// instead, so the ghost drapes over the bumps it would sit on.
+    /// </param>
+    public static MeshData Footprint(NavGrid navigation, ReadOnlySpan<int> cells, Func<int, int> heightOfCell)
+    {
+        ArgumentNullException.ThrowIfNull(navigation);
+        ArgumentNullException.ThrowIfNull(heightOfCell);
+
+        if (cells.IsEmpty)
+        {
+            return MeshData.Empty;
+        }
+
+        var vertices = new VertexPositionNormal[cells.Length * 4];
+        var indices = new ushort[cells.Length * 6];
+
+        float cellSize = navigation.CellSizeMm / (float)WorldPos.MmPerMetre;
+        int vertex = 0;
+        int index = 0;
+
+        foreach (int cell in cells)
+        {
+            float x0 = (navigation.OriginMm + (navigation.CellX(cell) * navigation.CellSizeMm)) / (float)WorldPos.MmPerMetre;
+            float z0 = (navigation.OriginMm + (navigation.CellZ(cell) * navigation.CellSizeMm)) / (float)WorldPos.MmPerMetre;
+            float y = (heightOfCell(cell) / (float)WorldPos.MmPerMetre) + LiftMetres;
+
+            // White, because the ghost's colour comes from the instance tint: a footprint mesh
+            // that carried its own colour could only ever be drawn in that one colour, and
+            // valid and invalid are the two states this mesh has to be able to be.
+            vertices[vertex + 0] = new VertexPositionNormal(new Vector3(x0, y, z0), Vector3.Up, Color.White);
+            vertices[vertex + 1] = new VertexPositionNormal(new Vector3(x0 + cellSize, y, z0), Vector3.Up, Color.White);
+            vertices[vertex + 2] = new VertexPositionNormal(new Vector3(x0 + cellSize, y, z0 + cellSize), Vector3.Up, Color.White);
+            vertices[vertex + 3] = new VertexPositionNormal(new Vector3(x0, y, z0 + cellSize), Vector3.Up, Color.White);
+
+            // The exact winding the terrain and the fog overlay use, cell for cell: (v, v+2, v+3)
+            // and (v, v+1, v+2) over the four corners in grid order. Getting it wrong does not
+            // draw the ghost the wrong way round — it draws no ghost at all, because the cull
+            // stage discards it, and a preview that is culled looks exactly like a preview that
+            // was never staged.
+            indices[index++] = (ushort)vertex;
+            indices[index++] = (ushort)(vertex + 2);
+            indices[index++] = (ushort)(vertex + 3);
+
+            indices[index++] = (ushort)vertex;
+            indices[index++] = (ushort)(vertex + 1);
+            indices[index++] = (ushort)(vertex + 2);
+
+            vertex += 4;
+        }
+
+        return new MeshData(vertices, indices);
+    }
+}

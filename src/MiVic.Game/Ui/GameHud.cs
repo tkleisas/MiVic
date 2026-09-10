@@ -63,6 +63,11 @@ public readonly record struct HudCommand(
 /// <param name="LargeFont">Headline font, loaded at a larger size.</param>
 /// <param name="Playback">True when a recorded match is being played back.</param>
 /// <param name="PlaybackFinished">True once playback has run past the end of the recording.</param>
+/// <param name="BridgeArmed">True while a bridge is waiting for the player to pick a site.</param>
+/// <param name="BridgeSiteReason">
+/// Why the site under the cursor would be refused, or an empty string when it would be taken.
+/// The ghost says <em>that</em> a site fails; this is the words for why.
+/// </param>
 public readonly record struct HudSnapshot(
     SimBridge Simulation,
     RtsCamera Camera,
@@ -79,7 +84,9 @@ public readonly record struct HudSnapshot(
     int AllyBuildingSlot,
     ImFontPtr LargeFont,
     bool Playback,
-    bool PlaybackFinished);
+    bool PlaybackFinished,
+    bool BridgeArmed = false,
+    string BridgeSiteReason = "");
 
 /// <summary>
 /// The in-game HUD. Every player-facing string is Greek, which is also the
@@ -103,6 +110,44 @@ public sealed class GameHud
 
     /// <summary>Whether the mission briefing is expanded. Objectives stay visible either way.</summary>
     public bool ShowBriefing { get; set; } = true;
+
+    /// <summary>How long a transient notice stays on screen, in seconds.</summary>
+    private const float NoticeSeconds = 4f;
+
+    private string _notice = string.Empty;
+    private float _noticeRemaining;
+
+    /// <summary>
+    /// Shows a transient line for a moment, for feedback about something the player just did
+    /// that would otherwise leave no trace at all.
+    /// <para>
+    /// It exists because the alternative was silence. A refused order — a bridge site that is
+    /// too wide to span, or clicked on dry ground — changed nothing on screen, so a player who
+    /// had mis-clicked and a player whose click had never reached the game saw exactly the same
+    /// thing: nothing. The simulation has always known the reason; this is where it is put in
+    /// front of the person who needs it.
+    /// </para>
+    /// </summary>
+    public void Notify(string text)
+    {
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        _notice = text;
+        _noticeRemaining = NoticeSeconds;
+    }
+
+    /// <summary>The notice currently on screen, for the probe and for diagnostics.</summary>
+    public string Notice => _noticeRemaining > 0f ? _notice : string.Empty;
+
+    /// <summary>
+    /// Height of the panel drawn in the bottom-left corner, measured as it is drawn. The
+    /// corner holds two panels — production or its hint, and support — and the second of them
+    /// starts above the first rather than on top of it.
+    /// </summary>
+    private float _bottomLeftHeight;
 
     /// <summary>Draws the HUD and returns any action the player triggered.</summary>
     public HudCommand? Draw(in HudSnapshot snapshot)
@@ -131,12 +176,64 @@ public sealed class GameHud
             DrawHelpPanel();
         }
 
+        // Before the outcome banner, which dims the whole screen: a notice about a click is
+        // about the match that is still being played.
+        DrawNotice(snapshot.FrameMilliseconds / 1000f);
+
         DrawOutcome(snapshot);
 
         ImGui.PopStyleVar(1);
         ImGui.PopStyleColor(2);
 
         return command;
+    }
+
+    /// <summary>
+    /// The transient notice, bottom centre: last, so it is drawn over the panels rather than
+    /// under them, and out of the corners the production and controls panels already own.
+    /// </summary>
+    /// <param name="elapsedSeconds">
+    /// Wall-clock frame time, not simulation time. A message about a click belongs to the
+    /// person who clicked, and it must not sit on screen for ever because the match is paused.
+    /// </param>
+    private void DrawNotice(float elapsedSeconds)
+    {
+        if (_noticeRemaining <= 0f)
+        {
+            return;
+        }
+
+        _noticeRemaining -= elapsedSeconds;
+
+        if (_noticeRemaining <= 0f)
+        {
+            _notice = string.Empty;
+            return;
+        }
+
+        NVec2 display = ImGui.GetIO().DisplaySize;
+
+        // Above the bottom edge rather than on it, so it clears the help panel's own height
+        // and the window border on a short screen.
+        ImGui.SetNextWindowPos(new NVec2(display.X * 0.5f, display.Y - 12f), ImGuiCond.Always, new NVec2(0.5f, 1f));
+
+        // Fades over its last second, so a message that is no longer news stops competing with
+        // the map without vanishing between two frames.
+        float alpha = MathF.Min(_noticeRemaining, 1f);
+
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, new NVec4(0.05f, 0.03f, 0.03f, 0.92f * alpha));
+        ImGui.PushStyleColor(ImGuiCol.Border, new NVec4(WarningColor.X, WarningColor.Y, WarningColor.Z, 0.75f * alpha));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 1f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new NVec2(14f, 8f));
+
+        if (ImGui.Begin("##notice", PanelFlags | ImGuiWindowFlags.NoTitleBar))
+        {
+            ImGui.TextColored(new NVec4(WarningColor.X, WarningColor.Y, WarningColor.Z, alpha), _notice);
+        }
+
+        ImGui.End();
+        ImGui.PopStyleVar(2);
+        ImGui.PopStyleColor(2);
     }
 
     /// <summary>Centred banner shown once the battle is decided.</summary>
@@ -465,7 +562,7 @@ public sealed class GameHud
     /// Shows what the selected building can make and what it is already making.
     /// Returns a command when the player presses a button.
     /// </summary>
-    private static HudCommand? DrawBuildPanel(in HudSnapshot snapshot)
+    private HudCommand? DrawBuildPanel(in HudSnapshot snapshot)
     {
         int slot = snapshot.SelectedBuildingSlot;
 
@@ -667,7 +764,17 @@ public sealed class GameHud
             }
         }
 
+        // Measured inside the window, because that is the only place ImGui will answer: asked
+        // after End it returns whatever window it happens to be thinking about, which put the
+        // support panel on top of the status panel rather than above this one.
+        float height = ImGui.GetWindowSize().Y;
         ImGui.End();
+
+        // The panel drawn above this one — the support panel — starts where this ends. ImGui
+        // windows positioned by hand do not stack: two of them told to sit on the bottom-left
+        // corner sit on each other, which is what the support panel and the production panel
+        // did, and the bridge's own refusal text was drawn over the build hint.
+        _bottomLeftHeight = height;
         return command;
     }
 
@@ -751,7 +858,7 @@ public sealed class GameHud
     /// could plausibly use, so the panel does not sit empty for most of a match.
     /// A disabled button states why, in the same way the build panel does.
     /// </summary>
-    private static HudCommand? DrawSupportPanel(in HudSnapshot snapshot)
+    private HudCommand? DrawSupportPanel(in HudSnapshot snapshot)
     {
         SimWorld world = snapshot.Simulation.World;
 
@@ -780,8 +887,14 @@ public sealed class GameHud
 
         NVec2 display = ImGui.GetIO().DisplaySize;
 
-        // Above the production panel on the left, so the two never overlap.
-        ImGui.SetNextWindowPos(new NVec2(12f, display.Y - 12f), ImGuiCond.Always, new NVec2(0f, 1f));
+        // Stacked on top of the production panel — which is the build hint when nothing is
+        // selected — because a hand-positioned ImGui window does not get out of another one's
+        // way. The anchor is the bottom of the screen minus whatever that panel measured
+        // itself at, so the two move together as its contents change.
+        ImGui.SetNextWindowPos(
+            new NVec2(12f, display.Y - 12f - _bottomLeftHeight - 6f),
+            ImGuiCond.Always,
+            new NVec2(0f, 1f));
 
         HudCommand? command = null;
 
@@ -823,11 +936,12 @@ public sealed class GameHud
                 ImGui.Separator();
             }
 
-            bool affordable = team.Materials >= SimWorld.BridgeMaterials &&
-                team.Energy >= SimWorld.BridgeEnergy &&
-                team.Water >= SimWorld.BridgeWater;
+            // The simulation's own answer, not a copy of it: the button is available exactly
+            // when a crossing could be paid for, because the two questions are the same
+            // question and a second version of it here is a second version to keep in step.
+            bool enabled = world.CanBuildAnyBridge(Player, out string bridgeReason);
 
-            ImGui.BeginDisabled(!affordable);
+            ImGui.BeginDisabled(!enabled);
 
             if (ImGui.Button($"{"Γέφυρα",-24} {SimWorld.BridgeMaterials,4}Π {SimWorld.BridgeEnergy,3}Ε {SimWorld.BridgeWater,3}Ν"))
             {
@@ -836,10 +950,23 @@ public sealed class GameHud
 
             ImGui.EndDisabled();
 
-            if (!affordable)
+            // While a site is being chosen the panel says so, because the player is now in a
+            // mode where a left click does something other than select, and the only way out
+            // of a mode has to be visible from inside it. When the cell under the cursor is
+            // one the simulation would refuse, the words replace the instruction: the ghost is
+            // red, and red says that it fails while this says why.
+            string note = !enabled ? bridgeReason
+                : snapshot.BridgeArmed && snapshot.BridgeSiteReason.Length > 0 ? $"× {snapshot.BridgeSiteReason}"
+                : snapshot.BridgeArmed ? "διαλέξτε σημείο στο νερό — Esc ακυρώνει"
+                : string.Empty;
+
+            if (note.Length > 0)
             {
+                bool refusing = snapshot.BridgeArmed && snapshot.BridgeSiteReason.Length > 0;
                 ImGui.SameLine();
-                ImGui.TextColored(MutedColor, "λείπουν πόροι");
+                ImGui.TextColored(
+                    refusing ? WarningColor : snapshot.BridgeArmed ? new NVec4(0.55f, 0.95f, 0.60f, 1f) : MutedColor,
+                    note);
             }
 
             if (ImGui.IsItemHovered())
@@ -857,7 +984,7 @@ public sealed class GameHud
     /// selection, which is not obvious from an empty corner of the screen, so the
     /// panel says so instead of vanishing.
     /// </summary>
-    private static void DrawBuildHint()
+    private void DrawBuildHint()
     {
         NVec2 display = ImGui.GetIO().DisplaySize;
 
@@ -873,7 +1000,11 @@ public sealed class GameHud
         ImGui.TextColored(MutedColor, "Κέντρο διοίκησης: πεζικό    Εργοστάσιο: οχήματα και αεροσκάφη");
         ImGui.TextColored(MutedColor, "Σχεδιαστικό γραφείο: έρευνα τεχνολογίας");
 
+        float height = ImGui.GetWindowSize().Y;
         ImGui.End();
+
+        // This hint is the bottom-left panel as far as anything stacked above it is concerned.
+        _bottomLeftHeight = height;
     }
 
     private static void DrawHelpPanel()
