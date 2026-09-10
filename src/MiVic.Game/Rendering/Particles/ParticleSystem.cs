@@ -598,6 +598,12 @@ public sealed class ParticleSystem
     /// <summary>An expanding ring on the ground: the shockwave of a large blast.</summary>
     public void SpawnShockwave(Vector3 position, float scale)
     {
+        // Capped in metres, not in multiples of the blast: the rings are the one
+        // effect whose size is a multiple of whatever scale it is handed, and a
+        // nuclear blast handed its own radius produced a ring two hundred metres
+        // across that swept the camera like a searchlight.
+        float endSize = MathF.Min(7.5f * scale, 70f);
+
         Spawn(new Particle
         {
             // Just above the ground so it is not fighting the terrain for the depth
@@ -606,8 +612,8 @@ public sealed class ParticleSystem
             Velocity = Vector3.Zero,
             Life = 0f,
             MaxLife = 0.42f + (scale * 0.05f),
-            StartSize = 1.2f * scale,
-            EndSize = 7.5f * scale,
+            StartSize = MathF.Min(1.2f * scale, 14f),
+            EndSize = endSize,
             StartColor = new Vector3(1f, 0.90f, 0.72f),
             EndColor = new Vector3(1f, 0.72f, 0.45f),
             StartAlpha = 0.60f,
@@ -716,9 +722,15 @@ public sealed class ParticleSystem
     /// last five seconds.
     /// </para>
     /// </summary>
-    public void SpawnNuke(Vector3 position, float scale)
+    /// <param name="blastRadius">
+    /// The radius the blast actually damages, in metres, as the ability catalogue
+    /// states it. Everything here is derived from that number rather than from a
+    /// chosen size: an effect that does not match the circle it kills in is a lie the
+    /// player will notice the first time they stand outside it and die anyway.
+    /// </param>
+    public void SpawnNuke(Vector3 position, float blastRadius)
     {
-        float blast = Math.Clamp(scale, 6f, 40f);
+        float radius = Math.Clamp(blastRadius, 20f, 200f);
 
         // The flash: everything is white for a quarter of a second.
         Spawn(new Particle
@@ -727,8 +739,8 @@ public sealed class ParticleSystem
             Velocity = Vector3.Zero,
             Life = 0f,
             MaxLife = 0.30f,
-            StartSize = blast * 1.6f,
-            EndSize = blast * 4.2f,
+            StartSize = radius * 0.18f,
+            EndSize = radius * 0.38f,
             StartColor = new Vector3(1f, 1f, 0.98f),
             EndColor = new Vector3(1f, 0.92f, 0.62f),
             StartAlpha = 1f,
@@ -738,12 +750,14 @@ public sealed class ParticleSystem
             Kind = ParticleKind.Fire,
         });
 
+        // Rings out to the weapon's real radius, which is what tells a player how far
+        // away is far enough.
         for (int i = 0; i < 3; i++)
         {
-            SpawnShockwave(position, blast * (0.8f + (i * 0.75f)));
+            SpawnShockwave(position, radius * (0.35f + (i * 0.325f)));
         }
 
-        SpawnScorch(position, blast * 2.6f);
+        SpawnScorch(position, radius * 0.20f);
 
         // The stem: dense smoke thrown straight up, which is the shape everyone
         // recognises and the reason this is a column and not a ball.
@@ -751,22 +765,22 @@ public sealed class ParticleSystem
         {
             float shade = 0.30f + ((float)_random.NextDouble() * 0.20f);
             float angle = (float)_random.NextDouble() * MathF.Tau;
-            float radius = (float)_random.NextDouble() * blast * 0.5f;
+            float spread = (float)_random.NextDouble() * radius * 0.25f;
 
             Spawn(new Particle
             {
                 Position = position + new Vector3(
-                    MathF.Cos(angle) * radius,
-                    (float)_random.NextDouble() * blast * 0.3f,
-                    MathF.Sin(angle) * radius),
+                    MathF.Cos(angle) * spread,
+                    (float)_random.NextDouble() * radius * 0.15f,
+                    MathF.Sin(angle) * spread),
                 Velocity = new Vector3(
                     MathF.Cos(angle) * (0.6f + ((float)_random.NextDouble() * 2f)),
-                    7f + ((float)_random.NextDouble() * 12f) + (blast * 0.35f),
+                    7f + ((float)_random.NextDouble() * 12f) + (radius * 0.05f),
                     MathF.Sin(angle) * (0.6f + ((float)_random.NextDouble() * 2f))),
                 Life = 0f,
                 MaxLife = 3.4f + ((float)_random.NextDouble() * 2.6f),
-                StartSize = blast * 0.30f,
-                EndSize = blast * 0.85f,
+                StartSize = 3.5f + (radius * 0.03f),
+                EndSize = 9f + (radius * 0.10f),
                 StartColor = new Vector3(shade + 0.22f, shade + 0.10f, shade * 0.8f),
                 EndColor = new Vector3(shade * 0.5f, shade * 0.5f, shade * 0.55f),
                 StartAlpha = 0.80f,
@@ -778,7 +792,7 @@ public sealed class ParticleSystem
         }
 
         // The cap, high above the stem and spreading outwards rather than up.
-        float capHeight = blast * 1.5f;
+        float capHeight = 55f + (radius * 0.5f);
 
         for (int i = 0; i < 34; i++)
         {
@@ -789,17 +803,17 @@ public sealed class ParticleSystem
             Spawn(new Particle
             {
                 Position = position + new Vector3(
-                    MathF.Cos(angle) * blast * 0.3f * spread,
-                    capHeight + (((float)_random.NextDouble() - 0.5f) * blast * 0.5f),
-                    MathF.Sin(angle) * blast * 0.3f * spread),
+                    MathF.Cos(angle) * radius * 0.5f * spread,
+                    capHeight + (((float)_random.NextDouble() - 0.5f) * radius * 0.4f),
+                    MathF.Sin(angle) * radius * 0.5f * spread),
                 Velocity = new Vector3(
                     MathF.Cos(angle) * (2f + ((float)_random.NextDouble() * 5f)),
                     1.4f + ((float)_random.NextDouble() * 3.4f),
                     MathF.Sin(angle) * (2f + ((float)_random.NextDouble() * 5f))),
                 Life = 0f,
                 MaxLife = 4.2f + ((float)_random.NextDouble() * 3.4f),
-                StartSize = blast * 0.4f,
-                EndSize = blast * 1.25f,
+                StartSize = 6f + (radius * 0.08f),
+                EndSize = 14f + (radius * 0.16f),
                 StartColor = new Vector3(shade, shade * 0.96f, shade * 0.92f),
                 EndColor = new Vector3(shade * 0.45f, shade * 0.45f, shade * 0.5f),
                 StartAlpha = 0.72f,
@@ -834,7 +848,7 @@ public sealed class ParticleSystem
             });
         }
 
-        SpawnDust(position, blast * 1.4f);
+        SpawnDust(position, radius * 0.30f);
     }
 
     /// <summary>

@@ -387,6 +387,16 @@ public sealed class MiVicGame : XnaGame
                 0f,
                 mission.PlayerBase.Z / (float)WorldPos.MmPerMetre));
         }
+        else if (_options.ParticleDemo)
+        {
+            // Straight down over the effect grid, close enough that a muzzle flash is
+            // more than a pixel. A fixture that does not frame itself is a fixture
+            // that costs a render per guess.
+            _camera.ZoomTo(150f);
+            _camera.TiltTo(-1.36f);
+            _camera.Yaw = 0f;
+            _camera.FocusOn(new Vector3(0f, 0f, 12f));
+        }
         else if (_options.CombatDemo)
         {
             // Close in and low: a firefight is read from the side, at the distance
@@ -2087,6 +2097,16 @@ public sealed class MiVicGame : XnaGame
     private readonly record struct PendingStrike(AbilityId Ability, Vector3 Ground, long Tick);
 
     /// <summary>
+    /// The radius an off-map ability actually damages, in metres. Read from the
+    /// catalogue rather than guessed, so an effect cannot quietly describe a smaller
+    /// or larger circle than the one that kills.
+    /// </summary>
+    private static float AbilityRadiusMetres(AbilityId ability)
+        => AbilityCatalog.TryGet(ability, out AbilityDefinition definition)
+            ? definition.RadiusMm / (float)WorldPos.MmPerMetre
+            : 40f;
+
+    /// <summary>
     /// Draws the strikes whose tick has arrived.
     /// <para>
     /// The blast is drawn on the tick the simulation applies it, so the flash and the
@@ -2117,7 +2137,9 @@ public sealed class MiVicGame : XnaGame
             switch (strike.Ability)
             {
                 case AbilityId.TacticalNuke:
-                    _particles.SpawnNuke(strike.Ground, 14f);
+                    // The catalogue's radius, so what is drawn and what is killed are
+                    // the same circle.
+                    _particles.SpawnNuke(strike.Ground, AbilityRadiusMetres(AbilityId.TacticalNuke));
                     _camera?.Shake(6f);
                     _sfx?.Play(SoundEffectKind.ExplosionLarge, strike.Ground, _camera?.Target ?? Vector3.Zero, 1f, -0.55f);
                     break;
@@ -2128,9 +2150,10 @@ public sealed class MiVicGame : XnaGame
                     for (int shot = 0; shot < 7; shot++)
                     {
                         float offset = (shot - 3) * 9f;
+                        float spread = AbilityRadiusMetres(AbilityId.OrbitalStrike) * 0.16f;
 
                         _particles.SpawnGroundBurst(
-                            strike.Ground + new Vector3(offset, 0.5f + (shot * 0.15f), offset * 0.35f),
+                            strike.Ground + new Vector3(offset * spread, 0.5f + (shot * 0.15f), offset * spread * 0.35f),
                             2.4f);
                     }
 
@@ -2669,8 +2692,15 @@ public sealed class MiVicGame : XnaGame
     }
 
     /// <summary>
-    /// Fires a row of explosions of increasing size plus a couple of smoke
-    /// plumes, so one screenshot shows the whole range of the particle system.
+    /// Lays out one of every effect in the game, so a single screenshot shows the
+    /// whole catalogue side by side under the same light.
+    /// <para>
+    /// Explosions were once the entire vocabulary, and a row of them of increasing
+    /// size was enough. There are now separate effects for a muzzle flash, a rifle
+    /// round on armour, a small burst, a shell, a crater, a flak burst and an
+    /// electric discharge, and they are only worth having if each is visibly its own
+    /// thing — which is a claim that has to be looked at, not asserted.
+    /// </para>
     /// </summary>
     private void SpawnParticleDemo()
     {
@@ -2681,23 +2711,102 @@ public sealed class MiVicGame : XnaGame
 
         MiVic.Core.Terrain.HeightMap terrain = _simulation.World.Terrain;
 
-        for (int i = 0; i < 5; i++)
-        {
-            float x = -80f + (i * 40f);
-            float z = -20f;
-            float ground = terrain.SampleHeightMm((int)(x * 1000f), (int)(z * 1000f)) / 1000f;
+        float Ground(float x, float z) => terrain.SampleHeightMm((int)(x * 1000f), (int)(z * 1000f)) / 1000f;
 
-            _particles.SpawnExplosion(new Vector3(x, ground + 1.5f, z), 1.2f + (i * 2.2f));
+        // A grid rather than rows: the effects are of wildly different sizes, and one
+        // frame has to hold all of them at a camera distance where the smallest is
+        // still more than a few pixels. Twenty-five metres apart puts eight of them
+        // inside a hundred-metre square, which a single overhead view can frame.
+        void At(int column, int row, Action<Vector3> spawn)
+        {
+            float x = (column - 1) * EffectGridPitch;
+            float z = (row - 1) * EffectGridPitch;
+
+            spawn(new Vector3(x, Ground(x, z), z));
         }
 
-        for (int i = 0; i < 6; i++)
-        {
-            float x = -60f + (i * 24f);
-            float z = 40f;
-            float ground = terrain.SampleHeightMm((int)(x * 1000f), (int)(z * 1000f)) / 1000f;
+        _effectGridSpawn = At;
 
-            _particles.SpawnSmokePlume(new Vector3(x, ground + 3f, z), 0.8f);
+        // The nuke gets its own quarter of the map. It is five seconds long and two
+        // hundred metres across, and drawn anywhere near the rest it would hide them.
+        _particles.SpawnNuke(
+            new Vector3(0f, Ground(0f, 220f) + 1f, 220f),
+            AbilityRadiusMetres(AbilityId.TacticalNuke));
+
+        SpawnEffectGrid();
+    }
+
+    /// <summary>Distance between the effect grid's cells, in metres.</summary>
+    private const float EffectGridPitch = 25f;
+
+    /// <summary>The ground-height lookup the grid was built against.</summary>
+    private Action<int, int, Action<Vector3>>? _effectGridSpawn;
+
+    /// <summary>Counts down to the next re-run of the effect grid in the demo fixture.</summary>
+    private float _effectDemoTimer = 1f;
+
+    /// <summary>
+    /// Lays out one of every weapon effect the game has, in a grid: the effects are
+    /// of wildly different sizes, and a single overhead view has to hold all of them
+    /// at a distance where the smallest is still more than a few pixels.
+    /// </summary>
+    private void SpawnEffectGrid()
+    {
+        if (_particles is null || _effectGridSpawn is not { } at)
+        {
+            return;
         }
+
+        // Row one: damage.
+        at(-1, -1, p => _particles.SpawnExplosion(p + new Vector3(0f, 1.5f, 0f), 2.2f));
+        at(0, -1, p => _particles.SpawnShellBurst(p + new Vector3(0f, 1f, 0f), 1.5f));
+        at(1, -1, p => _particles.SpawnGroundBurst(p + new Vector3(0f, 1f, 0f), 2.6f));
+
+        // Row two: the weapon effects that are not explosions.
+        at(-1, 0, p => _particles.SpawnMuzzleFlash(p + new Vector3(0f, 1.4f, 0f), new Vector3(1f, 0.86f, 0.48f), 1.1f));
+        at(0, 0, p => _particles.SpawnImpactSparks(p + new Vector3(0f, 1.2f, 0f), new Vector3(1f, 0.86f, 0.48f), 0.45f));
+        at(1, 0, p => _particles.SpawnSmallBurst(p + new Vector3(0f, 1f, 0f), 0.9f));
+
+        // Row three: the air, the odd ones out, and the two that outlive their blast.
+        at(-1, 1, p => _particles.SpawnAirburst(p + new Vector3(0f, 12f, 0f), 1.3f, new Vector3(1f, 0.94f, 0.62f)));
+        at(0, 1, p => _particles.SpawnElectricBurst(p + new Vector3(0f, 1.6f, 0f), 1.2f));
+        at(1, 1, p => _particles.SpawnShockwave(p + new Vector3(0f, 0f, 0f), 3.4f));
+
+        at(-1, 2, p => _particles.SpawnScorch(p + new Vector3(0f, 0.2f, 0f), 2.2f));
+
+        for (int i = 0; i < 3; i++)
+        {
+            at(i, 2, p => _particles.SpawnSmokePlume(p + new Vector3(0f, 3f, 0f), 0.8f));
+        }
+    }
+
+    /// <summary>
+    /// Re-runs the effect grid, for the demo fixture only.
+    /// <para>
+    /// Most of these effects last a tenth of a second, so spawning them once at
+    /// startup means the only frame that shows them all is a frame nobody can
+    /// predict — the first few frames of a run are slow enough that everything short
+    /// is already gone. Re-running the grid on a timer makes any frame a valid one to
+    /// photograph.
+    /// </para>
+    /// </summary>
+    private void UpdateEffectDemo(float elapsedSeconds)
+    {
+        if (!_options.ParticleDemo || _particles is null || _simulation is null)
+        {
+            return;
+        }
+
+        _effectDemoTimer -= elapsedSeconds;
+
+        if (_effectDemoTimer > 0f)
+        {
+            return;
+        }
+
+        _effectDemoTimer = 1.6f;
+
+        SpawnEffectGrid();
     }
 
     /// <summary>Ages the move-order rings and drops the expired ones.</summary>
@@ -2932,6 +3041,7 @@ public sealed class MiVicGame : XnaGame
             sizeScale);
 
         UpdatePendingStrikes();
+        UpdateEffectDemo(elapsedSeconds);
 
         // Shake is requested by whatever was loudest this frame, and applied to the
         // camera for the *next* one. Applying it here would move the view under a
