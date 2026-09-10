@@ -100,6 +100,7 @@ shot out/frame-later.png
 | `count <kind>` | how many of a role are alive, per faction |
 | `bridge <x> <z> [team] [build]` | whether a crossing at that cell would be accepted, the reason when it would not, the span it would cover, what it costs and how long the work takes — and with `build`, the order that starts it |
 | `bridges` | every crossing on the map: the cells it spans, how much of it the work has reached, how many of its blocks still stand, whether it has been cut, and the tick it will be whole on |
+| `block <x> <z>` | what deck stands on one cell: how much is left of it, which team owns it, which way it runs — including whether it is a **junction**, which is a fact about the cell rather than about any crossing — and which crossings pass through it |
 | `blast <x> <z> [radius] [damage] [team]` | drops a blast on the ground, as a salvo or a strike does, and reports how many blocks of deck it knocked out and what is left of the one at the centre |
 
 ### What the player would see
@@ -130,6 +131,23 @@ either advances the ticks itself or asks `bridges` how much work is left.
 down cannot be inspected either, and there is no other way to ask what a hole in one looks
 like. It calls the same area damage a Κατιούσα salvo and an off-map strike call, so what a
 script breaks is what a battlefield breaks.
+
+`block` exists because a junction cannot be found in the `bridges` list. Two crossings may share a
+cell — the simulation allows it, and thousands of pairs of sites on this map do — and the deck
+there is one block that both of them run through. Asking `bridges` twice tells you two spans
+overlap somewhere; asking `block` tells you the cell, which is the thing that can be looked at:
+
+```
+cmd: block -89.1 -295.3
+query: cell cell 22,0 of 65, index 22, ShallowWater (Νερό) at (x -89.1, z -295.3) m
+query:   deck       200/200 left, owner team 0, runs Junction
+query:   crossing   #0 runs through it, at cell 13 of 15
+query:   crossing   #1 runs through it, at cell 0 of 2
+```
+
+One block at 200 hit points rather than two at 200 each, running both ways, with both crossings
+through it: knock that block out and neither crossing can be used, because there is one deck under
+them and it is gone.
 
 ### Render-state queries
 

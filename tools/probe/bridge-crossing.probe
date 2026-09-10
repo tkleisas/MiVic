@@ -1,0 +1,64 @@
+# Q: what happens where two crossings meet at one cell?
+#
+#   MiVic.Game.exe --probe tools/probe/bridge-crossing.probe --probe-out artifacts/probe/bridge-crossing.txt
+#
+# A cell can carry deck from two crossings at once, and the simulation allows it: the rule
+# that a span runs the narrow way does not prevent two spans from crossing, and on this seed
+# thousands of pairs of sites do. What that leaves open is whether the deck at the shared cell
+# is one block or two drawn through each other, and it cannot be answered from the
+# `bridges` list, because a junction is a fact about the cell rather than about either crossing.
+#
+# The pair used here is on the map's northern shore: a fifteen-cell span along row 0 from
+# (-210, -295) m, and a span running south through column 22 from (-89, -295) m. They meet at
+# cell (22,0), which is the only cell both lists contain.
+
+focus -150 -290
+zoom 260
+pitch -0.95
+
+# Both sites are crossings on their own, and they cost nothing a team at its start cannot pay.
+bridge -210 -295
+bridge -89.1 -295.3
+
+# The first one, whole.
+arm bridge
+hover -210 -295
+click
+tick 500
+bridges
+
+# The second, across it. The placement is armed again because ordering one crossing ends the
+# mode — a click that is accepted means the player is done, and the button has to be pressed
+# again for the next one.
+arm bridge
+hover -89.1 -295.3
+click
+tick 200
+bridges
+
+# The shared cell: one block, running both ways, with both crossings through it.
+block -89.1 -295.3
+attributes -89.1 -295.3
+
+hud off
+shot artifacts/probe/bridge-crossing.png
+
+# Close up on the junction, and from above it, where a crossroads deck is legible as one.
+zoom 34
+pitch -0.45
+focus -89.1 -295.3 4
+settle
+shot artifacts/probe/bridge-junction-close.png
+
+pitch -1.30
+focus -89.1 -295.3 1
+settle
+shot artifacts/probe/bridge-junction-top.png
+
+# And the whole crossroads from a distance, which is how a player meets it.
+zoom 150
+yaw 2.2
+pitch -0.80
+focus -110 -295.3
+settle
+shot artifacts/probe/bridge-crossing-wide.png
