@@ -1,0 +1,30 @@
+# One process, sixteen commands, two ticks, two screenshots.
+#
+# This is the property the probe exists for. Testing this project used to be a process
+# launch, one screenshot and a guess per question; here one launch advances the world
+# four seconds, photographs two different moments from two different cameras, and prints
+# the world census in between. A fifty-command script costs the same one launch.
+#
+#   MiVic.Game.exe --probe tools/probe/batch.probe --probe-out artifacts/probe/batch.txt
+
+tick 60
+zoom 260
+pitch -0.72
+yaw 0.62
+focus 0 0
+settle
+
+# What the first frame holds, counted after rendering it.
+visible
+shot artifacts/probe/batch-a.png
+
+# Ninety ticks later — four and a half seconds of battle — from a different camera.
+tick 90
+focus -60 40
+settle
+events 4
+units soviet 3
+surfaces
+shot artifacts/probe/batch-b.png
+
+expect "the world advanced 150 ticks" 150 150

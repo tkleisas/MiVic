@@ -99,7 +99,25 @@ public sealed record LaunchOptions
     /// thing the fixture exists to show.
     /// </para>
     /// </summary>
-    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo;
+    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || IsProbe;
+
+    /// <summary>
+    /// When set, run the probe script in this file and exit.
+    /// <para>
+    /// A probe is a scripted inspection channel rather than a fixture: it steps the
+    /// simulation from its own commands, answers questions about the world and about what
+    /// the renderer is drawing, takes as many screenshots as it is asked for, and exits with
+    /// a status that says whether anything failed. It exists because the alternative was a
+    /// process launch, a screenshot and a guess per question.
+    /// </para>
+    /// </summary>
+    public string? ProbeScript { get; init; }
+
+    /// <summary>Where a probe writes its transcript. Defaults to <c>probe-report.txt</c>.</summary>
+    public string? ProbeOutputPath { get; init; }
+
+    /// <summary>True when this run is a probe script.</summary>
+    public bool IsProbe => ProbeScript is not null;
 
     /// <summary>Spawns a burst of explosions at startup, so a screenshot can show the particle system.</summary>
     public bool ParticleDemo { get; init; }
@@ -118,6 +136,12 @@ public sealed record LaunchOptions
 
     /// <summary>Points the camera at the most varied ground on the map, to look at the surfaces.</summary>
     public bool GroundDemo { get; init; }
+
+    /// <summary>Frames two tanks shooting at each other, to look at where the turrets point.</summary>
+    public bool TurretDemo { get; init; }
+
+    /// <summary>Frames a flyer of every model crossing the map, to look at which way they travel.</summary>
+    public bool FlightDemo { get; init; }
 
     /// <summary>
     /// Names one surface for the ground fixture to frame instead of the most varied
@@ -160,8 +184,12 @@ public sealed record LaunchOptions
           --mission <id>        Εκκίνηση αποστολής εκστρατείας
           --mission-list        Λίστα αποστολών
           --particle-demo       Επίδειξη σωματιδίων (εκρήξεις, καπνός)
+          --turret-demo         Δύο άρματα που πυροβολούνται, για τον πύργο
+          --flight-demo         Αεροσκάφη σε πτήση, για την κατεύθυνση της πλώρης
           --render-audio <dir>  Εξαγωγή θεμάτων μουσικής σε αρχεία WAV
           --render-sfx <dir>    Εξαγωγή ηχητικών εφέ σε αρχεία WAV
+          --probe <σενάριο>     Εκτέλεση σεναρίου διερεύνησης και έξοδος
+          --probe-out <αρχείο>  Αρχείο καταγραφής της διερεύνησης
           --no-audio            Χωρίς μουσική
           --selftest [καρέ]     Εκτέλεση δοκιμής απόδοσης και έξοδος (προεπιλογή 600)
           --help                Αυτό το μήνυμα
@@ -384,6 +412,19 @@ public sealed record LaunchOptions
                     options = options with { CombatDemo = true, ShowHelp = false, ScreenshotFrame = 150 };
                     break;
 
+                case "--turret-demo":
+                    // The tank's reload is a bit over a second, so this lands on the
+                    // second or third shot rather than on the first.
+                    options = options with { TurretDemo = true, ShowHelp = false, ScreenshotFrame = 120 };
+                    break;
+
+                case "--flight-demo":
+                    // Four seconds of flight. The flyers start at the western edge,
+                    // so an early frame has them out of the camera's window and a late
+                    // one has them past it; this lands them in the middle of it.
+                    options = options with { FlightDemo = true, ShowHelp = false, ScreenshotFrame = 220 };
+                    break;
+
                 case "--render-audio":
                     options = options with { RenderAudioPath = NextValue(args, ref i, arg) };
                     break;
@@ -394,6 +435,16 @@ public sealed record LaunchOptions
 
                 case "--no-audio":
                     options = options with { NoAudio = true };
+                    break;
+
+                case "--probe":
+                    // The HUD is off for the same reason the fixtures turn it off: a probe
+                    // reads the world, and a panel over the frame is a panel over the answer.
+                    options = options with { ProbeScript = NextValue(args, ref i, arg), ShowHelp = false };
+                    break;
+
+                case "--probe-out":
+                    options = options with { ProbeOutputPath = NextValue(args, ref i, arg) };
                     break;
 
                 case "--mission":

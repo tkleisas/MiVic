@@ -1,0 +1,19 @@
+# Q: what axis does the command centre's radar dish turn about, and where is it?
+#
+# This is the question a still frame cannot answer. A dish turning about Z instead of Y
+# climbs over its own tower, goes through the roof and comes back out, and at any single
+# moment that looks like a dish. Two samples of the same part, a few ticks apart, say
+# which axis it turned about and how fast — from the animator's own output rather than
+# from a copy of the rules, so the answer cannot drift from what is drawn.
+
+units soviet 1
+
+# The dish as the model declares it, and its world position 31 m up the tower.
+parts 0 radar
+
+# Forty ticks at 0.02 rad each is 0.8 rad, so the second sample is 46 degrees on. The
+# delta line is the one that says "about Y, 1.15 degrees per tick".
+tick 40
+parts 0 radar
+
+expect "the dish is drawn 16.5 m up the tower" 16.47 16.5 0.1

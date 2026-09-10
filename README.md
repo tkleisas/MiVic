@@ -63,7 +63,9 @@ $exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
 Design rationale and the alternate-history tech tree are in
 [docs/DESIGN.md](docs/DESIGN.md). What the ground is made of, and what it is becoming,
 is in [docs/TERRAIN.md](docs/TERRAIN.md). What is planned but not built is in
-[docs/ROADMAP.md](docs/ROADMAP.md).
+[docs/ROADMAP.md](docs/ROADMAP.md). How to interrogate a running client without looking
+at it — scripted queries, screenshots and checks in one process — is in
+[docs/PROBE.md](docs/PROBE.md).
 
 ## Requirements
 
@@ -75,7 +77,7 @@ is in [docs/TERRAIN.md](docs/TERRAIN.md). What is planned but not built is in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 328 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 368 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # optional: the old borrowed models, no longer used
 
@@ -115,6 +117,8 @@ dotnet run --project src/MiVic.Game
 | `--record <file>` | log every external command and save the match as a replay |
 | `--replay <file>` | verify a replay headlessly and exit (0 = the match was reproduced) |
 | `--watch <file>` | play a recorded match back in the client |
+| `--probe <script>` | run a probe script — scripted queries, screenshots and checks in one process — and exit |
+| `--probe-out <file>` | where a probe writes its transcript (default `probe-report.txt`) |
 | `--mission <id>` | start a campaign mission |
 | `--mission-list` | list the campaign |
 | `--render-audio <dir>` | export one WAV per faction theme and exit |
@@ -205,7 +209,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 34 generated, plus the fetched set |
 | Pick round-trip | 168/168 |
-| Tests | 345 passing (328 core, 17 audio) |
+| Tests | 385 passing (368 core, 17 audio) |
 
 ### Performance
 
@@ -340,6 +344,30 @@ apply each one twice. That keeps a 500-unit battle's replay at a few kilobytes.
 `replay round-trip`, so a determinism regression fails the build rather than
 showing up as a desync later. See
 [docs/DESIGN.md](docs/DESIGN.md#12-replays-a-match-is-its-inputs).
+
+### Probing a running client
+
+A **probe** is a script of commands run against a live match in one process: advance the
+simulation, ask what the world and the renderer are doing, photograph as many moments as
+you like, and assert the answers.
+
+```
+tick 40
+parts 509 turret        # where the gun points, from the renderer's own aim
+events 4                # where the shots went
+expect "the turret faces the shot" 33.7 33.7 0.2
+```
+
+```
+MiVic.Game.exe --turret-demo --probe tools/probe/turret.probe --probe-out artifacts/probe/turret.txt
+```
+
+It exists because testing here used to be a process launch, one screenshot and a guess per
+question, and most of this session's bugs were settled in seconds by a number that no
+screenshot could have shown: which axis a rotating part turns about, whether a turret faces
+the shot it fired, how many cells of each surface exist, how many of them are in frame. The
+command set, the output format and worked transcripts are in
+[docs/PROBE.md](docs/PROBE.md).
 
 ### Victory and defeat
 

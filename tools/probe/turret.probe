@@ -1,0 +1,27 @@
+# Q: is the turret pointing at what it fired at?
+#
+# Run with --turret-demo, which puts one Σοβιετικοί and one Δυτικοί tank 70 m apart on
+# open ground, in range from the first tick. Both hulls therefore point at each other and
+# the turrets do all the work.
+#
+#   MiVic.Game.exe --turret-demo --probe tools/probe/turret.probe --probe-out artifacts/probe/turret.txt
+#
+# A turret firing without facing the shot is invisible in a still frame — the tracer and
+# the barrel are both in the picture and neither one says which way the other went. Two
+# numbers settle it: the direction the shot was fired in, and the direction the turret's
+# own part points in the world.
+
+tick 40
+units
+
+# Which way the gun points, from the renderer's own aim and from the part transform it
+# produces. The nose of the turret part is the barrel's direction.
+parts 509 turret
+
+# Which way the shot went, from the bridge's own detection of firing.
+events 4
+
+# The two bearings are both 33.7 degrees: 0.83, 0.00, 0.55 for the shot and the same
+# direction for the turret's nose. A turret that fired somewhere else would print two
+# different bearings here.
+expect "the turret's world nose bears 33.7 degrees" 33.7 33.7 0.2

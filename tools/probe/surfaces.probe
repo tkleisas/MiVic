@@ -1,0 +1,23 @@
+# Q: how much of each surface is on the map, and is there any lava at all?
+#
+# A surface with a movement cost, a cover value, a colour and a shader treatment can
+# still be a surface no cell ever receives — that has happened twice here (sand, then
+# lava). A screenshot cannot show a surface that is missing; a census shows it in one
+# line, including the zeros.
+
+surfaces
+
+# The same question one cell at a time, with the height that decides it: a cell is water
+# when its ground is below the water line, and this prints both numbers.
+attributes 0 0
+attributes -180 -180
+
+# And what the camera can see of it, which is the other half of "why is the picture
+# empty": the ground the frustum covers, and the surfaces absent from it.
+visible
+
+# The counts above are a ledger. Two of them are worth pinning: lava exists, and the
+# map is not all one surface. These fail loudly if a terrain change takes either away.
+expect "the map has lava" 55 55
+expect "the map has woodland" 976 976
+expect "the navigation lattice is 65 x 65" 4225 4225

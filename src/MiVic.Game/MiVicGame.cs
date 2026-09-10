@@ -34,8 +34,15 @@ namespace MiVic.Game;
 /// ticks for smooth motion, and submits instanced draws. Rendering can never
 /// change the outcome of a tick.
 /// </para>
+/// <para>
+/// The probe — the scripted inspection channel behind <c>--probe</c> — is the other
+/// half of this class, in <c>Probe/MiVicGame.Probe.cs</c>. It is a partial rather
+/// than a separate type because its whole job is to answer out of the code below:
+/// a probe that reimplemented the animation would be a probe that could disagree
+/// with what is drawn.
+/// </para>
 /// </summary>
-public sealed class MiVicGame : XnaGame
+public sealed partial class MiVicGame : XnaGame
 {
     private const int WarmupFrames = 120;
     private const int MaxReportedFrames = 100_000;
@@ -137,6 +144,15 @@ public sealed class MiVicGame : XnaGame
     /// <summary>Camera elevation in the fixture, in degrees, held every frame.</summary>
     private float _viewerPitch = 62f;
     private bool _viewerOrbit;
+
+    /// <summary>
+    /// Where the turret and flight fixtures are looking. <see cref="RtsCamera"/>
+    /// flattens its target to the ground plane on every update, and both of those
+    /// fixtures look at something that is not on the ground — a pair of hulls, or a
+    /// formation sixty metres up — so the aim is held here and re-applied after the
+    /// camera has recomputed itself, which is what the viewer fixture does too.
+    /// </summary>
+    private Vector3? _fixtureAim;
 
     private static (Faction, UnitKind)[] BuildViewerList()
     {
@@ -433,6 +449,26 @@ public sealed class MiVicGame : XnaGame
             _camera.Yaw = 1.05f;
             _camera.FocusOn(Vector3.Zero);
         }
+        else if (_options.TurretDemo)
+        {
+            // Side on and low. The line between the two tanks then runs across the
+            // screen, so a gun that is off that line is off it by an angle the eye can
+            // measure against the tracer beside it; a view from above flattens the gun
+            // into the turret roof, which is where a turret is least legible.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 95f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.30f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 0f;
+        }
+        else if (_options.FlightDemo)
+        {
+            // Steeply down from above, and fixed rather than following the flyers: a
+            // swept wing only reads as an arrowhead from overhead, and an aircraft's
+            // motion is read against the ground it is moving over, which a moving
+            // camera would displace as well.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 130f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.95f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 0f;
+        }
         else if (_options.ScreenshotPath is not null)
         {
             _camera.ZoomTo(_options.ScreenshotZoom ?? 430f);
@@ -451,7 +487,11 @@ public sealed class MiVicGame : XnaGame
                         ? SimBridge.CreateFiringRange(_options.Seed)
                         : _options.CombatDemo
                             ? SimBridge.CreateCombatDemo(_options.Seed)
-                            : new SimBridge(_options.Seed, _options.IsModelGallery);
+                            : _options.TurretDemo
+                                ? SimBridge.CreateTurretDemo(_options.Seed)
+                                : _options.FlightDemo
+                                    ? SimBridge.CreateFlightDemo(_options.Seed)
+                                    : new SimBridge(_options.Seed, _options.IsModelGallery);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
@@ -544,6 +584,16 @@ public sealed class MiVicGame : XnaGame
             FocusOnForest();
         }
 
+        if (_options.TurretDemo)
+        {
+            FocusOnTurrets();
+        }
+
+        if (_options.FlightDemo)
+        {
+            FocusOnFlight();
+        }
+
         if (_options.GroundDemo)
         {
             FocusOnGround();
@@ -567,7 +617,7 @@ public sealed class MiVicGame : XnaGame
         _audio = new AudioDirector(_options.Seed);
         _sfx = new SfxDirector(_options.Seed) { IsMuted = _options.NoAudio };
 
-        if (!_options.NoAudio && !_options.IsSelfTest && _options.ScreenshotPath is null)
+        if (!_options.NoAudio && !_options.IsSelfTest && _options.ScreenshotPath is null && !_options.IsProbe)
         {
             _audio.Play(FactionStyle.Soviet);
         }
@@ -608,11 +658,35 @@ public sealed class MiVicGame : XnaGame
             SelectPlayerHeadquarters();
         }
 
+        // The probe is loaded last, because its first command may ask about any of the
+        // above: the world, the models, the camera, the renderer.
+        LoadProbe();
+
         base.LoadContent();
     }
 
     protected override void Update(GameTime gameTime)
     {
+        // A probe script owns the frame while it runs. It advances the simulation from its
+        // own commands rather than from the wall clock, so the same script produces the same
+        // transcript on a slow machine and a fast one — and the client's own per-frame work
+        // is not run on the script's behalf either: `settle` is what asks for that, and
+        // asking for it explicitly is what lets a script see the world between two frames.
+        if (IsProbing)
+        {
+            // ImGui still needs the frame that its Render in Draw expects, even though a
+            // probe never draws a panel.
+            _imgui?.Update(gameTime);
+
+            if (StepProbe())
+            {
+                Exit();
+            }
+
+            base.Update(gameTime);
+            return;
+        }
+
         _frameStopwatch.Stop();
         double frameMilliseconds = _frameStopwatch.Elapsed.TotalMilliseconds;
         _frameStopwatch.Restart();
@@ -717,6 +791,15 @@ public sealed class MiVicGame : XnaGame
         else if (_options.IsModelGallery)
         {
             ApplyGalleryCamera();
+        }
+        else if (_fixtureAim is { } aim)
+        {
+            // The turret and flight fixtures aim at something that is not on the
+            // ground — a pair of hulls, or an aircraft sixty metres up — and the RTS
+            // camera flattens its target to the ground plane on every update. Pinning
+            // the aim here, after the camera has recomputed itself, is what the viewer
+            // fixture does for the same reason.
+            _camera!.LookAt(aim);
         }
 
         _selection.PruneDead(_simulation.World);
@@ -1333,18 +1416,7 @@ public sealed class MiVicGame : XnaGame
             // A structure being raised: the progress is the simulation's, so a
             // replay builds at the same rate.
             float build = BuildFraction(ref entity);
-
-            Matrix transform =
-                Matrix.CreateRotationY(-heading) *
-                Matrix.CreateTranslation(position);
-
-            if (build < 1f)
-            {
-                // Rising out of the ground, not fading in: a partially built
-                // structure should look like one.
-                float rise = 0.25f + (build * 0.75f);
-                transform *= Matrix.CreateScale(1f, rise, 1f);
-            }
+            Matrix transform = EntityTransform(position, heading, build);
 
             Vector4 tint = FactionPalette.ForUnit(entity.Faction, entity.Kind).ToVector4();
 
@@ -1370,20 +1442,61 @@ public sealed class MiVicGame : XnaGame
                     continue;
                 }
 
-                Matrix local = batch.Locals[i];
-                int parent = part.ParentIndex;
-
-                while (parent >= 0 && parent < batch.Locals.Length)
-                {
-                    local *= batch.Locals[parent];
-                    parent = batch.Parts[parent].ParentIndex;
-                }
-
                 part.Instances[part.Count++] = new InstanceData(
-                    local * batch.ModelTransform * transform,
+                    PartWorldTransform(batch, i, transform),
                     tint);
             }
         }
+    }
+
+    /// <summary>
+    /// Where and how an entity's model sits in the world: the hull's facing, its position,
+    /// and the squash a half-built structure carries.
+    /// <para>
+    /// Factored out of the submission loop so the probe can ask for it rather than build its
+    /// own: a probe that composed the entity transform itself would go on answering for a
+    /// world the renderer had stopped drawing the moment this changed.
+    /// </para>
+    /// </summary>
+    private static Matrix EntityTransform(Vector3 position, float heading, float build)
+    {
+        Matrix transform =
+            Matrix.CreateRotationY(-heading) *
+            Matrix.CreateTranslation(position);
+
+        if (build < 1f)
+        {
+            // Rising out of the ground, not fading in: a partially built
+            // structure should look like one.
+            float rise = 0.25f + (build * 0.75f);
+            transform *= Matrix.CreateScale(1f, rise, 1f);
+        }
+
+        return transform;
+    }
+
+    /// <summary>
+    /// Where one part of one entity ends up: its animated transform, its parents' animated
+    /// transforms, the model's own alignment, and the hull's place in the world.
+    /// <para>
+    /// One function rather than two copies, for the same reason as the entity transform
+    /// above: <c>parts</c> answers "where is this part, and which way does it point" with
+    /// this, and a second copy of the chain would let the probe report a transform that is
+    /// not the one being drawn.
+    /// </para>
+    /// </summary>
+    private static Matrix PartWorldTransform(MeshBatch batch, int index, Matrix entityTransform)
+    {
+        Matrix local = batch.Locals[index];
+        int parent = batch.Parts[index].ParentIndex;
+
+        while (parent >= 0 && parent < batch.Locals.Length)
+        {
+            local *= batch.Locals[parent];
+            parent = batch.Parts[parent].ParentIndex;
+        }
+
+        return local * batch.ModelTransform * entityTransform;
     }
 
     /// <summary>
@@ -3393,6 +3506,87 @@ public sealed class MiVicGame : XnaGame
         }
 
         return (bestX, bestZ);
+    }
+
+    /// <summary>
+    /// Points the camera at the flight fixture's corridor, at the height the flyers
+    /// are actually flying at. A flyer sits sixty metres over the ground underneath
+    /// it, and the ground rises and falls by tens of metres across the map, so a
+    /// fixed height aims at the sky on a hill and well under an aeroplane in a
+    /// valley: the height has to come from the world, and the world does not exist
+    /// until the fixture has been built.
+    /// </summary>
+    private void FocusOnFlight()
+    {
+        if (_simulation is null || _camera is null)
+        {
+            return;
+        }
+
+        SimWorld world = _simulation.World;
+        int altitudeMm = 0;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (world.IsAliveSlot(slot))
+            {
+                altitudeMm = world.GetRefBySlot(slot).AltitudeMm;
+                break;
+            }
+        }
+
+        int xMm = (int)((_options.ScreenshotTargetX ?? 0f) * WorldPos.MmPerMetre);
+        int zMm = (int)((_options.ScreenshotTargetZ ?? 0f) * WorldPos.MmPerMetre);
+
+        _fixtureAim = new Vector3(
+            xMm * WorldPos.MmToMetres,
+            (world.Terrain.SampleHeightMm(xMm, zMm) + altitudeMm) * WorldPos.MmToMetres,
+            zMm * WorldPos.MmToMetres);
+
+        _camera.LookAt(_fixtureAim.Value);
+    }
+
+    /// <summary>
+    /// Points the camera at the middle of whatever the turret fixture put on the map:
+    /// two tanks and nothing else, so their midpoint is the line the shot travels
+    /// along. Where they are is a property of the seed — the fixture picks the
+    /// clearest ground it can find rather than taking the map's centre — so the camera
+    /// has to look for them instead of being told where to look.
+    /// </summary>
+    private void FocusOnTurrets()
+    {
+        if (_simulation is null || _camera is null)
+        {
+            return;
+        }
+
+        SimWorld world = _simulation.World;
+        Vector3 sum = Vector3.Zero;
+        int count = 0;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (world.IsAliveSlot(slot))
+            {
+                sum += _simulation.GetRenderPosition(slot, interpolate: false);
+                count++;
+            }
+        }
+
+        if (count == 0)
+        {
+            Console.WriteLine("turret-demo: nothing on the map to frame");
+            return;
+        }
+
+        Vector3 centre = sum / count;
+
+        Console.WriteLine($"turret-demo: framing {count} units around {centre.X:0}, {centre.Z:0}");
+
+        // A little above the hulls, so the frame is centred on the tanks rather than on
+        // the ground under them.
+        _fixtureAim = centre + new Vector3(0f, 1.5f, 0f);
+        _camera.LookAt(_fixtureAim.Value);
     }
 
     /// <summary>
