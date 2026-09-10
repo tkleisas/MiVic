@@ -45,3 +45,7 @@ artifacts/
 
 # Scratch screenshots from agent review passes
 shots/
+
+# Blender's Python bytecode cache, written when one generator imports another
+__pycache__/
+*.pyc
