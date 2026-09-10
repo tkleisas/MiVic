@@ -3057,21 +3057,28 @@ public sealed class MiVicGame : XnaGame
             _camera.FocusOn(centre);
 
             // Vision comes from units, and liquids are drawn under the fog, so lava
-            // nobody can see is lava drawn as fog. The observer stands a good way off —
-            // a volcano's own slopes are what it covers in lava, so a watcher next to it
-            // is a watcher standing in it, and would be moved down the mountain by the
-            // same rule that keeps everything else off impassable ground.
+            // nobody can see is lava drawn as fog. One watcher is not enough: a
+            // volcano's own slopes are what it covers in lava, so a watcher placed beside
+            // the crater is a watcher standing in it and gets moved down the mountain by
+            // the same rule that keeps everything else off impassable ground — leaving
+            // the crater itself outside anybody's sight, which is what two screenshots of
+            // pure fog were telling me. Watchers are therefore placed on all four sides,
+            // as close as solid ground allows.
             UnitDefinition observer = UnitCatalog.Get(UnitKind.Infantry);
+            SimWorld world = _simulation.World;
 
-            WorldPos wanting = WorldPos.FromMetres((int)centre.X + 45, 0, (int)centre.Z + 45);
+            foreach ((int dx, int dz) in new[] { (38, 0), (-38, 0), (0, 38), (0, -38) })
+            {
+                WorldPos wanting = WorldPos.FromMetres((int)centre.X + dx, 0, (int)centre.Z + dz);
 
-            _simulation.World.Spawn(
-                Faction.Soviet,
-                PlayerTeam,
-                UnitKind.Infantry,
-                _simulation.World.LegalSpawnSite(wanting),
-                Fix32.FromInt(observer.SpeedMmPerTick),
-                observer.Health);
+                world.Spawn(
+                    Faction.Soviet,
+                    PlayerTeam,
+                    UnitKind.Infantry,
+                    world.LegalSpawnSite(wanting),
+                    Fix32.FromInt(observer.SpeedMmPerTick),
+                    observer.Health);
+            }
 
             return;
         }

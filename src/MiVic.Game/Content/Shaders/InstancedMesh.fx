@@ -355,14 +355,26 @@ float4 LavaPS(VertexOutput input) : COLOR0
     // and the cracks between them are where the heat shows.
     float crust = 0.5 + (0.5 * sin((p.x * 0.055) + (Time * 0.22)) * cos((p.y * 0.071) - (Time * 0.18)));
     float veins = 0.5 + (0.5 * sin((p.x * 0.42) + (p.y * 0.36) + (Time * 0.75)));
-    float heat = saturate((crust * 0.75) + (veins * veins * 0.55) - 0.10);
+
+    // The heat has to be generous. Narrow bright veins over a dark crust is what lava
+    // looks like from a few metres away, and it is what this first did — but the veins
+    // are fifteen metres apart, so from a camera two hundred metres up they average
+    // into the crust and a volcano's crater reads as a dull rust stain. Measured rather
+    // than guessed: the first version averaged a heat of 0.41, squared to 0.17, which is
+    // five sixths cold rock.
+    float heat = saturate((crust * 0.85) + (veins * 0.75) - 0.05);
 
     float3 crustColor = input.Material.rgb * 0.55;
     float3 molten = float3(1.00, 0.42, 0.07);
 
-    // Squared so the molten cracks stay narrow and the crust stays dark, which is what
-    // lava actually looks like from above.
+    // Still squared, so the crust keeps its dark plates and the cracks between them stay
+    // the brightest thing on the surface.
     float3 color = lerp(crustColor, molten, heat * heat);
+
+    // The hottest cores glow past their own colour, so lava reads as a light source
+    // against the rock rather than as a stain on it. This is the whole reason it is drawn
+    // unlit: nothing else on the ground gets to be brighter than the sun.
+    color += molten * pow(heat, 4.0) * 0.45;
 
     // Emissive means it keeps its own brightness, but haze still applies.
     return float4(ApplyFog(color, input.WorldPos), input.Material.a * input.Tint.a);
