@@ -18,4 +18,59 @@
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
+  <!--
+    The version comes from the git tag, not from this file.
+
+    A number typed in here is a number somebody has to remember to change, and the
+    first release it is forgotten in is the first release that lies about itself. The
+    nearest tag is the version; asking git for the exact describe adds how many commits
+    past that tag the build is and whether the tree is dirty, which is what the game
+    displays, so a build between releases says so instead of claiming to be the release.
+
+    Falls back to 0.0.0 when there is no repository at all, which is the honest answer
+    for a checkout with no history: it must not silently become the SDK default of
+    1.0.0, which would look like a release.
+  -->
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
+  </PropertyGroup>
+
+  <Target Name="VersionFromGit" BeforeTargets="GetAssemblyVersion;CoreGenerateAssemblyInfo">
+    <Exec Command="git describe --tags --abbrev=0"
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true"
+          StandardOutputImportance="low"
+          StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" ItemName="_GitTagLines" />
+    </Exec>
+
+    <Exec Command="git describe --tags --always --dirty"
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true"
+          StandardOutputImportance="low"
+          StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" ItemName="_GitDescribeLines" />
+    </Exec>
+
+    <PropertyGroup>
+      <!-- Items into properties first: a property function cannot expand an item
+           list that is written inside its own string argument, it just passes the
+           text through, which is how this ended up building a NuGet version called
+           "@(_GitTagLines)". -->
+      <_GitTagRaw>@(_GitTagLines)</_GitTagRaw>
+      <_GitDescribeRaw>@(_GitDescribeLines)</_GitDescribeRaw>
+      <_GitTag>$(_GitTagRaw.Trim())</_GitTag>
+      <_GitDescribe>$(_GitDescribeRaw.Trim())</_GitDescribe>
+
+      <!-- The leading v belongs to the tag, not to the number. -->
+      <_GitTagVersion>$([System.String]::Copy('$(_GitTag)').TrimStart('v'))</_GitTagVersion>
+      <_GitExactVersion>$([System.String]::Copy('$(_GitDescribe)').TrimStart('v'))</_GitExactVersion>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(_GitTagVersion)' != ''">
+      <Version>$(_GitTagVersion)</Version>
+      <InformationalVersion>$(_GitExactVersion)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+
 </Project>

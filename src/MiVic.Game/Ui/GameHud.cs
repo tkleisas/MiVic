@@ -329,6 +329,8 @@ public sealed class GameHud
         }
 
         ImGui.TextUnformatted("MiVic — Στρατηγική Πραγματικού Χρόνου");
+        ImGui.SameLine();
+        ImGui.TextColored(MutedColor, GameVersion.Display);
         ImGui.TextColored(MutedColor, "Ο στόχος: η ήττα της Δυτικής αυτοκρατορίας.");
         ImGui.Separator();
 

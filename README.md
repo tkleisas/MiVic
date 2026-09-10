@@ -9,6 +9,48 @@ A 3D real-time strategy game in MonoGame, with a Greek-language interface. Set i
 an alternate future where the Soviet Union still exists and is allied with China;
 the goal is the defeat of the Western empire.
 
+**Release `v0.01`** — the first playable cut: three asymmetric factions, a full 3D
+battlefield with mutable terrain, and shooting you can watch happen.
+
+![The Soviet base, with the status and production panels](docs/images/skirmish.png)
+
+*Η σοβιετική βάση. Το πάνελ δείχνει την έκδοση της κατασκευής — `v0.01`, και ό,τι
+ακολουθεί το τελευταίο tag (π.χ. `v0.01-3-g1a2b3c4` για μια κατασκευή τρεις
+commits μετά την έκδοση).*
+
+## Versioning / Εκδόσεις
+
+The version is the **git tag**, not a number in a file:
+
+```pwsh
+git tag -a v0.02 -m "MiVic v0.02"
+dotnet build MiVic.sln          # the build now calls itself v0.02
+```
+
+`Directory.Build.props` asks git for the nearest tag at build time and stamps it into
+the assembly, which the window title and the status panel read back. A build that is
+past a tag says so (`v0.01-3-g1a2b3c4`); a build from a tree with uncommitted changes
+says that too (`v0.01-dirty`). A checkout with no tags at all is `v0.0.0` rather than
+the SDK's default, which would look like a release.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![A firefight: a fireball, smoke and debris](docs/images/firefight.png) | ![A firing line: one of every weapon in flight](docs/images/firing-line.png) |
+| **Μάχη.** Βολές, καπνός, θραύσματα. | **Γραμμή βολής.** Όλα τα όπλα του παιχνιδιού, με βλήματα στον αέρα. |
+| ![A ground burst with its shockwave ring](docs/images/explosions.png) | ![Every model on one sheet](docs/images/models.png) |
+| **Έκρηξη.** Κύκλος κύματος κρούσης, χώμα, θραύσματα. | **Τα μοντέλα.** Όλα, παραγόμενα από σενάριο Blender. |
+
+Όλες οι εικόνες παράγονται από το ίδιο το παιχνίδι, χωρίς να παιχτεί χέρι:
+
+```pwsh
+$exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
+& $exe --combat-demo  --screenshot docs/images/firefight.png  --screenshot-frame 22
+& $exe --fire-demo    --screenshot docs/images/firing-line.png --screenshot-frame 50
+& $exe --model-gallery docs/images/models.png
+```
+
 ## Factions / Παρατάξεις
 
 | | Σοβιετικοί | Κινέζοι | Δυτικοί |
@@ -57,10 +99,15 @@ dotnet run --project src/MiVic.Game
 | `--model-gallery <file>` | render every model with axis markers, for orientation checks |
 | `--fullscreen` | start fullscreen (F11 toggles it at any time) |
 | `--width <px>`, `--height <px>` | back-buffer size; the default 1280×720 is a size to play at, not to inspect a model at |
+| `--screenshot-frame <n>` | which frame to capture; whether a round is in flight depends entirely on it |
 | `--viewer` | model viewer: one model on a locked camera |
 | `--viewer-model <Faction/Kind>` | which model the viewer opens on |
 | `--viewer-shot <file>` | render one viewer frame to PNG and exit |
 | `--viewer-distance <m>`, `--viewer-pitch <deg>`, `--viewer-angle <deg>` | viewer camera, for reproducible comparison shots |
+| `--combat-demo` | a small battle already in weapon range, for looking at the shooting |
+| `--fire-demo` | one of every weapon firing on a repeating cycle, so rounds can be photographed |
+| `--particle-demo` | one of every effect, laid out in a grid |
+| `--nuke-demo` | a tactical nuke, framed |
 | `--select-hq` | select the player's command centre at start |
 | `--victory-demo` | knock out the rival structures so the victory banner appears |
 | `--record <file>` | log every external command and save the match as a replay |
@@ -68,7 +115,6 @@ dotnet run --project src/MiVic.Game
 | `--watch <file>` | play a recorded match back in the client |
 | `--mission <id>` | start a campaign mission |
 | `--mission-list` | list the campaign |
-| `--particle-demo` | spawn a row of explosions, for screenshots |
 | `--render-audio <dir>` | export one WAV per faction theme and exit |
 | `--render-sfx <dir>` | export one WAV per sound effect and exit |
 | `--no-audio` | no music or sound effects |
@@ -193,8 +239,32 @@ instanced passes — additive for sparks, straight alpha for smoke and debris.
 Deaths are reported by the simulation as events and turned into effects by the
 client, which is strictly one-way: particles can never affect a tick, and an
 enemy dying out of sight spawns nothing. Structures smoke in proportion to the
-damage they have taken. `--particle-demo` fires a row of explosions of increasing
-size for a screenshot.
+damage they have taken.
+
+### Shooting
+
+Damage is resolved on the tick a weapon fires, exactly as it always was — a round
+on screen is a *picture* of a shot that has already happened, and giving rounds
+real flight time would put them in the simulation, where they would change the
+outcome of a tick and every recorded hash in the project.
+
+The client finds the shots without being told: `CombatSystem` sets an entity's
+attack cooldown to its weapon's reload only on the tick it actually fires, so a
+cooldown that was zero last tick and is positive now, with a target, is a shot.
+Each weapon then draws itself — a rifle a thin tracer, a tank gun a fat round with
+a flash and a crack, a howitzer a shell thrown in an arc, the Κατιούσα four
+wobbling rockets trailing smoke, anti-air twin rounds that burst in the air,
+aircraft and drones missiles on smoke trails, the Ηλεκτροπυροβόλο an electric arc
+between two points. Impacts match the weapon, and a wreck keeps exploding after it
+dies.
+
+Three things are drawn with their own geometry and their own pixel shader rather
+than as billboards, because a billboard is the wrong shape for each of them: a
+shockwave is an annulus, the body of a detonation is a low-poly sphere shaded from
+its own facets, and a tracer is a streak shaded along its length.
+
+`--combat-demo`, `--fire-demo`, `--particle-demo` and `--nuke-demo` exist to look
+at all of this without playing a match; see [Screenshots](#screenshots).
 
 ### Music and sound effects
 

@@ -57,6 +57,9 @@ public sealed class MiVicGame : XnaGame
     /// </summary>
     private const string GreekWindowTitle = "MiVic — Στρατηγική Πραγματικού Χρόνου";
 
+    /// <summary>The window title with the build's version on it.</summary>
+    private static readonly string FullWindowTitle = $"{GreekWindowTitle}  {GameVersion.Display}";
+
     private readonly GraphicsDeviceManager _graphics;
     private readonly LaunchOptions _options;
     private readonly Stopwatch _frameStopwatch = Stopwatch.StartNew();
@@ -311,7 +314,7 @@ public sealed class MiVicGame : XnaGame
         // not have that problem because it encodes UTF-8 explicitly, but
         // GameWindow.Title ignores an assignment that does not change the value —
         // so the title must be left unset until this point for the setter to fire.
-        Window.Title = GreekWindowTitle;
+        Window.Title = FullWindowTitle;
     }
 
     protected override void LoadContent()
