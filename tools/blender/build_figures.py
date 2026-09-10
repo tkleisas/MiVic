@@ -198,7 +198,7 @@ def build_soldier(faction, kind, palette, kit=None, shoulders=0.42, bulk=1.0):
         parts.append(cap)
         paint(cap, palette["helmet"])
 
-        peak = box("Peak", (0.175, 0.10, 0.022), offset=(0.0, 0.155, 0.0))
+        peak = box("Peak", (0.175, 0.13, 0.022), offset=(0.0, 0.175, 0.0))
         peak.parent = cap
         parts.append(peak)
         paint(peak, MATERIALS["gun_dark"])
@@ -224,6 +224,25 @@ def build_soldier(faction, kind, palette, kit=None, shoulders=0.42, bulk=1.0):
         eyes.location = (0.0, 0.0, HEAD_BASE)
         parts.append(eyes)
         paint(eyes, MATERIALS["gun_dark"], variation=0.03)
+
+    # Optics. A dark figure against dark ground has no focal point at all, and a
+    # pair of lenses is the one thing that reads as a face when nothing else does —
+    # which is what a stealth unit needs, since being nearly invisible is its job.
+    if kit.get("lens"):
+        for side in (-1, 1):
+            lens = box("Lens", (0.045, 0.03, 0.032), offset=(0.0, 0.105, 0.138))
+            lens.location = (side * 0.040, 0.0, HEAD_BASE)
+            parts.append(lens)
+            paint(lens, MATERIALS["coil"], variation=0.02)
+
+    # Shoulder boards: two small bright patches that say "officer" from above, where
+    # the only part of a figure a player actually sees is the shoulders.
+    if kit.get("boards"):
+        for side in (-1, 1):
+            board = box("Board", (0.085, 0.15, 0.025), offset=(0.0, 0.0, 0.0))
+            board.location = (side * shoulders * 0.42, 0.0, SHOULDER + 0.03)
+            parts.append(board)
+            paint(board, palette["helmet"], variation=0.03)
 
     # ---- the weapon --------------------------------------------------------
     # Four boxes rather than one: a receiver, a barrel, a magazine and a stock.
@@ -374,7 +393,7 @@ def main():
          "skin_shade": FLESH_SHADE,
          "helmet": (0.46, 0.13, 0.11, 0.30),
          "pack": MATERIALS["crate"]},
-        {"coat": True, "helmet": "cap", "weapon": "carbine", "pack": True, "antenna": True},
+        {"coat": True, "helmet": "cap", "weapon": "carbine", "pack": True, "antenna": True, "boards": True},
         0.44, 1.02))
 
     emit("chinese_robot", lambda: build_soldier(
@@ -407,16 +426,18 @@ def main():
 
     emit("western_stalker", lambda: build_soldier(
         "western", "stalker",
-        {"body": (0.20, 0.22, 0.26, 0.24),
-         "belt": (0.14, 0.15, 0.18, 0.18),
-         "legs": (0.15, 0.17, 0.20, 0.18),
-         "boots": (0.10, 0.10, 0.12, 0.06),
-         "gloves": (0.12, 0.13, 0.16, 0.10),
-         "skin": (0.36, 0.28, 0.22, 0.00),
-         "skin_shade": (0.24, 0.19, 0.15, 0.00),
-         "helmet": (0.13, 0.15, 0.19, 0.12),
-         "pack": (0.14, 0.16, 0.19, 0.10)},
-        {"helmet": "visor", "weapon": "carbine", "pack": True},
+        # Darker than a line infantryman, because that is the point of him — but not
+        # so dark that a revealed stalker is a black hole with a rifle in it.
+        {"body": (0.28, 0.31, 0.36, 0.24),
+         "belt": (0.20, 0.22, 0.26, 0.18),
+         "legs": (0.21, 0.24, 0.28, 0.18),
+         "boots": (0.14, 0.14, 0.17, 0.06),
+         "gloves": (0.17, 0.19, 0.23, 0.10),
+         "skin": (0.44, 0.34, 0.27, 0.00),
+         "skin_shade": (0.30, 0.23, 0.18, 0.00),
+         "helmet": (0.19, 0.22, 0.27, 0.12),
+         "pack": (0.20, 0.23, 0.27, 0.10)},
+        {"helmet": "visor", "weapon": "carbine", "pack": True, "lens": True},
         0.42, 0.98))
 
     for path in written:
