@@ -248,9 +248,15 @@ def paint(obj, rgba):
 
 
 def join(parent, children):
-    """Parents each child to a part so the exporter writes a node hierarchy."""
+    """Parents each child to a part so the exporter writes a node hierarchy.
+
+    Parts that are animated as a unit are parented deliberately at the call site
+    (the barrel to the turret, the muzzle to the barrel); this is for the ones that
+    simply hang off the model root.
+    """
     for child in children:
-        child.parent = parent
+        if child.parent is None:
+            child.parent = parent
 
 
 # --------------------------------------------------------------------------
@@ -291,32 +297,39 @@ def build_tank(faction, profile):
     for side in (-1, 1):
         for i in range(count):
             t = 0.0 if count == 1 else (i / (count - 1)) - 0.5
+
+            # The cylinder is built around its own origin and *placed* with the
+            # object transform. Baking the offset into the vertices instead would
+            # put the mesh origin at the middle of the tank, and a wheel cannot
+            # spin about an axis that is not through its own hub.
             wheel = cylinder(
                 f"wheel_{'l' if side < 0 else 'r'}{i + 1:02d}",
                 profile["wheel_radius"],
                 profile["track_width"] * 0.9,
                 segments=10,
                 axis="x",
-                offset=(side * track_x, t * span, profile["wheel_radius"]),
             )
+            wheel.location = (side * track_x, t * span, profile["wheel_radius"])
             parts.append(wheel)
 
     turret_z = profile["wheel_radius"] + body
     sx, sy, sz = profile["turret_scale"]
 
+    # Every turret is built around its own origin — the ring centre — so rotating
+    # it later turns it about the ring rather than about the middle of the hull.
     if profile["turret"] == "dome":
         turret = dome("turret", 1.0, (sx, sy, sz * 2.0))
-        turret.location = (0.0, -0.25, turret_z)
     elif profile["turret"] == "wedge":
         turret = wedge_turret("turret", (sx, sy, sz * 2.0))
-        turret.location = (0.0, -0.35, turret_z)
     else:
-        turret = box("turret", (sx * 2.0, sy * 2.0, sz * 1.7), offset=(0.0, -0.3, turret_z + (sz * 0.85)))
-        turret.location = (0.0, 0.0, 0.0)
+        turret = box("turret", (sx * 2.0, sy * 2.0, sz * 1.7), offset=(0.0, 0.0, sz * 0.85))
 
+    turret.location = (0.0, 0.0, turret_z)
     parts.append(turret)
 
-    barrel_z = turret_z + (sz * 1.05)
+    # The barrel is a child of the turret, so the gun follows the turret for free
+    # and only has to add its own elevation. Its location is relative to the
+    # turret's origin, because that is what parenting means in Blender.
     barrel = cylinder(
         "barrel",
         profile["barrel_radius"],
@@ -325,7 +338,8 @@ def build_tank(faction, profile):
         axis="y",
         offset=(0.0, profile["barrel_length"] * 0.5, 0.0),
     )
-    barrel.location = (0.0, sy * 0.5, barrel_z)
+    barrel.parent = turret
+    barrel.location = (0.0, sy * 0.5, sz * 1.0)
     parts.append(barrel)
 
     if profile["muzzle_brake"]:
@@ -335,12 +349,10 @@ def build_tank(faction, profile):
             profile["barrel_radius"] * 3.0,
             segments=10,
             axis="y",
-            offset=(0.0, profile["barrel_length"], 0.0),
         )
-        brake.location = (0.0, sy * 0.5, barrel_z)
         brake.parent = barrel
-        barrel.children  # noqa: B018 - keeps the reference explicit
-        join(barrel, [brake])
+        brake.location = (0.0, profile["barrel_length"], 0.0)
+        parts.append(brake)
         paint(brake, (0.16, 0.16, 0.17, 1.0))
 
     paint(hull, (0.42, 0.45, 0.40, 1.0))

@@ -60,23 +60,40 @@ The silhouettes come out measurably distinct, which is the point of §2.1:
 | Κινέζοι | **3.50** (narrowest) | **4.72** (tallest) | 5.70 | 444 | 5 |
 | Δυτικοί | **4.86** (widest) | 4.55 | **7.90** (longest) | 588 | 7 |
 
-### 2.0 Two loader limits that block the rest of this section
+### 2.0 Loader limits — resolved
 
-Both are in `GltfLoader` and both need fixing before animation or textured colour
-means anything:
+Both are fixed:
 
-1. **The loader merges the whole node hierarchy into one mesh.** Every part is
-   baked into a single vertex buffer, so the parts exist in the file — `hull`,
-   `turret`, `barrel`, `wheel_l01`, `radar` all export correctly and are visible in
-   the glTF — but the engine cannot reach them. Tier-1 animation (a turret that
-   traverses, wheels that spin) needs the loader to keep per-node meshes and expose
-   the node transform, which is the single largest remaining piece of work here.
-2. **`COLOR_0` is reduced to greyscale luminance.** The loader computes a single
-   luminance value per vertex and writes it to R, G and B, so a model's own colours
-   are discarded and the faction tint is applied on top. Colourful generated models
-   therefore currently render as tinted greyscale. Since identity is meant to come
-   from silhouette rather than hue this is not fatal, but "colourful and textured"
-   needs the loader to pass RGB through.
+1. **The loader keeps parts.** `GltfLoader.LoadModel` returns each named node as its
+   own mesh, with a **parent-relative** transform and its parent's index. Parent
+   relative matters: an accumulated transform would freeze a barrel in place the
+   moment the turret turned. The alignment, scale, centring and grounding are
+   returned as one `ModelTransform` applied outside the parts, so a part's pivot
+   stays where the pivot is.
+2. **`COLOR_0` passes through as RGB**, so a model's own palette reaches the shader
+   and the faction tint composites over it rather than replacing it.
+
+`--inspect-models` lists each model's parts, which is the animation contract and
+the check that catches a model whose parts are baked into one mesh. It showed that
+the borrowed assets are already parts-rigged in most roles — `Soldier_Head/Legs/
+Feet/Body`, `Tank_Turret/Tank_Gun/TrackMesh.L/R`, `Turret_*_Base/Top` — so
+animation is not limited to the generated models.
+
+**Tier 1 is built.** `turret`, `wheel_*` and `radar` are animated in the renderer,
+each as a pure function of simulation state:
+
+| Part | Driven by |
+|---|---|
+| `turret` | bearing to `entity.TargetSlot`, relative to the hull's heading |
+| `wheel_*` | `Entity.DistanceTravelledMm` ÷ the wheel's own measured radius |
+| `radar` | the tick, so a dish sweeps identically in a replay |
+
+The odometer lives in the simulation rather than the client precisely so that a
+replay spins the wheels the same way; deriving it from frame-to-frame movement in
+the client would make the animation frame-rate dependent. It accumulates Euclidean
+distance, not the sum of the step components — a diagonal step is 400 mm of travel,
+not the 566 mm its two parts add up to, and a wheel spun by the wrong number slides
+instead of rolling.
 
 Three tiers of animation, cheapest first:
 

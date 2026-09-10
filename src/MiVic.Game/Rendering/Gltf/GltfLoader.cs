@@ -33,12 +33,18 @@ public readonly record struct ModelImportOptions(
     bool AlignLongestHorizontalAxis = true);
 
 /// <summary>
-/// One named part of a model, with the transform that places it in model space.
+/// One named part of a model, with the transform that places it.
 /// </summary>
 /// <param name="Name">The glTF node name, which is the part contract: <c>turret</c>, <c>wheel_l01</c>.</param>
 /// <param name="Mesh">Geometry in the space the part's transform expects.</param>
-/// <param name="LocalTransform">Where the part sits, relative to the model.</param>
-public readonly record struct ModelPart(string Name, MeshData Mesh, Matrix LocalTransform);
+/// <param name="LocalTransform">
+/// Where the part sits relative to <em>its parent</em>, not to the model. Keeping
+/// it parent-relative is what lets a turret turn and carry its barrel with it: an
+/// accumulated transform would freeze the barrel in place the moment the turret
+/// moved.
+/// </param>
+/// <param name="ParentIndex">Index of the enclosing part, or -1 for a root part.</param>
+public readonly record struct ModelPart(string Name, MeshData Mesh, Matrix LocalTransform, int ParentIndex);
 
 /// <summary>
 /// A model as its parts, plus the single transform that normalises the whole thing
@@ -160,14 +166,14 @@ public static class GltfLoader
         {
             for (int i = 0; i < (root.Nodes?.Length ?? 0); i++)
             {
-                AppendPart(root, buffers, i, Matrix.Identity, options, parts);
+                AppendPart(root, buffers, i, Matrix.Identity, -1, options, parts);
             }
         }
         else
         {
             foreach (int node in sceneNodes)
             {
-                AppendPart(root, buffers, node, Matrix.Identity, options, parts);
+                AppendPart(root, buffers, node, Matrix.Identity, -1, options, parts);
             }
         }
 
@@ -239,18 +245,22 @@ public static class GltfLoader
             built[i] = new ModelPart(
                 builder.Name,
                 new MeshData(vertices, [.. builder.Indices]),
-                builder.LocalTransform);
+                builder.LocalTransform,
+                builder.ParentIndex);
         }
 
         return new ModelData(built, modelTransform, size * scale);
     }
 
     /// <summary>Accumulates one named part's geometry while the scene graph is walked.</summary>
-    private sealed class PartBuilder(string name, Matrix localTransform)
+    private sealed class PartBuilder(string name, Matrix localTransform, int parentIndex)
     {
         public string Name { get; } = name;
 
+        /// <summary>Sits inside its parent, not inside the model.</summary>
         public Matrix LocalTransform { get; } = localTransform;
+
+        public int ParentIndex { get; } = parentIndex;
 
         public List<Vector3> Positions { get; } = new(512);
 
@@ -266,6 +276,7 @@ public static class GltfLoader
         byte[][] buffers,
         int nodeIndex,
         Matrix parentTransform,
+        int parentPartIndex,
         ModelImportOptions options,
         List<PartBuilder> parts)
     {
@@ -277,7 +288,13 @@ public static class GltfLoader
         }
 
         GltfNode node = nodes[nodeIndex];
-        Matrix transform = NodeTransform(node) * parentTransform;
+
+        // The node's own transform, not the accumulated one. Children are walked
+        // with the accumulated transform so the bounding box stays right, but each
+        // part keeps only its own step of the chain.
+        Matrix local = NodeTransform(node);
+        Matrix world = local * parentTransform;
+        int partIndex = parentPartIndex;
 
         if (node.Mesh is int meshIndex && root.Meshes is not null && (uint)meshIndex < (uint)root.Meshes.Length)
         {
@@ -285,7 +302,7 @@ public static class GltfLoader
                 ?? root.Meshes[meshIndex].Name
                 ?? $"part{parts.Count}";
 
-            var builder = new PartBuilder(name, transform);
+            var builder = new PartBuilder(name, local, parentPartIndex);
 
             // Identity here: the node's own transform becomes the part's local
             // transform, so the geometry stays in the space the pivot lives in.
@@ -303,6 +320,7 @@ public static class GltfLoader
             if (builder.Positions.Count > 0)
             {
                 parts.Add(builder);
+                partIndex = parts.Count - 1;
             }
         }
 
@@ -313,7 +331,7 @@ public static class GltfLoader
 
         foreach (int child in node.Children)
         {
-            AppendPart(root, buffers, child, transform, options, parts);
+            AppendPart(root, buffers, child, world, partIndex, options, parts);
         }
     }
 
@@ -333,13 +351,31 @@ public static class GltfLoader
         {
             foreach (Vector3 local in builder.Positions)
             {
-                Vector3 position = Vector3.Transform(local, builder.LocalTransform * orientation);
+                Vector3 position = Vector3.Transform(local, Accumulated(parts, builder) * orientation);
                 min = Vector3.Min(min, position);
                 max = Vector3.Max(max, position);
             }
         }
 
         return max - min;
+    }
+
+    /// <summary>
+    /// Walks a part's chain of parents to get the transform that places it in the
+    /// model. Parts are stored parents-first, so this only ever looks backwards.
+    /// </summary>
+    private static Matrix Accumulated(List<PartBuilder> parts, PartBuilder part)
+    {
+        Matrix result = part.LocalTransform;
+        int parent = part.ParentIndex;
+
+        while (parent >= 0 && parent < parts.Count)
+        {
+            result *= parts[parent].LocalTransform;
+            parent = parts[parent].ParentIndex;
+        }
+
+        return result;
     }
 
     private static (GltfRoot Root, byte[]? Binary) Parse(string path)

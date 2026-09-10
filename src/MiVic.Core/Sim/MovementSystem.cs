@@ -163,6 +163,15 @@ public static class MovementSystem
 
         e.Position = new WorldPos(e.Position.X + mx, e.Position.Y, e.Position.Z + mz);
         e.Heading = TrigTable.Atan2Brads(mz, mx);
+
+        // Odometer: the distance a unit has actually covered, which is what turns a
+        // wheel. Euclidean, not the Manhattan sum of the two step components — a
+        // diagonal step is 400 mm of travel, not the 566 mm its parts add up to,
+        // and a wheel spun by the wrong number slides instead of rolling.
+        if (mx != 0 || mz != 0)
+        {
+            e.DistanceTravelledMm += IntMath.Distance(mx, 0, mz);
+        }
     }
 
     /// <summary>Keeps a unit glued to the ground, or at its altitude above it.</summary>

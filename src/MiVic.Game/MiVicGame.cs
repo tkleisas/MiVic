@@ -72,8 +72,8 @@ public sealed class MiVicGame : XnaGame
     private InstancedRenderer.Mesh? _selectionMarkerMesh;
     private InstancedRenderer.Mesh? _axisMesh;
     private InstancedRenderer.Mesh? _particleMesh;
-    private MeshBatch? _axisBatch;
-    private MeshBatch? _markerBatch;
+    private SingleBatch? _axisBatch;
+    private SingleBatch? _markerBatch;
     private FogOverlayRenderer? _fog;
     private ParticleSystem? _particles;
     private AudioDirector? _audio;
@@ -85,7 +85,7 @@ public sealed class MiVicGame : XnaGame
     private readonly List<WorldLabel> _labelBuffer = [];
     private readonly List<OrderMarker> _orderMarkers = [];
     private InstancedRenderer.Mesh? _orderMesh;
-    private MeshBatch? _orderBatch;
+    private SingleBatch? _orderBatch;
 
     /// <summary>How long a move-order ring stays on screen, in seconds.</summary>
     private const float OrderMarkerSeconds = 0.9f;
@@ -224,11 +224,11 @@ public sealed class MiVicGame : XnaGame
             TerrainMeshBuilder.FromHeightMap(_simulation.World.Terrain, _simulation.World.TerrainTypes));
         _terrainRevision = _simulation.World.TerrainTypes.Revision;
         _selectionMarkerMesh = _renderer.CreateMesh(MeshBuilder.Cylinder(2.6f, 0.45f, 12));
-        _markerBatch = new MeshBatch(_selectionMarkerMesh, _simulation.World.Capacity);
+        _markerBatch = new SingleBatch(_selectionMarkerMesh, _simulation.World.Capacity);
 
         // Order markers reuse the selection ring's geometry at a larger scale.
         _orderMesh = _selectionMarkerMesh;
-        _orderBatch = new MeshBatch(_orderMesh, 32);
+        _orderBatch = new SingleBatch(_orderMesh, 32);
 
         // Fog of war is a terrain-shaped overlay textured by the team's
         // visibility mask, so its edge follows the ground instead of the cell
@@ -241,7 +241,7 @@ public sealed class MiVicGame : XnaGame
 
         // Axis markers for the model gallery: a unit-cube scaled into bars.
         _axisMesh = _renderer.CreateMesh(MeshBuilder.Box(1f, 1f, 1f));
-        _axisBatch = new MeshBatch(_axisMesh, _simulation.World.Capacity * 4);
+        _axisBatch = new SingleBatch(_axisMesh, _simulation.World.Capacity * 4);
 
         // Particles are billboards: a unit quad the CPU orients per particle.
         _particleMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
@@ -570,14 +570,17 @@ public sealed class MiVicGame : XnaGame
 
         foreach (MeshBatch batch in _batches.Values)
         {
-            if (batch.Count == 0)
+            foreach (PartBatch part in batch.Parts)
             {
-                continue;
-            }
+                if (part.Count == 0)
+                {
+                    continue;
+                }
 
-            _renderer.Draw(batch.Mesh, batch.Instances, batch.Count);
-            _drawCalls++;
-            _instancesSubmitted += batch.Count;
+                _renderer.Draw(part.Mesh, part.Instances, part.Count);
+                _drawCalls++;
+                _instancesSubmitted += part.Count;
+            }
         }
 
         if (_markerBatch is { Count: > 0 })
@@ -776,7 +779,10 @@ public sealed class MiVicGame : XnaGame
     {
         foreach (MeshBatch batch in _batches.Values)
         {
-            batch.Count = 0;
+            foreach (PartBatch part in batch.Parts)
+            {
+                part.Count = 0;
+            }
         }
 
         SimWorld world = _simulation!.World;
@@ -802,10 +808,6 @@ public sealed class MiVicGame : XnaGame
             }
 
             MeshBatch batch = GetBatch(entity.Faction, entity.Kind);
-            if (batch.Count >= batch.Instances.Length)
-            {
-                continue;
-            }
 
             Vector3 position = _simulation.GetRenderPosition(slot, interpolate: true);
             float heading = SimBridge.HeadingRadians(entity.Heading);
@@ -814,11 +816,115 @@ public sealed class MiVicGame : XnaGame
                 Matrix.CreateRotationY(-heading) *
                 Matrix.CreateTranslation(position);
 
-            batch.Instances[batch.Count] = new InstanceData(
-                transform,
-                FactionPalette.ForUnit(entity.Faction, entity.Kind).ToVector4());
-            batch.Count++;
+            Vector4 tint = FactionPalette.ForUnit(entity.Faction, entity.Kind).ToVector4();
+
+            // One instance per part, each carrying its own place in the model. The
+            // chain is composed here rather than at load time, because that is what
+            // lets a turret turn and take its barrel with it.
+            for (int i = 0; i < batch.Parts.Length; i++)
+            {
+                batch.Locals[i] = AnimatePart(batch.Parts[i], ref entity, world);
+            }
+
+            for (int i = 0; i < batch.Parts.Length; i++)
+            {
+                PartBatch part = batch.Parts[i];
+
+                if (part.Count >= part.Instances.Length)
+                {
+                    continue;
+                }
+
+                Matrix local = batch.Locals[i];
+                int parent = part.ParentIndex;
+
+                while (parent >= 0 && parent < batch.Locals.Length)
+                {
+                    local *= batch.Locals[parent];
+                    parent = batch.Parts[parent].ParentIndex;
+                }
+
+                part.Instances[part.Count++] = new InstanceData(
+                    local * batch.ModelTransform * transform,
+                    tint);
+            }
         }
+    }
+
+    /// <summary>
+    /// A part's transform for this entity, after animation.
+    /// <para>
+    /// Every animated part is a pure function of simulation state — the turret aims
+    /// at what the unit is shooting at, the wheels turn with the distance it has
+    /// actually travelled, the radar turns with the tick — so a replay shows the
+    /// same animation without any of it being recorded.
+    /// </para>
+    /// </summary>
+    private Matrix AnimatePart(PartBatch part, ref Entity entity, SimWorld world)
+    {
+        if (part.ParentIndex < 0 && part.LocalTransform == Matrix.Identity)
+        {
+            return part.LocalTransform;
+        }
+
+        string name = part.Name;
+
+        if (name.StartsWith("wheel_", StringComparison.Ordinal))
+        {
+            // Rolling, not sliding: the angle is the arc the wheel has covered.
+            float radius = _catalog!.WheelRadius(entity.Faction, entity.Kind);
+
+            if (radius > 0.01f)
+            {
+                float angle = (entity.DistanceTravelledMm / 1000f) / radius;
+                return Matrix.CreateRotationX(-angle) * part.LocalTransform;
+            }
+        }
+        else if (name.Equals("turret", StringComparison.Ordinal))
+        {
+            return Matrix.CreateRotationY(TurretYaw(ref entity, world)) * part.LocalTransform;
+        }
+        else if (name.Equals("radar", StringComparison.Ordinal))
+        {
+            // A dish sweeps continuously; the tick is the clock, so it is identical
+            // in a replay.
+            float sweep = world.Tick * 0.02f;
+            return Matrix.CreateRotationZ(sweep) * part.LocalTransform;
+        }
+
+        return part.LocalTransform;
+    }
+
+    /// <summary>
+    /// Turret angle relative to the hull, in radians, aiming at whatever the unit is
+    /// engaging. A turret with nothing to shoot at returns to centre rather than
+    /// freezing wherever it was pointing when the target died.
+    /// </summary>
+    private float TurretYaw(ref Entity entity, SimWorld world)
+    {
+        int target = entity.TargetSlot;
+
+        if (target < 0 || !world.IsAliveSlot(target))
+        {
+            return 0f;
+        }
+
+        ref Entity victim = ref world.GetRefBySlot(target);
+
+        int dx = victim.Position.X - entity.Position.X;
+        int dz = victim.Position.Z - entity.Position.Z;
+
+        if (dx == 0 && dz == 0)
+        {
+            return 0f;
+        }
+
+        // The simulation's heading is a brad-style angle; the renderer's yaw is the
+        // same convention negated, which is what every other transform here uses.
+        float bearing = MathF.Atan2(dz, dx);
+        float hull = SimBridge.HeadingRadians(entity.Heading);
+
+        return -(bearing - hull);
     }
 
     private MeshBatch GetBatch(Faction faction, UnitKind kind)
@@ -827,7 +933,7 @@ public sealed class MiVicGame : XnaGame
 
         if (!_batches.TryGetValue(key, out MeshBatch? batch))
         {
-            batch = new MeshBatch(_catalog!.Get(faction, kind), _simulation!.World.Capacity);
+            batch = new MeshBatch(_catalog!.GetParts(faction, kind), _simulation!.World.Capacity);
             _batches[key] = batch;
         }
 
@@ -2403,10 +2509,13 @@ public sealed class MiVicGame : XnaGame
         base.UnloadContent();
     }
 
-    /// <summary>One mesh plus the instance array and live count submitted for it.</summary>
-    private sealed class MeshBatch
+    /// <summary>
+    /// One mesh drawn as a single instanced batch: selection rings, order markers,
+    /// gallery axes. Everything that is not a multi-part unit model.
+    /// </summary>
+    private sealed class SingleBatch
     {
-        public MeshBatch(InstancedRenderer.Mesh mesh, int capacity)
+        public SingleBatch(InstancedRenderer.Mesh mesh, int capacity)
         {
             Mesh = mesh;
             Instances = new InstanceData[capacity];
@@ -2417,5 +2526,64 @@ public sealed class MiVicGame : XnaGame
         public InstanceData[] Instances { get; }
 
         public int Count { get; set; }
+    }
+
+    /// <summary>One part of one role: a mesh, its place in its parent, and its instances.</summary>
+    private sealed class PartBatch
+    {
+        public PartBatch(ModelCatalog.PartMesh part, int capacity)
+        {
+            Mesh = part.Mesh;
+            Name = part.Name;
+            LocalTransform = part.LocalTransform;
+            ParentIndex = part.ParentIndex;
+            Instances = new InstanceData[capacity];
+        }
+
+        public InstancedRenderer.Mesh Mesh { get; }
+
+        /// <summary>The part contract name, which is what animation keys on.</summary>
+        public string Name { get; }
+
+        /// <summary>Where the part sits inside its parent, before animation.</summary>
+        public Matrix LocalTransform { get; }
+
+        public int ParentIndex { get; }
+
+        public InstanceData[] Instances { get; }
+
+        public int Count { get; set; }
+    }
+
+    /// <summary>
+    /// Every part of one faction's role, each drawn as its own instanced batch.
+    /// <para>
+    /// A model is a handful of parts, so a role costs a handful of draw calls
+    /// instead of one per unit — which is what keeps hundreds of units affordable
+    /// while still allowing a turret to point somewhere other than forward.
+    /// </para>
+    /// </summary>
+    private sealed class MeshBatch
+    {
+        public MeshBatch(ModelCatalog.ModelParts model, int capacity)
+        {
+            ModelTransform = model.ModelTransform;
+            Parts = new PartBatch[model.Parts.Length];
+
+            for (int i = 0; i < model.Parts.Length; i++)
+            {
+                Parts[i] = new PartBatch(model.Parts[i], capacity);
+            }
+
+            Locals = new Matrix[model.Parts.Length];
+        }
+
+        public PartBatch[] Parts { get; }
+
+        /// <summary>Alignment, scale, centring and grounding for the whole model.</summary>
+        public Matrix ModelTransform { get; }
+
+        /// <summary>Scratch space for one entity's animated part transforms.</summary>
+        public Matrix[] Locals { get; }
     }
 }

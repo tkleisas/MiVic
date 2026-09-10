@@ -153,8 +153,26 @@ public sealed class MovementSystemTests
     }
 
     [Fact]
-    public void UnitWithoutAnOrderKeepsItsPathEmpty()
+    public void DistanceTravelledAccumulates()
     {
+        // The odometer is what turns the wheels, and it lives in the simulation
+        // rather than in the client so that a replay spins them identically. A
+        // client-side odometer would depend on frame rate instead.
+        (SimWorld world, EntityId unit, _) = OrderedUnit(speedMmPerTick: 400);
+
+        long before = world.GetRefBySlot(unit.Slot).DistanceTravelledMm;
+        Assert.Equal(0, before);
+
+        world.RunTicks(40);
+
+        long after = world.GetRefBySlot(unit.Slot).DistanceTravelledMm;
+
+        Assert.True(after > 0, "A moving unit covered no ground.");
+        Assert.True(after <= 40 * 400L, $"Odometer outran the unit's speed ({after} mm in 40 ticks).");
+    }
+
+    [Fact]
+    public void UnitWithoutAnOrderKeepsItsPathEmpty()    {
         SimWorld world = new(seed: 5, capacity: 4);
         PathContext context = SimWorld.PathContextFor(Faction.Soviet, UnitKind.Tank);
         WorldPos start = world.Navigation.CentreOf(

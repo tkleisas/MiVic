@@ -97,4 +97,16 @@ public struct Entity
     /// fires: a shot gives away a position, which is the whole cost of stealth.
     /// </summary>
     public long RevealedUntilTick;
+
+    /// <summary>
+    /// Ground distance this entity has covered since it spawned, in millimetres.
+    /// <para>
+    /// The simulation carries it because the wheels are a presentation concern but
+    /// the distance is not: a wheel's angle is a pure function of how far the unit
+    /// has travelled, so replaying a match turns the wheels exactly as the original
+    /// did. Deriving it in the client from frame-to-frame movement would make the
+    /// animation depend on frame rate instead.
+    /// </para>
+    /// </summary>
+    public long DistanceTravelledMm;
 }

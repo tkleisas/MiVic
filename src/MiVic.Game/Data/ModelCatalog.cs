@@ -1,6 +1,7 @@
 using MiVic.Core.Sim;
 using MiVic.Game.Rendering;
 using MiVic.Game.Rendering.Gltf;
+using Microsoft.Xna.Framework;
 
 namespace MiVic.Game.Data;
 
@@ -21,6 +22,7 @@ public sealed class ModelCatalog : IDisposable
     private readonly InstancedRenderer _renderer;
     private readonly string _baseDirectory;
     private readonly Dictionary<int, InstancedRenderer.Mesh> _cache = [];
+    private readonly Dictionary<int, ModelParts> _partsCache = [];
     private readonly List<InstancedRenderer.Mesh> _owned = [];
     private readonly List<string> _loaded = [];
     private readonly List<string> _failed = [];
@@ -58,6 +60,138 @@ public sealed class ModelCatalog : IDisposable
         _cache[key] = mesh;
         return mesh;
     }
+
+    /// <summary>
+    /// Gets every part of a faction's role, each with its place in the model.
+    /// <para>
+    /// A model that imports as a single mesh — a procedural fallback, or an asset
+    /// with no node hierarchy — comes back as one part with an identity transform,
+    /// so callers never need a special case for "this model has no parts".
+    /// </para>
+    /// </summary>
+    public ModelParts GetParts(Faction faction, UnitKind kind)
+    {
+        int key = CacheKey(faction, kind);
+
+        if (_partsCache.TryGetValue(key, out ModelParts cached))
+        {
+            return cached;
+        }
+
+        ModelParts parts = LoadParts(faction, kind);
+        _partsCache[key] = parts;
+        return parts;
+    }
+
+    private ModelParts LoadParts(Faction faction, UnitKind kind)
+    {
+        ModelData? model = null;
+
+        if (ModelSpec.TryGet(faction, kind, out ModelSpec spec))
+        {
+            string path = Path.Combine(_baseDirectory, ModelRoot, spec.Folder, spec.FileName);
+
+            if (File.Exists(path))
+            {
+                try
+                {
+                    model = GltfLoader.LoadModel(path, spec.ToImportOptions());
+                }
+                catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException)
+                {
+                    _failed.Add($"{spec.Folder}/{spec.FileName}: {exception.Message}");
+                }
+            }
+        }
+
+        if (model is null)
+        {
+            // No model: the procedural mesh becomes the whole model, with an
+            // identity transform, so the renderer has exactly one shape to handle.
+            InstancedRenderer.Mesh fallback = Get(faction, kind);
+            return new ModelParts([new PartMesh("model", fallback, Matrix.Identity, -1)], Matrix.Identity, 0f);
+        }
+
+        PartMesh[] parts = new PartMesh[model.Value.Parts.Count];
+        float wheelRadius = 0f;
+        float modelScale = model.Value.ModelTransform.M11;
+
+        for (int i = 0; i < parts.Length; i++)
+        {
+            ModelPart part = model.Value.Parts[i];
+
+            InstancedRenderer.Mesh mesh = _renderer.CreateMesh(part.Mesh);
+            _owned.Add(mesh);
+
+            // Parent-relative, so the renderer can compose the chain per entity and
+            // rotate one part without freezing its children in place.
+            parts[i] = new PartMesh(part.Name, mesh, part.LocalTransform, part.ParentIndex);
+
+            if (wheelRadius <= 0f && part.Name.StartsWith("wheel_", StringComparison.Ordinal))
+            {
+                (Vector3 min, Vector3 max) = MeshBounds(part.Mesh);
+                Vector3 size = max - min;
+
+                // A wheel is a disc: its radius is half of whichever cross-section
+                // is smaller, so the axle direction does not matter.
+                wheelRadius = MathF.Min(size.Y, size.Z) * 0.5f * modelScale;
+            }
+        }
+
+        _loaded.Add($"{ModelSpecLabel(faction, kind)} ({parts.Length} parts)");
+        return new ModelParts(parts, model.Value.ModelTransform, wheelRadius);
+    }
+
+    private static (Vector3 Min, Vector3 Max) MeshBounds(MeshData mesh)
+    {
+        Vector3 min = new(float.MaxValue);
+        Vector3 max = new(float.MinValue);
+
+        foreach (VertexPositionNormal vertex in mesh.Vertices)
+        {
+            min = Vector3.Min(min, vertex.Position);
+            max = Vector3.Max(max, vertex.Position);
+        }
+
+        return (min, max);
+    }
+
+    private static string ModelSpecLabel(Faction faction, UnitKind kind)
+        => ModelSpec.TryGet(faction, kind, out ModelSpec spec)
+            ? $"{spec.Folder}/{spec.FileName}"
+            : $"{faction}/{kind}";
+
+    /// <summary>A role's parts plus the transform that normalises the whole model.</summary>
+    /// <param name="Parts">Parts, parents before children.</param>
+    /// <param name="ModelTransform">Alignment, scale, centring and grounding.</param>
+    /// <param name="WheelRadiusMetres">
+    /// Radius of a road wheel, measured from the model itself. A wheel spun by
+    /// distance travelled needs its own radius, and measuring it here means a new
+    /// model does not also need a number typed into a table.
+    /// </param>
+    public readonly record struct ModelParts(
+        PartMesh[] Parts,
+        Matrix ModelTransform,
+        float WheelRadiusMetres);
+
+    /// <summary>One part's GPU mesh and where it sits relative to its parent.</summary>
+    /// <param name="Name">The part contract name, which is what animation keys on.</param>
+    /// <param name="Mesh">The geometry to draw.</param>
+    /// <param name="LocalTransform">Placement inside the parent's space.</param>
+    /// <param name="ParentIndex">Index of the enclosing part, or -1 for a root part.</param>
+    public readonly record struct PartMesh(
+        string Name,
+        InstancedRenderer.Mesh Mesh,
+        Matrix LocalTransform,
+        int ParentIndex);
+
+    /// <summary>
+    /// Radius of this role's road wheels in metres, measured from the model, or
+    /// zero when it has none. Wheels are spun by distance travelled, and a wheel
+    /// that does not know its own size cannot roll at the right speed.
+    /// </summary>
+    public float WheelRadius(Faction faction, UnitKind kind)
+        => GetParts(faction, kind).WheelRadiusMetres;
 
     private static int CacheKey(Faction faction, UnitKind kind) => ((int)faction << 8) | (int)kind;
 
