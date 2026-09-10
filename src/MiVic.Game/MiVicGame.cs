@@ -1317,10 +1317,15 @@ public sealed class MiVicGame : XnaGame
         {
             return Matrix.CreateRotationY(TurretYaw(ref entity, world)) * part.LocalTransform;
         }
-        else if (name.Equals("radar", StringComparison.Ordinal))
+        else if (name.StartsWith("radar", StringComparison.Ordinal))
         {
             // A dish sweeps continuously; the tick is the clock, so it is identical
             // in a replay.
+            //
+            // Matched by prefix, not equality: the contract is `radar*` because a
+            // model can have more than one thing that turns. The drone has four
+            // rotors and they cannot all be called `radar` in one Blender scene, so
+            // an equality test left every one of them still.
             float sweep = world.Tick * 0.02f;
             return Matrix.CreateRotationZ(sweep) * part.LocalTransform;
         }
@@ -1339,14 +1344,24 @@ public sealed class MiVicGame : XnaGame
             || name.EndsWith("Body", StringComparison.OrdinalIgnoreCase)
             || name.EndsWith("Head", StringComparison.OrdinalIgnoreCase)
             || name.EndsWith("Shoulders", StringComparison.OrdinalIgnoreCase)
-            // The generated figures ship one part per leg — LegLeft and LegRight —
-            // which is what makes a real alternating stride possible. Arms swing
-            // against the leg on the same side. Feet and anything else hanging off
-            // a limb inherit its motion through the parent chain and must not be
-            // animated twice.
-            || name.StartsWith("Leg", StringComparison.OrdinalIgnoreCase)
-            || name.StartsWith("Arm", StringComparison.OrdinalIgnoreCase)
-            || name.StartsWith("Shin", StringComparison.OrdinalIgnoreCase);
+            // The generated figures ship one part per limb — LegLeft and LegRight,
+            // ShinLeft, ArmRight — which is what makes a real alternating stride
+            // possible. Feet, forearms, hands and anything else hanging off a limb
+            // inherit its motion through the parent chain and must not be animated
+            // twice.
+            //
+            // A side suffix is required, not just the prefix: `Arm` alone also
+            // matches `Armour` (a Δυτικοί chest plate) and `Arms` (a loader
+            // linkage), and both of those flapped about as if they were walking.
+            || (HasSideSuffix(name)
+                && (name.StartsWith("Leg", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("Shin", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("Arm", StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>True for a part named for one side of a figure.</summary>
+    private static bool HasSideSuffix(string name)
+        => name.EndsWith("Left", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("Right", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// A procedural walk cycle for a parts-rigged figure.
@@ -1771,13 +1786,12 @@ public sealed class MiVicGame : XnaGame
         {
             string name = part.Name;
 
+            // The same rules the animator uses, rather than a second copy of them: a
+            // list that says a part moves when it does not is worse than no list.
             if (name.StartsWith("wheel_", StringComparison.Ordinal) ||
-                name is "turret" or "radar" ||
-                name.StartsWith("Leg", StringComparison.Ordinal) ||
-                name.StartsWith("Foot", StringComparison.Ordinal) ||
-                name.EndsWith("Legs", StringComparison.OrdinalIgnoreCase) ||
-                name.EndsWith("Feet", StringComparison.OrdinalIgnoreCase) ||
-                name is "Body" or "Head")
+                name is "turret" ||
+                name.StartsWith("radar", StringComparison.Ordinal) ||
+                IsLimb(name))
             {
                 animated.Add(name);
             }
