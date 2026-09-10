@@ -158,6 +158,82 @@ The dish is worth more than it looks here, incidentally: it is now a **visible**
 turns, so switching it off communicates itself without a UI widget, which is exactly what a
 power system needs.
 
+## 5. Detection, radar and stealth
+
+A defensive structure has a firing range. It should also have a **detection** radius, and those are
+two different numbers: you can only shoot what you can see. The effective engagement radius is
+whichever is smaller.
+
+**Radar coverage** is what makes that a system rather than a number. A radar structure projects
+coverage over an area, and structures within it gain detection — so a radar is a force multiplier
+for the guns around it rather than a lone sensor sitting in a corner. **Stealthy units are detected
+at a smaller radius**, which is what makes stealth worth having: the Western powers get it at a
+high tech tier, and it should mean something specific — a stealth aircraft inside radar coverage is
+spotted at a fraction of the radius, and outside coverage it is nearly invisible until it is close.
+
+**And the radar draws power, because it is active.** That closes a loop worth having: the power
+system already proposes browning out detection *first*, and the radar's own draw is the same
+mechanic from the other end. A strike that takes out a base's generation does not merely slow its
+factories — it blinds its defences, and the guns around it go quiet at range while still shooting
+anything that comes close. Counter-play follows: the radar is the thing to kill, and it is worth
+killing precisely because it multiplies everything else.
+
+Two consequences to design for rather than discover. **Vision should not become two systems** — the
+fog of war already computes what a team can see from its units, so radar coverage belongs in that
+same function, serving fog, acquisition and stealth detection together. And **coverage has to be
+visible**: a range ring when a radar or a gun is selected, drawn from the placement-preview
+machinery that already exists, because a radius a player cannot see is a radius a player cannot use.
+
+## 6. Structural armour
+
+Buildings should be **reinforced**, and reinforced unevenly: Σοβιετικοί structures hardest to
+destroy, then the Δυτικοί, then the Κινέζοι. It is the same statement the faction table already
+makes — unshakeable cohesion against bought-and-cheap mass production — expressed as a property of
+the building rather than of the men inside it. The Soviet architecture is already poured concrete
+with deep reveals; this is that made mechanical.
+
+**Armour is not health, and the difference is the point.** Health is a larger pool, so a reinforced
+building simply takes longer to kill. Armour is damage reduction per hit, which means a rifle
+mostly stops mattering against it while artillery still works — and that is what makes a fixed
+emplacement something you bring the right tool for.
+
+**Use a percentage, not a flat subtraction.** A flat reduction makes small arms useless against
+armour and turns every fight into a comparison of weapon classes; a permille keeps every weapon
+relevant while making the heavy ones worth their cost, and it cannot produce the "immune to
+rifles" case that a flat number invites.
+
+**It composes with cover, and the composition has to be written down once.** Cover is *where a unit
+stands* and armour is *what it is made of*; both are multipliers on the same damage path, so the
+order they apply in, and the fact that the existing floor of one damage still holds, belong in a
+single documented place. Getting two multipliers into one path without stating their order is how
+a balance change becomes unreproducible reasoning six months later.
+
+Worth deciding when it lands: whether armour stays a property of **structures** or extends to
+vehicles. The request is about buildings, and vehicles already differ by health; extending it would
+be a balance change of its own rather than a detail of this one. Also worth knowing that it shifts
+mission balance — the AI's ability to break a Soviet base drops, and the campaign is already
+untuned after the bases moved onto dry land.
+
+**And the answer to that question is yes, with the opposite ordering — which is the whole design.**
+Σοβιετικοί *structures* are the most reinforced of the three; Σοβιετικοί *vehicles* carry the least
+armour of the three, on a par with the Κινέζοι and behind the Δυτικοί, and buy mobility with it.
+Heavy where it does not move, light where it does. That is one sentence a player can hold in their
+head, and it describes the faction better than any table of multipliers.
+
+The point of the light vehicle is the **rasputitsa**, and most of the machinery for it already
+exists. Ground pressure is already a per-role and per-faction figure, and it already sets what mud
+costs a given vehicle; mud already exists as a surface; and weather control — a Σοβιετικοί ability —
+already lays it. So the Soviet advantage in the mud season is not a new system: it is the numbers
+those existing systems were always waiting for. A Western armoured push that meets a Soviet weather
+strike should slow to a crawl exactly where Soviet light armour does not, and that is a faction
+being played rather than a statistic being read.
+
+Two notes. Western armour being heavy is only a weakness if the mud can reach it, so the balance
+depends on weather control being usable on the offensive rather than only over one's own ground —
+worth checking when this is tuned. And a Soviet vehicle that is light *and* cheap *and* faster has
+to lose something else, or the mobility is free; the obvious place is survivability, which is what
+the armour figure already says, so the temptation to soften it elsewhere should be resisted.
+
 ## Also outstanding, from the art and rendering work
 
 Not on the list above, but open:

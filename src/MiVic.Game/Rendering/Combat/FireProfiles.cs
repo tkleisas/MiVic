@@ -173,6 +173,21 @@ public static class FireProfiles
             FireStyle.Bolt, 4_000f, 0f, 0.80f, new Vector3(0.62f, 0.85f, 1.0f), 0.02f, 0f, 1, 0f, 1.6f,
             FireImpact.Electric, SoundEffectKind.TankGun, 0.25f),
 
+        // The emplacements: the same two weapons a hull carries, fired from something that
+        // is not going anywhere. A building's gun is the biggest one on the field, so the
+        // shell is drawn heavier than a tank's and the flash is larger — at 200 m the shot
+        // has to be visible from where the player is looking or the building reads as
+        // scenery that happens to be losing hit points.
+        UnitKind.GunEmplacement => new FireProfile(
+            FireStyle.Shell, 820f, 8f, 0.26f, White, 0f, 0f, 1, 0f, 1.8f,
+            FireImpact.ShellBurst, SoundEffectKind.TankGun, 0.35f),
+
+        // Anti-aircraft fire: a pair of fast bright rounds bursting in the air, timed to
+        // the emplacement's faster reload so a battery of them reads as a barrage.
+        UnitKind.AntiAirEmplacement => new FireProfile(
+            FireStyle.Flak, 950f, 5f, 0.10f, new Vector3(1.0f, 0.94f, 0.62f), 0f, 0f, 2, 0.8f, 0.7f,
+            FireImpact.Airburst, SoundEffectKind.AntiAirBurst, 0.12f),
+
         _ => null,
     };
 

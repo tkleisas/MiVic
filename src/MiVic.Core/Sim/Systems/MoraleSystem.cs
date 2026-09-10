@@ -75,8 +75,11 @@ public static class MoraleSystem
 
             // Automata have nobody aboard to steady or to break. Leaving them out
             // entirely means they never rout and never accumulate a morale target,
-            // which is exactly what "no morale" should mean.
-            if (definition.IsAutomaton)
+            // which is exactly what "no morale" should mean. A structure is the same
+            // fact for a different reason: there is no crew to shake, so an armed
+            // building must not be able to rout out of its own gun, and its reload
+            // must not drift with a bar nobody is watching.
+            if (definition.IsAutomaton || definition.IsBuilding)
             {
                 continue;
             }

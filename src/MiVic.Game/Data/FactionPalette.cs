@@ -52,6 +52,13 @@ public static class FactionPalette
             UnitKind.ElectroPrototype => Shade(primary, 1.45f),
             UnitKind.CommandCentre => Shade(primary, 0.65f),
             UnitKind.NuclearPlant => Shade(primary, 0.55f),
+
+            // The emplacements: a defensive structure is read against the ground rather than
+            // against the sky, so both sit a little darker than the buildings they protect —
+            // and the anti-aircraft mount a shade lighter than the gun, which is the same
+            // distinction the two make in the catalogue.
+            UnitKind.GunEmplacement => Shade(primary, 0.78f),
+            UnitKind.AntiAirEmplacement => Shade(primary, 0.88f),
             _ => primary,
         };
     }

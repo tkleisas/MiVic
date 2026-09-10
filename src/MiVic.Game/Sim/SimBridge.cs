@@ -262,52 +262,12 @@ public sealed class SimBridge
         SimWorld world = bridge.World;
         Clear(world);
 
-        TerrainLayer terrain = world.TerrainTypes;
-        int clearCells = ClearRadiusCells(terrain, metres: 90f);
-        int bestCell = -1;
-        int bestScore = -1;
-
-        // Woodland is what blocks the view, and where it is is a property of the
-        // seed, so the fixture looks for the largest clearing rather than hoping the
-        // map's middle is one. Water and lava count against a cell as much as trees
-        // do: the first version of this scored the sea as the clearest ground on the
-        // map and framed two tanks standing in it.
-        for (int z = clearCells; z < terrain.Size - clearCells; z++)
-        {
-            for (int x = clearCells; x < terrain.Size - clearCells; x++)
-            {
-                if (!IsOpenGround(terrain, x, z))
-                {
-                    continue;
-                }
-
-                int score = 0;
-
-                for (int dz = -clearCells; dz <= clearCells; dz++)
-                {
-                    for (int dx = -clearCells; dx <= clearCells; dx++)
-                    {
-                        if (IsOpenGround(terrain, x + dx, z + dz))
-                        {
-                            score++;
-                        }
-                    }
-                }
-
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    bestCell = (z * terrain.Size) + x;
-                }
-            }
-        }
-
-        if (bestCell < 0)
+        if (!TryFindClearing(world.TerrainTypes, metres: 90f, out int bestCell, out int bestScore))
         {
             return bridge;
         }
 
-        (int centreX, int centreZ) = CellCentreMetres(terrain, bestCell);
+        (int centreX, int centreZ) = CellCentreMetres(world.TerrainTypes, bestCell);
 
         Console.WriteLine($"turret-demo: open ground at {centreX}, {centreZ} (score {bestScore})");
 
@@ -322,6 +282,141 @@ public sealed class SimBridge
         Spawn(world, Faction.Western, TeamOf(Faction.Western), UnitKind.Tank, centreX + 30, centreZ + 20);
 
         return bridge;
+    }
+
+    /// <summary>
+    /// A gun emplacement's position and the things it is there to shoot at, on the
+    /// clearest ground the map has.
+    /// <para>
+    /// The emplacement is not placed here: the whole question this fixture exists to
+    /// answer is whether a building shoots <em>on its own</em>, so it is put down by the
+    /// probe's own `structure … build` — the same command a player's click issues — and
+    /// what the fixture supplies is the situation it is put down into. Three enemies at
+    /// three different distances from the middle of the clearing: a tank 150 m out, which
+    /// is inside a gun emplacement's reach and outside the 110 m a tank can shoot back
+    /// from; an aircraft 100 m out, and nearer on purpose, so that a gun which picked its
+    /// target by distance alone would be seen tracking something it cannot touch; and a
+    /// second tank 60 m out, to give the anti-aircraft emplacement something it must
+    /// ignore.
+    /// </para>
+    /// <para>
+    /// Team 0 is put at era II with resources to match, because that is what the
+    /// anti-aircraft emplacement is behind — a fixture that could not build the thing
+    /// under test would be a fixture that proves nothing about it.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateEmplacementDemo(ulong seed)
+    {
+        var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
+
+        SimWorld world = bridge.World;
+        Clear(world);
+
+        if (!TryFindClearing(world.TerrainTypes, metres: 90f, out int bestCell, out int bestScore))
+        {
+            return bridge;
+        }
+
+        (int centreX, int centreZ) = CellCentreMetres(world.TerrainTypes, bestCell);
+
+        Console.WriteLine($"emplacement-demo: open ground at {centreX}, {centreZ} (score {bestScore})");
+
+        ref TeamState state = ref world.TeamRef(0);
+        state.TechTier = 2;
+        state.Materials = 4_000;
+        state.Energy = 1_000;
+        state.Water = 1_000;
+
+        // A command centre, because nothing raises itself: a structure is ordered from a
+        // finished building of the role that makes it, and an emplacement with no yard to
+        // come from is refused as χρειάζεται Κέντρο Διοίκησης before the site is ever
+        // looked at. It is set back behind the position rather than beside it, so it is
+        // not in the enemy's reach and not in the way of the site the probe picks.
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.CommandCentre, centreX - 90, centreZ - 60);
+
+        // The far tank is 150 m away, on the +X side: an emplacement built at the search
+        // centre reaches it and it cannot reach back. The aircraft orbits nothing and is
+        // simply parked at 60 m, which is what "in range of the gun and inside the anti-
+        // aircraft emplacement's reach" looks like from the ground.
+        SpawnAbsolute(world, Faction.Western, 2, UnitKind.Tank, centreX + 150, centreZ);
+        SpawnAbsolute(world, Faction.Western, 2, UnitKind.Aircraft, centreX + 60, centreZ - 40);
+        SpawnAbsolute(world, Faction.Western, 2, UnitKind.Tank, centreX + 60, centreZ + 40);
+
+        return bridge;
+    }
+
+    /// <summary>
+    /// The largest patch of open ground on the map, as a cell index and the number of open
+    /// cells within <paramref name="metres"/> of it.
+    /// <para>
+    /// Woodland is what blocks the view, and where it is is a property of the seed, so a
+    /// fixture looks for the largest clearing rather than hoping the map's middle is one.
+    /// Water and lava count against a cell as much as trees do: the first version of this
+    /// scored the sea as the clearest ground on the map and framed two tanks standing in it.
+    /// </para>
+    /// </summary>
+    private static bool TryFindClearing(TerrainLayer terrain, float metres, out int cell, out int score)
+    {
+        int clearCells = ClearRadiusCells(terrain, metres);
+        int bestCell = -1;
+        int bestScore = -1;
+
+        for (int z = clearCells; z < terrain.Size - clearCells; z++)
+        {
+            for (int x = clearCells; x < terrain.Size - clearCells; x++)
+            {
+                if (!IsOpenGround(terrain, x, z))
+                {
+                    continue;
+                }
+
+                int open = 0;
+
+                for (int dz = -clearCells; dz <= clearCells; dz++)
+                {
+                    for (int dx = -clearCells; dx <= clearCells; dx++)
+                    {
+                        if (IsOpenGround(terrain, x + dx, z + dz))
+                        {
+                            open++;
+                        }
+                    }
+                }
+
+                if (open > bestScore)
+                {
+                    bestScore = open;
+                    bestCell = (z * terrain.Size) + x;
+                }
+            }
+        }
+
+        cell = bestCell;
+        score = bestScore;
+        return bestCell >= 0;
+    }
+
+    /// <summary>
+    /// Spawns one unit at an exact metre position, without the legal-ground search a
+    /// formation spawn uses.
+    /// <para>
+    /// The emplacement demo's whole geometry is the distance from the gun to each of its
+    /// three targets, so a spawn nudged onto the nearest walkable cell would move the
+    /// numbers the fixture was built to produce. The clearing this is called into is open
+    /// ground already, which is why the search is not needed here.
+    /// </para>
+    /// </summary>
+    private static EntityId SpawnAbsolute(SimWorld world, Faction faction, int team, UnitKind kind, int x, int z)
+    {
+        UnitDefinition definition = UnitCatalog.Get(kind);
+
+        return world.Spawn(
+            faction,
+            team,
+            kind,
+            WorldPos.GroundMetres(x, z),
+            Fix32.FromInt(definition.SpeedMmPerTick),
+            definition.Health);
     }
 
     /// <summary>
@@ -605,9 +700,13 @@ public sealed class SimBridge
                 // duplicated weapon table here to drift out of step.
                 //
                 // A cooldown set because no target could be found is excluded by the
-                // target check: that path never leaves a target behind.
+                // target check: that path never leaves a target behind. There used to be a
+                // second clause here — the unit had to have had a target on the previous
+                // tick as well — which read as a safeguard and was in fact a hole: the
+                // first shot of a weapon that had just acquired something was never
+                // reported, so the tick an emplacement finished rising and opened fire on
+                // its own was the one tick missing from the record of it doing so.
                 if (entity.TargetSlot >= 0 &&
-                    _previousTarget[slot] >= 0 &&
                     _previousCooldown[slot] == 0 &&
                     entity.AttackCooldown > 0)
                 {

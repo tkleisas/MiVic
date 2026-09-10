@@ -518,6 +518,16 @@ public sealed partial class MiVicGame : XnaGame
             _camera.TiltTo(_options.ScreenshotPitch ?? -0.95f);
             _camera.Yaw = _options.ScreenshotYaw ?? 0f;
         }
+        else if (_options.EmplacementDemo)
+        {
+            // From above and to one side, far enough out to hold a gun emplacement and the
+            // tanks it is shooting at in one frame: the claim being looked at is a building
+            // firing across a hundred and fifty metres, and a frame that showed either end
+            // of that on its own would show nothing.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 260f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.72f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 0.55f;
+        }
         else if (_options.ScreenshotPath is not null)
         {
             _camera.ZoomTo(_options.ScreenshotZoom ?? 430f);
@@ -540,7 +550,9 @@ public sealed partial class MiVicGame : XnaGame
                                 ? SimBridge.CreateTurretDemo(_options.Seed)
                                 : _options.FlightDemo
                                     ? SimBridge.CreateFlightDemo(_options.Seed)
-                                    : new SimBridge(_options.Seed, _options.IsModelGallery);
+                                    : _options.EmplacementDemo
+                                        ? SimBridge.CreateEmplacementDemo(_options.Seed)
+                                        : new SimBridge(_options.Seed, _options.IsModelGallery);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
@@ -650,6 +662,11 @@ public sealed partial class MiVicGame : XnaGame
         if (_options.FlightDemo)
         {
             FocusOnFlight();
+        }
+
+        if (_options.EmplacementDemo)
+        {
+            FocusOnClearing();
         }
 
         if (_options.GroundDemo)
@@ -4169,6 +4186,51 @@ public sealed partial class MiVicGame : XnaGame
     }
 
     /// <summary>
+    /// Points the camera at the middle of the clearing the emplacement fixture chose.
+    /// <para>
+    /// The enemies are out to the +X side of that clearing and the emplacement is ordered
+    /// into the middle of it, so the frame that shows the whole engagement is centred
+    /// between the two rather than on either — a gun, a tank a hundred and fifty metres
+    /// away and the shot crossing between them.
+    /// </para>
+    /// </summary>
+    private void FocusOnClearing()
+    {
+        if (_simulation is null || _camera is null)
+        {
+            return;
+        }
+
+        SimWorld world = _simulation.World;
+        Vector3 sum = Vector3.Zero;
+        int count = 0;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (world.IsAliveSlot(slot))
+            {
+                sum += _simulation.GetRenderPosition(slot, interpolate: false);
+                count++;
+            }
+        }
+
+        if (count == 0)
+        {
+            Console.WriteLine("emplacement-demo: nothing on the map to frame");
+            return;
+        }
+
+        // The middle of the enemy line, halfway back towards where the emplacement goes.
+        Vector3 enemies = sum / count;
+        Vector3 centre = enemies - new Vector3(75f, 0f, 0f);
+
+        Console.WriteLine($"emplacement-demo: framing {count} enemies around {enemies.X:0}, {enemies.Z:0}");
+
+        _fixtureAim = centre + new Vector3(0f, 1.5f, 0f);
+        _camera.LookAt(_fixtureAim.Value);
+    }
+
+    /// <summary>
     /// Points the camera at the most varied ground on the map.
     /// <para>
     /// Grass, mud, sand and rock are not neighbours anywhere: sand lies along a shore,
@@ -4831,10 +4893,14 @@ public sealed partial class MiVicGame : XnaGame
                     _particles.SpawnSmokePlume(vent, 0.22f);
                     _smokeTimers[slot] = 0.30f + ((slot % 7) * 0.06f);
                 }
-                else
+                else if (healthFraction < 0.65f)
                 {
-                    // Damaged industry smokes hard, from wherever it is burning.
-                    float intensity = healthFraction < 0.65f ? 0.35f + ((1f - healthFraction) * 0.65f) : 0.16f;
+                    // Damaged industry smokes hard, from wherever it is burning. A structure
+                    // with no exhaust part at all — a gun pit, which has nothing to burn and
+                    // nothing to vent — sits under this branch only once it is hurt, so a
+                    // healthy emplacement no longer trails the haze that a working factory
+                    // does. Smoke coming out of a concrete pit reads as a fire.
+                    float intensity = 0.35f + ((1f - healthFraction) * 0.65f);
                     _particles.SpawnSmokePlume(position + new Vector3(0f, 4f, 0f), intensity);
                     _smokeTimers[slot] = 0.25f + ((slot % 7) * 0.06f);
                 }

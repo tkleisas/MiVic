@@ -2281,6 +2281,15 @@ public sealed class SimWorld
     /// Locks a unit onto an enemy. If the target is out of range the unit is sent
     /// towards it, and the combat system keeps the approach updated as the enemy
     /// moves.
+    /// <para>
+    /// A structure is locked on but not sent anywhere. It has no speed and no route, so
+    /// the order it can be given is a standing one — this is the target, engage it if it
+    /// comes into reach — rather than a march: <c>HasAttackOrder</c> is what the approach
+    /// loop keys on, and an emplacement that set it would be handed a move goal every ten
+    /// ticks for a path it can never walk. The target is sticky either way, and when it
+    /// dies or leaves, automatic acquisition picks up whatever came next, which is the
+    /// same behaviour the building had before anyone clicked on it.
+    /// </para>
     /// </summary>
     private bool TryAttack(int slot, ref Entity attacker, EntityId victim)
     {
@@ -2299,6 +2308,12 @@ public sealed class SimWorld
         }
 
         attacker.TargetSlot = victimSlot;
+
+        if (weapon.IsBuilding)
+        {
+            return true;
+        }
+
         attacker.HasAttackOrder = true;
 
         long dx = attacker.Position.X - target.Position.X;

@@ -45,7 +45,7 @@ therefore generated as code:
 pwsh ./tools/blender/build_all.ps1
 ```
 
-**Status: every model in the game is generated.** All 51 `(faction, role)` slots in
+**Status: every model in the game is generated.** All 46 `(faction, role)` slots in
 `ModelCatalog` point at `Content/Models/Generated/`, and `--inspect-models` reports
 `failures=0 missing=0`. The generator is split by family, because a soldier is a
 different problem from a building and one file that owned both could not be worked on
@@ -55,7 +55,7 @@ in parallel:
 |---|---|
 | `build_vehicles.py` | the shared mesh and material kit, tanks, self-propelled guns, anti-air, Συλλέκτης, Κατιούσα, the electro prototype, the drone, the aircraft |
 | `build_figures.py` | soldiers: line infantry, commissar, robot infantry, mercenary, stealth reconnaissance |
-| `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau |
+| `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau, gun emplacement, anti-aircraft emplacement |
 | `build_props.py` | woodland: six tree species, drawn instanced |
 | `build_bridge.py` | the bridge block, and one panel of its rail |
 

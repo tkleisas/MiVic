@@ -99,7 +99,7 @@ public sealed record LaunchOptions
     /// thing the fixture exists to show.
     /// </para>
     /// </summary>
-    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || IsProbe;
+    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || EmplacementDemo || IsProbe;
 
     /// <summary>
     /// When set, run the probe script in this file and exit.
@@ -142,6 +142,18 @@ public sealed record LaunchOptions
 
     /// <summary>Frames a flyer of every model crossing the map, to look at which way they travel.</summary>
     public bool FlightDemo { get; init; }
+
+    /// <summary>
+    /// Clears the field and puts three enemy machines on open ground at known distances from
+    /// the middle of it, so an emplacement ordered into that clearing has something to shoot
+    /// at that nobody has to steer.
+    /// <para>
+    /// It exists for the question a defensive structure is built around — does a building fire
+    /// without being told to — which needs a situation rather than a line-up: the emplacement
+    /// itself is placed by the probe, through the same command a player's click issues.
+    /// </para>
+    /// </summary>
+    public bool EmplacementDemo { get; init; }
 
     /// <summary>
     /// Names one surface for the ground fixture to frame instead of the most varied
@@ -423,6 +435,13 @@ public sealed record LaunchOptions
                     // so an early frame has them out of the camera's window and a late
                     // one has them past it; this lands them in the middle of it.
                     options = options with { FlightDemo = true, ShowHelp = false, ScreenshotFrame = 220 };
+                    break;
+
+                case "--emplacement-demo":
+                    // Long enough for an emplacement ordered by a probe to have been built
+                    // and to have fired a few times: the gun's reload is two and a half
+                    // seconds and the emplacement takes nine to rise.
+                    options = options with { EmplacementDemo = true, ShowHelp = false, ScreenshotFrame = 260 };
                     break;
 
                 case "--render-audio":

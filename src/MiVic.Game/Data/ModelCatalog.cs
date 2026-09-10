@@ -308,6 +308,13 @@ public sealed class ModelCatalog : IDisposable
         UnitKind.Factory => MeshBuilder.Box(16f, 8f, 12f),
         UnitKind.DesignBureau => MeshBuilder.Box(10f, 11f, 10f),
         UnitKind.Harvester => MeshBuilder.Box(3f, 2f, 4f),
+
+        // The emplacements, until their models arrive: a low square pit with a gun on it and
+        // a taller round one. Two different placeholder shapes on purpose — a fallback that
+        // made a gun emplacement and an anti-aircraft emplacement look alike would hide the
+        // fact that one of the two files failed to load.
+        UnitKind.GunEmplacement => MeshBuilder.Box(9f, 3.4f, 10f),
+        UnitKind.AntiAirEmplacement => MeshBuilder.Cylinder(4.6f, 5f),
         _ => MeshBuilder.Box(1f, 1f, 1f),
     };
 
@@ -387,6 +394,18 @@ public sealed class ModelCatalog : IDisposable
             [CacheKeyOf(Faction.Soviet, UnitKind.DesignBureau)] = new("Generated", "soviet_bureau.glb", 14f, GeneratedYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.NuclearPlant)] = new("Generated", "soviet_nuclear.glb", 20f, GeneratedYaw),
 
+            // The two emplacements. `gun` and `aa` are the defensive structures; the mobile
+            // anti-aircraft mount owns `soviet_antiair.glb`, and the two files are different
+            // models of different things.
+            //
+            // `GeneratedYaw` for all six because the generator authors each one with its barrel
+            // along +Y and its revetment deeper than it is wide, so the loader's own quarter turn
+            // fires and lands that barrel on +X — the forward the simulation means. Verified
+            // rather than assumed: `tools/model_facing.py --table` measures the `barrel` part of
+            // every one of these and prints 0°/0 m forward.
+            [CacheKeyOf(Faction.Soviet, UnitKind.GunEmplacement)] = new("Generated", "soviet_gun.glb", 11.5f, GeneratedYaw),
+            [CacheKeyOf(Faction.Soviet, UnitKind.AntiAirEmplacement)] = new("Generated", "soviet_aa.glb", 11.5f, GeneratedYaw),
+
             // ---- Κινέζοι: light hulls, mass-produced patterns ----
             [CacheKeyOf(Faction.Chinese, UnitKind.Infantry)] = new("Generated", "chinese_infantry.glb", 1.92f, AcrossYaw),
             [CacheKeyOf(Faction.Chinese, UnitKind.Tank)] = new("Generated", "chinese_tank.glb", 5.4f, GeneratedYaw),
@@ -401,6 +420,8 @@ public sealed class ModelCatalog : IDisposable
             [CacheKeyOf(Faction.Chinese, UnitKind.Factory)] = new("Generated", "chinese_factory.glb", 15f, AcrossYaw),
             [CacheKeyOf(Faction.Chinese, UnitKind.DesignBureau)] = new("Generated", "chinese_bureau.glb", 13f, AcrossYaw),
             [CacheKeyOf(Faction.Chinese, UnitKind.NuclearPlant)] = new("Generated", "chinese_nuclear.glb", 18f, AcrossYaw),
+            [CacheKeyOf(Faction.Chinese, UnitKind.GunEmplacement)] = new("Generated", "chinese_gun.glb", 11f, GeneratedYaw),
+            [CacheKeyOf(Faction.Chinese, UnitKind.AntiAirEmplacement)] = new("Generated", "chinese_aa.glb", 11f, GeneratedYaw),
 
             // ---- Δυτικοί: the most refined vehicles and buildings ----
             [CacheKeyOf(Faction.Western, UnitKind.Infantry)] = new("Generated", "western_infantry.glb", 1.82f, AcrossYaw),
@@ -416,6 +437,8 @@ public sealed class ModelCatalog : IDisposable
             [CacheKeyOf(Faction.Western, UnitKind.Factory)] = new("Generated", "western_factory.glb", 17f, AcrossYaw),
             [CacheKeyOf(Faction.Western, UnitKind.DesignBureau)] = new("Generated", "western_bureau.glb", 15f, GeneratedYaw),
             [CacheKeyOf(Faction.Western, UnitKind.NuclearPlant)] = new("Generated", "western_nuclear.glb", 22f, GeneratedYaw),
+            [CacheKeyOf(Faction.Western, UnitKind.GunEmplacement)] = new("Generated", "western_gun.glb", 12f, GeneratedYaw),
+            [CacheKeyOf(Faction.Western, UnitKind.AntiAirEmplacement)] = new("Generated", "western_aa.glb", 12f, GeneratedYaw),
         };
 
         private static int CacheKeyOf(Faction faction, UnitKind kind) => ((int)faction << 8) | (int)kind;

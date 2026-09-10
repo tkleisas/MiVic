@@ -18,7 +18,7 @@ diff.
 |---|---|
 | `build_vehicles.py` | the shared mesh/material kit, tanks, self-propelled guns, anti-air, the harvester, Κατιούσα, the electro prototype, the drone and the aircraft |
 | `build_figures.py` | soldiers: infantry, commissar, robot infantry, mercenary, stealth reconnaissance |
-| `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau |
+| `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau, gun emplacement, anti-aircraft emplacement |
 
 `tools/blender/build_all.ps1` runs all of them in order. Each generator writes only
 its own files, so they never conflict.
@@ -26,7 +26,7 @@ its own files, so they never conflict.
 ## Slots
 
 `src/MiVic.Game/Data/ModelCatalog.cs` maps every (faction, role) pair to a file
-here. At present all 41 slots are generated; `--inspect-models` reports
+here. At present all 46 slots are generated; `--inspect-models` reports
 `failures=0 missing=0` when that is true.
 
 ## Materials and the faction paint mask
@@ -57,6 +57,7 @@ them at will:
 |---|---|
 | `wheel_*` | rolls, at the rate its own radius implies for the distance travelled |
 | `turret` | traverses to face the unit's current target |
+| `barrel` | elevates: authored with its elevation, and a child of the `turret` it hangs off |
 | `radar*` | sweeps continuously |
 | `Leg*`, `Shin*` | a stride; the shin bends behind the thigh on the forward swing |
 | `Arm*` | swings against the leg on the same side |
@@ -64,6 +65,14 @@ them at will:
 
 A part named `turret` that is not a turret is a bug rather than a style choice —
 the Κατιούσα's cab was once named that, and the cab swung round to aim at the enemy.
+
+`barrel` is the one name that does two jobs, and the difference is the model family rather
+than the name: on a vehicle it is the gun tube that hangs off the turret, and on a factory or
+a design bureau it is the flue the smoke comes out of. The renderer elevates no barrel today —
+the elevation is the one the generator authored — and the client pulls working smoke out of a
+structure whose role names a `barrel` or a `stack`, which is why the emplacements' guns are
+named `barrel` and smoke nothing: their role has no exhaust part, and a concrete pit that
+hazed like a working factory read as a fire.
 
 ## The old borrowed models
 

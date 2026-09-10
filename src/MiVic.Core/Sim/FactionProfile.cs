@@ -71,6 +71,18 @@ public enum UnitKind : byte
 
     /// <summary>Ηλεκτροπυροβόλο — Σοβιετικοί electro prototype. Capped, and expensive to lose.</summary>
     ElectroPrototype = 18,
+
+    /// <summary>
+    /// Πυροβολείο — a gun emplacement: the first structure in the game that shoots.
+    /// Long-ranged, slow to reload, and blind to anything in the air.
+    /// </summary>
+    GunEmplacement = 19,
+
+    /// <summary>
+    /// Αντιαεροπορικό Πυροβολείο — an anti-aircraft emplacement: an airfield's worth
+    /// of range bottled into one building, and no answer at all to anything on the ground.
+    /// </summary>
+    AntiAirEmplacement = 20,
 }
 
 /// <summary>

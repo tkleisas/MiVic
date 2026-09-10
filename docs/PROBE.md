@@ -525,6 +525,63 @@ change to the footprint moves the third line, a change to the occupancy rule mov
 the first two are the map.
 
 
+## Worked example: does a defensive structure shoot on its own?
+
+A building that has to be told to fire never fires in a real game, because the player has no
+reason to think of it. So the question is not "does the weapon work" but "does it choose", and
+it cannot be answered by an assertion: the answer is a stream of shots that nobody ordered,
+against a target that was picked rather than named.
+
+`tools/probe/emplacement.probe`, run against `--emplacement-demo` — a fixture that clears the
+field and puts a tank and an aircraft 72 m from the middle of the clearest ground on the map, a
+tank 150 m out, and a command centre behind them to raise the buildings from. Trimmed to the
+answers (`…` marks lines cut out of the middle):
+
+```
+cmd: structure GunEmplacement 23 -192 0 build
+query:   verdict    accepted for team 0 — it would stand at (x 23.4, z -192.2) m, cell 34,11 of 65, index 749
+query:   work       163 ticks (8.2 s) of construction, rising out of the ground over the whole of it
+ok: Πυροβολείο ordered for team 0 at (x 23.4, z -192.2) m, executing on tick 2
+cmd: tick 180
+cmd: structures 0
+query:   slot  505 GunEmplacement (Πυροβολείο) at (x 23.4, z -192.2) m, cell 34,11 — whole, 889 hit points
+cmd: tick 2
+cmd: events 16
+query:   #249 tick 161 hit       slot  505 soviet/GunEmplacement … took 28 damage
+query:   #250 tick 161 shot      slot  507 western/Aircraft … firing at soviet/GunEmplacement (slot 505) …
+query:   #251 tick 164 shot      slot  505 soviet/GunEmplacement at (23.4, 7.7, -192.2) m firing at western/Tank (slot 506), direction (0.83, 0.03, 0.56) bearing 34.0°, 71.9 m away
+query:   #252 tick 164 hit       slot  506 western/Tank … took 44 damage
+cmd: unit 505
+query:   attack     slot 506 (western/Tank at 71.9 m), cooldown 23 ticks of 50, order automatic, 45 damage out to 200.0 m
+query:   move       none, path 0 cells at 0, 0 failures
+cmd: events 8
+query:   #250 tick 475 shot      slot  504 soviet/AntiAirEmplacement … firing at western/Aircraft (slot 507), direction (0.56, 0.52, -0.64) bearing -48.7°, 90.4 m away
+query:   #251 tick 475 hit       slot  507 western/Aircraft … took 30 damage
+query:   #256 tick 488 destroyed slot  507 western/Aircraft at (83.0, 68.0, -232.0) m
+query:   slot  506 western Tank             team 2 at (x 83.0, z -152.0) m heading 0.0° health 12/320 target 505 building no
+```
+
+Five facts, and each of them is a different failure mode:
+
+- **the emplacement finished rising on tick 163 and fired on tick 164** — one tick later, with
+  no order given to it in between. The `structure … build` line is the last thing that touched
+  it, and that line only chose the site;
+- **`order automatic`** in the `unit` line, which is the client reading
+  `Entity.HasAttackOrder` off the simulation: the gun is engaging something it picked;
+- **the target is the tank at 71.9 m, not the aircraft at 71.7 m** — and the aircraft is firing
+  at the emplacement throughout (`#250`, and every fourth line after it). An enemy that is
+  nearer, visible and shooting it is still not a target, which is what an anti-aircraft clause
+  that leaked into a gun would look like when it went wrong;
+- **the aircraft dies to slot 504, the anti-aircraft emplacement**, at tick 488 — and the same
+  stream contains no shot by 504 at either tank, because that weapon cannot touch the ground;
+- **the shot bearing is 34.0° and the direction it fired in is `(0.83, 0.03, 0.56)`** — the
+  muzzle and the shot agreeing, which is the check every turret in this game lives or dies by.
+  `parts 505 turret` prints the same bearing from the other side of the engine.
+
+The `events` stream is the evidence rather than a summary of it: those lines come from
+`SimBridge` watching `AttackCooldown`, so a shot in the transcript and a tracer on screen are
+the same shot.
+
 ## `parts <slot>` in full
 
 ### A tank's turret

@@ -50,7 +50,7 @@ import bpy
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from build_vehicles import MATERIALS, _noise, clear_scene, export, join  # noqa: E402
+from build_vehicles import MATERIALS, _noise, clear_scene, export  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -112,12 +112,26 @@ class Part:
         self.faces = []
         self.mats = []
         self.location = None
+        self.parent = None
 
     # -- placement ---------------------------------------------------------
 
     def place(self, location):
         """Sets the object's origin. Required for anything the game rotates."""
         self.location = tuple(float(v) for v in location)
+        return self
+
+    def hangs_from(self, part_name):
+        """Parents this part to another part of the same model.
+
+        The child's location is then measured in its parent's frame, so a gun named
+        `barrel` hanging off the mount named `turret` follows every traverse for free.
+        That is the arrangement the vehicle kit uses for every tank in the game, and it
+        is why a building's gun is not baked into its mount's mesh: the contract's
+        `barrel` is the part that elevates, and a barrel merged into the turret could
+        never be elevated on its own.
+        """
+        self.parent = part_name
         return self
 
     def mark(self):
@@ -312,8 +326,22 @@ class Model:
     def build(self):
         root = bpy.data.objects.new(self.name, None)
         bpy.context.collection.objects.link(root)
-        objects = [self._parts[name].build() for name in self._order]
-        join(root, objects)
+        objects = {}
+
+        for name in self._order:
+            part = self._parts[name]
+
+            # A child is created after the part it hangs from, and on the same model, so
+            # the lookup can only fail if a model asks for a parent it never made — which
+            # is a mistake worth a sentence rather than a node silently left at the root.
+            if part.parent is not None and part.parent not in objects:
+                raise RuntimeError(
+                    f"{self.name}: '{name}' hangs from '{part.parent}', which is not a part of this model yet")
+
+            obj = part.build()
+            obj.parent = objects[part.parent] if part.parent else root
+            objects[name] = obj
+
         return root
 
 
@@ -1713,6 +1741,547 @@ def build_bureau_western():
 
 
 # --------------------------------------------------------------------------
+# Defensive structures: the gun emplacement and the anti-aircraft emplacement
+#
+# The first buildings in the game with a gun on them, and the first whose whole
+# reason for existing is visible from above. A factory is read by its roof; an
+# emplacement is read by *the hole it sits in* — a ring of revetment with a circle
+# of concrete inside it and a barrel lying over the lip. The pairing is the same for
+# all three factions, because the player has to be able to tell the two roles apart
+# at a glance and a glance is all they get: one long barrel, low over a parapet,
+# against two thin ones standing up at the sky with a dish turning beside them.
+#
+# They are small on purpose. A gun pit is the smallest thing a player can build —
+# the catalogue gives it a power plant's ground and no more — so the model is about
+# eleven metres across and the barrel overhangs the parapet, which is the one piece
+# of a defensive structure that has to be visible from two hundred metres away.
+#
+# Which end is the front: +Y, like every other model here. The barrel is built along
+# +Y, the parapet is cut low on +Y, and the revetment is deeper than it is wide so
+# that the loader turns the model rather than leaving it across — the mistake that
+# cost this project a day on the tanks.
+# --------------------------------------------------------------------------
+
+
+def platform_pit(model, w, d, platform_h, ledge=1.1, drop=0.85, floor_mat=DARK, wall=CONCRETE,
+                 round_pad=False, segments=24):
+    """A raised platform with a pit sunk into the middle of it, and the height to build on.
+
+    Every emplacement in the game is this one shape, and getting it wrong is what an
+    emplacement looks like when it goes wrong. The first pass poured a solid plinth with a
+    cap on it, which filled the pit in and left a gun standing on a pavement; the second
+    made the pit forty centimetres deep, which from the camera the game is actually played
+    at is no pit at all. A pit is a *hole*: the floor is most of a metre below the ledge the
+    crew walk on, which is why a gun crew is hard to hit and why the model reads as a
+    position rather than as a slab with a turret on it.
+
+    Square for two of the factions, round for the third: the round one is a drum whose
+    profile goes up the outside and back down again, so the pit floor is the surface of
+    revolution's own closing face.
+
+    Returns the height of the pit floor, which is where the barbette stands.
+    """
+    apron(model, "apron", 0.0, 0.0, w + 2.8, d + 3.2, 0.3, 0.9, CONCRETE, PAINT)
+
+    floor_z = platform_h - drop
+
+    if round_pad:
+        radius = w * 0.5
+        model.part("platform").revolve(
+            [(radius, 0.3), (radius, platform_h), (radius - ledge, platform_h),
+             (radius - ledge, floor_z)], segments, wall)
+        # The pit floor is a *block* from the apron up, not a plate laid on it: a five
+        # centimetre plate four centimetres above the ground underneath it is two surfaces
+        # the depth buffer cannot separate at the distance this game is played from, and it
+        # draws as a moire band across the floor of the pit.
+        model.part("pit").revolve([(radius - ledge + 0.5, 0.15),
+                                   (radius - ledge + 0.5, floor_z + 0.1)],
+                                  segments, floor_mat, variation=0.04)
+    else:
+        # The platform's own walls, with the middle left open: a ring rather than a slab, so
+        # there is somewhere for the pit to be.
+        parapet_ring(model, "platform", 0.0, 0.0, w, d, 0.3, platform_h - 0.3, ledge, wall)
+        model.part("pit").box((0.0, 0.0, (0.15 + floor_z + 0.1) * 0.5),
+                              (w - (2 * ledge) + 1.0, d - (2 * ledge) + 1.0, floor_z - 0.05),
+                              floor_mat, 0.04)
+
+    # A projecting course at the platform's own top edge: the one line that makes a concrete
+    # slab read as something that was shuttered rather than poured on the ground. A *ring*,
+    # not a slab — see `coping`.
+    coping(model, "platform_cap", 0.0, 0.0, w - (2 * ledge), d - (2 * ledge), platform_h, 0.24)
+
+    # Steps down into the pit at the back, where the crew come in. Three boxes, and without
+    # them the drop into the pit reads as a mistake rather than as a position.
+    steps = model.part("pit_steps")
+    tread = drop / 4.0
+
+    for i in range(3):
+        steps.box((0.0, -((d * 0.5) - ledge) + 0.5 + (i * 0.65), floor_z + (tread * (i + 0.5))),
+                  (1.6, 0.65, tread * (i + 1)), CONCRETE, 0.05)
+
+    return floor_z
+
+
+def coping(model, name, cx, cy, w, d, z, thickness, material=TRIM, out=0.16, height=0.22):
+    """A course of stone along the top of a parapet: four boxes, never a slab.
+
+    `collar` is a single box, which is right for a string course round a solid wall and
+    wrong across an open pit: there it becomes the *lid* of the pit it is meant to be the
+    edge of. These models were built with it once, and from above a gun emplacement was a
+    turret standing in a filled-in hole with a paved courtyard round it.
+    """
+    parapet_ring(model, name, cx, cy, w + (2 * out), d + (2 * out), z, height,
+                 thickness + out, material)
+
+
+def ring_parapet(model, name, radius, z, height, thickness, segments, material, front=0.0,
+                 squeeze=1.12, variation=0.07):
+    """A parapet laid round a circle, one tangential slab per segment.
+
+    Each segment is a box turned about the vertical so that it lies along the arc it
+    covers. The first pass placed eight unrotated boxes round an ellipse and got eight
+    loose panels lying about a courtyard, which is what a parapet looks like when nobody
+    has thought about which way its segments point.
+    """
+    part = model.part(name)
+    width = (2.0 * math.pi * radius / segments) * squeeze
+
+    for i in range(segments):
+        angle = 360.0 * i / segments
+
+        # The segment facing +Y is the one the gun shoots over, so it is cut down; every
+        # other one is full height, which is what makes the position face somewhere.
+        height_here = front if front > 0.0 and math.cos(math.radians(angle)) > 0.95 else height
+        start = part.mark()
+
+        # Built out along +Y and turned into place, so the slab's own width runs along the
+        # circumference rather than across it.
+        part.box((0.0, radius, z + (height_here * 0.5)), (thickness, width, height_here),
+                 material, variation)
+        part.rotate(start, angle, "z")
+
+
+def revetment(model, name, cx, cy, w, d, z, height, thickness, material, front=0.0,
+              variation=0.07):
+    """A square parapet with the front cut down for the gun to shoot over.
+
+    The whole point of a prepared position is that the gun fires over the lip and the crew
+    behind it are covered, so the front is low and the other three sides are not. From
+    above that asymmetry says which way the position faces even when the turret is pointed
+    somewhere else.
+    """
+    part = model.part(name)
+    half_w, half_d = w * 0.5, d * 0.5
+
+    for side in (1.0, -1.0):
+        part.box((cx + (side * (half_w - (thickness * 0.5))), cy, z + (height * 0.5)),
+                 (thickness, d, height), material, variation)
+
+    part.box((cx, cy - half_d + (thickness * 0.5), z + (height * 0.5)),
+             (w - (2 * thickness), thickness, height), material, variation)
+
+    if front > 0.0:
+        part.box((cx, cy + half_d - (thickness * 0.5), z + (front * 0.5)),
+                 (w - (2 * thickness), thickness, front), material, variation)
+
+    # The coping: one more course, projecting, along the top of the back and both sides. It
+    # stops where the front stops, so the lip the gun shoots over stays open.
+    coping(model, f"{name}_cap", cx, cy, w, d - (thickness * 0.5), z + height, thickness)
+
+
+def barbette(model, name, floor_z, top_z, radius, mat=CONCRETE, lip=TRIM, segments=18):
+    """The pedestal a gun mount traverses on: a tapered drum from the pit floor to the gun.
+
+    It runs from the *floor* of the pit, not from the ledge: a mount standing on the ledge
+    would be a gun on a pavement, and the whole point of sinking the pit is that the gun is
+    the only thing above the parapet. Wider at the bottom than at the top, which is what a
+    poured pedestal does and what makes the drum read as carrying something.
+    """
+    part = model.part(name)
+    base = radius * 1.16
+    part.revolve([(base, floor_z), (base, floor_z + (top_z - floor_z) * 0.4), (radius, top_z - 0.16),
+                  (radius * 0.93, top_z)], segments, mat)
+    part.revolve([(radius * 1.05, top_z), (radius * 1.05, top_z + 0.2)], segments, lip,
+                 variation=0.05)
+
+
+def gun_mount(model, z, style, bore, length, elevation, mat, gun_mat, gun_dark,
+              scale=1.0, brake=False):
+    """The traversing part of an emplacement, with its gun hanging off it.
+
+    The assembly is built around its own origin — the centre of the barbette — because the
+    client turns this node about the vertical: a mount built around the middle of the pit
+    would swing its barrel in an arc around the pit instead of around itself. The gun is a
+    separate child part named `barrel`, which is the contract's name for the piece that
+    elevates, so the gun follows the traverse for nothing and can be given its own
+    elevation the day the renderer animates one.
+
+    `style` is the faction's turret language, the same three shapes the tanks wear: a cast
+    dome, a welded box, a sloped wedge. A player who can tell the tanks apart can tell the
+    emplacements apart.
+    """
+    mount = model.part("turret").place((0.0, 0.0, z))
+
+    if style == "dome":
+        # Σοβιετικοί: a cast drum with a domed roof, a ring of bolts and a bustle behind.
+        mount.revolve([(1.5 * scale, 0.0), (1.62 * scale, 0.22), (1.48 * scale, 0.6),
+                       (1.16 * scale, 0.86), (0.6 * scale, 0.98), (0.06, 1.02)], 18, mat)
+        mount.box((0.0, -1.3 * scale, 0.5), (1.9 * scale, 1.4 * scale, 0.9 * scale), mat, 0.06)
+    elif style == "box":
+        # Κινέζοι: a welded box with ribs and a flat roof, straight off a production line.
+        mount.box((0.0, 0.0, 0.46 * scale), (2.9 * scale, 3.2 * scale, 0.92 * scale), mat)
+        mount.box((0.0, 0.1 * scale, 0.98 * scale), (2.5 * scale, 2.8 * scale, 0.22 * scale),
+                  TRIM, 0.05)
+
+        for i in range(4):
+            y = (-1.1 + (i * 0.75)) * scale
+            mount.box((0.0, y, 0.46 * scale), (3.0 * scale, 0.16, 0.96 * scale), TRIM, 0.05)
+    else:
+        # Δυτικοί: a wedge with sloped plates and a flat roof, the tank turret's language.
+        mount.frustum((0.0, 0.0, 0.0), (3.1 * scale, 3.4 * scale), (2.1 * scale, 2.2 * scale),
+                      0.86 * scale, mat)
+        mount.box((0.0, 0.0, 0.94 * scale), (2.0 * scale, 2.1 * scale, 0.2 * scale), PANEL, 0.05)
+
+    # The roof fittings: a hatch, a sight head either side of the gun and the rim the crew
+    # stand behind. From above these are most of what distinguishes a mount from a drum.
+    mount.revolve([(0.6 * scale, 1.02), (0.6 * scale, 1.26), (0.48 * scale, 1.32)], 12, mat,
+                  offset=(0.0, -0.55 * scale, 0.0))
+    mount.box((0.8 * scale, 0.5 * scale, 1.14), (0.4 * scale, 0.6 * scale, 0.34 * scale),
+              DARK, 0.05)
+    mount.box((-0.8 * scale, 0.5 * scale, 1.14), (0.4 * scale, 0.6 * scale, 0.34 * scale),
+              DARK, 0.05)
+    mount.revolve([(0.3 * scale, 1.02), (0.3 * scale, 1.4)], 10, STEEL,
+                  offset=(-0.95 * scale, -0.95 * scale, 0.0))
+
+    # The gun itself, in its own node, hanging off the mount. Built along +Z and turned
+    # forward, with the elevation in the turn: a barrel authored along Y and tilted
+    # afterwards is the same shape, but the turn is one call and one sign to get wrong.
+    gun = model.part("barrel").hangs_from("turret").place((0.0, 0.75 * scale, 0.72 * scale))
+
+    start = gun.mark()
+    gun.revolve([(bore, -1.1 * scale), (bore, length)], 10, gun_mat, variation=0.05)
+    gun.revolve([(bore * 2.0, -1.05 * scale), (bore * 2.0, -0.3 * scale)], 10, gun_dark,
+                variation=0.05)
+
+    if brake:
+        gun.revolve([(bore * 1.8, length - (bore * 3.0)), (bore * 1.8, length)], 10, gun_dark,
+                    variation=0.05)
+
+    gun.rotate(start, elevation - 90.0, "x")
+    return mount
+
+
+def aa_mount(model, z, style, tubes, bore, length, elevation, spread, mat, gun_mat, gun_dark,
+             scale=1.0):
+    """The traversing part of an anti-aircraft emplacement: an open cradle, tubes at the sky.
+
+    Both tubes are one part named `barrel`, so the pair can never be separated by a future
+    animation, and the elevation is authored *into* the turn as a positive angle: an
+    anti-aircraft gun is pointed up, and a model of one with its barrels level reads as a
+    machine gun.
+    """
+    mount = model.part("turret").place((0.0, 0.0, z))
+
+    if style == "dome":
+        mount.revolve([(1.2 * scale, 0.0), (1.3 * scale, 0.2), (1.08 * scale, 0.6)], 16, mat)
+    elif style == "box":
+        mount.box((0.0, 0.0, 0.4 * scale), (2.4 * scale, 2.4 * scale, 0.8 * scale), mat)
+        mount.box((0.0, 0.0, 0.86 * scale), (2.0 * scale, 1.9 * scale, 0.18 * scale), TRIM, 0.05)
+    else:
+        mount.frustum((0.0, 0.0, 0.0), (2.6 * scale, 2.8 * scale), (1.8 * scale, 1.9 * scale),
+                      0.8 * scale, mat)
+        mount.box((0.0, 0.0, 0.84 * scale), (1.7 * scale, 1.8 * scale, 0.18 * scale), PANEL, 0.05)
+
+    # The trunnion the tubes swing on, and the seats either side of it: an anti-aircraft
+    # mount is served by people, and the pair of seats is what says so from above.
+    mount.box((0.0, 0.0, 0.95 * scale), (1.4 * scale, 0.5 * scale, 0.4 * scale), STEEL, 0.05)
+
+    for side in (-1.0, 1.0):
+        mount.box((side * 1.05 * scale, -0.35 * scale, 0.6 * scale),
+                  (0.55 * scale, 0.65 * scale, 0.45 * scale), DARK, 0.06)
+
+    gun = model.part("barrel").hangs_from("turret").place((0.0, 0.5 * scale, 1.1 * scale))
+
+    start = gun.mark()
+
+    for i in range(tubes):
+        offset = (i - ((tubes - 1) * 0.5)) * spread
+        gun.revolve([(bore, -1.0 * scale), (bore, length)], 10, gun_mat, offset=(offset, 0.0, 0.0),
+                    variation=0.05)
+        gun.revolve([(bore * 1.9, -0.95 * scale), (bore * 1.9, -0.25 * scale)], 10, gun_dark,
+                    offset=(offset, 0.0, 0.0), variation=0.05)
+
+    gun.rotate(start, elevation - 90.0, "x")
+    return mount
+
+
+def ammo_lockers(model, name, cx, cy, z, width, mat=RUST):
+    """Shell lockers and a stack of rounds beside the pit: the furniture of a position.
+
+    Four boxes and a row of rounds are what tells a player the thing is occupied; a gun pit
+    with nothing around it reads as a concrete ring rather than as a post.
+    """
+    part = model.part(name)
+    part.box((cx - (width * 0.5), cy, z + 0.38), (1.5, 0.9, 0.76), mat, 0.08)
+    part.box((cx + (width * 0.5), cy, z + 0.38), (1.5, 0.9, 0.76), mat, 0.08)
+
+    for i in range(3):
+        part.box((cx + 2.0 + (i * 0.5), cy - 0.3, z + 0.2), (0.34, 0.34, 0.4), RUST, 0.1)
+
+
+def radar_dish_small(model, name, x, y, z, radius, tilt=24.0, mast=1.6, yoke=0.7):
+    """A fire-control dish on a short mast, built around its own origin and named `radar`.
+
+    The anti-aircraft emplacement is the one defensive structure with a part that turns on
+    its own besides its mount, and a dish is what that part honestly is: the client sweeps
+    anything named `radar*` continuously, so a dish that tracks nothing still looks like a
+    director looking. The mobile anti-aircraft mount carries one for the same reason.
+    Nothing reads it yet — detection is a system this game does not have — and this is
+    presentation only.
+    """
+    part = model.part("radar").place((x, y, z))
+    part.revolve([(0.32, 0.0), (0.22, mast)], 10, STEEL)
+    part.box((0.0, 0.0, mast), (1.1, 0.4, 0.24), DARK, 0.05)
+
+    start = part.mark()
+    profile = [(0.03, 0.0)]
+
+    for i in range(5):
+        t = (i + 1) / 5.0
+        profile.append((radius * math.sin(math.radians(72.0 * t)),
+                        (radius * 0.5) * (1.0 - math.cos(math.radians(72.0 * t)))))
+
+    part.revolve(profile, 16, PANEL, offset=(0.0, 0.0, yoke))
+    part.rotate(start, -tilt, "x", about=(0.0, 0.0, yoke))
+    return part
+
+
+def build_gun_soviet():
+    """Σοβιετικοί gun emplacement: a cast turret over a pit of poured concrete.
+
+    The faction's defensive position is its architecture at the smallest scale it comes in:
+    a battered plinth, a revetment of one pour with a coping course on it, a casemate on a
+    thick barbette, and a short thick gun with a muzzle brake. The bustle on the back of
+    the turret is the counterweight for a gun that was never designed to be light.
+    """
+    m = Model("soviet_gun")
+
+    floor_z = platform_pit(m, w=9.0, d=11.0, platform_h=1.4, ledge=1.8, drop=0.9,
+                           wall=CONCRETE)
+
+    revetment(m, "revetment", 0.0, 0.0, 9.0, 11.0, 1.4, 1.9, 0.8, CONCRETE, front=0.6)
+
+    barbette(m, "barbette", floor_z, 3.1, 1.9, CONCRETE, TRIM)
+    gun_mount(m, 3.1, "dome", bore=0.17, length=4.6, elevation=4.0,
+              mat=MATERIALS["turret"], gun_mat=MATERIALS["gun"], gun_dark=DARK, brake=True)
+
+    ammo_lockers(m, "lockers", 0.0, -6.7, 0.3, 3.4)
+    m.part("crates").box((3.4, -6.2, 0.9), (0.9, 0.9, 0.5), MATERIALS["crate"], 0.09)
+    m.part("crates").box((3.4, -6.2, 1.4), (0.6, 0.6, 0.5), MATERIALS["crate"], 0.09)
+
+    # A range drum and a mast: the antenna is what the position talks to its battery with,
+    # and the mast is the one vertical note that stops a pit reading as a flat ring.
+    m.part("range_drum").revolve([(0.5, 0.3), (0.5, 1.1)], 12, STEEL, offset=(-2.6, -3.4, 0.0))
+    mast(m, "mast", 3.2, -3.4, 0.3, 5.6, 0.12, STEEL, arms=1)
+
+    return m.build()
+
+
+def build_gun_chinese():
+    """Κινέζοι gun emplacement: the same pit, stamped out of brick and angle iron.
+
+    Where the Σοβιετικοί poured a casemate, the Κινέζοι built a brick revetment with a
+    concrete pier every two metres, a parapet of sandbags inside it and a welded box turret
+    on a plain ring. There is nothing on it that is not repeated somewhere else on the
+    model, which is the faction's whole statement, and the hazard stripe is its one piece
+    of colour.
+    """
+    m = Model("chinese_gun")
+
+    floor_z = platform_pit(m, w=9.2, d=11.2, platform_h=1.25, ledge=1.8, drop=0.9, wall=BRICK)
+
+    revetment(m, "revetment", 0.0, 0.0, 9.2, 11.2, 1.25, 1.7, 0.75, BRICK, front=0.55)
+    ribs(m, "revetment_piers", 0.0, 0.0, 9.2, 11.2, 1.25, 2.95, 1.9, 0.5, 0.2, CONCRETE)
+
+    # The sandbag rim: a comb of small boxes along the inside of the parapet, which from
+    # above is the dotted line that says "prepared position" rather than "wall".
+    bags = m.part("sandbags")
+
+    for i in range(9):
+        y = -4.6 + (i * 1.15)
+        bags.box((3.75, y, 2.61), (0.7, 0.7, 0.34), RUST, 0.12)
+        bags.box((-3.75, y, 2.61), (0.7, 0.7, 0.34), RUST, 0.12)
+
+    barbette(m, "barbette", floor_z, 2.9, 1.8, CONCRETE, TRIM, segments=16)
+    gun_mount(m, 2.9, "box", bore=0.14, length=4.2, elevation=5.0,
+              mat=MATERIALS["turret"], gun_mat=MATERIALS["gun"], gun_dark=DARK)
+
+    ammo_lockers(m, "lockers", 0.0, -6.8, 0.3, 3.2)
+    m.part("crates").box((3.3, -6.3, 0.9), (1.0, 1.0, 0.6), MATERIALS["crate"], 0.09)
+    m.part("crates").box((3.3, -6.3, 1.5), (0.7, 0.7, 0.6), MATERIALS["crate"], 0.09)
+
+    m.part("hazard").box((0.0, 5.5, 0.4), (9.4, 0.12, 0.3), HAZARD, 0.03)
+    mast(m, "mast", -3.4, -6.4, 0.3, 4.6, 0.11, STEEL, arms=1)
+
+    return m.build()
+
+
+def build_gun_western():
+    """Δυτικοί gun emplacement: a round pit, a wedge mount and a very long gun.
+
+    The faction that designs its buildings gets the emplacement that looks designed: a
+    round pit with a low kerb round it rather than a square of revetment, a wedge turret
+    with a thermal sleeve and a muzzle reference sensor on the barrel, a cable duct running
+    out to the position, and a director on a pedestal so the gun has something to shoot
+    with. It is also the lowest and the longest of the three, which is what a tank gun
+    mounted for good looks like.
+    """
+    m = Model("western_gun")
+
+    floor_z = platform_pit(m, w=9.6, d=11.6, platform_h=1.1, ledge=1.7, drop=0.8,
+                           wall=CONCRETE, round_pad=True, segments=24)
+
+    ring_parapet(m, "parapet", 4.8, 1.1, 1.6, 0.5, 10, CONCRETE, front=0.7)
+
+    # The coping on a round parapet is another ring, slightly wider and in the dark trim: a
+    # square course laid over a circular wall is what a corner of it sticking out into the
+    # air looks like.
+    ring_parapet(m, "parapet_cap", 4.92, 2.7, 0.2, 0.62, 10, TRIM, front=0.2)
+    m.part("kerb").revolve([(4.9, 0.3), (4.9, 0.7)], 24, TRIM, variation=0.04)
+
+    barbette(m, "barbette", floor_z, 2.6, 1.85, CONCRETE, TRIM, segments=20)
+    gun_mount(m, 2.6, "wedge", bore=0.13, length=5.2, elevation=3.0,
+              mat=MATERIALS["turret"], gun_mat=MATERIALS["gun"], gun_dark=DARK)
+
+    # A thermal sleeve and a muzzle reference sensor on the barrel itself, in the barrel's
+    # own frame so they travel with the gun: on the axis, not above it, which is where the
+    # first pass put them — two parts floating a metre over the tube.
+    sleeve = m.part("sleeve").hangs_from("barrel").place((0.0, 1.4, 0.72))
+    start = sleeve.mark()
+    sleeve.revolve([(0.19, 0.9), (0.19, 2.9)], 10, PANEL, variation=0.04)
+    sleeve.rotate(start, -87.0, "x")
+
+    sensor = m.part("muzzle_sensor").hangs_from("barrel").place((0.0, 3.2, 0.72))
+    start = sensor.mark()
+    sensor.revolve([(0.09, 0.5), (0.09, 0.8)], 8, STEEL, variation=0.04)
+    sensor.rotate(start, -87.0, "x")
+
+    # The director: a rangefinder on a pedestal looking the way the gun does, and the duct
+    # that feeds the position from the cable trench behind it.
+    m.part("director").box((-3.8, 0.5, 1.4), (1.0, 1.0, 2.8), PANEL, 0.05)
+    m.part("director").box((-3.8, 0.8, 2.95), (1.6, 0.7, 0.45), DARK, 0.05)
+    m.part("duct").box((0.0, -6.8, 0.4), (1.1, 2.6, 0.4), PANEL, 0.05)
+    m.part("duct").box((0.0, -5.6, 0.62), (1.4, 1.2, 0.3), TRIM, 0.05)
+
+    ammo_lockers(m, "lockers", 2.6, -6.2, 0.3, 1.8)
+    m.part("crates").box((-2.6, -5.9, 0.65), (1.1, 1.1, 0.7), MATERIALS["crate"], 0.09)
+
+    return m.build()
+
+
+def build_aa_soviet():
+    """Σοβιετικοί anti-aircraft emplacement: a twin mount in a concrete pit, dish turning.
+
+    The one defensive structure whose model has two things that move: the mount traverses
+    and the director beside it sweeps. The tubes are deliberately long and thin next to the
+    gun emplacement's short thick one, and they stand up at thirty degrees, because at the
+    distance a player ever sees this distinction the angle of the barrels is what says
+    "air" and nothing else does.
+    """
+    m = Model("soviet_aa")
+
+    floor_z = platform_pit(m, w=8.8, d=10.8, platform_h=1.3, ledge=1.6, drop=0.85,
+                           wall=CONCRETE)
+    ptop = 1.3
+
+    revetment(m, "revetment", 0.0, 0.0, 8.8, 10.8, 1.3, 1.6, 0.75, CONCRETE, front=1.0)
+
+    barbette(m, "barbette", floor_z, 3.0, 1.7, CONCRETE, TRIM, segments=16)
+    aa_mount(m, 3.0, "dome", tubes=2, bore=0.1, length=4.0, elevation=30.0,
+             spread=0.55, mat=MATERIALS["turret"], gun_mat=MATERIALS["gun"], gun_dark=DARK)
+
+    radar_dish_small(m, "director", -2.6, -3.0, ptop, 1.35, tilt=22.0, mast=1.4, yoke=0.5)
+    ammo_lockers(m, "lockers", 0.0, -6.6, 0.3, 3.2)
+
+    m.part("crates").box((3.2, -5.6, 0.85), (0.9, 0.9, 0.6), MATERIALS["crate"], 0.09)
+    m.part("cable_drum").revolve([(0.5, 0.3), (0.5, 0.6)], 12, RUST, offset=(3.4, -6.6, 0.0))
+    mast(m, "mast", -3.4, -6.5, 0.3, 4.2, 0.11, STEEL, arms=1)
+
+    return m.build()
+
+
+def build_aa_chinese():
+    """Κινέζοι anti-aircraft emplacement: a quad mount on a brick platform.
+
+    Four tubes rather than two, because the faction's answer to everything is more of it,
+    and a row of four muzzles pointed at the sky is a silhouette nothing else in the game
+    has. The platform is the same brick-and-pier wall as the gun emplacement's revetment at
+    a different length — the same bay repeated, which is the point.
+    """
+    m = Model("chinese_aa")
+
+    floor_z = platform_pit(m, w=9.2, d=11.0, platform_h=1.2, ledge=1.7, drop=0.85, wall=BRICK)
+    ptop = 1.2
+
+    revetment(m, "revetment", 0.0, 0.0, 9.2, 11.0, 1.2, 1.5, 0.75, BRICK, front=0.9)
+    ribs(m, "revetment_piers", 0.0, 0.0, 9.2, 11.0, 1.2, 2.7, 1.85, 0.5, 0.2, CONCRETE)
+
+    barbette(m, "barbette", floor_z, 2.9, 1.8, CONCRETE, TRIM, segments=16)
+    aa_mount(m, 2.9, "box", tubes=4, bore=0.085, length=3.5, elevation=34.0,
+             spread=0.42, mat=MATERIALS["turret"], gun_mat=MATERIALS["gun"], gun_dark=DARK,
+             scale=1.05)
+
+    radar_dish_small(m, "director", -2.6, -2.9, ptop, 1.25, tilt=20.0, mast=1.3, yoke=0.45)
+    ammo_lockers(m, "lockers", 0.0, -6.7, 0.3, 3.0)
+
+    m.part("crates").box((3.3, -5.5, 0.8), (1.0, 1.0, 0.6), MATERIALS["crate"], 0.09)
+    m.part("hazard").box((0.0, 5.5, 0.4), (9.4, 0.12, 0.28), HAZARD, 0.03)
+    mast(m, "mast", 3.7, -6.6, 0.3, 3.8, 0.1, STEEL, arms=1)
+
+    return m.build()
+
+
+def build_aa_western():
+    """Δυτικοί anti-aircraft emplacement: a twin mount on a clean round pad, with director.
+
+    The Δυτικοί version is the one that looks like a piece of equipment rather than a
+    position: a round pad with a kerb instead of a parapet, outriggers put down to widen
+    the mount's footprint, and the director on its own plinth looking the same way. The
+    faction pays more for everything, and the difference here is that nothing on it is
+    improvised.
+    """
+    m = Model("western_aa")
+
+    floor_z = platform_pit(m, w=9.4, d=11.2, platform_h=1.0, ledge=1.6, drop=0.8,
+                           wall=CONCRETE, round_pad=True, segments=24)
+
+    ring_parapet(m, "parapet", 4.7, 1.0, 1.35, 0.45, 10, CONCRETE, front=0.85)
+    ring_parapet(m, "parapet_cap", 4.82, 2.35, 0.18, 0.56, 10, TRIM, front=0.18)
+    m.part("kerb").revolve([(4.8, 0.3), (4.8, 0.66)], 24, TRIM, variation=0.04)
+
+    barbette(m, "barbette", floor_z, 2.5, 1.75, CONCRETE, TRIM, segments=20)
+    aa_mount(m, 2.5, "wedge", tubes=2, bore=0.095, length=4.8, elevation=28.0,
+             spread=0.5, mat=MATERIALS["turret"], gun_mat=MATERIALS["gun"], gun_dark=DARK)
+
+    # Outriggers: four legs put down to widen the mount's footprint, which is what an
+    # air-defence crew does the moment they stop, and what makes the pad read as a site.
+    for side in (-1.0, 1.0):
+        m.part("outriggers").box((side * 3.2, 1.6, 0.75), (2.4, 0.32, 0.26), STEEL, 0.05)
+        m.part("outriggers").box((side * 4.2, 1.6, 0.5), (0.45, 0.45, 0.85), DARK, 0.05)
+
+    radar_dish_small(m, "director", -2.4, -3.0, floor_z, 1.25, tilt=20.0, mast=1.4, yoke=0.45)
+    m.part("director_base").box((-2.4, -3.0, floor_z + 0.3), (1.1, 1.1, 0.6), PANEL, 0.05)
+
+    ammo_lockers(m, "lockers", 2.8, -6.0, 0.3, 1.6)
+    m.part("crates").box((-3.0, -5.6, 0.65), (1.0, 1.0, 0.7), MATERIALS["crate"], 0.09)
+    m.part("duct").box((0.0, -6.6, 0.4), (1.1, 2.4, 0.4), PANEL, 0.05)
+
+    return m.build()
+
+    return m.build()
+
+
+# --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
 
@@ -1722,6 +2291,13 @@ STRUCTURES = (
     ("power", build_power_soviet, build_power_chinese, build_power_western),
     ("nuclear", build_nuclear_soviet, build_nuclear_chinese, build_nuclear_western),
     ("bureau", build_bureau_soviet, build_bureau_chinese, build_bureau_western),
+
+    # The two defensive structures. `gun` and `aa` rather than `antiair`, because the
+    # mobile mount already owns `soviet_antiair.glb` and a file name that a reader has to
+    # tell apart by which generator wrote it is a file name that will eventually be
+    # confused for the other one.
+    ("gun", build_gun_soviet, build_gun_chinese, build_gun_western),
+    ("aa", build_aa_soviet, build_aa_chinese, build_aa_western),
 )
 
 

@@ -55,6 +55,12 @@ using MiVic.Core.Terrain;
 /// structure that asked for none would be a building standing on a single cell with its walls in
 /// the next one.
 /// </param>
+/// <param name="CanHitGround">
+/// Whether this role can engage anything that is not airborne. True for nearly everything, and the
+/// mirror of <paramref name="CanHitAir"/>: a weapon that can only reach into the air is the other
+/// half of the same fact, and an anti-aircraft mount that fires at tanks is a bug rather than a
+/// bonus. A role that could hit neither would be unarmed, which is a different field.
+/// </param>
 public readonly record struct UnitDefinition(
     UnitKind Kind,
     int MaterialCost,
@@ -81,7 +87,8 @@ public readonly record struct UnitDefinition(
     bool Stealthy = false,
     int MaxAlive = 0,
     TechId RequiredTech = TechId.None,
-    int FootprintRadiusCells = 0)
+    int FootprintRadiusCells = 0,
+    bool CanHitGround = true)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -181,9 +188,10 @@ public static class UnitCatalog
             SplashRadiusMm: 16_000, Movement: MovementClass.Tracked, GroundPressurePermille: 1_000,
             OnlyFor: Faction.Soviet, MaxAlive: 2, RequiredTech: TechId.SovietElectro),
 
-        // Structures are unarmed for now; defensive buildings come with M3 balance.
-        // Industry needs a great deal of water, which is what makes a second
-        // command centre or power plant a real economic decision.
+        // Structures were unarmed until the emplacements below arrived; industry still
+        // carries no gun, because a factory that could shoot would be a factory nobody
+        // has to defend. Industry needs a great deal of water, which is what makes a
+        // second command centre or power plant a real economic decision.
         //
         // The last number on each of them is its footprint: the radius, in navigation cells, of the
         // square of ground the building stands on. The number comes from how big the buildings
@@ -213,6 +221,46 @@ public static class UnitCatalog
         // even though both are one building with one job.
         new(UnitKind.NuclearPlant, 900, 0, 600, 4_000, 0, 4, UnitKind.CommandCentre, true, WaterCost: 320,
             FootprintRadiusCells: 2),
+
+        // Πυροβολείο: the first structure in the game with a gun on it, and deliberately the
+        // weakest thing a defensive line can be made of. Forty-five damage every two and a half
+        // seconds is *less* than a tank's sustained fire and less than a Κατιούσα's, it cannot
+        // move, and it cannot touch anything in the air — so a player who buys one instead of a
+        // tank is buying reach and nothing else. Reach is what makes it worth having: 200 m is
+        // further than any tank can shoot back from (110 m) and further than a mobile anti-air
+        // mount reaches, so an emplacement covers an approach that a hull cannot. That is the
+        // whole of the decision the placement rule created — the same gun on a ridge sees the
+        // road for two hundred metres and the same gun in a basin sees a hillside.
+        //
+        // An entry in the tech tree that means something: this one is at era I, so it can be up
+        // inside the first minute, and it is priced to be a real purchase early on (180 Π is most
+        // of a command centre's opening stockpile) rather than something to sprinkle. What it is
+        // not is a gun behind research: a player who has not researched anything yet has no
+        // aeroplanes to fear and no armour of their own to protect, so the cheap turret is the
+        // right shape for the first minute.
+        new(UnitKind.GunEmplacement, 180, 30, 180, 1_400, 0, 1, UnitKind.CommandCentre, true,
+            45, 200_000, 50, false, 50,
+            FootprintRadiusCells: 1),
+
+        // Αντιαεροπορικό Πυροβολείο: the same building with the other half of the problem in
+        // mind, and worth waiting for. It is behind each faction's own «Επίπεδο 2» project — the
+        // research every faction has to do anyway to reach the armour era — which is the honest
+        // place for it: aircraft do not exist until era III, so a player cannot be caught without
+        // one, and a player who has just spent five hundred ticks on an era has something to show
+        // for it.
+        //
+        // What the wait buys, against the mobile Αντιαεροπορικό the factions can already build at
+        // era II: thirty metres more range (180 m against 150), a faster reload (12 ticks against
+        // 16) and a heavier shell (30 against 25), and it never has to be driven anywhere. A
+        // mobile mount has to be *at* the raid when the raid arrives; an emplacement is already
+        // there, which is the difference between a defence and a reaction.
+        //
+        // It cannot shoot at anything on the ground at all, and says so in the catalogue rather
+        // than in a comment: CanHitGround false. An anti-aircraft mount that kills tanks is not a
+        // strong anti-aircraft mount, it is the tank's replacement.
+        new(UnitKind.AntiAirEmplacement, 200, 45, 200, 1_200, 0, 2, UnitKind.CommandCentre, true,
+            30, 180_000, 12, true, 60, CanHitGround: false,
+            FootprintRadiusCells: 1),
     ];
 
     /// <summary>Every defined role.</summary>
@@ -383,6 +431,8 @@ public static class UnitCatalog
         UnitKind.NuclearPlant => "Πυρηνικός Σταθμός",
         UnitKind.Factory => "Εργοστάσιο",
         UnitKind.DesignBureau => "Γραφείο Σχεδιασμού",
+        UnitKind.GunEmplacement => "Πυροβολείο",
+        UnitKind.AntiAirEmplacement => "Αντιαεροπορικό Πυροβολείο",
         _ => "Άγνωστο",
     };
 

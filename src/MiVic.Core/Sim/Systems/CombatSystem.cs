@@ -11,11 +11,28 @@ namespace MiVic.Core.Sim;
 /// same tick. Targeting is sticky: a unit keeps its target until it dies or
 /// leaves range, which keeps the per-tick cost linear instead of quadratic.
 /// </para>
+/// <para>
+/// <b>Nobody has to be told to shoot.</b> This is also the system that fires the
+/// structures: an armed building with no target acquires one the same way a tank
+/// does, because a player who has to order a turret to fire will never order it —
+/// the building is scenery to them until the tick it opens up on its own. The
+/// order a player *can* give one is a preference rather than a command: see
+/// <see cref="SimWorld"/>'s attack order, which locks a structure onto a target
+/// without pretending it can drive at it.
+/// </para>
 /// </summary>
 public static class CombatSystem
 {
     /// <summary>Ticks an unarmed-of-targets unit waits before searching again.</summary>
     public const int SearchRetryTicks = 5;
+
+    /// <summary>
+    /// How far a target that has already been chosen may be and still be kept. Not
+    /// <c>int.MaxValue</c>, which would square to a value no distance can exceed but is
+    /// one multiplication away from an overflow somebody would have to reason about: this
+    /// is a thousand kilometres, which is beyond every corner of a six-hundred-metre map.
+    /// </summary>
+    private const int HeldTargetReachMm = 1_000_000_000;
 
     /// <summary>Runs one combat tick.</summary>
     public static void Tick(SimWorld world)
@@ -55,8 +72,22 @@ public static class CombatSystem
                 continue;
             }
 
-            // Validate the current target; a dead or illegal one is dropped.
-            if (attacker.TargetSlot >= 0 && !IsEnemyAndTargetable(world, ref attacker, attacker.TargetSlot, weapon))
+            // A structure that is still being raised has no gun on it yet. Everything
+            // else a building does waits for it to be up — income, production, research —
+            // and a gun emplacement that fired out of a half-poured foundation would be
+            // the one exception, which is exactly the sort of exception a player reads as
+            // a bug rather than as a rule.
+            if (weapon.IsBuilding && !world.IsComplete(slot))
+            {
+                continue;
+            }
+
+            // Validate the current target; a dead or illegal one is dropped. A held
+            // target is allowed to be out of reach — see CanEngage — because a unit
+            // under an attack order is on its way to it, and the order would be thrown
+            // away by the first tick the enemy stepped back.
+            if (attacker.TargetSlot >= 0 &&
+                !CanEngage(world, ref attacker, attacker.TargetSlot, weapon, HeldTargetReachMm))
             {
                 attacker.TargetSlot = -1;
                 attacker.HasAttackOrder = false;
@@ -156,8 +187,11 @@ public static class CombatSystem
             // Morale scales reload speed: a shaken unit is already worse, not just
             // closer to breaking. Automata have no morale at all, so they reload at
             // exactly the catalogue rate — no bonus for being unshakeable, no
-            // penalty for being unmanned.
-            int factor = weapon.IsAutomaton
+            // penalty for being unmanned. Neither has a structure: a gun crew is
+            // either at its post or the gun is silent, and a building that inherited
+            // its faction's morale floor would reload forty per cent faster for the
+            // Σοβιετικοί than for the Δυτικοί for no reason a player could see.
+            int factor = weapon.IsAutomaton || weapon.IsBuilding
                 ? 1_000
                 : 1_500 - ((attacker.Morale.Raw * 1_000) / 65_536);
 
@@ -283,8 +317,47 @@ public static class CombatSystem
         return ((hash & 0x7FFFFFFF) % span) - magnitude;
     }
 
-    /// <summary>True when the slot holds a live enemy this weapon may engage.</summary>
-    private static bool IsEnemyAndTargetable(SimWorld world, ref Entity attacker, int slot, in UnitDefinition weapon)
+    /// <summary>
+    /// <b>The one question targeting asks: can this attacker engage that slot?</b>
+    /// <para>
+    /// Everything that decides it lives here — whether the slot holds a live enemy, whether
+    /// the attacker can see it at all, what class of thing the weapon is allowed to shoot,
+    /// and whether it is close enough — so that "in range" and "the right kind of target"
+    /// are one predicate rather than two tests that a caller can forget to pair. The two
+    /// bugs this shape prevents are the obvious ones: a gun that shoots aircraft because
+    /// the air clause was left out of one of the two call sites, and an anti-aircraft
+    /// emplacement that kills tanks for the same reason.
+    /// </para>
+    /// <para>
+    /// <b>This is where the sensor chain will land.</b> What is being built today is a
+    /// firing range and a target class, which is all this engine has. The direction of
+    /// travel is that a structure detects as well as fires: a detection radius that is not
+    /// the same number as its range, stealthy vehicles and aircraft detected at a smaller
+    /// one, and a radar structure extending detection over an area while drawing power —
+    /// at which point vision, detection, acquisition and fire become a chain rather than a
+    /// single comparison. All of that belongs inside this method, in the clause about
+    /// whether the attacker can see the target, and in the <paramref name="reachMm"/> the
+    /// caller passes. Nothing about it is half-built here: no detection field is set by
+    /// anything, because a field nothing writes is a feature that never happens.
+    /// </para>
+    /// </summary>
+    /// <param name="world">The world both of them stand in.</param>
+    /// <param name="attacker">The shooter.</param>
+    /// <param name="slot">The candidate target's slot.</param>
+    /// <param name="weapon">The shooter's definition, which carries range and target class.</param>
+    /// <param name="reachMm">
+    /// How far this question reaches. Acquisition passes the weapon's own range, because a
+    /// target it cannot shoot yet is not a target. A target already chosen is asked about at
+    /// <see cref="HeldTargetReachMm"/> instead, because holding and choosing are different
+    /// questions sharing one body: the held target may legitimately be out of reach while
+    /// the attacker closes on it.
+    /// </param>
+    private static bool CanEngage(
+        SimWorld world,
+        ref Entity attacker,
+        int slot,
+        in UnitDefinition weapon,
+        int reachMm)
     {
         if (!world.IsAliveSlot(slot))
         {
@@ -299,19 +372,48 @@ public static class CombatSystem
         }
 
         // A stealthed enemy is not a target until it fires or something gets close
-        // enough to detect it.
+        // enough to detect it. This is the whole of detection in this engine today, and
+        // it is already per-viewer rather than per-shooter: what will change is that a
+        // structure's own detection radius, and a radar's coverage of the ground around
+        // it, become part of the same answer.
         if (world.IsHiddenFrom(attacker.TeamId, slot))
         {
             return false;
         }
 
-        return !UnitCatalog.Flies(target.Kind) || weapon.CanHitAir;
+        // What the weapon can reach, which is two questions rather than one. A tank
+        // gun cannot be pointed at an aeroplane; an anti-aircraft mount that can
+        // shoot a tank is not a specialist weapon, it is the tank's replacement, and
+        // the roster says which of the two a role is rather than leaving the client
+        // or the balance table to guess.
+        if (!(UnitCatalog.Flies(target.Kind) ? weapon.CanHitAir : weapon.CanHitGround))
+        {
+            return false;
+        }
+
+        return InRange(ref attacker, ref target, reachMm);
     }
 
     /// <summary>
     /// Picks the nearest legal enemy in range. The spatial index limits the scan
     /// to the cells the weapon can actually reach, instead of every entity on the
     /// map — the difference between a linear and a quadratic tick.
+    /// <para>
+    /// <b>The tie-break is the lowest slot.</b> The index hands cells back in its own
+    /// order and each cell's contents in ascending slot order, so "nearest, and among
+    /// equals the lowest slot" is the answer an ascending slot-order scan of the whole
+    /// map would give — without paying for that scan. It matters because two enemies
+    /// are exactly equidistant far more often than arithmetic suggests: a defender
+    /// shooting down a road at two trucks nose to tail, or a battery on a grid, sees
+    /// ties every few seconds, and "which one" has to be the same answer on both
+    /// machines even though the cell a candidate sits in depends on the terrain.
+    /// Nothing outside the world is consulted: no spawn order, no seed, no clock.
+    /// </para>
+    /// <para>
+    /// The only test a candidate is put through is <see cref="CanEngage"/>, which is
+    /// where the range and the target class are decided. A scan that tested range here
+    /// as well would be a second copy of a rule that already exists one method up.
+    /// </para>
     /// </summary>
     private static int AcquireTarget(SimWorld world, int slot, ref Entity attacker, in UnitDefinition weapon)
     {
@@ -330,21 +432,19 @@ public static class CombatSystem
             {
                 foreach (int candidate in index.Cell(index.IndexOf(cellX, cellZ)))
                 {
-                    if (candidate == slot || !IsEnemyAndTargetable(world, ref attacker, candidate, weapon))
+                    if (candidate == slot ||
+                        !CanEngage(world, ref attacker, candidate, weapon, weapon.AttackRangeMm))
                     {
                         continue;
                     }
 
                     ref Entity target = ref world.GetRefBySlot(candidate);
-
-                    if (!InRange(ref attacker, ref target, weapon.AttackRangeMm))
-                    {
-                        continue;
-                    }
-
                     long distance = attacker.Position.DistanceSquaredTo(target.Position);
 
-                    if (distance < bestDistance)
+                    // Strictly nearer, or equally near and lower-numbered: the second
+                    // clause is the tie-break, and without it the winner depends on
+                    // which cell the index happened to visit first.
+                    if (distance < bestDistance || (distance == bestDistance && candidate < best))
                     {
                         bestDistance = distance;
                         best = candidate;
@@ -359,6 +459,14 @@ public static class CombatSystem
     /// <summary>
     /// Range is measured horizontally: a tank on a hill can still shoot a tank in
     /// the valley, and aircraft are engaged by horizontal distance at altitude.
+    /// <para>
+    /// <b>There is no line of sight in this engine, and that is a known simplification rather
+    /// than an oversight.</b> An emplacement on one side of a ridge can shoot a target on the
+    /// other side of it: height is a term in the cover arithmetic and nowhere else, and the
+    /// landform fields the terrain layer already computes are what a sight test would be built
+    /// from when somebody builds one. Until then the rule a player can rely on is "in range is
+    /// in range", which is at least a rule they can predict.
+    /// </para>
     /// </summary>
     private static bool InRange(ref Entity attacker, ref Entity target, int rangeMm)
     {

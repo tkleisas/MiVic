@@ -1,0 +1,78 @@
+# Q: does a defensive structure shoot on its own, at what, and at what does it refuse to?
+#
+# Run against the emplacement fixture, which clears the map and puts three enemy machines on the
+# clearest ground it can find — a tank and an aircraft 72 m out, and a tank 150 m out — and a
+# command centre behind them to raise the buildings from:
+#
+#   MiVic.Game.exe --emplacement-demo --probe tools/probe/emplacement.probe `
+#                  --probe-out artifacts/probe/emplacement.txt
+#
+# The point of the fixture is that nothing in this script gives an order to shoot. The two
+# emplacements are placed through `structure ... build`, which is the command a player's click on
+# the build panel issues, and after that the script only advances the clock and asks what happened.
+# A defensive structure that had to be told to fire would never fire in a real game, because the
+# player has no reason to think of it — so "it fired with nobody having told it to" is the whole
+# feature, and the `events` stream is where it is visible.
+#
+# The two enemies are placed to make the refusals visible as well as the shots. The gun cannot
+# touch an aircraft and the anti-aircraft emplacement cannot touch a tank, and in both cases the
+# machine it cannot touch is *shooting it* at the time: an enemy that is in range, visible,
+# hostile, and simply not a target.
+
+tick 1
+
+# The line-up, so the slots and the distances below are the fixture's own numbers rather than
+# anything this script assumes.
+units western 10
+
+# --- the gun emplacement -------------------------------------------------------------------
+#
+# The site is the middle of the clearing. The order is the player's own path: the site is
+# surveyed, the cost is paid, and what appears is a building site that does nothing until it is
+# up — which the `structures` line below shows, and which is why the emplacement is already
+# damaged before it has fired a shot.
+structure GunEmplacement 23 -192 0 build
+tick 1
+structures 0
+
+# Eight seconds of construction, and then it is a gun.
+tick 180
+structures 0
+
+# The first shot, two ticks after it finished rising: no order was given to it between the
+# `structure` line above and this one, and this is the event that says so. The window is wide
+# because the two enemies that can reach it are firing at it every few ticks as well, and the
+# line worth reading is the one that names slot 505 as the shooter rather than as the target.
+tick 2
+events 16
+
+# And three seconds of it being a gun. The events are the proof: shot events from slot 505, hit
+# events on the tank it chose, and no event at all against slot 507 — the aircraft, which is
+# nearer to it than the far tank is and which is firing at it throughout.
+tick 58
+events 8
+unit 505
+units western 10
+
+# --- the anti-aircraft emplacement ---------------------------------------------------------
+#
+# Raised thirty metres behind the gun, which is far enough that the two footprints do not share a
+# cell. It is the same order through the same command; what differs is what it will shoot at.
+structure AntiAirEmplacement 23 -160 0 build
+tick 1
+tick 200
+structures 0
+
+# And three seconds of the pair of them firing at the two different halves of the enemy line: the
+# gun at the ground, the anti-aircraft emplacement at the aircraft, and neither at the other's.
+tick 60
+events 8
+units western 10
+
+# Look at it: a gun pit and an anti-aircraft mount, thirty metres apart, both of them turned
+# towards what they are shooting at, with the enemy line to the east of them.
+focus 30 -178
+zoom 95
+pitch -0.52
+yaw 0.62
+shot artifacts/probe/emplacements.png
