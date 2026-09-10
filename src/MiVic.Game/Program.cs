@@ -8,6 +8,8 @@ const string CrashLogName = "crash.log";
 
 try
 {
+    UseUtf8Console();
+
     // Model diagnostics run before any graphics device exists.
     if (args.Length >= 1 && args[0] is "--inspect-models")
     {
@@ -79,3 +81,26 @@ catch (Exception exception)
 
 [DllImport("kernel32.dll", SetLastError = true)]
 static extern bool AttachConsole(int processId);
+
+/// <summary>
+/// Makes the console able to print Greek.
+/// <para>
+/// A Windows console starts on a legacy code page, so every Greek title, mission name
+/// and unit label this program prints arrived as rows of question marks and accented
+/// rubbish — and it did so in redirected output too, which is how the screenshot
+/// fixtures and the model inspector are read. A program whose entire interface is Greek
+/// was unreadable in the one place its diagnostics live.
+/// </para>
+/// </summary>
+static void UseUtf8Console()
+{
+    try
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+    }
+    catch (IOException)
+    {
+        // No console to configure — output is a pipe or a file, which is already
+        // byte-oriented, and there is nothing to set. Not a reason to fail.
+    }
+}
