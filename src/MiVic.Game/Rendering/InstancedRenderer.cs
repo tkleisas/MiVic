@@ -25,6 +25,7 @@ public sealed class InstancedRenderer : IDisposable
     private readonly EffectParameter _fogStartParameter;
     private readonly EffectParameter _fogEndParameter;
     private readonly EffectParameter? _timeParameter;
+    private readonly EffectParameter? _foliageHeightParameter;
 
     private DynamicVertexBuffer? _instanceBuffer;
     private int _instanceCapacity;
@@ -46,6 +47,13 @@ public sealed class InstancedRenderer : IDisposable
         _fogStartParameter = _effect.Parameters["FogStart"];
         _fogEndParameter = _effect.Parameters["FogEnd"];
         _timeParameter = _effect.Parameters["Time"];
+
+        // Optional, and looked up once rather than per draw. A parameter that the
+        // compiler eliminates — which it does to this one the moment the foliage
+        // vertex shader stops using its value for anything — comes back as null
+        // rather than as an error, so asking for it by name at draw time is a null
+        // reference in the middle of a frame instead of a missing uniform.
+        _foliageHeightParameter = _effect.Parameters["FoliageHeight"];
     }
 
     /// <summary>A mesh uploaded to the GPU, with its draw parameters cached.</summary>
@@ -189,7 +197,7 @@ public sealed class InstancedRenderer : IDisposable
     }
 
     /// <summary>
-    /// Switches to a liquid surface technique. The caller must call <see cref="Begin"/>
+    /// Switches to the liquid surface technique. The caller must call <see cref="Begin"/>
     /// first; <see cref="EndParticles"/> switches back, since a liquid pass is drawn
     /// opaquely and leaves the pipeline exactly as the lit pass does.
     /// </summary>
@@ -197,6 +205,33 @@ public sealed class InstancedRenderer : IDisposable
     {
         _particles = false;
         _effect.CurrentTechnique = _effect.Techniques[pass == LiquidPass.Lava ? "Lava" : "Water"];
+        _effect.CurrentTechnique.Passes[0].Apply();
+    }
+
+    /// <summary>
+    /// Switches to the foliage technique, which sways a mesh in the wind. The caller
+    /// must call <see cref="Begin"/> first; <see cref="EndFoliage"/> switches back.
+    /// </summary>
+    /// <param name="meshHeightMetres">
+    /// How tall the mesh being drawn is. The sway is weighted by height above the
+    /// base so that a trunk stays planted while its crown moves, and this is the
+    /// height that weighting is measured against — which is per mesh and not per
+    /// pass, because the trees in one wood are not all the same size. It is set
+    /// again for each mesh drawn, so each is swaying against its own height.
+    /// </param>
+    public void BeginFoliage(float meshHeightMetres)
+    {
+        _particles = false;
+        _foliageHeightParameter?.SetValue(meshHeightMetres);
+        _effect.CurrentTechnique = _effect.Techniques["Foliage"];
+        _effect.CurrentTechnique.Passes[0].Apply();
+    }
+
+    /// <summary>Returns to the lit technique after a foliage pass.</summary>
+    public void EndFoliage()
+    {
+        _particles = false;
+        _effect.CurrentTechnique = _effect.Techniques["Instanced"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
 

@@ -385,3 +385,115 @@ technique Lava
         PixelShader  = compile PS_SHADERMODEL LavaPS();
     }
 };
+
+// -----------------------------------------------------------------------------
+// Foliage: trees, the one thing on the map that moves without being told to.
+//
+// A wood is drawn as one instanced mesh per species, so the sway has to happen in
+// the vertex shader: there is no geometry stage in this pipeline — DesktopGL
+// compiles these as vs_3_0/ps_3_0 — and nothing per-tree is uploaded except its
+// matrix. Moving the vertices is also the cheap answer, which is what matters when
+// several hundred trees share one draw call.
+//
+// Two details decide whether this reads as wind or as jitter.
+//
+// The phase comes from the instance's own world position, so neighbouring trees
+// are out of step. A wood that sways in unison is one object being shaken, and it
+// is the single most obvious way this effect goes wrong.
+//
+// And the sway is weighted by height above the tree's own base, so the trunk
+// stays planted and only the canopy carries the movement. A tree displaced
+// uniformly slides across the grass with its roots trailing, which is worse than
+// no wind at all.
+// -----------------------------------------------------------------------------
+
+/// <summary>
+/// Height of the mesh being drawn, in metres, so the sway can be weighted by it.
+/// Set per mesh: the trees range from seven metres to ten, and a fixed divisor
+/// would have the tall ones swaying from halfway up their trunks.
+/// </summary>
+float FoliageHeight;
+
+VertexOutput FoliageVS(VertexInput input, InstanceInput instance)
+{
+    float4x4 world = float4x4(instance.Row0, instance.Row1, instance.Row2, instance.Row3);
+    float4 worldPosition = mul(input.Position, world);
+
+    // How far up its own tree this vertex is, 0 at the root and 1 at the crown.
+    // The tree meshes are grounded on import — their lowest point sits at y = 0 —
+    // so the local y is already the height above the base.
+    float reach = saturate(input.Position.y / max(FoliageHeight, 0.001));
+
+    // Squared, because a tree bends: the base of the trunk moves by almost
+    // nothing, the crown moves by the whole amplitude, and the curve between them
+    // is not a straight line.
+    float weight = reach * reach;
+
+    // Phase from where this tree is standing. Two trees a few metres apart must
+    // not start their gust together, and the wood has to look like a wood and not
+    // like a field of metronomes.
+    float phase = (instance.Row3.x * 0.19) + (instance.Row3.z * 0.27);
+
+    // A slow lean with a faster flutter over it. The lean alone reads as a
+    // metronome and the flutter alone reads as vibration: air is both.
+    float lean = sin((Time * 0.85) + phase);
+    float flutter = sin((Time * 2.35) + (phase * 1.7));
+
+    // One wind direction for the whole map, so the wood leans together the way a
+    // real one does, plus a small cross-wind component so it is not a wobble in a
+    // single line. The amplitudes are the movement at the very top of a tree:
+    // thirty-odd centimetres of lean and a hand's width of flutter.
+    float2 along = float2(0.82, 0.57);
+    float2 sway = (along * lean * 0.34) + (float2(-along.y, along.x) * flutter * 0.11);
+
+    worldPosition.xyz += float3(sway.x * weight, 0.0, sway.y * weight);
+
+    VertexOutput output;
+    output.Position = mul(worldPosition, ViewProjection);
+    output.Normal = normalize(mul(input.Normal, (float3x3)world));
+    output.Material = input.Color;
+    output.Tint = instance.Color;
+    output.WorldPos = worldPosition.xyz;
+    output.Local = input.Position.xyz;
+    return output;
+}
+
+/// <summary>
+/// Trees are lit exactly as anything else is, with one difference: the instance
+/// tint multiplies the material instead of being mixed into it by the paint mask.
+///
+/// A tree belongs to nobody, so every one of its materials has a mask of zero —
+/// the value that tells the lit shader to leave the material alone. That is what
+/// keeps a wood from being repainted in whichever team's colour happens to be
+/// drawing it, and it is also why the lit technique cannot give one tree a
+/// different green from its neighbour. Here the tint *is* the variation: the
+/// client hands each tree a slightly different shade, and a wood stops being one
+/// flat colour repeated three hundred times.
+/// </summary>
+float4 FoliagePS(VertexOutput input) : COLOR0
+{
+    float3 normal = normalize(input.Normal);
+    float3 base = input.Material.rgb * input.Tint.rgb;
+
+    float hemi = saturate((normal.y * 0.5) + 0.5);
+    float3 ambient = AmbientColor.rgb * lerp(0.58, 1.30, hemi);
+
+    float lambert = saturate(dot(normal, LightDirection));
+    float wrap = (lambert * 0.6) + 0.4;
+    float3 lit = base * (ambient + (wrap * 0.68));
+
+    float distanceToCamera = length(input.WorldPos - CameraPosition);
+    float fogRange = max(FogEnd - FogStart, 0.001);
+    float fogAmount = saturate((distanceToCamera - FogStart) / fogRange) * FogColor.a;
+
+    return float4(lerp(lit, FogColor.rgb, fogAmount), input.Tint.a);
+}
+
+technique Foliage
+{
+    pass P0
+    {
+        VertexShader = compile VS_SHADERMODEL FoliageVS();
+        PixelShader  = compile PS_SHADERMODEL FoliagePS();
+    }
+};

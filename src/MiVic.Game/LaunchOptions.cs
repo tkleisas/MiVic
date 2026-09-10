@@ -99,7 +99,7 @@ public sealed record LaunchOptions
     /// thing the fixture exists to show.
     /// </para>
     /// </summary>
-    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo;
+    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo;
 
     /// <summary>Spawns a burst of explosions at startup, so a screenshot can show the particle system.</summary>
     public bool ParticleDemo { get; init; }
@@ -112,6 +112,9 @@ public sealed record LaunchOptions
 
     /// <summary>Points the camera at the nearest lava on the map, to look at the surface.</summary>
     public bool LavaDemo { get; init; }
+
+    /// <summary>Points the camera at the densest wood on the map, to look at the trees.</summary>
+    public bool ForestDemo { get; init; }
 
     /// <summary>When set, export one WAV per faction theme and exit.</summary>
     public string? RenderAudioPath { get; init; }
@@ -344,6 +347,10 @@ public sealed record LaunchOptions
 
                 case "--lava-demo":
                     options = options with { LavaDemo = true, ShowHelp = false, ScreenshotFrame = 60 };
+                    break;
+
+                case "--forest-demo":
+                    options = options with { ForestDemo = true, ShowHelp = false, ScreenshotFrame = 60 };
                     break;
 
                 case "--combat-demo":

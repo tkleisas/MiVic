@@ -14,6 +14,7 @@ using MiVic.Game.Data;
 using MiVic.Game.Rendering;
 using MiVic.Game.Rendering.Combat;
 using MiVic.Game.Rendering.Particles;
+using MiVic.Game.Rendering.Props;
 using MiVic.Game.Sim;
 using MiVic.Game.Ui;
 using NVec2 = System.Numerics.Vector2;
@@ -75,6 +76,7 @@ public sealed class MiVicGame : XnaGame
     private ImGuiController? _imgui;
 
     private InstancedRenderer.Mesh? _terrainMesh;
+    private ForestRenderer? _forest;
     private InstancedRenderer.Mesh? _selectionMarkerMesh;
     private InstancedRenderer.Mesh? _healthBackMesh;
     private InstancedRenderer.Mesh? _healthFillMesh;
@@ -464,6 +466,13 @@ public sealed class MiVicGame : XnaGame
         // shaders. Built from the same layers the simulation uses, so the sea a player
         // sees is the sea the pathfinder refuses to walk into.
         BuildLiquidMeshes();
+
+        // Trees stand on the woodland the surface layer already has: how many, where,
+        // which shape and how big are all read from the cell lattice below, so they
+        // are placed with the terrain and rebuilt with it.
+        _forest = new ForestRenderer(_renderer, AppContext.BaseDirectory);
+        _forest.Rebuild(_simulation.World.Terrain, _simulation.World.TerrainTypes);
+
         _selectionMarkerMesh = _renderer.CreateMesh(MeshBuilder.Cylinder(2.6f, 0.45f, 12));
         _markerBatch = new SingleBatch(_selectionMarkerMesh, _simulation.World.Capacity);
 
@@ -528,6 +537,11 @@ public sealed class MiVicGame : XnaGame
         if (_options.LavaDemo)
         {
             FocusOnLava();
+        }
+
+        if (_options.ForestDemo)
+        {
+            FocusOnForest();
         }
 
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Content", "Fonts", "NotoSans-Regular.ttf");
@@ -886,6 +900,19 @@ public sealed class MiVicGame : XnaGame
         // Immediately over the ground they lie on, and under everything else: water
         // drawn after the units would put a lake in front of the tanks standing in it.
         DrawLiquids();
+
+        // Trees are scenery on walkable ground, so they go here: over the surfaces
+        // they stand on, and under the units that drive through them. The model
+        // fixtures skip them — they frame one vehicle at a time on a plain grid, and
+        // a wood in the background of a model shot is a wood in the way.
+        if (!_options.IsModelGallery && !_options.Viewer)
+        {
+            (int treeCalls, int treeInstances) = _forest?.Draw(_camera!.IsStrategicZoom) ?? (0, 0);
+
+            _drawCalls += treeCalls;
+            _instancesSubmitted += treeInstances;
+        }
+
         CollectUnitInstances();
         CollectSelectionMarkers();
         CollectOrderMarkers();
@@ -2278,6 +2305,10 @@ public sealed class MiVicGame : XnaGame
         // The liquid surfaces move with the ground under them: a bridge turns water
         // into road, and mud control does not, but a volcano's lava field does.
         BuildLiquidMeshes();
+
+        // The woodland moves with the ground too, and for the same reason: a wood is
+        // a property of the cells, and weather control can turn one into a bog.
+        _forest?.Rebuild(world.Terrain, world.TerrainTypes);
     }
 
     /// <summary>
@@ -3031,6 +3062,128 @@ public sealed class MiVicGame : XnaGame
                 observer.Health);
 
             return;
+        }
+    }
+
+    /// <summary>
+    /// Points the camera at the densest wood on the map.
+    /// <para>
+    /// Where the woodland is is a property of the seed, not of anything a person
+    /// can find by dragging a camera over six hundred metres of ground, so the
+    /// fixture looks for it. It takes the cell with the most woodland around it
+    /// rather than the first one it meets: that is the middle of a wood instead of
+    /// its ragged edge, which is the difference between a screenshot of trees and a
+    /// screenshot of a treeline.
+    /// </para>
+    /// <para>
+    /// It stands an observer nearby, because vision comes from units and props are
+    /// drawn under the fog — a wood nobody can see is a wood drawn as fog, and this
+    /// one exists to be looked at.
+    /// </para>
+    /// </summary>
+    private void FocusOnForest()
+    {
+        if (_simulation is null || _camera is null)
+        {
+            return;
+        }
+
+        TerrainLayer terrain = _simulation.World.TerrainTypes;
+        int forestCells = 0;
+        int bestCell = -1;
+        int bestScore = -1;
+
+        for (int z = 0; z < terrain.Size; z++)
+        {
+            for (int x = 0; x < terrain.Size; x++)
+            {
+                if (terrain.TypeAtCell(x, z) != TerrainType.Forest)
+                {
+                    continue;
+                }
+
+                forestCells++;
+
+                // How much woodland surrounds it, out to the radius the generator
+                // grows a wood to. Every cell of a wood scores at least itself, so
+                // the deepest cell in the thickest wood wins.
+                int score = 0;
+
+                for (int dz = -2; dz <= 2; dz++)
+                {
+                    for (int dx = -2; dx <= 2; dx++)
+                    {
+                        if (terrain.TypeAtCell(x + dx, z + dz) == TerrainType.Forest)
+                        {
+                            score++;
+                        }
+                    }
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestCell = (z * terrain.Size) + x;
+                }
+            }
+        }
+
+        Console.WriteLine(
+            $"forest-demo: {forestCells} forest cells, {_forest?.Summary ?? "no forest loaded"}, " +
+            $"placement digest {_forest?.PlacementDigest ?? 0:X16}");
+
+        if (_forest is { } forest)
+        {
+            foreach (string shape in forest.LoadedShapes)
+            {
+                Console.WriteLine($"forest-demo:   shape {shape}");
+            }
+        }
+
+        if (bestCell < 0)
+        {
+            Console.WriteLine("forest-demo: no woodland on this map to frame");
+            return;
+        }
+
+        int cellX = bestCell % terrain.Size;
+        int cellZ = bestCell / terrain.Size;
+
+        var centre = new Vector3(
+            (terrain.OriginMm + (cellX * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre,
+            0f,
+            (terrain.OriginMm + (cellZ * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre);
+
+        Console.WriteLine(
+            $"forest-demo: densest cell {cellX},{cellZ} with {bestScore} of 25 cells wooded, " +
+            $"at {centre.X:0},{centre.Z:0} m");
+
+        // Close enough that a nine-metre tree is a tree rather than a tuft, and far
+        // enough back that the trunks are not hiding the crowns behind them. The
+        // screenshot options win when they are given: a fixture with one fixed camera
+        // cannot be looked at from closer in, and a wood is judged at two distances —
+        // as a mass from above and as trees from near the ground.
+        _camera.ZoomTo(_options.ScreenshotZoom ?? 135f);
+        _camera.TiltTo(_options.ScreenshotPitch ?? -0.66f);
+        _camera.Yaw = _options.ScreenshotYaw ?? 0.58f;
+        _camera.FocusOn(centre);
+
+        // Three watchers, spread round the wood. Infantry see a hundred and ten
+        // metres and the frame is wider than that: one of them leaves the corners of
+        // the picture under fog, which is not what looking at a wood is supposed to
+        // show.
+        foreach ((int dx, int dz) in new[] { (42, 42), (-52, 34), (10, -58) })
+        {
+            UnitDefinition watcher = UnitCatalog.Get(UnitKind.Infantry);
+            WorldPos wanting = WorldPos.FromMetres((int)centre.X + dx, 0, (int)centre.Z + dz);
+
+            _simulation.World.Spawn(
+                Faction.Soviet,
+                PlayerTeam,
+                UnitKind.Infantry,
+                _simulation.World.LegalSpawnSite(wanting),
+                Fix32.FromInt(watcher.SpeedMmPerTick),
+                watcher.Health);
         }
     }
 
@@ -4123,6 +4276,7 @@ public sealed class MiVicGame : XnaGame
         _sfx?.Dispose();
 
         _terrainMesh?.Dispose();
+        _forest?.Dispose();
         _selectionMarkerMesh?.Dispose();
         _healthBackMesh?.Dispose();
         _healthFillMesh?.Dispose();

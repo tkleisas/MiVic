@@ -181,6 +181,21 @@ MATERIALS = {
     "flesh":    (0.72, 0.55, 0.42, 0.00),
     "robot":    (0.42, 0.45, 0.48, 0.70),
     "robot_leg": (0.28, 0.29, 0.31, 0.30),
+
+    # Woodland, used by build_props.py. **Every mask here is zero**, and that is
+    # the one thing about these entries that matters: a tree belongs to nobody,
+    # and a mask above zero would paint a wood in whichever team happened to be
+    # drawing it. The renderer's foliage pass is what varies a canopy from tree
+    # to tree, by multiplying the material by a per-tree tint, so these are the
+    # shades of one wood rather than the colours of one species.
+    "bark":       (0.25, 0.19, 0.14, 0.00),
+    "bark_pale":  (0.56, 0.54, 0.48, 0.00),
+    "needle_dark": (0.09, 0.19, 0.12, 0.00),
+    "needle":     (0.14, 0.27, 0.14, 0.00),
+    "needle_lit": (0.19, 0.34, 0.17, 0.00),
+    "leaf_dark":  (0.17, 0.30, 0.13, 0.00),
+    "leaf":       (0.23, 0.37, 0.16, 0.00),
+    "leaf_lit":   (0.31, 0.44, 0.19, 0.00),
 }
 
 
