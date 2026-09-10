@@ -63,6 +63,13 @@ public sealed class TerrainLayer
     public int CellCount => Size * Size;
 
     /// <summary>
+    /// Bumped on every surface change. The client rebuilds its terrain mesh when
+    /// this moves, so weather control is visible without meshing the ground every
+    /// frame.
+    /// </summary>
+    public int Revision { get; private set; }
+
+    /// <summary>
     /// Generates the layer for a height field, aligned to a navigation grid so the
     /// two share one lattice.
     /// </summary>
@@ -418,6 +425,7 @@ public sealed class TerrainLayer
         }
 
         _types[index] = (byte)type;
+        Revision++;
         return true;
     }
 
@@ -475,12 +483,16 @@ public sealed class TerrainLayer
             }
         }
 
+        if (covered > 0)
+        {
+            Revision++;
+        }
+
         return covered;
     }
 
     /// <summary>Reverts every weather effect that has run out. Returns cells restored.</summary>
-    public int ExpireWeather(long tick)
-    {
+    public int ExpireWeather(long tick)    {
         if (_weatherCells == 0)
         {
             return 0;
@@ -499,6 +511,11 @@ public sealed class TerrainLayer
             _weatherExpiry[index] = 0;
             _weatherCells--;
             restored++;
+        }
+
+        if (restored > 0)
+        {
+            Revision++;
         }
 
         return restored;

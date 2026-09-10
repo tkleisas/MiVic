@@ -99,6 +99,9 @@ public sealed class MiVicGame : XnaGame
 
     /// <summary>Off-map ability waiting for the player to click a target.</summary>
     private AbilityId _pendingAbility = AbilityId.None;
+
+    /// <summary>Terrain revision the current ground mesh was built from.</summary>
+    private int _terrainRevision;
     private double _lastClickSeconds;
     private int _lastClickedSlot = -1;
 
@@ -215,9 +218,11 @@ public sealed class MiVicGame : XnaGame
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
 
-        // The client meshes the simulation's own height field, so what is drawn is
-        // exactly what pathfinding reasons about.
-        _terrainMesh = _renderer.CreateMesh(TerrainMeshBuilder.FromHeightMap(_simulation.World.Terrain));
+        // The client meshes the simulation's own height field and surface layer, so
+        // what is drawn is exactly what pathfinding reasons about.
+        _terrainMesh = _renderer.CreateMesh(
+            TerrainMeshBuilder.FromHeightMap(_simulation.World.Terrain, _simulation.World.TerrainTypes));
+        _terrainRevision = _simulation.World.TerrainTypes.Revision;
         _selectionMarkerMesh = _renderer.CreateMesh(MeshBuilder.Cylinder(2.6f, 0.45f, 12));
         _markerBatch = new MeshBatch(_selectionMarkerMesh, _simulation.World.Capacity);
 
@@ -620,6 +625,11 @@ public sealed class MiVicGame : XnaGame
                 _drawCalls++;
                 _instancesSubmitted += particles.AdditiveCount;
             }
+        }
+
+        if (_simulation is not null)
+        {
+            RefreshTerrainMeshIfChanged();
         }
 
         if (_fog is not null && !_options.IsModelGallery)
@@ -1136,6 +1146,30 @@ public sealed class MiVicGame : XnaGame
         WorldPos target = WorldPos.FromMetres((int)ground.X, 0, (int)ground.Z);
 
         _simulation.World.Enqueue(SimCommand.UseAbility(ability, target, _simulation.World.Tick + 1, PlayerTeam));
+    }
+
+    /// <summary>
+    /// Re-meshes the ground when the simulation's surface layer changes.
+    /// <para>
+    /// Weather control writes to the terrain, and a player who calls down mud has
+    /// to be able to see where it landed. Rebuilding is driven by the layer's
+    /// revision rather than by a timer, so the cost is paid only when something
+    /// actually changed — which is rare.
+    /// </para>
+    /// </summary>
+    private void RefreshTerrainMeshIfChanged()
+    {
+        SimWorld world = _simulation!.World;
+
+        if (world.TerrainTypes.Revision == _terrainRevision)
+        {
+            return;
+        }
+
+        _terrainRevision = world.TerrainTypes.Revision;
+        _terrainMesh?.Dispose();
+        _terrainMesh = _renderer!.CreateMesh(
+            TerrainMeshBuilder.FromHeightMap(world.Terrain, world.TerrainTypes));
     }
 
     /// <summary>

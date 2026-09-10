@@ -343,10 +343,12 @@ whoever has the worst ground pressure. It deals no damage — the mud is the wea
 Terrain is no longer a pure function of the seed, so the surface is part of the
 state hash and the ground reverts exactly when the effect expires.
 
-**Terrain is currently simulated but not drawn**: it changes pathing, cost and
-passability, and the fog overlay hides the enemy half of the map, but the ground
-itself is still a single texture. Showing mud, water and snow is part of the
-rendering work.
+**Terrain is drawn as it is simulated.** The ground mesh takes its colour from the
+simulation's own surface layer, so mud the player can see is mud the pathfinder
+charges for, and water is flattened to the water line so lakes read as lakes rather
+than as dark pits. The mesh is re-built from `TerrainLayer.Revision`, so a weather
+control cast appears on the ground the moment it lands without meshing the terrain
+every frame.
 
 The **Καταδρομέας** is the Δυτικοί era-V edge: fast, hard-hitting, fragile, and
 **invisible** to the enemy until it fires. A shot reveals it for five seconds, and
