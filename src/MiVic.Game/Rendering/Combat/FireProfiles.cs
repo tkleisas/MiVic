@@ -170,7 +170,7 @@ public static class FireProfiles
         // sized arc is an invisible one. Drawn thin enough to read as a bolt rather
         // than as a beam.
         UnitKind.ElectroPrototype => new FireProfile(
-            FireStyle.Bolt, 4_000f, 0f, 0.55f, new Vector3(0.62f, 0.85f, 1.0f), 0.02f, 0f, 1, 0f, 1.6f,
+            FireStyle.Bolt, 4_000f, 0f, 0.80f, new Vector3(0.62f, 0.85f, 1.0f), 0.02f, 0f, 1, 0f, 1.6f,
             FireImpact.Electric, SoundEffectKind.TankGun, 0.25f),
 
         _ => null,
