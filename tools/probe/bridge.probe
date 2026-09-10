@@ -75,6 +75,26 @@ attributes -257 -201
 hud off
 shot artifacts/probe/bridge-built.png
 
+# And down it comes: enemy salvos on the middle of the span. A bridge is a chain of blocks, so this
+# does not delete the crossing — it knocks blocks out, the water comes back through the hole, and
+# what is left either side of it is deck that leads nowhere. One salvo is not enough for a block
+# (200 hit points against 95 a salvo); the second leaves it at 10, and the third takes it.
+blast -257 -210 22 95 2
+bridges
+blast -257 -210 22 95 2
+bridges
+blast -257 -210 22 95 2
+bridges
+attributes -257 -210
+attributes -257 -201
+
+# The hole in the deck, from the same camera as the whole crossing above.
+shot artifacts/probe/bridge-cut.png
+
+# A cut crossing is repaired with the order that built it: the gap is water again, so the site is a
+# site, and the price is the price of the span the simulation measures from there.
+bridge -257 -210
+
 # The round trip over water is exact, which is the regression guard on the projection: marched
 # against the bed instead of the surface the player sees, this lands metres away.
 expect "a click on water resolves to the water it was aimed at" 0.0 0.0 0.3

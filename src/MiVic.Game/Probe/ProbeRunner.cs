@@ -2,8 +2,7 @@ using System.Globalization;
 using System.Text;
 using MiVic.Core.Numerics;
 using MiVic.Core.Sim;
-using MiVic.Core.Terrain;
-using MiVic.Game.Data;
+using MiVic.Core.Terrain;using MiVic.Game.Data;
 using MiVic.Game.Sim;
 using Microsoft.Xna.Framework;
 
@@ -240,6 +239,9 @@ public sealed class ProbeRunner
             case "bridges":
                 Bridges(command);
                 break;
+            case "blast":
+                Blast(command);
+                break;
             case "arm":
                 Arm(command);
                 break;
@@ -259,7 +261,7 @@ public sealed class ProbeRunner
                 throw new ProbeException(
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
                     "surfaces, attributes, units, unit, count, parts, model, visible, events, bridge, " +
-                    "bridges, arm, hover, click, hud, expect");
+                    "bridges, blast, arm, hover, click, hud, expect");
         }
     }
 
@@ -599,14 +601,68 @@ public sealed class ProbeRunner
             int size = world.TerrainTypes.Size;
             int first = cells[0];
 
-            string progress = state.Complete
-                ? "whole"
-                : $"{state.Built}/{state.Total} up from ({first % size},{first / size}), " +
-                  $"{ProbeFormat.Permille(state.ProgressPermille)}, {ProbeFormat.Ticks(state.RemainingTicks(world.Tick))} of work left";
+            string condition = state.Cut ? "cut" : state.Complete ? "whole" : "under construction";
+            string progress = state.Complete && !state.Cut
+                ? condition
+                : $"{condition} — {state.Built}/{state.Total} reached, {state.Standing} standing, " +
+                  $"{ProbeFormat.Ticks(state.RemainingTicks(world.Tick))} of work left";
 
             Emit(
                 $"query:   #{bridge} {DescribeSpan(world, cells, cells.Length)} — {progress}, " +
-                $"started on tick {state.StartTick}, whole on tick {state.ReadyTick}");
+                $"started on tick {state.StartTick}, whole on tick {state.ReadyTick}, from ({first % size},{first / size})");
+        }
+    }
+
+    /// <summary>
+    /// Drops a blast on the ground, as a salvo or a strike does, so a script can watch a crossing
+    /// come down. The one command here that damages anything: a bridge that cannot be knocked down
+    /// cannot be inspected, and there is no other way to ask what a hole in one looks like.
+    /// </summary>
+    private void Blast(ProbeCommand command)
+    {
+        const string Usage = "blast <x> <z> [radius] [damage] [team]";
+
+        float x = command.Number(0, "an x in metres", Usage);
+        float z = command.Number(1, "a z in metres", Usage);
+        float radius = command.OptionalNumber(2, 22f, "a radius in metres", Usage);
+        int damage = (int)command.OptionalNumber(3, 95f, "damage", Usage);
+        int team = (int)command.OptionalNumber(4, 2f, "a team number", Usage);
+
+        if (radius <= 0f || damage <= 0)
+        {
+            throw new ProbeException($"a blast needs a positive radius and damage — usage: {Usage}");
+        }
+
+        SimWorld world = _host.Simulation.World;
+        TerrainLayer terrain = world.TerrainTypes;
+        int centreX = (int)(x * WorldPos.MmPerMetre);
+        int centreZ = (int)(z * WorldPos.MmPerMetre);
+        int cell = terrain.IndexOfWorld(centreX, centreZ);
+
+        if (cell < 0)
+        {
+            throw new ProbeException($"({x}, {z}) m is off the map — {Usage}, and the map is +-300 m");
+        }
+
+        int knockedOut = world.Bridgeworks.DamageArea(
+            terrain,
+            centreX,
+            centreZ,
+            (int)(radius * WorldPos.MmPerMetre),
+            damage,
+            team);
+
+        Emit(
+            $"ok: blast at (x {x:0.0}, z {z:0.0}) m, radius {ProbeFormat.Metres(radius)}, {damage} damage from team {team} — " +
+            $"{ProbeFormat.Count(knockedOut, "block")} knocked out");
+
+        if (world.Bridgeworks.TryGetBlock(cell, out BridgeBlock block))
+        {
+            Emit($"query:   deck       {DescribeCell(world, cell)} — {block.Health}/{Bridgeworks.BlockHealth} left, owner team {block.Team}, {block.Axis}");
+        }
+        else
+        {
+            Emit($"query:   deck       {DescribeCell(world, cell)} — no deck standing here");
         }
     }
 

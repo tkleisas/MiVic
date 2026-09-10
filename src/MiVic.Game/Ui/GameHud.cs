@@ -980,17 +980,20 @@ public sealed class GameHud
                     note);
             }
 
-            // What the site under the cursor would cost, on its own line, because it is the one
-            // number that decides whether the player can afford the crossing they are looking
-            // at: a ditch and a hundred metres of water are not the same undertaking, and a
-            // single price on the button could only ever be right for one of them.
+            // What the site under the cursor would cost and how long it would take, on its own
+            // line, because those are the two numbers that decide whether the crossing the player
+            // is looking at is worth ordering: a ditch and a hundred metres of water are not the
+            // same undertaking, in money or in time, and a single price on the button could only
+            // ever be right for one of them.
             if (snapshot.BridgeArmed && snapshot.BridgeSiteReason.Length == 0 && snapshot.BridgeSiteCells > 0)
             {
                 BridgeCost price = Bridgeworks.Cost(snapshot.BridgeSiteCells);
+                int seconds = Bridgeworks.TicksFor(snapshot.BridgeSiteCells) / SimConstants.TickRate;
 
                 ImGui.TextColored(
                     MutedColor,
-                    $"Σημείο: {snapshot.BridgeSiteCells} κύτταρα — {price.Materials} Π, {price.Energy} Ε, {price.Water} Ν");
+                    $"Σημείο: {snapshot.BridgeSiteCells} κύτταρα — {price.Materials} Π, {price.Energy} Ε, " +
+                    $"{price.Water} Ν — {seconds} δευτ.");
             }
 
             if (ImGui.IsItemHovered())
@@ -1010,12 +1013,14 @@ public sealed class GameHud
     }
 
     /// <summary>
-    /// Progress of the crossings still being built.
+    /// What has happened to the crossings: one still going up, or one that has been cut.
     /// <para>
-    /// The deck growing across the water is the live sign of the work; this is the line that
-    /// says how much of it is left. A bridge that took time and showed nothing would be as bad
-    /// as one that showed nothing and took no time, which is what it did before: the order
-    /// turned water into ford in a single tick with no trace of the work at all.
+    /// The deck growing across the water is the live sign of the work, and a hole in it is the live
+    /// sign of the damage; these are the lines that say how much of either. A bridge that took time
+    /// and showed nothing would be as bad as one that showed nothing and took no time, which is what
+    /// it did before: the order turned water into ford in a single tick with no trace of the work at
+    /// all — and a crossing that has been cut is worth saying out loud, because the army on the far
+    /// side of it has no way home until somebody notices.
     /// </para>
     /// </summary>
     private static void DrawBridgeWork(SimWorld world)
@@ -1025,6 +1030,14 @@ public sealed class GameHud
         for (int bridge = 0; bridge < bridgeworks.Count; bridge++)
         {
             BridgeState state = bridgeworks.State(bridge);
+
+            if (state.Cut)
+            {
+                ImGui.TextColored(
+                    WarningColor,
+                    $"Γέφυρα κομμένη: {state.Standing}/{state.Built} κύτταρα στέκουν.");
+                continue;
+            }
 
             if (state.Complete)
             {

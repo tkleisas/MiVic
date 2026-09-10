@@ -99,7 +99,8 @@ shot out/frame-later.png
 | `unit <slot>` | the same in detail: move goal and distance to go, path state, what it is attacking and from how far, cooldown, morale, distance travelled, construction, and whether the client is drawing it |
 | `count <kind>` | how many of a role are alive, per faction |
 | `bridge <x> <z> [team] [build]` | whether a crossing at that cell would be accepted, the reason when it would not, the span it would cover, what it costs and how long the work takes — and with `build`, the order that starts it |
-| `bridges` | every crossing on the map: the cells it spans, how much of the deck is up, which bank the work started from, and the tick it will be whole on |
+| `bridges` | every crossing on the map: the cells it spans, how much of it the work has reached, how many of its blocks still stand, whether it has been cut, and the tick it will be whole on |
+| `blast <x> <z> [radius] [damage] [team]` | drops a blast on the ground, as a salvo or a strike does, and reports how many blocks of deck it knocked out and what is left of the one at the centre |
 
 ### What the player would see
 
@@ -124,6 +125,11 @@ looking at, and it exists because a crossing cannot be inspected until it has be
 cells it turns into ford are the answer, and there is no other way to ask for them. Everything
 else here reads. A bridge takes time to build, so a script that wants to see it finished
 either advances the ticks itself or asks `bridges` how much work is left.
+
+`blast` is the second, and it is damage rather than an order: a crossing that can be knocked
+down cannot be inspected either, and there is no other way to ask what a hole in one looks
+like. It calls the same area damage a Κατιούσα salvo and an off-map strike call, so what a
+script breaks is what a battlefield breaks.
 
 ### Render-state queries
 

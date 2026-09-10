@@ -63,8 +63,13 @@ public sealed class BridgeRenderer : IDisposable
     }
 
     /// <summary>
-    /// Collects one instance per deck segment and per rail of every crossing in the world, up to
-    /// the cells whose work is done. Returns how many instances were written.
+    /// Collects one instance per deck block and per rail, for every cell of the map that carries
+    /// deck. Returns how many instances were written.
+    /// <para>
+    /// Walked by cell rather than by crossing, because a block belongs to the cell: that is what
+    /// makes a destroyed block a hole in the deck (the block is simply not there any more) and a
+    /// crossing of two spans one junction block rather than two decks drawn through each other.
+    /// </para>
     /// </summary>
     public int Collect(SimWorld world)
     {
@@ -78,38 +83,35 @@ public sealed class BridgeRenderer : IDisposable
         float railBase = deckBase + DeckThickness;
         int written = 0;
 
-        for (int bridge = 0; bridge < bridgeworks.Count; bridge++)
+        for (int index = 0; index < bridgeworks.CellCount && written + 3 <= _instances.Length; index++)
         {
-            ReadOnlySpan<int> cells = bridgeworks.Cells(bridge);
-            int built = bridgeworks.State(bridge).Built;
-
-            if (built == 0 || cells.IsEmpty)
+            if (!bridgeworks.TryGetBlock(index, out BridgeBlock block))
             {
                 continue;
             }
 
-            // Which way the span runs, so the rails go along it. A one-cell crossing has no
-            // direction of its own and is drawn as a square platform with rails on both.
-            bool alongX = cells.Length < 2 || navigation.CellX(cells[0]) != navigation.CellX(cells[^1]);
+            float x0 = (navigation.OriginMm + (navigation.CellX(index) * navigation.CellSizeMm)) / (float)WorldPos.MmPerMetre;
+            float z0 = (navigation.OriginMm + (navigation.CellZ(index) * navigation.CellSizeMm)) / (float)WorldPos.MmPerMetre;
 
-            for (int i = 0; i < built && written + 3 <= _instances.Length; i++)
+            written = Add(written, x0 + (cell * 0.5f), deckBase, z0 + (cell * 0.5f), cell, DeckThickness, cell, DeckTint);
+
+            // A junction is open on all four sides: rails across it would say the deck only goes one
+            // way, which is the one thing a crossroads is not. The block model has a junction piece
+            // with its rails broken where the other span comes in; until it does, no rails.
+            if (block.Axis == BridgeAxis.Junction)
             {
-                int index = cells[i];
-                float x0 = (navigation.OriginMm + (navigation.CellX(index) * navigation.CellSizeMm)) / (float)WorldPos.MmPerMetre;
-                float z0 = (navigation.OriginMm + (navigation.CellZ(index) * navigation.CellSizeMm)) / (float)WorldPos.MmPerMetre;
+                continue;
+            }
 
-                written = Add(written, x0 + (cell * 0.5f), deckBase, z0 + (cell * 0.5f), cell, DeckThickness, cell, DeckTint);
-
-                if (alongX)
-                {
-                    written = Add(written, x0 + (cell * 0.5f), railBase, z0 + (RailWidth * 0.5f), cell, RailHeight, RailWidth, RailTint);
-                    written = Add(written, x0 + (cell * 0.5f), railBase, z0 + cell - (RailWidth * 0.5f), cell, RailHeight, RailWidth, RailTint);
-                }
-                else
-                {
-                    written = Add(written, x0 + (RailWidth * 0.5f), railBase, z0 + (cell * 0.5f), RailWidth, RailHeight, cell, RailTint);
-                    written = Add(written, x0 + cell - (RailWidth * 0.5f), railBase, z0 + (cell * 0.5f), RailWidth, RailHeight, cell, RailTint);
-                }
+            if (block.Axis == BridgeAxis.AlongX)
+            {
+                written = Add(written, x0 + (cell * 0.5f), railBase, z0 + (RailWidth * 0.5f), cell, RailHeight, RailWidth, RailTint);
+                written = Add(written, x0 + (cell * 0.5f), railBase, z0 + cell - (RailWidth * 0.5f), cell, RailHeight, RailWidth, RailTint);
+            }
+            else
+            {
+                written = Add(written, x0 + (RailWidth * 0.5f), railBase, z0 + (cell * 0.5f), RailWidth, RailHeight, cell, RailTint);
+                written = Add(written, x0 + cell - (RailWidth * 0.5f), railBase, z0 + (cell * 0.5f), RailWidth, RailHeight, cell, RailTint);
             }
         }
 

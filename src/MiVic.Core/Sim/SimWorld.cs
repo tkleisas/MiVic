@@ -66,6 +66,10 @@ public sealed class SimWorld
         Terrain = HeightMap.Generate(seed, SimConstants.TerrainResolution, SimConstants.MapExtentMm, SimConstants.TerrainMaxHeightMm);
         Navigation = NavGrid.Build(Terrain, SimConstants.MaxSlopePermille, SimConstants.NavGridStride);
         TerrainTypes = TerrainLayer.Build(Terrain, Navigation, seed);
+
+        // The deck tables are sized by the lattice the bridges are built on, so they are made here
+        // rather than in a field initialiser that would run before the grid exists.
+        Bridgeworks = new Bridgeworks(Navigation.CellCount);
         _pathFinder = new PathFinder(Navigation.CellCount);
         _pathCells = new int[capacity * SimConstants.MaxPathCells];
         _jobs = new ProductionJob[capacity * SimConstants.MaxQueueLength];
@@ -97,11 +101,11 @@ public sealed class SimWorld
     public TerrainLayer TerrainTypes { get; }
 
     /// <summary>
-    /// The crossings a team has built, with the work still going into them. The client draws
-    /// the decks from here: a ford on the map could have been carved by the generator, so the
-    /// terrain alone cannot say where a bridge is.
+    /// The crossings a team has built, block by block, with the work still going into them. The
+    /// client draws the decks from here: a ford on the map could have been carved by the generator,
+    /// so the terrain alone cannot say where a bridge is.
     /// </summary>
-    public Bridgeworks Bridgeworks { get; } = new();
+    public Bridgeworks Bridgeworks { get; }
 
     /// <summary>Uniform grid of live entities, rebuilt each tick for proximity queries.</summary>
     public SpatialIndex Spatial => _spatial;
@@ -1034,6 +1038,18 @@ public sealed class SimWorld
 
         long radiusSquared = (long)definition.RadiusMm * definition.RadiusMm;
 
+        // Off-map support is the other way a crossing comes down. A strike that lands on a bridge
+        // takes it with the units on it — and an ability documented as hitting everybody takes the
+        // crossing its own side is using as well, which is the same promise it makes about units.
+        Bridgeworks.DamageArea(
+            TerrainTypes,
+            target.X,
+            target.Z,
+            definition.RadiusMm,
+            definition.Damage,
+            team,
+            sparesFriends: !definition.DamagesFriendlies);
+
         for (int slot = 0; slot < _entities.Length; slot++)
         {
             if (!IsAliveSlot(slot))
@@ -1304,7 +1320,7 @@ public sealed class SimWorld
         // The span is recorded before the resources are taken, so that an order that cannot be
         // recorded — a map already carrying every crossing it may carry — costs nothing. The
         // plan refuses that case too; the order here is what makes the two agree.
-        if (!Bridgeworks.Begin(cells[..count], Tick))
+        if (!Bridgeworks.Begin(cells[..count], Tick, team))
         {
             return false;
         }

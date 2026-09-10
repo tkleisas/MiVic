@@ -124,12 +124,25 @@ public static class CombatSystem
             }
             else if (target.Health <= damage)
             {
+                // The shot lands on the man, and what is behind him is the deck he is standing on.
+                world.Bridgeworks.DamageAt(
+                    world.TerrainTypes,
+                    target.Position,
+                    Bridgeworks.DeckDamage(damage),
+                    attacker.TeamId);
+
                 Kill(world, attacker.TargetSlot);
                 attacker.TargetSlot = -1;
                 attacker.HasAttackOrder = false;
             }
             else
             {
+                world.Bridgeworks.DamageAt(
+                    world.TerrainTypes,
+                    target.Position,
+                    Bridgeworks.DeckDamage(damage),
+                    attacker.TeamId);
+
                 target.Health -= damage;
             }
 
@@ -198,6 +211,16 @@ public static class CombatSystem
 
         long radiusSquared = (long)weapon.SplashRadiusMm * weapon.SplashRadiusMm;
         int capacity = world.Capacity;
+
+        // A salvo is aimed at the ground rather than at a man, so it is the weapon that cuts a
+        // crossing: every block of an enemy's deck inside the radius takes the full damage.
+        world.Bridgeworks.DamageArea(
+            world.TerrainTypes,
+            impactX,
+            impactZ,
+            weapon.SplashRadiusMm,
+            damage,
+            attacker.TeamId);
 
         for (int other = 0; other < capacity; other++)
         {

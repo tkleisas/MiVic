@@ -109,7 +109,8 @@ public static class StateHash
         // client draws a deck from and what decides when the next cell of the ford appears, so
         // two peers that disagreed about one would paint different maps and walk them
         // differently. The ford itself is already in the surface bytes above; this is the work
-        // that is putting it there.
+        // that is putting it there, and the blocks it has laid — which is the part that can be
+        // knocked down, and therefore the part a battle silently diverges over if it is not hashed.
         Bridgeworks bridgeworks = world.Bridgeworks;
         Mix(ref hash, bridgeworks.Count);
 
@@ -119,14 +120,15 @@ public static class StateHash
             BridgeState state = bridgeworks.State(bridge);
 
             Mix(ref hash, cells.Length);
+            Mix(ref hash, bridgeworks.Team(bridge));
+            Mix(ref hash, state.Built);
+            Mix(ref hash, state.StartTick);
 
             for (int i = 0; i < cells.Length; i++)
             {
                 Mix(ref hash, cells[i]);
+                Mix(ref hash, bridgeworks.BlockHealthAt(cells[i]));
             }
-
-            Mix(ref hash, state.Built);
-            Mix(ref hash, state.StartTick);
         }
 
         int capacity = world.Capacity;

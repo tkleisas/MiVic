@@ -73,6 +73,173 @@ public sealed class BridgeTests
     }
 
     /// <summary>
+    /// A bridge is a chain of blocks, so losing one cuts it. Artillery does not delete a crossing:
+    /// it knocks a hole in one, the water comes back through the hole, and what is left either side
+    /// of it is deck that leads nowhere. That is the difference between a bridge a player can
+    /// defend and a bridge that either exists or does not.
+    /// </summary>
+    [Fact]
+    public void ABlastKnocksAHoleInTheCrossingAndTheWaterComesBack()
+    {
+        SimWorld world = WithFactory(out _);
+
+        Assert.True(TryFindCrossing(world, out WorldPos site, out int[] span, out _, out _));
+        BuildBridge(world, site);
+
+        int middle = span[span.Length / 2];
+        Assert.True(world.Bridgeworks.HasBlock(middle));
+        Assert.True(world.Bridgeworks.State(0).Intact);
+
+        // A hit that is not enough leaves the crossing alone.
+        Assert.False(world.Bridgeworks.Damage(world.TerrainTypes, middle, Bridgeworks.BlockHealth - 1, 2));
+        Assert.True(world.Bridgeworks.HasBlock(middle));
+        Assert.Equal(TerrainType.ShallowWater, world.TerrainTypes.TypeAt(middle));
+        Assert.True(world.Bridgeworks.State(0).Intact);
+
+        // One more and the block is gone.
+        Assert.True(world.Bridgeworks.Damage(world.TerrainTypes, middle, 1, 2));
+        Assert.False(world.Bridgeworks.HasBlock(middle));
+
+        // The water it was built over is back, and the cell is impassable again.
+        Assert.Equal(TerrainType.DeepWater, world.TerrainTypes.TypeAt(middle));
+        Assert.Equal(0, world.TerrainTypes.CostPermille(middle, MovementClass.Tracked, 1_000));
+
+        // The crossing is cut; the deck either side of the hole is still standing.
+        BridgeState state = world.Bridgeworks.State(0);
+
+        Assert.True(state.Cut);
+        Assert.False(state.Intact);
+        Assert.True(state.Complete);
+        Assert.Equal(state.Built - 1, state.Standing);
+
+        // And the gap is water, so the same order the player used the first time can be given
+        // again: repairing a cut crossing costs a crossing, at the hole.
+        Assert.True(world.CanBuildBridge(0, world.Navigation.CentreOf(middle), out string reason), reason);
+    }
+
+    /// <summary>
+    /// The deck belongs to a side, and only the other side breaks it. Falling in with the rule the
+    /// splash damage on units already follows: a stray shell should not cut the crossing your own
+    /// army is using, and an enemy's should.
+    /// </summary>
+    [Fact]
+    public void OnlyTheOtherSideBreaksYourDeck()
+    {
+        SimWorld world = WithFactory(out _);
+
+        Assert.True(TryFindCrossing(world, out WorldPos site, out int[] span, out _, out _));
+        BuildBridge(world, site);
+
+        int cell = span[0];
+
+        // The owner's own fire, and an ally's: neither touches it.
+        Assert.False(world.Bridgeworks.Damage(world.TerrainTypes, cell, 10_000, 0));
+        Assert.False(world.Bridgeworks.Damage(world.TerrainTypes, cell, 10_000, 1));
+        Assert.True(world.Bridgeworks.HasBlock(cell));
+
+        // The enemy's does.
+        Assert.True(world.Bridgeworks.Damage(world.TerrainTypes, cell, 10_000, 2));
+        Assert.False(world.Bridgeworks.HasBlock(cell));
+    }
+
+    /// <summary>
+    /// Two crossings that meet at a cell share the deck there, and losing it cuts both.
+    /// <para>
+    /// The simulation allows spans to cross — the rule that a span runs the narrow way does not
+    /// prevent it, and on this seed a great many pairs of sites do — so the choice is whether the
+    /// shared cell is one block or two decks drawn through each other. One block is what a deck
+    /// physically is, and it makes the crossroads fall out of the same damage rule as everything
+    /// else: knock the junction out and neither crossing can be used, because there is one deck
+    /// under them and it is gone.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TwoCrossingsAtOneCellShareOneBlockAndLosingItCutsBoth()
+    {
+        SimWorld world = WithFactory(out _);
+
+        Assert.True(
+            TryFindCrossroads(world, out int shared, out WorldPos firstSite, out WorldPos secondSite),
+            "No two spans cross on this seed.");
+
+        BuildBridge(world, firstSite);
+        BuildBridge(world, secondSite);
+
+        Assert.Equal(2, world.Bridgeworks.Count);
+
+        // One block, laid once, running both ways.
+        Assert.True(world.Bridgeworks.TryGetBlock(shared, out BridgeBlock block));
+        Assert.Equal(BridgeAxis.Junction, block.Axis);
+        Assert.Equal(Bridgeworks.BlockHealth, block.Health);
+
+        BridgeState first = world.Bridgeworks.State(0);
+        BridgeState second = world.Bridgeworks.State(1);
+
+        Assert.True(first.Intact, "The first crossing is not whole.");
+        Assert.True(second.Intact, "The second crossing is not whole.");
+
+        // Knock the junction out: the cell goes back to water, and both crossings are cut.
+        Assert.True(world.Bridgeworks.Damage(world.TerrainTypes, shared, Bridgeworks.BlockHealth, 2));
+        Assert.False(world.Bridgeworks.HasBlock(shared));
+        Assert.Equal(TerrainType.DeepWater, world.TerrainTypes.TypeAt(shared));
+
+        Assert.True(world.Bridgeworks.State(0).Cut, "The first crossing survived losing the junction.");
+        Assert.True(world.Bridgeworks.State(1).Cut, "The second crossing survived losing the junction.");
+    }
+
+    /// <summary>
+    /// Two sites whose spans meet at one cell running different ways: the whole question of bridges
+    /// crossing bridges, found on the map rather than assumed.
+    /// </summary>
+    private static bool TryFindCrossroads(SimWorld world, out int shared, out WorldPos first, out WorldPos second)
+    {
+        int size = world.TerrainTypes.Size;
+        int[] plan = new int[SimWorld.MaxBridgeCells];
+        var coverage = new Dictionary<int, (bool AlongX, int Site)>();
+
+        for (int cell = 0; cell < world.TerrainTypes.CellCount; cell++)
+        {
+            if (world.TerrainTypes.TypeAt(cell) is not (TerrainType.ShallowWater or TerrainType.DeepWater))
+            {
+                continue;
+            }
+
+            WorldPos site = world.Navigation.CentreOf(cell);
+
+            if (!world.TryPlanBridge(0, site, plan, out int count, out _) || count < 2)
+            {
+                continue;
+            }
+
+            bool alongX = Math.Abs(plan[1] - plan[0]) == 1;
+
+            for (int i = 0; i < count; i++)
+            {
+                if (coverage.TryGetValue(plan[i], out (bool AlongX, int Site) other))
+                {
+                    if (other.AlongX != alongX)
+                    {
+                        shared = plan[i];
+                        first = world.Navigation.CentreOf(other.Site);
+                        second = site;
+                        _ = size;
+                        return true;
+                    }
+
+                    continue;
+                }
+
+                coverage[plan[i]] = (alongX, cell);
+            }
+        }
+
+        shared = -1;
+        first = default;
+        second = default;
+        return false;
+    }
+
+    /// <summary>
     /// Orders a crossing and runs the simulation until its deck is across. A bridge is
     /// engineering work rather than a surface edit, so a test that looks at the ground one tick
     /// after the order is looking at a site that has been paid for and not yet built.
