@@ -975,8 +975,40 @@ public sealed class GameHud
             }
         }
 
+        DrawBridgeWork(world);
+
         ImGui.End();
         return command;
+    }
+
+    /// <summary>
+    /// Progress of the crossings still being built.
+    /// <para>
+    /// The deck growing across the water is the live sign of the work; this is the line that
+    /// says how much of it is left. A bridge that took time and showed nothing would be as bad
+    /// as one that showed nothing and took no time, which is what it did before: the order
+    /// turned water into ford in a single tick with no trace of the work at all.
+    /// </para>
+    /// </summary>
+    private static void DrawBridgeWork(SimWorld world)
+    {
+        Bridgeworks bridgeworks = world.Bridgeworks;
+
+        for (int bridge = 0; bridge < bridgeworks.Count; bridge++)
+        {
+            BridgeState state = bridgeworks.State(bridge);
+
+            if (state.Complete)
+            {
+                continue;
+            }
+
+            int seconds = (int)(state.RemainingTicks(world.Tick) / SimConstants.TickRate);
+
+            ImGui.TextColored(
+                MutedColor,
+                $"Γέφυρα σε κατασκευή: {state.Built}/{state.Total} κύτταρα — {seconds} δευτ.");
+        }
     }
 
     /// <summary>

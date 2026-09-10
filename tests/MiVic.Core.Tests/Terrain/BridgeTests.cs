@@ -67,10 +67,25 @@ public sealed class BridgeTests
 
         Assert.True(world.CanBuildBridge(0, target, out _));
 
-        world.Enqueue(SimCommand.Bridge(target, world.Tick + 1, 0));
-        world.Step();
+        BuildBridge(world, target);
 
         Assert.True(world.TerrainTypes.IsPassable(waterCell, MovementClass.Tracked), "The bridge went nowhere.");
+    }
+
+    /// <summary>
+    /// Orders a crossing and runs the simulation until its deck is across. A bridge is
+    /// engineering work rather than a surface edit, so a test that looks at the ground one tick
+    /// after the order is looking at a site that has been paid for and not yet built.
+    /// </summary>
+    private static void BuildBridge(SimWorld world, WorldPos site, int team = 0)
+    {
+        int[] cells = new int[SimWorld.MaxBridgeCells];
+
+        Assert.True(world.TryPlanBridge(team, site, cells, out int count, out string reason), reason);
+
+        world.Enqueue(SimCommand.Bridge(site, world.Tick + 1, team));
+        world.Step();
+        world.RunTicks(Bridgeworks.TicksFor(count) + 1);
     }
 
     [Fact]
@@ -260,8 +275,7 @@ public sealed class BridgeTests
 
         Assert.True(world.CanBuildBridge(0, site, out _));
 
-        world.Enqueue(SimCommand.Bridge(site, world.Tick + 1, 0));
-        world.Step();
+        BuildBridge(world, site);
 
         foreach (int cell in span)
         {
@@ -295,8 +309,7 @@ public sealed class BridgeTests
 
         if (bridge)
         {
-            world.Enqueue(SimCommand.Bridge(site, world.Tick + 1, 0));
-            world.Step();
+            BuildBridge(world, site);
         }
 
         WorldPos start = world.Navigation.CentreOf(nearBank);
@@ -423,8 +436,7 @@ public sealed class BridgeTests
             before[cell] = world.TerrainTypes.TypeAt(cell);
         }
 
-        world.Enqueue(SimCommand.Bridge(site, world.Tick + 1, 0));
-        world.Step();
+        BuildBridge(world, site);
 
         for (int cell = 0; cell < before.Length; cell++)
         {
@@ -437,6 +449,132 @@ public sealed class BridgeTests
                     ? $"Cell {cell} was planned but not carved."
                     : $"Cell {cell} was carved but was never planned.");
         }
+    }
+
+    /// <summary>
+    /// The work happens, and it can be watched happening: a crossing is recorded the moment it
+    /// is ordered, its deck goes up a cell at a time from one bank, and the water it has reached
+    /// is ford and no more. Before this the whole thing was one tick and a surface change, with
+    /// nothing on screen and nothing to see.
+    /// </summary>
+    [Fact]
+    public void ABridgeIsBuiltOneCellAtATimeFromOneBank()
+    {
+        SimWorld world = WithFactory(out _);
+
+        Assert.True(TryFindCrossing(world, out WorldPos site, out int[] span, out _, out _));
+
+        OrderBridge(world, site, out int total);
+        world.Step();
+        Assert.Equal(span.Length, total);
+
+        // Ordered and paid for, and not one cell of it is up yet.
+        BridgeState start = world.Bridgeworks.State(0);
+
+        Assert.Equal(total, start.Total);
+        Assert.Equal(0, start.Built);
+        Assert.False(start.Complete);
+        Assert.Equal(0, start.ProgressPermille);
+        Assert.Equal(TerrainType.DeepWater, world.TerrainTypes.TypeAt(span[0]));
+
+        // Two cells in: the ford is a prefix of the span, from one bank, and the rest is water.
+        world.RunTicks(Bridgeworks.SetupTicks + (Bridgeworks.TicksPerCell * 2) + 1);
+        BridgeState middle = world.Bridgeworks.State(0);
+
+        Assert.Equal(2, middle.Built);
+        Assert.True(middle.ProgressPermille is > 0 and < 1_000);
+        Assert.True(middle.RemainingTicks(world.Tick) > 0);
+
+        for (int i = 0; i < total; i++)
+        {
+            Assert.Equal(
+                i < middle.Built ? TerrainType.ShallowWater : TerrainType.DeepWater,
+                world.TerrainTypes.TypeAt(span[i]));
+        }
+
+        // And finished, on the tick it said it would be.
+        world.RunTicks(Bridgeworks.TicksFor(total));
+
+        BridgeState done = world.Bridgeworks.State(0);
+
+        Assert.True(done.Complete);
+        Assert.Equal(total, done.Built);
+        Assert.Equal(0, done.RemainingTicks(world.Tick));
+        Assert.Equal(1_000, done.ProgressPermille);
+
+        foreach (int cell in span)
+        {
+            Assert.Equal(TerrainType.ShallowWater, world.TerrainTypes.TypeAt(cell));
+        }
+    }
+
+    /// <summary>
+    /// A wider crossing takes longer, which is the whole reason the work is measured in cells:
+    /// a fifteen-cell span is not the same afternoon's work as a three-cell one.
+    /// </summary>
+    [Fact]
+    public void AWiderCrossingTakesLongerToBuild()
+    {
+        SimWorld world = WithFactory(out _);
+
+        Assert.True(TryFindCrossing(world, out WorldPos narrow, out int[] narrowSpan, out _, out _));
+        Assert.True(TryFindWidestCrossing(world, out WorldPos wide, out int wideCells));
+        Assert.True(wideCells > narrowSpan.Length, "This seed has no crossing wider than the first one found.");
+
+        // Ordered in the same tick, so the two crossings' clocks start together and the
+        // difference between them is the work and nothing else.
+        OrderBridge(world, narrow, out int narrowCells);
+        OrderBridge(world, wide, out _);
+        world.Step();
+
+        long narrowWork = world.Bridgeworks.State(0).RemainingTicks(world.Tick);
+        long wideWork = world.Bridgeworks.State(1).RemainingTicks(world.Tick);
+
+        Assert.Equal(Bridgeworks.TicksFor(narrowCells), narrowWork);
+        Assert.Equal(narrowWork + ((wideCells - narrowCells) * Bridgeworks.TicksPerCell), wideWork);
+
+        // And the difference is real: the narrow crossing is across on a tick when the wide
+        // one still has water in the middle of it.
+        world.RunTicks(narrowWork + 1);
+
+        Assert.True(world.Bridgeworks.State(0).Complete);
+        Assert.False(world.Bridgeworks.State(1).Complete);
+        Assert.True(world.Bridgeworks.State(1).Built < wideCells);
+    }
+
+    /// <summary>Queues a crossing for the next tick, and reports the span it planned.</summary>
+    private static void OrderBridge(SimWorld world, WorldPos site, out int cells)
+    {
+        Assert.True(world.TryPlanBridge(0, site, default, out cells, out string reason), reason);
+        Assert.True(world.CanBuildBridge(0, site, out _));
+
+        world.Enqueue(SimCommand.Bridge(site, world.Tick + 1, 0));
+    }
+
+    /// <summary>The widest crossing on the map, which is the longest job a player could order.</summary>
+    private static bool TryFindWidestCrossing(SimWorld world, out WorldPos site, out int cells)
+    {
+        int[] plan = new int[SimWorld.MaxBridgeCells];
+        site = default;
+        cells = 0;
+
+        for (int cell = 0; cell < world.TerrainTypes.CellCount; cell++)
+        {
+            if (world.TerrainTypes.TypeAt(cell) is not (TerrainType.ShallowWater or TerrainType.DeepWater))
+            {
+                continue;
+            }
+
+            WorldPos candidate = world.Navigation.CentreOf(cell);
+
+            if (world.TryPlanBridge(0, candidate, plan, out int count, out _) && count > cells)
+            {
+                cells = count;
+                site = candidate;
+            }
+        }
+
+        return cells > 0;
     }
 
     /// <summary>

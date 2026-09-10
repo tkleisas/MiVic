@@ -98,7 +98,8 @@ shot out/frame-later.png
 | `units [faction\|team] [limit]` | one line per live entity: slot, faction, kind, team, position, heading, health, target, whether it is a building |
 | `unit <slot>` | the same in detail: move goal and distance to go, path state, what it is attacking and from how far, cooldown, morale, distance travelled, construction, and whether the client is drawing it |
 | `count <kind>` | how many of a role are alive, per faction |
-| `bridge <x> <z> [team] [build]` | whether a crossing at that cell would be accepted, the reason when it would not, the span it would cover and what it costs — and with `build`, the order that places it |
+| `bridge <x> <z> [team] [build]` | whether a crossing at that cell would be accepted, the reason when it would not, the span it would cover, what it costs and how long the work takes — and with `build`, the order that starts it |
+| `bridges` | every crossing on the map: the cells it spans, how much of the deck is up, which bank the work started from, and the tick it will be whole on |
 
 ### What the player would see
 
@@ -121,7 +122,8 @@ that is not on the ground, as `focus` allows.
 `build` on `bridge` is the one command in the tool that changes the world the script is
 looking at, and it exists because a crossing cannot be inspected until it has been built: the
 cells it turns into ford are the answer, and there is no other way to ask for them. Everything
-else here reads.
+else here reads. A bridge takes time to build, so a script that wants to see it finished
+either advances the ticks itself or asks `bridges` how much work is left.
 
 ### Render-state queries
 
@@ -347,14 +349,32 @@ query:   placement  accepted — the ghost takes 7 cells and is green
 cmd: click
 query: click — armed yes, resolved (-257.0, 3.5, -210.0) m
 query:   result     an order was issued
+cmd: bridges
+query: crossings: 0 crossings on the map, tick 0
 cmd: tick 2
+cmd: bridges
+query: crossings: 1 crossing on the map, tick 2
+query:   #0 7 cells along z, (4,4) to (4,10), (x -257.8, z -257.8) m to (x -257.8, z -201.6) m — 0/7 up from (4,10), 0 ‰, 239 ticks (12.0 s) of work left, started on tick 1, whole on tick 241
+cmd: tick 90
+cmd: bridges
+query:   #0 7 cells along z, (4,4) to (4,10) … — 2/7 up from (4,10), 285 ‰, 149 ticks (7.5 s) of work left, started on tick 1, whole on tick 241
+cmd: shot artifacts/probe/bridge-building.png
+cmd: tick 160
+cmd: bridges
+query:   #0 7 cells along z, (4,4) to (4,10), (x -257.8, z -257.8) m to (x -257.8, z -201.6) m — whole, started on tick 1, whole on tick 241
 cmd: attributes -257 -210
 query:   surface    ShallowWater (Νερό), churn 0/255
 query:   going      foot 250 ‰, tracked 300 ‰, wheeled 450 ‰, air 100 ‰
 ```
 
-The cell the click landed on is a ford, and a ford is ground a tracked vehicle can drive over:
-that is the bridge, built by a script, out of the same three calls a mouse makes.
+That is a bridge built by a script out of the same three calls a mouse makes, and it is a
+bridge a player can watch: the order is recorded on tick 1 and paid for, the deck goes up from
+the bank the player clicked nearest — one cell every 1.5 s, twelve seconds for this one — and
+the ford appears under each cell as the work reaches it, which is why `attributes` on the
+clicked cell reports water at tick 92 only if the deck got there first. `bridges` is the
+command that answers "is anything happening", and it exists because for a while nothing was:
+a crossing used to be a surface change applied in one tick, with no deck on screen and no
+progress anywhere.
 
 ## `parts <slot>` in full
 

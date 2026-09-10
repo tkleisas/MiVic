@@ -302,7 +302,10 @@ public sealed class MissionTests
         // catches a change to the mission layouts that a replay would otherwise
         // reproduce faithfully but wrongly.
         //
-        // Last changed by the bases moving onto ground that can hold them: a mission lays
+        // Last changed by the crossings a team builds becoming state: a bridge records its span,
+        // the tick its work started and how much of the deck is up, and all three are hashed, so
+        // every world's hash moved with the new field. Before that it was the bases moving onto
+        // ground that can hold them: a mission lays
         // its three bases out through the same search the skirmish uses, and seven of the
         // nine moved — 92.9 m, 88.6 m and 9.2 m in the first mission, 166.6 m and 28.7 m in
         // the second, 142.0 m and 66.8 m in the third — with the structures and the
@@ -313,9 +316,9 @@ public sealed class MissionTests
         // cell.
         ulong[] expected =
         [
-            18016454080196418928UL,
-            10604447477301797516UL,
-            11326387368445595021UL,
+            13455289978335290768UL,
+            11658923710920883436UL,
+            17860173042412434573UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)

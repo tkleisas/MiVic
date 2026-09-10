@@ -105,6 +105,30 @@ public static class StateHash
             Mix(ref hash, objective.HoldProgress);
         }
 
+        // Crossings are state, and more than the terrain they leave behind: a span is what the
+        // client draws a deck from and what decides when the next cell of the ford appears, so
+        // two peers that disagreed about one would paint different maps and walk them
+        // differently. The ford itself is already in the surface bytes above; this is the work
+        // that is putting it there.
+        Bridgeworks bridgeworks = world.Bridgeworks;
+        Mix(ref hash, bridgeworks.Count);
+
+        for (int bridge = 0; bridge < bridgeworks.Count; bridge++)
+        {
+            ReadOnlySpan<int> cells = bridgeworks.Cells(bridge);
+            BridgeState state = bridgeworks.State(bridge);
+
+            Mix(ref hash, cells.Length);
+
+            for (int i = 0; i < cells.Length; i++)
+            {
+                Mix(ref hash, cells[i]);
+            }
+
+            Mix(ref hash, state.Built);
+            Mix(ref hash, state.StartTick);
+        }
+
         int capacity = world.Capacity;
         for (int slot = 0; slot < capacity; slot++)
         {

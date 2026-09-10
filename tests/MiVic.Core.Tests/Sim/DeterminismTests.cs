@@ -259,19 +259,25 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by cover becoming a function of the ground — the surface as a base, the
-    /// canopy density on it, then the shape of the ground — rather than a lookup on the surface
-    /// byte. Both sides of this battle now take different damage in a wood than they did in the
-    /// open, and on the ground the scenario happens to drive across, so a different set of units
-    /// is alive at the end of five hundred ticks. Before that it was aspect and landform, which
-    /// fill two more fields of the attribute word from the height field: the word is hashed, so a
-    /// ground that faces somewhere new is a state that has moved. Before that it was the terrain
-    /// attributes themselves — canopy density, moisture and the bits the fire step will write.
-    /// Before *that* it was the terrain bands, which are cut from the map's relief and stacked in
-    /// order so that sand and snow can appear at all.
+    /// Last changed by the crossings a team builds becoming state: a bridge is engineering work
+    /// now — the span is recorded when it is ordered, its deck goes up a cell at a time, and the
+    /// ford appears as the work reaches it — so the spans, their start ticks and how much of each
+    /// is up are folded into the hash. Nothing in this scenario builds one, which is precisely
+    /// why the entry is mixed unconditionally: a field that is only hashed when it happens to be
+    /// non-empty is a field a desync can hide in. Before that it was cover becoming a function of
+    /// the ground — the surface as a base, the canopy density on it, then the shape of the ground
+    /// — rather than a lookup on the surface byte. Both sides of this battle now take different
+    /// damage in a wood than they did in the open, and on the ground the scenario happens to
+    /// drive across, so a different set of units is alive at the end of five hundred ticks.
+    /// Before that it was aspect and landform, which fill two more fields of the attribute word
+    /// from the height field: the word is hashed, so a ground that faces somewhere new is a state
+    /// that has moved. Before that it was the terrain attributes themselves — canopy density,
+    /// moisture and the bits the fire step will write. Before *that* it was the terrain bands,
+    /// which are cut from the map's relief and stacked in order so that sand and snow can appear
+    /// at all.
     /// </para>
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(2821426435522902204UL, HashScenario(20250101));
+        => Assert.Equal(7472911029308892828UL, HashScenario(20250101));
 }

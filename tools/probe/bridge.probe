@@ -49,14 +49,26 @@ shot artifacts/probe/bridge-refused.png
 # The player's click on the water, through the same path a mouse release takes.
 hover -257 -210
 click
-tick 2
 
-# What that did to the ground. The cell was deep water in the `bridge` line above; it is a ford
-# now, and a ford is ground a tracked vehicle can drive over.
+# Nothing is across yet: the order has been recorded and paid for, and the work has not started.
+bridges
+tick 2
+bridges
+
+# Two cells in. The deck is a stamp of the span from one bank, `attributes` shows the ford
+# following it, and the panel carries the line the player reads while they wait.
+tick 90
+bridges
+attributes -257 -210
+shot artifacts/probe/bridge-building.png
+
+# And whole: every cell of the span is ford, and every cell of it is deck.
+tick 160
+bridges
 attributes -257 -210
 attributes -257 -201
 
-# And the crossing itself: seven cells of ford through the water, where the deep water was.
+# The crossing itself, with the panel out of the way.
 hud off
 shot artifacts/probe/bridge-built.png
 

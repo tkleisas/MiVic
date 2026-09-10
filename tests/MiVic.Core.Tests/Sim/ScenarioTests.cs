@@ -42,7 +42,10 @@ public sealed class ScenarioTests
     /// deliberate change to the starting layout: this is what catches a refactor
     /// that quietly moves a unit, which a replay would then reproduce wrongly.
     /// <para>
-    /// Last changed by the bases moving onto ground that can hold them: the three base
+    /// Last changed by the crossings a team builds becoming state: the span of each one, the tick
+    /// its work started on and how much of the deck is up are hashed now, because a bridge is
+    /// engineering work that takes time rather than a surface edit that happens in one tick.
+    /// Before that it was the bases moving onto ground that can hold them: the three base
     /// positions are hardcoded and the terrain comes from the seed, so each is now
     /// searched for, and on this seed all three moved — Σοβιετικοί by 92.9 m, Κινέζοι by
     /// 88.6 m and Δυτικοί by 9.2 m — with the four structures and the starting force of
@@ -55,7 +58,7 @@ public sealed class ScenarioTests
     /// </summary>
     [Fact]
     public void SkirmishInitialHash_IsStable()
-        => Assert.Equal(4907108487286676242UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
+        => Assert.Equal(10807918322043874866UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
 
     [Fact]
     public void SkirmishLaysOutThreeForcesOfTheRightSize()

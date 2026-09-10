@@ -96,6 +96,13 @@ public sealed class SimWorld
     /// </summary>
     public TerrainLayer TerrainTypes { get; }
 
+    /// <summary>
+    /// The crossings a team has built, with the work still going into them. The client draws
+    /// the decks from here: a ford on the map could have been carved by the generator, so the
+    /// terrain alone cannot say where a bridge is.
+    /// </summary>
+    public Bridgeworks Bridgeworks { get; } = new();
+
     /// <summary>Uniform grid of live entities, rebuilt each tick for proximity queries.</summary>
     public SpatialIndex Spatial => _spatial;
 
@@ -619,6 +626,11 @@ public sealed class SimWorld
             }
 
             ConstructionSystem.Tick(this);
+
+            // Engineering works are construction too, and for the same reason: the cost was
+            // paid when the order was given, and what follows is a period in which the work
+            // can be seen to be happening.
+            Bridgeworks.Tick(TerrainTypes, Tick);
 
             ChurnSystem.Tick(this);
             HazardSystem.Tick(this);
@@ -1192,53 +1204,58 @@ public sealed class SimWorld
             return false;
         }
 
+        // Engineering works are finite, and the client draws every crossing there is. A limit
+        // with no words of its own would be the silent refusal this whole method exists to
+        // prevent, even where a match is unlikely ever to reach it.
+        if (!Bridgeworks.HasRoom)
+        {
+            reason = "όριο γεφυρών";
+            return false;
+        }
+
         if (cells.Length == 0)
         {
             return true;
         }
 
+        // Listed from one bank to the other, because that is the order the work reaches them:
+        // the deck the client draws grows across the water rather than outwards from a point in
+        // the middle of it. It starts at the bank nearer the site the player picked, so the
+        // crossing builds away from them — a bridge that goes up from the far bank first reads
+        // as somebody else's. Walking the two arms from the target put the clicked cell first
+        // and built the crossing from the centre out at both ends.
+        int step = horizontal ? 1 : Navigation.Size;
+        int low = cell - (SpanAlong(x, z, horizontal ? -1 : 0, horizontal ? 0 : -1) * step);
+        int high = cell + (SpanAlong(x, z, stepX, stepZ) * step);
+        bool upwards = cell - low <= high - cell;
+        int from = upwards ? low : high;
+        int direction = upwards ? step : -step;
         int written = 0;
 
-        // The target first, because both arms are measured from it and it is still one cell.
-        cells[written++] = cell;
-
-        for (int direction = -1; direction <= 1; direction += 2)
+        for (int i = 0; i <= (high - low) / step && written < cells.Length; i++)
         {
-            int cx = x + (stepX * direction);
-            int cz = z + (stepZ * direction);
-
-            for (int step = 0; step < MaxBridgeSpan && written < cells.Length; step++)
-            {
-                int index = Navigation.IndexOf(cx, cz);
-
-                if (index < 0 || !IsWater(TerrainTypes.TypeAt(index)))
-                {
-                    break;
-                }
-
-                cells[written++] = index;
-                cx += stepX * direction;
-                cz += stepZ * direction;
-            }
+            cells[written++] = from + (i * direction);
         }
 
         return true;
     }
 
     /// <summary>
-    /// Spans the water at a position.
+    /// Starts a crossing at a position: the site is surveyed, the resources are spent and the
+    /// work is recorded. The deck itself goes up over the following ticks, cell by cell, in the
+    /// order <see cref="TryPlanBridge"/> listed them — see <see cref="Bridgeworks"/>.
     /// <para>
     /// The span runs along whichever axis stays wet longest, so placing it on a river
-    /// crosses the river rather than running along the bank. Every water cell it
-    /// covers becomes a ford, which is the same surface the generator carves for its
+    /// crosses the river rather than running along the bank. Every water cell the work
+    /// reaches becomes a ford, which is the same surface the generator carves for its
     /// own crossings — a bridge is a ford a player chose the site of.
     /// </para>
     /// <para>
-    /// The cells carved are the cells <see cref="TryPlanBridge"/> returned, rather than
-    /// a walk repeated here. The walk was duplicated once and the two copies disagreed:
-    /// the width of the span was checked in this method but not in the check the button
-    /// and the preview read, so a site that the interface offered was quietly refused
-    /// here with nothing to tell the player why.
+    /// The cells are the cells <see cref="TryPlanBridge"/> returned, rather than a walk
+    /// repeated here. The walk was duplicated once and the two copies disagreed: the width of
+    /// the span was checked in this method but not in the check the button and the preview
+    /// read, so a site the interface offered was quietly refused here with nothing to tell the
+    /// player why.
     /// </para>
     /// <para>
     /// Permanent once built. A bridge is engineering work, not a unit: there is
@@ -1255,16 +1272,21 @@ public sealed class SimWorld
             return false;
         }
 
+        // The span is recorded before the resources are taken, so that an order that cannot be
+        // recorded — a map already carrying every crossing it may carry — costs nothing. The
+        // plan refuses that case too; the order here is what makes the two agree.
+        if (!Bridgeworks.Begin(cells[..count], Tick))
+        {
+            return false;
+        }
+
         ref TeamState state = ref _teams[team];
         state.Materials -= BridgeMaterials;
         state.Energy -= BridgeEnergy;
         state.Water -= BridgeWater;
 
-        for (int i = 0; i < count; i++)
-        {
-            TerrainTypes.SetType(cells[i], TerrainType.ShallowWater);
-        }
-
+        // Paid for now, built over the next few seconds, which is how a structure works in this
+        // game: the cost is the order, and the construction is a period of visibility.
         return true;
     }
 

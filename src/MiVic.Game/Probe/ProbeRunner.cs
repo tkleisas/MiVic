@@ -237,6 +237,9 @@ public sealed class ProbeRunner
             case "bridge":
                 Bridge(command);
                 break;
+            case "bridges":
+                Bridges(command);
+                break;
             case "arm":
                 Arm(command);
                 break;
@@ -256,7 +259,7 @@ public sealed class ProbeRunner
                 throw new ProbeException(
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
                     "surfaces, attributes, units, unit, count, parts, model, visible, events, bridge, " +
-                    "arm, hover, click, hud, expect");
+                    "bridges, arm, hover, click, hud, expect");
         }
     }
 
@@ -555,6 +558,7 @@ public sealed class ProbeRunner
 
         Emit($"query:   verdict    accepted for team {team} — {ProbeFormat.Count(count, "cell")} would become ford");
         Emit($"query:   span       {DescribeSpan(world, cells, count)}");
+        Emit($"query:   work       {ProbeFormat.Ticks(Bridgeworks.TicksFor(count))} to build, one cell every {ProbeFormat.Ticks(Bridgeworks.TicksPerCell)}");
 
         TeamState state = world.Team(team);
         Emit(
@@ -568,7 +572,37 @@ public sealed class ProbeRunner
 
         long executeTick = world.Tick + 1;
         world.Enqueue(SimCommand.Bridge(target, executeTick, team));
-        Emit($"ok: bridge ordered for team {team}, executing on tick {executeTick} — `tick {(int)(executeTick - world.Tick)}` builds it");
+        Emit($"ok: bridge ordered for team {team}, executing on tick {executeTick} — `tick {(int)(executeTick - world.Tick)}` starts the work");
+    }
+
+    /// <summary>
+    /// Every crossing on the map, with the work done on it. A bridge is built a cell at a time
+    /// over several seconds, so "is there a bridge" is not a yes or no question while it is
+    /// going up — and this is where a dialogue about nothing appearing on screen gets settled.
+    /// </summary>
+    private void Bridges(ProbeCommand command)
+    {
+        SimWorld world = _host.Simulation.World;
+        Bridgeworks bridgeworks = world.Bridgeworks;
+
+        Emit($"query: crossings: {ProbeFormat.Count(bridgeworks.Count, "crossing")} on the map, tick {world.Tick}");
+
+        for (int bridge = 0; bridge < bridgeworks.Count; bridge++)
+        {
+            ReadOnlySpan<int> cells = bridgeworks.Cells(bridge);
+            BridgeState state = bridgeworks.State(bridge);
+            int size = world.TerrainTypes.Size;
+            int first = cells[0];
+
+            string progress = state.Complete
+                ? "whole"
+                : $"{state.Built}/{state.Total} up from ({first % size},{first / size}), " +
+                  $"{ProbeFormat.Permille(state.ProgressPermille)}, {ProbeFormat.Ticks(state.RemainingTicks(world.Tick))} of work left";
+
+            Emit(
+                $"query:   #{bridge} {DescribeSpan(world, cells, cells.Length)} — {progress}, " +
+                $"started on tick {state.StartTick}, whole on tick {state.ReadyTick}");
+        }
     }
 
     /// <summary>

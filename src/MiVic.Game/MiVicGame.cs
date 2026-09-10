@@ -132,6 +132,9 @@ public sealed partial class MiVicGame : XnaGame
     /// <summary>The ghost of the placement the player has not committed to yet.</summary>
     private PlacementPreview? _placementPreview;
 
+    /// <summary>Draws the decks of the crossings that have been built.</summary>
+    private BridgeRenderer? _bridges;
+
     /// <summary>Footprint mesh of the crossing currently being previewed; owned here.</summary>
     private InstancedRenderer.Mesh? _bridgePreviewMesh;
 
@@ -562,6 +565,10 @@ public sealed partial class MiVicGame : XnaGame
         // its own: the footprint is built from the cells the simulation says would be taken,
         // and rebuilt only when the site moves to another cell.
         _placementPreview = new PlacementPreview(GraphicsDevice, _renderer);
+
+        // The decks of the crossings the simulation has built, drawn from its own record of
+        // where each span runs and how much of it is up.
+        _bridges = new BridgeRenderer(_renderer);
 
         // Particles are billboards: a unit quad the CPU orients per particle.
         _particleMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
@@ -1044,6 +1051,20 @@ public sealed partial class MiVicGame : XnaGame
         // Immediately over the ground they lie on, and under everything else: water
         // drawn after the units would put a lake in front of the tanks standing in it.
         DrawLiquids();
+
+        // The decks over that water. Under the fog like every other piece of the world: a
+        // bridge is a thing on the map, not a piece of the interface.
+        if (_bridges is not null && _simulation is not null)
+        {
+            int decks = _bridges.Collect(_simulation.World);
+
+            if (decks > 0)
+            {
+                _bridges.Draw(decks);
+                _drawCalls++;
+                _instancesSubmitted += decks;
+            }
+        }
 
         // Trees are scenery on walkable ground, so they go here: over the surfaces
         // they stand on, and under the units that drive through them. The model
@@ -5247,6 +5268,7 @@ public sealed partial class MiVicGame : XnaGame
         _healthFillMesh?.Dispose();
         _axisMesh?.Dispose();
         _bridgePreviewMesh?.Dispose();
+        _bridges?.Dispose();
         _fog?.Dispose();
 
         _catalog?.Dispose();
