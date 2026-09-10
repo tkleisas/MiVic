@@ -56,6 +56,14 @@ in parallel:
 | `build_vehicles.py` | the shared mesh and material kit, tanks, self-propelled guns, anti-air, Συλλέκτης, Κατιούσα, the electro prototype, the drone, the aircraft |
 | `build_figures.py` | soldiers: line infantry, commissar, robot infantry, mercenary, stealth reconnaissance |
 | `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau |
+| `build_props.py` | woodland: six tree species, drawn instanced |
+| `build_bridge.py` | the two bridge blocks: a crossing block, and the crossroads block for a cell where two spans meet |
+
+The last two are not roles: a tree and a bridge block have no faction and no slot in
+`ModelCatalog`, so they are loaded by the renderer that draws them (`ForestRenderer`,
+`BridgeRenderer`) rather than resolved through the catalogue. A bridge is one block repeated, so
+the whole of a crossing — two cells or twenty-four — is the same 288-triangle mesh placed once per
+cell of the span, and a hole blown in a crossing is a block that is simply not drawn.
 
 The silhouettes come out measurably distinct, which is the point of §2.1:
 

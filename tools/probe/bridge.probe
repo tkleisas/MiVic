@@ -75,6 +75,39 @@ attributes -257 -201
 hud off
 shot artifacts/probe/bridge-built.png
 
+# And the same deck from close up, where the block is a model rather than a ribbon: planks,
+# kerbs in the owner's colour, stringers under the deck and a pier standing in the water. Three
+# angles, because a block is a solid: from above it is a deck, from the waterline it is a pier,
+# and only the two together say whether it is a bridge.
+zoom 30
+pitch -0.42
+focus -257 -210 4
+settle
+shot artifacts/probe/bridge-close.png
+
+pitch -1.35
+focus -257 -210 1
+settle
+shot artifacts/probe/bridge-close-top.png
+
+pitch -0.10
+focus -257 -210 1.5
+settle
+shot artifacts/probe/bridge-close-side.png
+
+# The same block from the other side. A mark that stays put on the deck is geometry; one that
+# moves with the camera is the light, and the two need different fixes.
+yaw 3.93
+pitch -0.42
+focus -257 -210 4
+settle
+shot artifacts/probe/bridge-close-away.png
+
+yaw 0.785
+zoom 170
+pitch -0.90
+focus -257 -210
+
 # And down it comes: enemy salvos on the middle of the span. A bridge is a chain of blocks, so this
 # does not delete the crossing — it knocks blocks out, the water comes back through the hole, and
 # what is left either side of it is deck that leads nowhere. One salvo is not enough for a block

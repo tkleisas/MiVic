@@ -239,6 +239,9 @@ public sealed class ProbeRunner
             case "bridges":
                 Bridges(command);
                 break;
+            case "block":
+                Block(command);
+                break;
             case "blast":
                 Blast(command);
                 break;
@@ -261,7 +264,7 @@ public sealed class ProbeRunner
                 throw new ProbeException(
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
                     "surfaces, attributes, units, unit, count, parts, model, visible, events, bridge, " +
-                    "bridges, blast, arm, hover, click, hud, expect");
+                    "bridges, block, blast, arm, hover, click, hud, expect");
         }
     }
 
@@ -610,6 +613,55 @@ public sealed class ProbeRunner
             Emit(
                 $"query:   #{bridge} {DescribeSpan(world, cells, cells.Length)} — {progress}, " +
                 $"started on tick {state.StartTick}, whole on tick {state.ReadyTick}, from ({first % size},{first / size})");
+        }
+    }
+
+    /// <summary>
+    /// What deck stands on one cell: how much is left of it, whose it is, and which way it runs —
+    /// including whether it is a junction, which is a fact about the cell rather than about any
+    /// crossing and is therefore not in the <c>bridges</c> list.
+    /// </summary>
+    private void Block(ProbeCommand command)
+    {
+        const string Usage = "block <x> <z>";
+
+        float x = command.Number(0, "an x in metres", Usage);
+        float z = command.Number(1, "a z in metres", Usage);
+
+        SimWorld world = _host.Simulation.World;
+        TerrainLayer terrain = world.TerrainTypes;
+        int cell = terrain.IndexOfWorld((int)(x * WorldPos.MmPerMetre), (int)(z * WorldPos.MmPerMetre));
+
+        if (cell < 0)
+        {
+            throw new ProbeException($"({x}, {z}) m is off the map — {Usage}, and the map is +-300 m");
+        }
+
+        Emit($"query: cell {DescribeCell(world, cell)} at (x {x:0.0}, z {z:0.0}) m");
+
+        if (!world.Bridgeworks.TryGetBlock(cell, out BridgeBlock block))
+        {
+            Emit("query:   deck       none — no crossing covers this cell");
+            return;
+        }
+
+        Emit(
+            $"query:   deck       {block.Health}/{Bridgeworks.BlockHealth} left, owner team {block.Team}, " +
+            $"runs {block.Axis}");
+
+        // Which crossings pass through it, which is what makes a junction a junction.
+        for (int bridge = 0; bridge < world.Bridgeworks.Count; bridge++)
+        {
+            ReadOnlySpan<int> cells = world.Bridgeworks.Cells(bridge);
+
+            for (int i = 0; i < cells.Length; i++)
+            {
+                if (cells[i] == cell)
+                {
+                    Emit($"query:   crossing   #{bridge} runs through it, at cell {i} of {cells.Length}");
+                    break;
+                }
+            }
         }
     }
 

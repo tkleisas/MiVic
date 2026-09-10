@@ -571,7 +571,7 @@ public sealed partial class MiVicGame : XnaGame
 
         // The decks of the crossings the simulation has built, drawn from its own record of
         // where each span runs and how much of it is up.
-        _bridges = new BridgeRenderer(_renderer);
+        _bridges = new BridgeRenderer(_renderer, AppContext.BaseDirectory);
 
         // Particles are billboards: a unit quad the CPU orients per particle.
         _particleMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
@@ -1055,16 +1055,15 @@ public sealed partial class MiVicGame : XnaGame
         // drawn after the units would put a lake in front of the tanks standing in it.
         DrawLiquids();
 
-        // The decks over that water. Under the fog like every other piece of the world: a
-        // bridge is a thing on the map, not a piece of the interface.
+        // The decks over that water, one block per cell of every crossing. Under the fog like
+        // every other piece of the world: a bridge is a thing on the map, not the interface.
         if (_bridges is not null && _simulation is not null)
         {
             int decks = _bridges.Collect(_simulation.World);
 
             if (decks > 0)
             {
-                _bridges.Draw(decks);
-                _drawCalls++;
+                _drawCalls += _bridges.Draw();
                 _instancesSubmitted += decks;
             }
         }

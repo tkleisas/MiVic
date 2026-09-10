@@ -18,7 +18,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$generators = @("build_vehicles.py", "build_figures.py", "build_buildings.py", "build_props.py")
+$generators = @("build_vehicles.py", "build_figures.py", "build_buildings.py", "build_props.py", "build_bridge.py")
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 Push-Location $root
