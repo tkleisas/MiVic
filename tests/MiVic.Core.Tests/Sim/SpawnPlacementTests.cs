@@ -168,6 +168,96 @@ public sealed class SpawnPlacementTests
         Assert.True(neighbours * 2 > total, $"{neighbours} of {total} forest cells have a neighbour: that is speckle");
     }
 
+    /// <summary>
+    /// Every surface the game defines can actually appear on a generated map.
+    /// <para>
+    /// This is the test that was missing, twice. The volcano line once sat above every
+    /// square of ground, and sand was worse: its band was cut below the mud line, and
+    /// since the mud test is taken first, no cell could ever be sand — on any seed, on
+    /// any map. Both had movement costs, cover values, colours and shader treatments
+    /// built for them.
+    /// </para>
+    /// <para>
+    /// A feature that exists and never happens is invisible to every other kind of test,
+    /// so this one counts. Water is excluded because it is the map's edges and the
+    /// generation is allowed to produce a dry map; everything else is land, and land is
+    /// what the game is played on.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(TerrainType.Grass)]
+    [InlineData(TerrainType.Mud)]
+    [InlineData(TerrainType.Sand)]
+    [InlineData(TerrainType.Snow)]
+    [InlineData(TerrainType.Rock)]
+    [InlineData(TerrainType.Forest)]
+    [InlineData(TerrainType.Mine)]
+    [InlineData(TerrainType.Lava)]
+    public void EverySurfaceCanAppear(TerrainType wanted)
+    {
+        SimWorld world = Build();
+        int count = CountSurface(world, wanted);
+
+        Assert.True(count > 0, $"{wanted} appears nowhere on the standard map");
+    }
+
+    /// <summary>
+    /// And they are in a sensible order up the hillside: the shore is mud, sand is above
+    /// the mud, and snow is on top.
+    /// </summary>
+    [Fact]
+    public void TheBandsAreStackedInOrder()
+    {
+        SimWorld world = Build();
+        TerrainLayer terrain = world.TerrainTypes;
+
+        int lowestMud = int.MaxValue;
+        int highestMud = 0;
+        int lowestSand = int.MaxValue;
+        int highestSand = 0;
+        int lowestSnow = int.MaxValue;
+
+        for (int z = 0; z < terrain.Size; z++)
+        {
+            for (int x = 0; x < terrain.Size; x++)
+            {
+                TerrainType type = terrain.TypeAtCell(x, z);
+                int height = HeightOf(world, x, z);
+
+                switch (type)
+                {
+                    case TerrainType.Mud:
+                        lowestMud = Math.Min(lowestMud, height);
+                        highestMud = Math.Max(highestMud, height);
+                        break;
+
+                    case TerrainType.Sand:
+                        lowestSand = Math.Min(lowestSand, height);
+                        highestSand = Math.Max(highestSand, height);
+                        break;
+
+                    case TerrainType.Snow:
+                        lowestSnow = Math.Min(lowestSnow, height);
+                        break;
+                }
+            }
+        }
+
+        Assert.True(lowestMud < int.MaxValue && lowestSand < int.MaxValue && lowestSnow < int.MaxValue);
+        Assert.True(lowestSand > lowestMud, $"sand starts at {lowestSand} but mud starts at {lowestMud}");
+        Assert.True(highestSand < lowestSnow, $"sand reaches {highestSand} but snow starts at {lowestSnow}");
+    }
+
+    /// <summary>Ground height under a terrain cell, through the navigation grid.</summary>
+    private static int HeightOf(SimWorld world, int cellX, int cellZ)
+    {
+        TerrainLayer terrain = world.TerrainTypes;
+        int navX = ((cellX * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / world.Navigation.CellSizeMm;
+        int navZ = ((cellZ * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / world.Navigation.CellSizeMm;
+
+        return world.Navigation.HeightAt(world.Navigation.IndexOf(navX, navZ));
+    }
+
     private static int CountSurface(SimWorld world, TerrainType wanted)
     {
         TerrainLayer terrain = world.TerrainTypes;

@@ -108,14 +108,37 @@ public sealed class TerrainLayer
         int size = grid.Size;
         int stride = Math.Max(1, grid.CellSizeMm / map.CellSizeMm);
 
-        // The water line is deliberately shallow relative to the map's relief: a
-        // high line floods a quarter of the battlefield into lakes, and since deep
-        // water is impassable that fragments the map into pockets no ground unit
-        // can leave. Fords (shallow water) connect the rest.
+        // The bands are cut from the map's *relief* — its highest point above its
+        // lowest — rather than from its highest value, and they are cut in order, each
+        // one against the one below it.
+        //
+        // Both of those matter, and both were wrong. Tied to the peak's absolute value,
+        // a band is a fraction of a range the terrain may only occupy the bottom of,
+        // and it can come out empty: the volcano line once sat above every square of
+        // ground, and sand was worse. Its band was cut between the mud line and a sand
+        // line that was *lower* than the mud line, and since the mud test is taken
+        // first, no cell could ever be sand — on any seed, on any map, with a movement
+        // cost, a cover value, a colour and a shader treatment all built for it. Twenty
+        // four seeds were checked: zero sand cells, every one.
+        int lowest = int.MaxValue;
+        int highest = 0;
+
+        for (int index = 0; index < size * size; index++)
+        {
+            int sample = grid.HeightAt(index);
+
+            lowest = Math.Min(lowest, sample);
+            highest = Math.Max(highest, sample);
+        }
+
+        int relief = Math.Max(1, highest - lowest);
         int waterLevel = map.MaxHeightMm / 12;
-        int snowLine = (map.MaxHeightMm * 3) / 4;
-        int sandLine = map.MaxHeightMm / 8;
-        int mudLine = waterLevel + 2_000;
+
+        // Each band is a meaningful slice of the relief, and each is cut above the last,
+        // so every one of these surfaces can actually appear.
+        int mudLine = waterLevel + Math.Max(500, relief / 20);
+        int sandLine = mudLine + Math.Max(500, relief / 8);
+        int snowLine = highest - Math.Max(1_000, relief / 5);
 
         byte[] types = new byte[size * size];
 
