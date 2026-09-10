@@ -97,6 +97,9 @@ public sealed record LaunchOptions
     /// <summary>Detonates a tactical nuke at startup, framed for a screenshot.</summary>
     public bool NukeDemo { get; init; }
 
+    /// <summary>Fires one of every weapon on a repeating cycle, so rounds can be photographed.</summary>
+    public bool FireDemo { get; init; }
+
     /// <summary>When set, export one WAV per faction theme and exit.</summary>
     public string? RenderAudioPath { get; init; }
 
@@ -320,6 +323,10 @@ public sealed record LaunchOptions
                 case "--nuke-demo":
                     // Late enough that the column has climbed and the cap has formed.
                     options = options with { NukeDemo = true, ShowHelp = false, ScreenshotFrame = 150 };
+                    break;
+
+                case "--fire-demo":
+                    options = options with { FireDemo = true, ShowHelp = false, ScreenshotFrame = 40 };
                     break;
 
                 case "--combat-demo":

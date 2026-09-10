@@ -388,6 +388,15 @@ public sealed class MiVicGame : XnaGame
                 0f,
                 mission.PlayerBase.Z / (float)WorldPos.MmPerMetre));
         }
+        else if (_options.FireDemo)
+        {
+            // From the side and slightly above, looking along the firing line: the
+            // trajectories run away from the camera, which is how a tracer's shape and
+            // a rocket's trail are actually read.
+            _camera.ZoomTo(300f);
+            _camera.TiltTo(-0.34f);
+            _camera.Yaw = 1.15f;
+        }
         else if (_options.NukeDemo)
         {
             // Far enough out for a two-hundred-metre cloud, at an angle that shows the
@@ -495,6 +504,11 @@ public sealed class MiVicGame : XnaGame
         if (_options.NukeDemo)
         {
             SpawnNukeDemo();
+        }
+
+        if (_options.FireDemo)
+        {
+            BuildFireDemo();
         }
 
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Content", "Fonts", "NotoSans-Regular.ttf");
@@ -2767,6 +2781,88 @@ public sealed class MiVicGame : XnaGame
     }
 
     /// <summary>
+    /// Sets up the firing line: one of every weapon in the game, firing on a repeating
+    /// cycle so that any frame has rounds of several kinds in the air at once.
+    /// <para>
+    /// Rounds are in flight for between a fifth of a second and most of one, so a
+    /// battle is a poor place to try to look at one: whether a rocket is on screen at
+    /// the moment a screenshot is taken is luck. Firing on a timer turns luck into a
+    /// certainty.
+    /// </para>
+    /// </summary>
+    private void BuildFireDemo()
+    {
+        if (_simulation is null)
+        {
+            return;
+        }
+
+        MiVic.Core.Terrain.HeightMap terrain = _simulation.World.Terrain;
+
+        // Every weapon the game has, in the order the profiles table lists them.
+        UnitKind[] kinds =
+        [
+            UnitKind.Infantry, UnitKind.Tank, UnitKind.Artillery,
+            UnitKind.RocketArtillery, UnitKind.AntiAir, UnitKind.Aircraft, UnitKind.ElectroPrototype,
+        ];
+
+        Vector3 centre = FindVisibleFixtureCentre();
+        var line = new (UnitKind Kind, Vector3 Origin, Vector3 Target, float Timer)[kinds.Length];
+
+        for (int i = 0; i < kinds.Length; i++)
+        {
+            float x = centre.X + ((i - ((kinds.Length - 1) * 0.5f)) * 34f);
+            float z = centre.Z - 90f;
+            float ground = terrain.SampleHeightMm((int)(x * 1000f), (int)(z * 1000f)) / 1000f;
+
+            line[i] = (
+                kinds[i],
+                new Vector3(x, ground + 1.6f, z),
+                new Vector3(x, ground + 1.2f, z + 150f),
+                i * 0.09f);
+        }
+
+        _fireDemo = line;
+        _camera?.FocusOn(new Vector3(centre.X, 0f, centre.Z - 15f));
+    }
+
+    /// <summary>Runs the firing line. Demo fixture only.</summary>
+    private void UpdateFireDemo(float elapsedSeconds)
+    {
+        if (!_options.FireDemo || _projectiles is null || _fireDemo.Length == 0)
+        {
+            return;
+        }
+
+        for (int i = 0; i < _fireDemo.Length; i++)
+        {
+            (UnitKind kind, Vector3 origin, Vector3 target, float timer) = _fireDemo[i];
+
+            timer -= elapsedSeconds;
+
+            if (timer <= 0f)
+            {
+                if (FireProfiles.For(kind) is { } profile)
+                {
+                    float size = ModelCatalog.NominalSizeMetres(Faction.Soviet, kind);
+
+                    _projectiles.Fire(profile, origin, target, MathF.Max(size / 6.4f, 0.55f));
+                }
+
+                timer += FireDemoInterval;
+            }
+
+            _fireDemo[i] = (kind, origin, target, timer);
+        }
+    }
+
+    /// <summary>Seconds between volleys in the firing-line fixture.</summary>
+    private const float FireDemoInterval = 0.55f;
+
+    /// <summary>The firing line's weapons, positions and timers.</summary>
+    private (UnitKind Kind, Vector3 Origin, Vector3 Target, float Timer)[] _fireDemo = [];
+
+    /// <summary>
     /// The tactical nuke on its own, for the fixture.
     /// <para>
     /// It is not part of the effect grid and never can be: its cloud is two hundred
@@ -3206,6 +3302,7 @@ public sealed class MiVicGame : XnaGame
 
         UpdatePendingStrikes();
         UpdateEffectDemo(elapsedSeconds);
+        UpdateFireDemo(elapsedSeconds);
 
         // Shake is requested by whatever was loudest this frame, and applied to the
         // camera for the *next* one. Applying it here would move the view under a
