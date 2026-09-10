@@ -61,7 +61,8 @@ $exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
 | Ιδιαίτερο | Σχεδιαστικό Γραφείο | Μαζική παραγωγή | Ηθικό ανά μονάδα |
 
 Design rationale and the alternate-history tech tree are in
-[docs/DESIGN.md](docs/DESIGN.md).
+[docs/DESIGN.md](docs/DESIGN.md). What is planned but not built is in
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
