@@ -65,7 +65,7 @@ public sealed class MiVicGame : XnaGame
     private readonly Stopwatch _frameStopwatch = Stopwatch.StartNew();
     private readonly List<double> _frameTimes = [];
     private readonly GameHud _hud = new();
-    private readonly Dictionary<int, MeshBatch> _batches = [];
+    private readonly Dictionary<(Faction Faction, UnitKind Kind), MeshBatch> _batches = [];
     private readonly InstanceData[] _singleInstance = new InstanceData[1];
 
     private InstancedRenderer? _renderer;
@@ -1597,7 +1597,17 @@ public sealed class MiVicGame : XnaGame
 
     private MeshBatch GetBatch(Faction faction, UnitKind kind)
     {
-        int key = ((int)faction * 8) + (int)kind;
+        // Keyed by the pair itself rather than by an integer packed out of them. The
+        // packed key was `faction * 8 + kind`, where eight was the number of unit kinds
+        // when it was written; there are more than twice that now, so keys ran together
+        // and a batch built for one entity was handed to another. The first one drawn
+        // won, and everything that collided wore its model — which is how a Δυτικοί
+        // Συλλέκτης came to be drawn as a Κινέζοι command centre, and a Δυτικοί tank as
+        // a Κινέζοι design bureau driving around like a vehicle.
+        //
+        // A tuple cannot collide, whatever the enums grow to. The previous fix was one
+        // multiplier away from the same bug.
+        var key = (faction, kind);
 
         if (!_batches.TryGetValue(key, out MeshBatch? batch))
         {
