@@ -164,9 +164,13 @@ public static class FireProfiles
             FireStyle.Missile, 380f, 2.6f, 0.12f, new Vector3(1.0f, 0.88f, 0.66f), 0.03f, 24f, 2, 1.0f, 0f,
             FireImpact.SmallBurst, SoundEffectKind.ArtilleryLaunch, 0f),
 
-        // Not a projectile: an arc between two points, drawn for a couple of frames.
+        // Not a projectile: an arc between two points, drawn for a fraction of a second.
+        // Wide on purpose — a real lightning channel is centimetres across and a
+        // centimetre at three hundred metres is a fraction of a pixel, so a physically
+        // sized arc is an invisible one. Drawn thin enough to read as a bolt rather
+        // than as a beam.
         UnitKind.ElectroPrototype => new FireProfile(
-            FireStyle.Bolt, 4_000f, 0f, 0.10f, new Vector3(0.62f, 0.85f, 1.0f), 0.02f, 0f, 1, 0f, 1.6f,
+            FireStyle.Bolt, 4_000f, 0f, 0.55f, new Vector3(0.62f, 0.85f, 1.0f), 0.02f, 0f, 1, 0f, 1.6f,
             FireImpact.Electric, SoundEffectKind.TankGun, 0.25f),
 
         _ => null,

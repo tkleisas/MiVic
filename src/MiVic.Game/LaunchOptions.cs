@@ -91,6 +91,16 @@ public sealed record LaunchOptions
     /// <summary>Campaign mission to play, by id.</summary>
     public string? MissionId { get; init; }
 
+    /// <summary>
+    /// True when this run is one of the inspection fixtures rather than a match.
+    /// <para>
+    /// Fixtures are not games: a firing range with one soldier on it is a draw and an
+    /// effect catalogue with no enemy is a victory, and both of those banners cover the
+    /// thing the fixture exists to show.
+    /// </para>
+    /// </summary>
+    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo;
+
     /// <summary>Spawns a burst of explosions at startup, so a screenshot can show the particle system.</summary>
     public bool ParticleDemo { get; init; }
 

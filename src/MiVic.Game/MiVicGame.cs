@@ -390,12 +390,14 @@ public sealed class MiVicGame : XnaGame
         }
         else if (_options.FireDemo)
         {
-            // From the side and slightly above, looking along the firing line: the
-            // trajectories run away from the camera, which is how a tracer's shape and
-            // a rocket's trail are actually read.
-            _camera.ZoomTo(300f);
-            _camera.TiltTo(-0.34f);
-            _camera.Yaw = 1.15f;
+            // Looking along the line from behind and above, with no yaw: the line runs
+            // left to right and every trajectory runs away from the camera, so each
+            // weapon has a predictable place on screen and "did it fire" stops being a
+            // question about framing. Close in, because a tracer is centimetres thick
+            // however long it is.
+            _camera.ZoomTo(120f);
+            _camera.TiltTo(-0.62f);
+            _camera.Yaw = 0f;
         }
         else if (_options.NukeDemo)
         {
@@ -438,9 +440,11 @@ public sealed class MiVicGame : XnaGame
                 ? new SimBridge(MissionCatalog.Require(missionId))
                 : _options.Viewer
                     ? new SimBridge(_options.Seed, ViewerFaction, ViewerKind)
-                    : _options.CombatDemo
-                        ? SimBridge.CreateCombatDemo(_options.Seed)
-                        : new SimBridge(_options.Seed, _options.IsModelGallery);
+                    : _options.FireDemo
+                        ? SimBridge.CreateFiringRange(_options.Seed)
+                        : _options.CombatDemo
+                            ? SimBridge.CreateCombatDemo(_options.Seed)
+                            : new SimBridge(_options.Seed, _options.IsModelGallery);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
@@ -699,10 +703,10 @@ public sealed class MiVicGame : XnaGame
             DrawViewerPanel();
         }
 
-        // The gallery and the model viewer are inspection fixtures, not a game: a
-        // HUD over a contact sheet hides half the models, and the victory banner
-        // that a team with no opposition triggers covers the rest.
-        HudCommand? command = _options.Viewer || _options.IsModelGallery ? null : _hud.Draw(BuildSnapshot());
+        // The gallery, the viewer and the effect fixtures are inspection tools, not a
+        // game: a HUD over a contact sheet hides half the models, and the victory
+        // banner that a team with no opposition triggers covers the rest.
+        HudCommand? command = _options.IsFixture ? null : _hud.Draw(BuildSnapshot());
 
         if (command is HudCommand requested && !IsPlayback)
         {
@@ -2811,19 +2815,19 @@ public sealed class MiVicGame : XnaGame
 
         for (int i = 0; i < kinds.Length; i++)
         {
-            float x = centre.X + ((i - ((kinds.Length - 1) * 0.5f)) * 34f);
-            float z = centre.Z - 90f;
+            float x = centre.X + ((i - ((kinds.Length - 1) * 0.5f)) * 12f);
+            float z = centre.Z - 30f;
             float ground = terrain.SampleHeightMm((int)(x * 1000f), (int)(z * 1000f)) / 1000f;
 
             line[i] = (
                 kinds[i],
                 new Vector3(x, ground + 1.6f, z),
-                new Vector3(x, ground + 1.2f, z + 150f),
+                new Vector3(x, ground + 1.2f, z + 70f),
                 i * 0.09f);
         }
 
         _fireDemo = line;
-        _camera?.FocusOn(new Vector3(centre.X, 0f, centre.Z - 15f));
+        _camera?.FocusOn(new Vector3(centre.X, 0f, centre.Z + 5f));
     }
 
     /// <summary>Runs the firing line. Demo fixture only.</summary>

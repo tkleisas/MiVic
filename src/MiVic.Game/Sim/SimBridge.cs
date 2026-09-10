@@ -205,6 +205,42 @@ public sealed class SimBridge
         return bridge;
     }
 
+    /// <summary>
+    /// An empty map with one observer on it, for the firing-line fixture.
+    /// <para>
+    /// Empty because a round in flight is centimetres across and a battlefield is
+    /// full of things that look like rounds in flight; one observer because vision
+    /// comes from units, so an entirely empty map is an entirely fogged one, and
+    /// particles are drawn under the fog.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateFiringRange(ulong seed)
+    {
+        var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
+
+        SimWorld world = bridge.World;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (world.IsAliveSlot(slot))
+            {
+                world.Despawn(new EntityId(slot, world.GetRefBySlot(slot).Generation));
+            }
+        }
+
+        UnitDefinition observer = UnitCatalog.Get(UnitKind.Infantry);
+
+        world.Spawn(
+            Faction.Soviet,
+            0,
+            UnitKind.Infantry,
+            WorldPos.FromMetres(0, 0, 0),
+            Fix32.FromInt(observer.SpeedMmPerTick),
+            observer.Health);
+
+        return bridge;
+    }
+
     /// <summary>Creates a campaign mission from its definition.</summary>
     public SimBridge(MissionDefinition mission)
         : this(
