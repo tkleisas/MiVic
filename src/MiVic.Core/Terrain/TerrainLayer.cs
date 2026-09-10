@@ -138,11 +138,89 @@ public sealed class TerrainLayer
         // the guarantee that every patch of ground can be reached. A* then spends
         // its whole expansion budget on goals that cannot be reached.
         RaiseVolcanoes(types, size, grid, seed);
+        ScatterForests(types, size, grid, seed);
         EnsureGroundConnectivity(types, size, grid);
         ScatterDeposits(types, size, grid, seed);
 
         return new TerrainLayer(size, grid.CellSizeMm, grid.OriginMm, waterLevel, map.MaxHeightMm, types);
     }
+
+    /// <summary>
+    /// Plants woodland in clusters on open ground.
+    /// <para>
+    /// Clustered rather than sprinkled, and that is the whole point: woods are places,
+    /// not noise. A forest that is a scatter of single cells gives no cover anywhere
+    /// worth standing and no obstacle anywhere worth avoiding — it is a texture. A wood
+    /// big enough to hide a squad in is a decision on the map.
+    /// </para>
+    /// <para>
+    /// Only on grass, and only below the snow line, so forests appear on the ground a
+    /// player would expect trees on rather than on sand dunes and mountainsides.
+    /// </para>
+    /// </summary>
+    private static void ScatterForests(byte[] types, int size, NavGrid grid, ulong seed)
+    {
+        for (int z = 0; z < size; z++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                int index = (z * size) + x;
+
+                if (types[index] != (byte)TerrainType.Grass || !grid.IsWalkable(index))
+                {
+                    continue;
+                }
+
+                // The cluster test decides where a grove is seeded; the radius below
+                // decides how big it grows.
+                int cluster = Hash(x / ForestCluster, z / ForestCluster, seed ^ 0xF0_4E_57);
+
+                if ((int)(cluster % 1_000) >= ForestFrequencyPermille)
+                {
+                    continue;
+                }
+
+                for (int dz = -ForestRadius; dz <= ForestRadius; dz++)
+                {
+                    for (int dx = -ForestRadius; dx <= ForestRadius; dx++)
+                    {
+                        int nx = x + dx;
+                        int nz = z + dz;
+
+                        if ((uint)nx >= (uint)size || (uint)nz >= (uint)size)
+                        {
+                            continue;
+                        }
+
+                        // A ragged edge rather than a circle: trees thin out at the
+                        // treeline, and a wood with a squared-off border looks drawn.
+                        int distance = (dx * dx) + (dz * dz);
+
+                        if (distance > (ForestRadius * ForestRadius) ||
+                            (distance > 1 && Hash(nx, nz, seed ^ 0x7E_EE) % 3 == 0))
+                        {
+                            continue;
+                        }
+
+                        int cell = (nz * size) + nx;
+
+                        if (types[cell] == (byte)TerrainType.Grass && grid.IsWalkable(cell))
+                        {
+                            types[cell] = (byte)TerrainType.Forest;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>How many cells across a forest cluster is judged, and how big it grows.</summary>
+    private const int ForestCluster = 3;
+
+    private const int ForestRadius = 2;
+
+    /// <summary>How often a cluster becomes a wood, in permille of clusters.</summary>
+    private const int ForestFrequencyPermille = 260;
 
     /// <summary>
     /// Scatters mineral deposits over dry, passable ground.
@@ -772,9 +850,54 @@ public sealed class TerrainLayer
     /// Movement cost of a surface in permille of flat ground; zero means the
     /// surface cannot be entered at all.
     /// </summary>
+    /// <summary>
+    /// What cover a surface gives, as the permille of incoming damage that still
+    /// lands: 1000 is no cover, 600 is a third off.
+    /// <para>
+    /// Deliberately keyed on the movement class as well as the surface, because cover
+    /// is not a property of the ground on its own. A wood is cover to a man who can lie
+    /// in it and an obstruction to a tank that can only sit on top of it — which is the
+    /// same reason the cost table inverts there.
+    /// </para>
+    /// </summary>
+    public static int CoverPermille(MovementClass movement, TerrainType type) => type switch
+    {
+        TerrainType.Forest => movement switch
+        {
+            MovementClass.Foot => 600,
+            MovementClass.Tracked => 880,
+            MovementClass.Wheeled => 880,
+            _ => 1_000,
+        },
+        TerrainType.Rock => 850,
+        TerrainType.Mine => 900,
+        _ => 1_000,
+    };
+
+    /// <summary>Cover where a unit is standing, by its movement class.</summary>
+    public int CoverAt(int index, MovementClass movement)
+        => index >= 0 && index < _types.Length
+            ? CoverPermille(movement, TypeAt(index))
+            : 1_000;
+
+    /// <summary>
+    /// Movement cost of a surface, in permille of the baseline: 1000 is normal going,
+    /// higher is slower, and zero means the surface cannot be entered at all.
+    /// </summary>
     public static int BaseCostPermille(MovementClass movement, TerrainType type) => type switch
     {
         TerrainType.Grass => BasePermille,
+        TerrainType.Forest => movement switch
+        {
+            // The only surface where the classes invert: trees are an obstacle to a
+            // vehicle and an advantage to a man. Infantry pick their way through at
+            // some cost; armour has to go round or push through slowly.
+            MovementClass.Air => BasePermille,
+            MovementClass.Foot => 140,
+            MovementClass.Tracked => 280,
+            MovementClass.Wheeled => 320,
+            _ => 0,
+        },
         TerrainType.Rock => movement == MovementClass.Air ? BasePermille : 180,
         TerrainType.Sand => movement switch
         {

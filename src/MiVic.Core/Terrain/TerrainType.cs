@@ -34,6 +34,13 @@ public enum TerrainType : byte
 
     /// <summary>A mineral deposit a harvester can work.</summary>
     Mine = 8,
+
+    /// <summary>
+    /// Woodland: hard going for anything on tracks or wheels, and cover for anything on
+    /// foot. The one surface in the game that treats the movement classes as opposites
+    /// rather than as a ranking.
+    /// </summary>
+    Forest = 9,
 }
 
 /// <summary>

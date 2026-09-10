@@ -99,6 +99,75 @@ public sealed class SpawnPlacementTests
         Assert.True(lava > 0, "no lava on the map at all, so the volcano line is above the ground");
     }
 
+    /// <summary>
+    /// A wood is hard going for armour and cover for infantry — the two rules that make
+    /// it a wood rather than a darker shade of grass.
+    /// </summary>
+    [Fact]
+    public void ForestSlowsArmourAndSheltersInfantry()
+    {
+        int foot = TerrainLayer.BaseCostPermille(MovementClass.Foot, TerrainType.Forest);
+        int tracked = TerrainLayer.BaseCostPermille(MovementClass.Tracked, TerrainType.Forest);
+
+        Assert.True(foot > 0 && tracked > 0, "a forest has to be passable, or it is a wall");
+        Assert.True(tracked > foot, "tracks should pay more for trees than legs do");
+
+        int footCover = TerrainLayer.CoverPermille(MovementClass.Foot, TerrainType.Forest);
+        int tankCover = TerrainLayer.CoverPermille(MovementClass.Tracked, TerrainType.Forest);
+
+        Assert.True(footCover < 1_000, "a forest has to protect the infantry standing in it");
+        Assert.True(footCover < tankCover, "trees are cover to a man and an obstruction to a tank");
+
+        // And no other surface may be cheaper on foot and dearer on tracks by accident.
+        Assert.Equal(
+            1_000,
+            TerrainLayer.CoverPermille(MovementClass.Tracked, TerrainType.Grass));
+    }
+
+    [Fact]
+    public void TheStandardMapHasForests()
+    {
+        SimWorld world = Build();
+        int forest = CountSurface(world, TerrainType.Forest);
+
+        Assert.True(forest > 0, "no woodland on the map at all");
+    }
+
+    /// <summary>
+    /// Woodland comes in groves, not speckle. A scatter of single cells would give no
+    /// cover worth standing in and no obstacle worth going round.
+    /// </summary>
+    [Fact]
+    public void ForestsComeInGroves()
+    {
+        SimWorld world = Build();
+        TerrainLayer terrain = world.TerrainTypes;
+
+        int total = 0;
+        int neighbours = 0;
+
+        for (int z = 0; z < terrain.Size; z++)
+        {
+            for (int x = 0; x < terrain.Size; x++)
+            {
+                if (terrain.TypeAtCell(x, z) != TerrainType.Forest)
+                {
+                    continue;
+                }
+
+                total++;
+
+                if (x > 0 && terrain.TypeAtCell(x - 1, z) == TerrainType.Forest)
+                {
+                    neighbours++;
+                }
+            }
+        }
+
+        Assert.True(total > 0);
+        Assert.True(neighbours * 2 > total, $"{neighbours} of {total} forest cells have a neighbour: that is speckle");
+    }
+
     private static int CountSurface(SimWorld world, TerrainType wanted)
     {
         TerrainLayer terrain = world.TerrainTypes;

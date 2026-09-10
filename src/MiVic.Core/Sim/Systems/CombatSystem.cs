@@ -1,4 +1,5 @@
 using MiVic.Core.Numerics;
+using MiVic.Core.Terrain;
 
 namespace MiVic.Core.Sim;
 
@@ -111,6 +112,12 @@ public static class CombatSystem
             int damageScale = attackerTeam.DamagePermille > 0 ? attackerTeam.DamagePermille : 1_000;
             int damage = Math.Max(1, (weapon.AttackDamage * damageScale) / 1_000);
 
+            // What the target is standing behind counts. Trees are cover to a man who
+            // can lie in them and nothing to a tank sitting on top of them, which is the
+            // same asymmetry the movement costs have: this is where infantry hold a
+            // wood against armour.
+            damage = ApplyCover(world, ref target, damage);
+
             if (weapon.ScatterMm > 0)
             {
                 FireScattered(world, slot, ref attacker, weapon, damage);
@@ -143,6 +150,24 @@ public static class CombatSystem
 
             attacker.AttackCooldown = Math.Max(1, (weapon.AttackCooldownTicks * factor) / 1_000);
         }
+    }
+
+    /// <summary>
+    /// Reduces damage by whatever cover the target is standing in, never below one.
+    /// <para>
+    /// One is the floor because a shot that does nothing at all reads as a bug, and
+    /// because a defender who is genuinely untouchable should be untouchable by rule —
+    /// out of range, or unseen — rather than by a rounding of the damage.
+    /// </para>
+    /// </summary>
+    private static int ApplyCover(SimWorld world, ref Entity target, int damage)
+    {
+        MovementClass movement = UnitCatalog.Get(target.Kind).Movement;
+        int cover = world.TerrainTypes.CoverAt(
+            world.TerrainTypes.IndexOfWorld(target.Position.X, target.Position.Z),
+            movement);
+
+        return cover >= 1_000 ? damage : Math.Max(1, (damage * cover) / 1_000);
     }
 
     /// <summary>

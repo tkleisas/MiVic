@@ -26,6 +26,12 @@ public static class TerrainMeshBuilder
     private static readonly Color Lava = new(196, 74, 28);
     private static readonly Color Mine = new(92, 88, 82);
 
+    /// <summary>
+    /// Darker and greener than the grass it grows on: a wood has to read as a place on
+    /// the map, and a shade that only just differs from open ground reads as a smudge.
+    /// </summary>
+    private static readonly Color Forest = new(40, 66, 38);
+
     /// <summary>Colour of a surface as it appears on the ground.</summary>
     public static Color SurfaceColor(TerrainType type) => type switch
     {
@@ -37,6 +43,7 @@ public static class TerrainMeshBuilder
         TerrainType.DeepWater => DeepWater,
         TerrainType.Lava => Lava,
         TerrainType.Mine => Mine,
+        TerrainType.Forest => Forest,
         _ => Grass,
     };
 

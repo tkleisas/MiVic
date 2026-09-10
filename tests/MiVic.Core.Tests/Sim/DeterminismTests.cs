@@ -259,11 +259,11 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by the volcano line: lava now appears on the standard map where
-    /// before there was none, and impassable ground changes where everything walks.
+    /// Last changed by woodland: forests are a new surface, and they change both where
+    /// units can go and how much damage they take when they get there.
     /// </para>
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(4103227895744666646UL, HashScenario(20250101));
+        => Assert.Equal(901504124632583463UL, HashScenario(20250101));
 }
