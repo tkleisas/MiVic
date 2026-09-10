@@ -36,3 +36,6 @@ src/MiVic.Game/Content/Models/**/*.bin
 # Content pipeline intermediate output
 src/MiVic.Game/Content/bin/
 src/MiVic.Game/Content/obj/
+
+# Blender scratch output
+tools/blender/out/
