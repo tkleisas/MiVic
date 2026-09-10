@@ -36,6 +36,7 @@ public static class VisionSystem
         UnitKind.Commissar => 90_000,
         UnitKind.Mercenary => 120_000,
         UnitKind.StealthRecon => 150_000,
+        UnitKind.ElectroPrototype => 180_000,
         UnitKind.AntiAir => 140_000,
         UnitKind.Aircraft => 200_000,
         UnitKind.Drone => 150_000,

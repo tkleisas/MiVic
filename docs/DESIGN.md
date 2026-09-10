@@ -202,11 +202,16 @@ why every loss stings.
   their only lever. `IncomePermille` is a separate axis from `CostPermille`: the
   Δυτικοί are rich and unproductive, and `EconomySystem` scales income but not
   upkeep, so a rich faction can afford more rather than run cheaper.
-- **Σοβιετικοί cost is two-tier, not flat — partly applied.** Standard hulls are
-  now cheap (×0.90) and the design bureau gates advanced ones behind a prototype
-  run. What is still missing is the *cap*: an advanced prototype is expensive to
-  prove but nothing stops a Σοβιετικοί player fielding twenty of them once it is
-  approved. The cap belongs with the tier-4 prototype content.
+- **Σοβιετικοί cost is two-tier, not flat — applied.** Standard hulls are cheap
+  (×0.90) and the design bureau gates advanced ones behind a prototype run. The gap
+  that remained — nothing stopping a player fielding twenty of an approved
+  prototype — is closed by `UnitDefinition.MaxAlive`: **Ηλεκτροπυροβόλο «Τόξο»** is
+  a tier-2 role that additionally requires the Ηλεκτροτεχνία project, is
+  Σοβιετικοί-only, and **no team may have more than two**, counting whatever is
+  already in the queue. It hits harder than anything else on the field, so it is a
+  capability the faction owns rather than a unit type it can spam. What cannot be
+  mass-produced is the *technology*, not the tank — and the cap is what makes that
+  true in the numbers rather than only in the description.
 - **Δυτικοί lose by attrition, not by being out-built in a burst**, and their
   counterplay is to avoid trading units at all. Income and throughput therefore have
   to be shown separately in the UI, or a Δυτικοί player will see a full bank and an

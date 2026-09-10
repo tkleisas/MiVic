@@ -604,7 +604,7 @@ public sealed class GameHud
 
                     if (definition.IsBuilding || definition.ProducedAt != UnitKind.Factory ||
                         (team.ApprovedMask & bit) != 0 ||
-                        !UnitCatalog.IsUnlocked(building.Faction, definition.Kind, team.TechTier))
+                        !UnitCatalog.IsUnlocked(building.Faction, definition.Kind, team.TechTier, team.TechMask))
                     {
                         continue;
                     }
@@ -701,7 +701,7 @@ public sealed class GameHud
                 continue;
             }
 
-            bool unlocked = UnitCatalog.IsUnlocked(building.Faction, definition.Kind, team.TechTier);
+            bool unlocked = UnitCatalog.IsUnlocked(building.Faction, definition.Kind, team.TechTier, team.TechMask);
             uint bit = 1u << (int)definition.Kind;
             bool licensed = (team.LicenceMask & bit) != 0;
 
@@ -710,6 +710,9 @@ public sealed class GameHud
                 || building.Faction != Faction.Soviet
                 || definition.ProducedAt != UnitKind.Factory
                 || (team.ApprovedMask & bit) != 0;
+
+            // A capped design is a capability rather than a unit type.
+            bool capped = definition.MaxAlive > 0 && world.CountOf(building.TeamId, definition.Kind) >= definition.MaxAlive;
 
             int materials = UnitCatalog.MaterialCost(building.Faction, definition.Kind);
             int energy = UnitCatalog.EnergyCost(building.Faction, definition.Kind);
@@ -721,14 +724,17 @@ public sealed class GameHud
                 $"{FactionPalette.UnitLabel(definition.Kind),-20} {materials,4}Π {energy,3}Ε {water,3}Ν {ticks / 20f,5:0.0}δ";
 
             string reason = !unlocked
-                ? $"χρειάζεται τεχνολογία {definition.RequiredTechTier}"
+                ? definition.RequiredTech != TechId.None && !TechCatalog.IsCompleted(team.TechMask, definition.RequiredTech)
+                    ? "χρειάζεται έρευνα"
+                    : $"χρειάζεται τεχνολογία {definition.RequiredTechTier}"
+                : capped ? $"όριο {definition.MaxAlive}"
                 : !approved ? "χρειάζεται πρωτότυπο στο σχεδιαστικό γραφείο"
                 : affordable ? string.Empty
                 : team.Materials < materials ? $"λείπουν {materials - team.Materials} Π"
                 : team.Energy < energy ? $"λείπουν {energy - team.Energy} Ε"
                 : $"λείπουν {water - team.Water} Ν";
 
-            options.Add(new BuildOption(definition.Kind, label, unlocked && approved && affordable, reason));
+            options.Add(new BuildOption(definition.Kind, label, unlocked && approved && !capped && affordable, reason));
         }
 
         return options;

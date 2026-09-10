@@ -319,6 +319,7 @@ public sealed class ModelCatalog : IDisposable
             [CacheKeyOf(Faction.Soviet, UnitKind.AntiAir)] = new("Generated", "soviet_antiair.glb", 4.2f, GeneratedYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.Aircraft)] = new("Generated", "soviet_aircraft.glb", 11f, FigureYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.RocketArtillery)] = new("Generated", "soviet_katyusha.glb", 6.0f, GeneratedYaw),
+            [CacheKeyOf(Faction.Soviet, UnitKind.ElectroPrototype)] = new("Generated", "soviet_electro.glb", 6.6f, GeneratedYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.Commissar)] = new("Generated", "soviet_commissar.glb", 1.9f, FigureYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.CommandCentre)] = new("Generated", "soviet_hq.glb", 20f, GeneratedYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.PowerPlant)] = new("Generated", "soviet_power.glb", 12f, GeneratedYaw),

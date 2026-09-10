@@ -68,6 +68,9 @@ public enum UnitKind : byte
 
     /// <summary>Καταδρομέας — Δυτικοί stealth raider: invisible until it fires.</summary>
     StealthRecon = 17,
+
+    /// <summary>Ηλεκτροπυροβόλο — Σοβιετικοί electro prototype. Capped, and expensive to lose.</summary>
+    ElectroPrototype = 18,
 }
 
 /// <summary>

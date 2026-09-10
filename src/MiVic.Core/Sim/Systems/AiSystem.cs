@@ -137,8 +137,8 @@ public static class AiSystem
     {
         ReadOnlySpan<UnitKind> preference =
         [
-            UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery, UnitKind.AntiAir,
-            UnitKind.Drone, UnitKind.RobotInfantry, UnitKind.Aircraft, UnitKind.Infantry,
+            UnitKind.ElectroPrototype, UnitKind.Tank, UnitKind.Artillery, UnitKind.RocketArtillery,
+            UnitKind.AntiAir, UnitKind.Drone, UnitKind.RobotInfantry, UnitKind.Aircraft, UnitKind.Infantry,
         ];
 
         foreach (UnitKind kind in preference)
@@ -174,7 +174,7 @@ public static class AiSystem
     {
         ref TeamState state = ref world.TeamRef(team);
 
-        if (state.IsPrototyping || !UnitCatalog.IsUnlocked(SimWorld.FactionOfTeam(team), kind, state.TechTier))
+        if (state.IsPrototyping || !UnitCatalog.IsUnlocked(SimWorld.FactionOfTeam(team), kind, state.TechTier, state.TechMask))
         {
             return false;
         }

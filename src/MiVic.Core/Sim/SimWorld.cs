@@ -784,7 +784,14 @@ public sealed class SimWorld
             return true;
         }
 
-        if (!UnitCatalog.IsUnlocked(FactionOfTeam(team), kind, state.TechTier))
+        if (!UnitCatalog.IsUnlocked(FactionOfTeam(team), kind, state.TechTier, state.TechMask))
+        {
+            return false;
+        }
+
+        // A capped design is a capability, not a unit type: the team may field a
+        // limited number, counting whatever is already on the way.
+        if (UnitCatalog.Get(kind).MaxAlive > 0 && CountOf(team, kind) >= UnitCatalog.Get(kind).MaxAlive)
         {
             return false;
         }
@@ -792,6 +799,36 @@ public sealed class SimWorld
         return FactionOfTeam(team) != Faction.Soviet
             || definition.ProducedAt != UnitKind.Factory
             || (state.ApprovedMask & bit) != 0;
+    }
+
+    /// <summary>
+    /// Live and queued entities of a role for a team. Both count against a cap:
+    /// otherwise a player could queue ten of a prototype in one tick and only be
+    /// stopped once they started appearing.
+    /// </summary>
+    public int CountOf(int team, UnitKind kind)
+    {
+        int total = 0;
+
+        for (int slot = 0; slot < _entities.Length; slot++)
+        {
+            if (_entities[slot].Alive && _entities[slot].TeamId == team && _entities[slot].Kind == kind)
+            {
+                total++;
+            }
+
+            ReadOnlySpan<ProductionJob> queued = JobsOf(slot);
+
+            for (int job = 0; job < queued.Length; job++)
+            {
+                if (queued[job].Kind == kind)
+                {
+                    total++;
+                }
+            }
+        }
+
+        return total;
     }
 
     /// <summary>

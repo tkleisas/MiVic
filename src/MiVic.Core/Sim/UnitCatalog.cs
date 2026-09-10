@@ -42,6 +42,12 @@ using MiVic.Core.Terrain;
 /// True when the unit is invisible to the enemy until it fires or is detected at
 /// close range. You cannot shoot what you cannot see.
 /// </param>
+/// <param name="MaxAlive">
+/// How many of these a team may have at once, counting those already queued. Zero
+/// means unlimited. This is what makes a prototype a prototype: the technology
+/// cannot be mass-produced, so losing one is a real loss.
+/// </param>
+/// <param name="RequiredTech">Project a team must have completed before it may build this role.</param>
 public readonly record struct UnitDefinition(
     UnitKind Kind,
     int MaterialCost,
@@ -65,7 +71,9 @@ public readonly record struct UnitDefinition(
     bool IsAutomaton = false,
     Faction OnlyFor = Faction.None,
     int WagePerTick = 0,
-    bool Stealthy = false)
+    bool Stealthy = false,
+    int MaxAlive = 0,
+    TechId RequiredTech = TechId.None)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -148,6 +156,15 @@ public static class UnitCatalog
             40, 120_000, 20, false, 18,
             Movement: MovementClass.Foot, GroundPressurePermille: 850,
             OnlyFor: Faction.Western, Stealthy: true),
+
+        // Ηλεκτροπυροβόλο: the payoff of Ηλεκτροτεχνία, and the thing the two-tier
+        // cost was decided for. It hits harder than anything else on the field and
+        // a team may have at most two, counting the one in the queue — so it is a
+        // capability rather than a unit type, and losing one is a campaign loss.
+        new(UnitKind.ElectroPrototype, 320, 60, 260, 220, 280, 2, UnitKind.Factory, false,
+            110, 240_000, 70, false, 40,
+            SplashRadiusMm: 16_000, Movement: MovementClass.Tracked, GroundPressurePermille: 1_000,
+            OnlyFor: Faction.Soviet, MaxAlive: 2, RequiredTech: TechId.SovietElectro),
 
         // Structures are unarmed for now; defensive buildings come with M3 balance.
         // Industry needs a great deal of water, which is what makes a second
@@ -245,11 +262,13 @@ public static class UnitCatalog
         && definition.IsAutomaton;
 
     /// <summary>
-    /// True when a faction at <paramref name="techTier"/> may build the role.
-    /// This is what stops the Κινέζοι from ever fielding tier-4 hardware, and what
-    /// keeps the Κινέζοι automata out of everyone else's hands.
+    /// True when a faction at <paramref name="techTier"/>, with
+    /// <paramref name="techMask"/> of completed projects, may build the role. This
+    /// is what stops the Κινέζοι from ever fielding tier-4 hardware, what keeps
+    /// their automata out of everyone else's hands, and what holds a prototype back
+    /// until the research behind it exists.
     /// </summary>
-    public static bool IsUnlocked(Faction faction, UnitKind kind, int techTier)
+    public static bool IsUnlocked(Faction faction, UnitKind kind, int techTier, ulong techMask = 0)
     {
         if (!TryGet(kind, out UnitDefinition definition))
         {
@@ -257,6 +276,11 @@ public static class UnitCatalog
         }
 
         if (definition.OnlyFor != Faction.None && definition.OnlyFor != faction)
+        {
+            return false;
+        }
+
+        if (definition.RequiredTech != TechId.None && !TechCatalog.IsCompleted(techMask, definition.RequiredTech))
         {
             return false;
         }

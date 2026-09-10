@@ -368,6 +368,39 @@ def build_tank(faction, profile):
     return root
 
 
+def build_electro(faction, profile):
+    """Σοβιετικοί electro prototype: a tank hull under a coil emitter.
+
+    Deliberately unlike every other turret in the game — a stack of rings rather
+    than a box or a dome — because there are only ever two of them and the player
+    has to be able to pick them out at a glance.
+    """
+    root = build_tank(faction, profile)
+    root.name = f"{faction}_electro"
+
+    for obj in list(root.children):
+        if obj.name in ("barrel", "muzzle"):
+            obj.scale.y = 0.4
+            obj.rotation_euler = (math.radians(-8.0), 0.0, 0.0)
+
+    turret = next((o for o in root.children if o.name == "turret"), None)
+
+    if turret is not None:
+        for i in range(3):
+            ring = cylinder("coil", 0.5 + (i * 0.16), 0.22, segments=14, axis="y")
+            ring.parent = turret
+            ring.location = (0.0, 0.7 + (i * 0.55), 0.55)
+            ring.rotation_euler = (math.radians(90.0), 0.0, 0.0)
+            paint(ring, (0.30, 0.55, 0.72, 1.0))
+
+        emitter = cylinder("emitter", 0.34, 1.5, segments=12, axis="y")
+        emitter.parent = turret
+        emitter.location = (0.0, 1.6, 0.55)
+        paint(emitter, (0.24, 0.62, 0.82, 1.0))
+
+    return root
+
+
 def build_command_centre(faction, profile):
     """A headquarters: a blocky base, a tower, and a rotating radar dish."""
     root = bpy.data.objects.new(f"{faction}_hq", None)
@@ -770,6 +803,7 @@ def main():
 
     # Faction-unique roles: these had no model at all and rendered as a raw box.
     emit("soviet_katyusha", lambda: build_katyusha("soviet"))
+    emit("soviet_electro", lambda: build_electro("soviet", PROFILES["soviet"]))
     emit("soviet_commissar", lambda: build_figure(
         "soviet", "commissar", (1.0, 1.85, 0.9),
         {"body": (0.30, 0.30, 0.32, 1.0), "legs": (0.24, 0.24, 0.26, 1.0), "gear": (0.52, 0.16, 0.14, 1.0)}))
