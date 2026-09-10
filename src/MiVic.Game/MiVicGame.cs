@@ -1482,8 +1482,15 @@ public sealed class MiVicGame : XnaGame
             // model can have more than one thing that turns. The drone has four
             // rotors and they cannot all be called `radar` in one Blender scene, so
             // an equality test left every one of them still.
+            //
+            // About Y, which is vertical, and not about Z. Everything on this contract
+            // is built to turn around Blender's up axis — a dish on a mast, a drone
+            // rotor as a horizontal disc, a harvester's beacon — and Z is not up in the
+            // world the game draws in. Turning about it swung the dish through the
+            // vertical plane instead: it climbed over the tower, went through the roof
+            // and came back out, which is exactly what it looked like from a distance.
             float sweep = world.Tick * 0.02f;
-            return Matrix.CreateRotationZ(sweep) * part.LocalTransform;
+            return Matrix.CreateRotationY(sweep) * part.LocalTransform;
         }
         else if (IsLimb(name))
         {
