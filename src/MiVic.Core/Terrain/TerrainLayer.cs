@@ -53,6 +53,15 @@ public sealed class TerrainLayer
     /// <summary>Most a fully churned cell can add to its own cost, in permille.</summary>
     public const int MaxChurnSurcharge = 600;
 
+    /// <summary>Cells per side of the lattice used to cluster mineral deposits.</summary>
+    private const int DepositCluster = 3;
+
+    /// <summary>One in this many deposit clusters carries ore, in permille.</summary>
+    private const int DepositFrequencyPermille = 70;
+
+    /// <summary>Radius of a volcano's lava pool, in cells.</summary>
+    private const int VolcanoRadius = 2;
+
     /// <summary>Cells per side; matches the navigation grid.</summary>
     public int Size { get; }
 
@@ -91,7 +100,7 @@ public sealed class TerrainLayer
     /// </summary>
     /// <param name="map">Source height field.</param>
     /// <param name="grid">Navigation grid built from the same map.</param>
-    public static TerrainLayer Build(HeightMap map, NavGrid grid)
+    public static TerrainLayer Build(HeightMap map, NavGrid grid, ulong seed = 0)
     {
         ArgumentNullException.ThrowIfNull(map);
         ArgumentNullException.ThrowIfNull(grid);
@@ -124,9 +133,118 @@ public sealed class TerrainLayer
             }
         }
 
+        // Volcanoes go in before connectivity, not after: they place impassable
+        // lava, and anything impassable added after the ford pass silently breaks
+        // the guarantee that every patch of ground can be reached. A* then spends
+        // its whole expansion budget on goals that cannot be reached.
+        RaiseVolcanoes(types, size, grid, seed);
         EnsureGroundConnectivity(types, size, grid);
+        ScatterDeposits(types, size, grid, seed);
 
         return new TerrainLayer(size, grid.CellSizeMm, grid.OriginMm, waterLevel, map.MaxHeightMm, types);
+    }
+
+    /// <summary>
+    /// Scatters mineral deposits over dry, passable ground.
+    /// <para>
+    /// Clustered rather than uniform: a deposit is a place worth fighting over, so
+    /// it has to be big enough to find and defend. Deterministic from the seed, and
+    /// placed last so a deposit can never land in a lake or on a cliff.
+    /// </para>
+    /// </summary>
+    private static void ScatterDeposits(byte[] types, int size, NavGrid grid, ulong seed)
+    {
+        for (int z = 0; z < size; z++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                int index = (z * size) + x;
+                TerrainType type = (TerrainType)types[index];
+
+                if (type is not (TerrainType.Grass or TerrainType.Sand or TerrainType.Snow) ||
+                    !grid.IsWalkable(index))
+                {
+                    continue;
+                }
+
+                int cluster = Hash(x / DepositCluster, z / DepositCluster, seed);
+
+                if ((int)(cluster % 1_000) < DepositFrequencyPermille)
+                {
+                    types[index] = (byte)TerrainType.Mine;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Raises volcanic cones on the highest ground: rock on the slopes, lava in the
+    /// crater. The lava is impassable and burns whatever is standing on it, which is
+    /// what makes a volcano terrain rather than scenery.
+    /// </summary>
+    private static void RaiseVolcanoes(byte[] types, int size, NavGrid grid, ulong seed)
+    {
+        int snowLine = grid.HeightAt(0);
+
+        for (int index = 0; index < size * size; index++)
+        {
+            snowLine = Math.Max(snowLine, grid.HeightAt(index));
+        }
+
+        // Only the very tops, so a map has a handful of volcanoes rather than a range.
+        snowLine = snowLine - (snowLine / 12);
+
+        for (int z = 0; z < size; z++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                int index = (z * size) + x;
+
+                // Rare enough that a map has a few volcanoes rather than a lava
+                // field, and only on the very highest ground.
+                if (grid.HeightAt(index) < snowLine || Hash(x, z, seed ^ 0x5EED) % 23 != 0)
+                {
+                    continue;
+                }
+
+                for (int dz = -VolcanoRadius; dz <= VolcanoRadius; dz++)
+                {
+                    for (int dx = -VolcanoRadius; dx <= VolcanoRadius; dx++)
+                    {
+                        int nx = x + dx;
+                        int nz = z + dz;
+
+                        if ((uint)nx >= (uint)size || (uint)nz >= (uint)size)
+                        {
+                            continue;
+                        }
+
+                        int distance = (dx * dx) + (dz * dz);
+                        int cell = (nz * size) + nx;
+
+                        if (distance <= 1)
+                        {
+                            types[cell] = (byte)TerrainType.Lava;
+                        }
+                        else if (distance <= VolcanoRadius * VolcanoRadius)
+                        {
+                            types[cell] = (byte)TerrainType.Rock;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>A stable integer hash of a lattice coordinate and the world seed.</summary>
+    private static int Hash(int x, int z, ulong seed)
+    {
+        ulong value = seed + ((ulong)(uint)x * 0x9E3779B97F4A7C15UL) + ((ulong)(uint)z * 0xC2B2AE3D27D4EB4FUL);
+        value ^= value >> 29;
+        value *= 0xBF58476D1CE4E5B9UL;
+        value ^= value >> 32;
+
+        return (int)(value & 0x7FFFFFFF);
     }
 
     /// <summary>
@@ -361,6 +479,13 @@ public sealed class TerrainLayer
             if (types[index] == (byte)TerrainType.DeepWater)
             {
                 types[index] = (byte)TerrainType.ShallowWater;
+                changed = true;
+            }
+            else if (types[index] == (byte)TerrainType.Lava)
+            {
+                // A crossing over a crater rim is rock, not a ford: it is passable
+                // and nobody wants to linger on it.
+                types[index] = (byte)TerrainType.Rock;
                 changed = true;
             }
         }
@@ -666,6 +791,10 @@ public sealed class TerrainLayer
             MovementClass.Wheeled => 450,
             _ => 0,
         },
+
+        // Ore ground is rough going for everyone, and it is a place to stop rather
+        // than a place to cross.
+        TerrainType.Mine => movement == MovementClass.Air ? BasePermille : 130,
         TerrainType.DeepWater or TerrainType.Lava =>
             movement == MovementClass.Air ? BasePermille : 0,
         _ => BasePermille,

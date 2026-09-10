@@ -117,6 +117,13 @@ public static class UnitCatalog
         new(UnitKind.Aircraft, 260, 60, 200, 160, 1_500, 3, UnitKind.Factory, false, 30, 100_000, 20, true, 45,
             Movement: MovementClass.Air, GroundPressurePermille: 0),
 
+        // Συλλέκτης: the role that makes a deposit worth anything. It has no weapon
+        // and no place in a fight — its whole job is to sit on ore, which is why it
+        // is the unit an opponent raids rather than shoots.
+        new(UnitKind.Harvester, 200, 20, 150, 300, 260, 1, UnitKind.CommandCentre, false,
+            0, 0, 0, false, 25,
+            Movement: MovementClass.Wheeled, GroundPressurePermille: 1_100),
+
         // Κατιούσα: one salvo is worth more than a howitzer's, but it lands
         // scattered over an area. Devastating against formations and buildings,
         // poor against a single moving tank — which is why the Σοβιετικοί want

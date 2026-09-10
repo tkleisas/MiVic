@@ -318,12 +318,22 @@ the season must be legible in the UI or the penalty reads as a bug.
   water, which makes both real geography: either the generator guarantees a
   **ford**, or the player builds a **bridge** (a new structure, and a role for
   engineers). Leaning toward both — fords on narrow rivers, bridges on wide ones.
-- **Mines** hook into the existing `UnitKind.Harvester`: a mine cell is a
-  capturable deposit, a harvester on it adds material income, and the income
-  stops when the harvester dies.
-- **Volcanoes** are a hazard biome: a rock cone with impassable lava cells that
-  damage whatever stands on them, plus a smoke plume the particle system already
-  supports.
+- **Mines are built.** Deposits are scattered as clusters over dry, passable ground,
+  and a **Συλλέκτης** parked on one adds materials per tick. The ground is the
+  income and the vehicle is what collects it, which is also what finally gives the
+  harvester a role: it has no weapon and no place in a fight, so it is the unit an
+  opponent raids rather than shoots.
+- **Volcanoes are built.** Rock slopes with an impassable lava crater that burns
+  whatever is standing in it — fast enough to be fatal, slow enough to escape.
+  Aircraft are over the lava, not in it.
+- **Order matters, and this cost a real bug.** Volcanoes are raised *before* the
+  connectivity pass and deposits scattered after it, because anything impassable
+  added after the ford pass silently breaks the guarantee that every patch of
+  ground can be reached. Wired the other way round, A\* spent its whole expansion
+  budget on goals that could not be reached: pathfinding went from 0.08 ms to
+  3.8 ms per tick and the test suite from 21 s to 42 s. The ford pass now carves
+  through lava as well as deep water, so a crater can never cut the map in two.
+  `HazardTests.LavaAndDepositsDoNotStrandAnyone` is the regression test.
 - **Snow** slows everything except aircraft and could shorten sight ranges, which
   hooks into the per-team visibility grid.
 

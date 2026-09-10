@@ -65,7 +65,7 @@ public sealed class SimWorld
         // the per-tick state hash — only of the initial world hash.
         Terrain = HeightMap.Generate(seed, SimConstants.TerrainResolution, SimConstants.MapExtentMm, SimConstants.TerrainMaxHeightMm);
         Navigation = NavGrid.Build(Terrain, SimConstants.MaxSlopePermille, SimConstants.NavGridStride);
-        TerrainTypes = TerrainLayer.Build(Terrain, Navigation);
+        TerrainTypes = TerrainLayer.Build(Terrain, Navigation, seed);
         _pathFinder = new PathFinder(Navigation.CellCount);
         _pathCells = new int[capacity * SimConstants.MaxPathCells];
         _jobs = new ProductionJob[capacity * SimConstants.MaxQueueLength];
@@ -621,6 +621,7 @@ public sealed class SimWorld
             ConstructionSystem.Tick(this);
 
             ChurnSystem.Tick(this);
+            HazardSystem.Tick(this);
             ResearchSystem.Tick(this);
             Profiler.Mark(ref Profiler.Research, ref Profiler.WorstResearch);
             PrototypeSystem.Tick(this);

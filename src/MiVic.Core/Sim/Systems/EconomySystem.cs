@@ -1,3 +1,5 @@
+using MiVic.Core.Terrain;
+
 namespace MiVic.Core.Sim;
 
 /// <summary>
@@ -27,6 +29,9 @@ public static class EconomySystem
 
     /// <summary>Water per tick from a nuclear plant: it needs a great deal of cooling.</summary>
     public const int NuclearPlantWater = 6;
+
+    /// <summary>Materials per tick a harvester working a deposit adds.</summary>
+    public const int HarvesterDepositMaterials = 6;
 
     /// <summary>Runs one economy tick.</summary>
     public static void Tick(SimWorld world)
@@ -79,6 +84,14 @@ public static class EconomySystem
             {
                 state.ArmedCount++;
                 state.WagesPerTick += definition.WagePerTick;
+            }
+
+            // A harvester parked on a deposit is the only thing that makes ore worth
+            // holding: the ground is the income, and the vehicle is what collects it.
+            if (entity.Kind == UnitKind.Harvester &&
+                world.TerrainTypes.TypeAt(world.Navigation.IndexOfWorld(entity.Position)) == TerrainType.Mine)
+            {
+                state.MaterialsPerTick += Scale(HarvesterDepositMaterials, income);
             }
 
             switch (entity.Kind)
