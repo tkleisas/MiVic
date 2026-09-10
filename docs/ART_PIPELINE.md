@@ -42,23 +42,28 @@ works (Python 3.13.13) and the glTF exporter addon is present. Models are
 therefore generated as code:
 
 ```
-blender --background --python tools/blender/build_vehicles.py -- --out <dir>
+pwsh ./tools/blender/build_all.ps1
 ```
 
-**Status: the generator exists and its output is in the game.** One tank in all
-three faction silhouettes, plus a command centre per faction, are generated into
-`src/MiVic.Game/Content/Models/Generated/` and wired into `ModelCatalog` for
-`UnitKind.Tank` and `UnitKind.CommandCentre`. Verified with `--inspect-models`
-(558 / 444 / 588 triangles, imported and oriented) and a passing `--selftest` with
-`models unavailable: 0`.
+**Status: every model in the game is generated.** All 51 `(faction, role)` slots in
+`ModelCatalog` point at `Content/Models/Generated/`, and `--inspect-models` reports
+`failures=0 missing=0`. The generator is split by family, because a soldier is a
+different problem from a building and one file that owned both could not be worked on
+in parallel:
+
+| Script | Owns |
+|---|---|
+| `build_vehicles.py` | the shared mesh and material kit, tanks, self-propelled guns, anti-air, Συλλέκτης, Κατιούσα, the electro prototype, the drone, the aircraft |
+| `build_figures.py` | soldiers: line infantry, commissar, robot infantry, mercenary, stealth reconnaissance |
+| `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau |
 
 The silhouettes come out measurably distinct, which is the point of §2.1:
 
-| | width | height | length | triangles | wheels/side |
+| | width | height | length | wheels/side | turret |
 |---|---|---|---|---|---|
-| Σοβιετικοί | 4.44 | **3.77** (lowest) | 6.17 | 558 | 5 |
-| Κινέζοι | **3.50** (narrowest) | **4.72** (tallest) | 5.70 | 444 | 5 |
-| Δυτικοί | **4.86** (widest) | 4.55 | **7.90** (longest) | 588 | 7 |
+| Σοβιετικοί | 4.44 | **3.77** (lowest) | 6.17 | 5 | cast dome |
+| Κινέζοι | **3.50** (narrowest) | **4.72** (tallest) | 5.70 | 5 | welded box |
+| Δυτικοί | **4.86** (widest) | 4.55 | **7.90** (longest) | 7 | sloped wedge |
 
 ### 2.0 Loader limits — resolved
 
@@ -121,17 +126,23 @@ Three tiers of animation, cheapest first:
    distance travelled ÷ radius. Both are pure functions of simulation state.
    Buildings get the same treatment: rotating radar dish, factory crane and
    doors, power-plant fans.
-**Tier 2 is built.** Limbs are matched by contract name — anything ending in
-`Legs`, `Feet`, `Body` or `Head` — so the borrowed Quaternius soldiers walk without
-being re-authored, and a generated rig would walk on the same terms. The phase
-comes from the odometer, so the legs keep step with the ground rather than with the
-frame rate, and a unit that has stopped stands still. Limbs swing about the **top
-of their own mesh**, measured at load: an imported rig has no skeleton to query, so
-measuring where the joint is beats assuming the mesh origin is the hip.
+**Tier 2 is built.** Limbs are matched by contract name — `Leg*`, `Shin*`, `Arm*`,
+`Body`, `Head` — and the generated figures ship exactly those parts, so a stride is a
+rotation rather than a skeleton. The phase comes from the odometer, so the legs keep
+step with the ground rather than with the frame rate, and a unit that has stopped
+stands still. Limbs swing about the **top of their own mesh**, measured at load: an
+imported rig has no skeleton to query, so measuring where the joint is beats assuming
+the mesh origin is the hip. The generators therefore build a limb hanging *below* its
+own origin, which puts the origin at the joint for free.
 
-Honest limitation: the borrowed soldier ships one `Legs` mesh for *both* legs, so
-the gait reads as a march rather than a stride. Alternating legs needs either a
-generated two-part rig or a skinned mesh, which is tier 3.
+The knees bend, and only on the forward swing: a stiff-legged walk is the most
+obvious way for a low-poly figure to look wrong. `Leg*`/`Shin*` are separate parts so
+the shin inherits the thigh's swing and adds its own bend behind it, and the two legs
+run in antiphase. Arms swing against the leg on the same side.
+
+Known limitation: the legs are rigid below the knee — there is no ankle and no foot
+roll. A shin bend plus a boot is enough at the distances the game is played at; the
+next honest step up is skinning (tier 3).
 
 2. **Parts-rigged infantry.** Torso, head, arms and legs as separate nodes with a
    procedural walk cycle driven by `world.Tick` phase. No skinning, no weight
@@ -144,16 +155,25 @@ Animation phase is driven by the tick and interpolation alpha, never the wall
 clock, so replays look identical. Fire and death animations hang off the
 `UnitHit` / `UnitDestroyed` events the client already receives.
 
-**Style:** low-poly, but colourful and textured. Vertex colours carry the base
-look (they already do); a shared 256² per-faction palette texture adds panel
-detail, decals and hazard stripes; an emissive channel handles windows,
-headlights, engine glow and lava. That needs a texture and sampler in
-`InstancedMesh.fx` and UVs in `VertexPositionNormal` — one draw call per mesh, so
-the cost is negligible.
+**Style:** low-poly, but colourful and textured. Vertex colours carry the base look,
+and they now carry **two** things: a material colour and, in its alpha, the faction
+paint mask. The shader blends the material against the faction colour — shaded by the
+material's own brightness — so a Σοβιετικοί tank is red *and* has black rubber tracks,
+a gunmetal barrel and a light grey radar dish. Getting this wrong is what makes every
+unit of a faction one flat silhouette, and it is worth stating the two ways the old
+pipeline did exactly that: per-mesh normalisation to the brightest channel erased the
+difference between dark and light materials, and a clamp at 0.35 threw away the
+bottom third of the range.
 
-**Licensing:** generated models are ours and may be committed. Third-party assets
-stay out of the repository and are fetched by script, as the QAL Quaternius set
-already is.
+Still future work: a shared 256² per-faction palette texture for panel detail, decals
+and hazard stripes, and an emissive channel for windows, headlights, engine glow and
+lava. That needs a texture and sampler in `InstancedMesh.fx` and UVs in
+`VertexPositionNormal` — one draw call per mesh, so the cost is negligible.
+
+**Licensing:** every model in the game is generated by `tools/blender/` and is ours,
+so it is committed and a fresh clone looks right. The QAL Quaternius set that the
+game used to borrow from is no longer referenced by any slot; `tools/fetch-assets.ps1`
+still downloads it, and those files stay out of the repository.
 
 **Pipeline changes:** `ModelCatalog` gains per-kind part specs (node names, wheel
 radius, turret pivot, clip names); `InstancedRenderer` gains a node-transform
