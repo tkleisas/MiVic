@@ -84,6 +84,8 @@ public sealed class MiVicGame : XnaGame
     private InstancedRenderer.Mesh? _particleMesh;
     private InstancedRenderer.Mesh? _ringMesh;
     private InstancedRenderer.Mesh? _blastMesh;
+    private InstancedRenderer.Mesh? _waterMesh;
+    private InstancedRenderer.Mesh? _lavaMesh;
     private InstancedRenderer.Mesh? _projectileMesh;
     private SingleBatch? _axisBatch;
     private SingleBatch? _markerBatch;
@@ -457,6 +459,11 @@ public sealed class MiVicGame : XnaGame
         _terrainMesh = _renderer.CreateMesh(
             TerrainMeshBuilder.FromHeightMap(_simulation.World.Terrain, _simulation.World.TerrainTypes));
         _terrainRevision = _simulation.World.TerrainTypes.Revision;
+
+        // Water and lava are their own surfaces, drawn over the terrain with animated
+        // shaders. Built from the same layers the simulation uses, so the sea a player
+        // sees is the sea the pathfinder refuses to walk into.
+        BuildLiquidMeshes();
         _selectionMarkerMesh = _renderer.CreateMesh(MeshBuilder.Cylinder(2.6f, 0.45f, 12));
         _markerBatch = new SingleBatch(_selectionMarkerMesh, _simulation.World.Capacity);
 
@@ -859,7 +866,10 @@ public sealed class MiVicGame : XnaGame
             AmbientColor: new Color(96, 101, 110),
             FogColor: BackgroundColor,
             FogStart: 620f,
-            FogEnd: 2000f);
+            FogEnd: 2000f,
+            // The animated surfaces read this. Frame time, not simulation time: a
+            // shimmering sea must never be able to reach a tick.
+            Time: (float)_totalSeconds);
 
         _renderer!.Begin(view, projection, _camera.Position, environment);
 
@@ -867,6 +877,10 @@ public sealed class MiVicGame : XnaGame
         _instancesSubmitted = 0;
 
         DrawSingle(_terrainMesh!, Matrix.Identity, Color.White);
+
+        // Immediately over the ground they lie on, and under everything else: water
+        // drawn after the units would put a lake in front of the tanks standing in it.
+        DrawLiquids();
         CollectUnitInstances();
         CollectSelectionMarkers();
         CollectOrderMarkers();
@@ -2245,6 +2259,62 @@ public sealed class MiVicGame : XnaGame
         _terrainMesh?.Dispose();
         _terrainMesh = _renderer!.CreateMesh(
             TerrainMeshBuilder.FromHeightMap(world.Terrain, world.TerrainTypes));
+
+        // The liquid surfaces move with the ground under them: a bridge turns water
+        // into road, and mud control does not, but a volcano's lava field does.
+        BuildLiquidMeshes();
+    }
+
+    /// <summary>
+    /// Draws the water and lava surfaces with their animated shaders.
+    /// </summary>
+    private void DrawLiquids()
+    {
+        if (_renderer is null)
+        {
+            return;
+        }
+
+        if (_waterMesh is not null)
+        {
+            _renderer.BeginLiquids(InstancedRenderer.LiquidPass.Water);
+            DrawSingle(_waterMesh, Matrix.Identity, Color.White);
+        }
+
+        if (_lavaMesh is not null)
+        {
+            _renderer.BeginLiquids(InstancedRenderer.LiquidPass.Lava);
+            DrawSingle(_lavaMesh, Matrix.Identity, Color.White);
+        }
+
+        if (_waterMesh is not null || _lavaMesh is not null)
+        {
+            // Back to the lit technique for everything drawn after this.
+            _renderer.EndParticles();
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the water and lava surfaces from the simulation's own layers. Cheap
+    /// enough to redo whenever the terrain mesh is redone, and it must be redone with
+    /// it: they are the same ground.
+    /// </summary>
+    private void BuildLiquidMeshes()
+    {
+        if (_renderer is null || _simulation is null)
+        {
+            return;
+        }
+
+        SimWorld world = _simulation.World;
+
+        (MeshData water, MeshData lava) = TerrainMeshBuilder.BuildLiquids(world.Terrain, world.TerrainTypes);
+
+        _waterMesh?.Dispose();
+        _lavaMesh?.Dispose();
+
+        _waterMesh = water.PrimitiveCount > 0 ? _renderer.CreateMesh(water) : null;
+        _lavaMesh = lava.PrimitiveCount > 0 ? _renderer.CreateMesh(lava) : null;
     }
 
     /// <summary>

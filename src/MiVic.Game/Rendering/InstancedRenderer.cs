@@ -24,6 +24,7 @@ public sealed class InstancedRenderer : IDisposable
     private readonly EffectParameter _cameraPositionParameter;
     private readonly EffectParameter _fogStartParameter;
     private readonly EffectParameter _fogEndParameter;
+    private readonly EffectParameter? _timeParameter;
 
     private DynamicVertexBuffer? _instanceBuffer;
     private int _instanceCapacity;
@@ -44,6 +45,7 @@ public sealed class InstancedRenderer : IDisposable
         _cameraPositionParameter = _effect.Parameters["CameraPosition"];
         _fogStartParameter = _effect.Parameters["FogStart"];
         _fogEndParameter = _effect.Parameters["FogEnd"];
+        _timeParameter = _effect.Parameters["Time"];
     }
 
     /// <summary>A mesh uploaded to the GPU, with its draw parameters cached.</summary>
@@ -71,12 +73,32 @@ public sealed class InstancedRenderer : IDisposable
     }
 
     /// <summary>Lighting and fog settings applied to every draw in a pass.</summary>
+    /// <param name="LightDirection">Direction towards the sun.</param>
+    /// <param name="AmbientColor">Sky colour used for the hemisphere ambient term.</param>
+    /// <param name="FogColor">Distance fog colour, with its strength in alpha.</param>
+    /// <param name="FogStart">Distance at which fog begins, in metres.</param>
+    /// <param name="FogEnd">Distance at which fog is complete, in metres.</param>
+    /// <param name="Time">Seconds since the client started, for the animated surfaces.</param>
     public readonly record struct Environment(
         Vector3 LightDirection,
         Color AmbientColor,
         Color FogColor,
         float FogStart,
-        float FogEnd);
+        float FogEnd,
+        float Time = 0f);
+
+    /// <summary>
+    /// Which surface shader a liquid pass draws with. Water and lava are both animated
+    /// from the clock, but they are opposites: water reflects and lava emits.
+    /// </summary>
+    public enum LiquidPass
+    {
+        /// <summary>Moving highlights, a grazing-angle sky reflection and a sun glint.</summary>
+        Water = 0,
+
+        /// <summary>Emissive, with a dark crust drifting over molten cracks.</summary>
+        Lava = 1,
+    }
 
     /// <summary>Which blend mode the unlit particle pass uses.</summary>
     public enum ParticleBlend
@@ -125,6 +147,7 @@ public sealed class InstancedRenderer : IDisposable
         _cameraPositionParameter?.SetValue(cameraPosition);
         _fogStartParameter?.SetValue(environment.FogStart);
         _fogEndParameter?.SetValue(environment.FogEnd);
+        _timeParameter?.SetValue(environment.Time);
 
         _particles = false;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
@@ -162,6 +185,18 @@ public sealed class InstancedRenderer : IDisposable
     {
         _particles = false;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
+        _effect.CurrentTechnique.Passes[0].Apply();
+    }
+
+    /// <summary>
+    /// Switches to a liquid surface technique. The caller must call <see cref="Begin"/>
+    /// first; <see cref="EndParticles"/> switches back, since a liquid pass is drawn
+    /// opaquely and leaves the pipeline exactly as the lit pass does.
+    /// </summary>
+    public void BeginLiquids(LiquidPass pass)
+    {
+        _particles = false;
+        _effect.CurrentTechnique = _effect.Techniques[pass == LiquidPass.Lava ? "Lava" : "Water"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
 

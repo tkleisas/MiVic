@@ -25,6 +25,11 @@ float3 CameraPosition;
 float FogStart;
 float FogEnd;
 
+// Seconds since the client started. Presentation only: nothing that moves on this
+// clock can reach the simulation, exactly like the particle system, which already
+// integrates on frame time.
+float Time;
+
 // COLOR0 is the mesh's own material colour, and its alpha says how much of the
 // faction colour replaces it: 1 is "paint this plate in the team colour", 0 is
 // "leave this material alone". Tracks, gun barrels, glass and terrain sit at the
@@ -272,5 +277,111 @@ technique Blast
     {
         VertexShader = compile VS_SHADERMODEL MainVS();
         PixelShader  = compile PS_SHADERMODEL BlastPS();
+    }
+};
+
+// -----------------------------------------------------------------------------
+// Liquids: water and lava, drawn as their own surfaces over the terrain mesh.
+//
+// They get their own mesh rather than a flag on the terrain's vertices because the
+// vertex alpha is already spoken for — it is the faction paint mask, and borrowing it
+// would let a team's colour bleed into the sea. Two surfaces, two techniques, and the
+// terrain underneath keeps drawing the lake bed.
+//
+// Both are shaped by the clock rather than by a texture, which is the only way a
+// generated-art project can have moving water: a texture would have to be authored,
+// and this has nothing authored about it. The patterns are two sines crossing at
+// different rates, which is cheap, tiles without seams, and never repeats visibly at
+// the scale a river is seen from.
+// -----------------------------------------------------------------------------
+
+/// <summary>Applies distance fog, which liquids need as much as anything else.</summary>
+float3 ApplyFog(float3 color, float3 worldPosition)
+{
+    float distanceToCamera = length(worldPosition - CameraPosition);
+    float fogRange = max(FogEnd - FogStart, 0.001);
+    float fogAmount = saturate((distanceToCamera - FogStart) / fogRange) * FogColor.a;
+
+    return lerp(color, FogColor.rgb, fogAmount);
+}
+
+float4 WaterPS(VertexOutput input) : COLOR0
+{
+    float3 base = input.Material.rgb * input.Tint.rgb;
+    float2 p = input.WorldPos.xz;
+
+    // A long swell and a shorter chop, on different axes and at different speeds, so
+    // the surface never looks like it is sliding in one direction.
+    float swell = sin((p.x * 0.085) + (Time * 0.85)) * cos((p.y * 0.105) - (Time * 0.62));
+    float chop = sin((p.x * 0.34) - (Time * 1.9) + (p.y * 0.29)) * 0.5;
+
+    // Strong enough to read from a strategic camera, where a river is a few hundred
+    // pixels of screen and a five per cent variation is nothing at all.
+    float3 color = base * (0.88 + (swell * 0.22) + (chop * 0.12));
+
+    // A slope derived from the waves rather than a normal map. It only has to be
+    // enough to catch a highlight and break the surface into facets.
+    float2 slope = float2(
+        cos((p.x * 0.085) + (Time * 0.85)) * 0.085,
+        cos((p.y * 0.105) - (Time * 0.62)) * 0.105);
+
+    float3 normal = normalize(float3(-slope.x * 6.0, 1.0, -slope.y * 6.0));
+    float3 toCamera = normalize(CameraPosition - input.WorldPos);
+
+    // Sky reflected at a grazing angle. An RTS camera looks at a river from a shallow
+    // angle almost always, and flat blue that never changes is what makes water read
+    // as a painted floor.
+    float grazing = pow(1.0 - saturate(abs(dot(normal, toCamera))), 3.0);
+    color += float3(0.16, 0.24, 0.30) * grazing;
+
+    // The sun on the water, which is the one thing that says "liquid" more than any
+    // colour does. Taken as an absolute alignment rather than a signed one: the light
+    // vector's sign convention is the lit shader's business, and a reflection that
+    // silently never happens because of it is a reflection nobody notices is missing.
+    float3 half = normalize(-LightDirection + toCamera);
+    float glint = pow(saturate(abs(dot(normal, half))), 24.0);
+    color += float3(1.0, 0.97, 0.88) * glint * 0.65;
+
+    return float4(ApplyFog(color, input.WorldPos), input.Material.a * input.Tint.a);
+}
+
+float4 LavaPS(VertexOutput input) : COLOR0
+{
+    // Emissive, and deliberately not lit: lava is a light source. Ambient and sun
+    // would only make it dimmer, and molten rock that dims at dusk is not molten.
+    float2 p = input.WorldPos.xz;
+
+    // A slow crust drifting over faster veins: the crust cools and darkens in plates,
+    // and the cracks between them are where the heat shows.
+    float crust = 0.5 + (0.5 * sin((p.x * 0.055) + (Time * 0.22)) * cos((p.y * 0.071) - (Time * 0.18)));
+    float veins = 0.5 + (0.5 * sin((p.x * 0.42) + (p.y * 0.36) + (Time * 0.75)));
+    float heat = saturate((crust * 0.75) + (veins * veins * 0.55) - 0.10);
+
+    float3 crustColor = input.Material.rgb * 0.55;
+    float3 molten = float3(1.00, 0.42, 0.07);
+
+    // Squared so the molten cracks stay narrow and the crust stays dark, which is what
+    // lava actually looks like from above.
+    float3 color = lerp(crustColor, molten, heat * heat);
+
+    // Emissive means it keeps its own brightness, but haze still applies.
+    return float4(ApplyFog(color, input.WorldPos), input.Material.a * input.Tint.a);
+}
+
+technique Water
+{
+    pass P0
+    {
+        VertexShader = compile VS_SHADERMODEL MainVS();
+        PixelShader  = compile PS_SHADERMODEL WaterPS();
+    }
+};
+
+technique Lava
+{
+    pass P0
+    {
+        VertexShader = compile VS_SHADERMODEL MainVS();
+        PixelShader  = compile PS_SHADERMODEL LavaPS();
     }
 };
