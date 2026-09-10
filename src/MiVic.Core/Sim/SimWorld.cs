@@ -1069,15 +1069,6 @@ public sealed class SimWorld
         return true;
     }
 
-    /// <summary>Materials a bridge costs.</summary>
-    public const int BridgeMaterials = 150;
-
-    /// <summary>Energy a bridge costs.</summary>
-    public const int BridgeEnergy = 40;
-
-    /// <summary>Water a bridge costs — concrete needs a great deal of it.</summary>
-    public const int BridgeWater = 30;
-
     /// <summary>Furthest a span will reach from where it is placed, in cells.</summary>
     public const int MaxBridgeSpan = 24;
 
@@ -1095,6 +1086,12 @@ public sealed class SimWorld
     /// the resources itself would be a second copy of this rule, and the first thing a
     /// copy does is drift: the button that looks available and does nothing when pressed
     /// is the bug this shape prevents.
+    /// </para>
+    /// <para>
+    /// What it measures is the cheapest crossing there is, one cell, because that is the
+    /// question a button can answer before it knows the site. Whether a <em>particular</em>
+    /// span is affordable is a question about the span, and it is answered where the span is
+    /// measured.
     /// </para>
     /// </summary>
     public bool CanBuildAnyBridge(int team, out string reason)
@@ -1114,11 +1111,35 @@ public sealed class SimWorld
             return false;
         }
 
+        return Affordable(team, Bridgeworks.Cost(1), out reason);
+    }
+
+    /// <summary>
+    /// True when a team has the resources for a crossing of this price, and which one it is
+    /// short of when it has not. Naming the resource and the shortfall rather than saying
+    /// "resources" is what the build panel has always done for a structure, and a player
+    /// choosing between a ditch and a hundred metres of water needs the difference.
+    /// </summary>
+    private bool Affordable(int team, BridgeCost cost, out string reason)
+    {
+        reason = string.Empty;
         ref TeamState state = ref _teams[team];
 
-        if (state.Materials < BridgeMaterials || state.Energy < BridgeEnergy || state.Water < BridgeWater)
+        if (state.Materials < cost.Materials)
         {
-            reason = "λείπουν πόροι";
+            reason = $"λείπουν {cost.Materials - state.Materials} Π";
+            return false;
+        }
+
+        if (state.Energy < cost.Energy)
+        {
+            reason = $"λείπουν {cost.Energy - state.Energy} Ε";
+            return false;
+        }
+
+        if (state.Water < cost.Water)
+        {
+            reason = $"λείπουν {cost.Water - state.Water} Ν";
             return false;
         }
 
@@ -1213,6 +1234,14 @@ public sealed class SimWorld
             return false;
         }
 
+        // What it costs is a question about the span, so it is asked here rather than before the
+        // site was measured: a ditch and a hundred metres of water are not the same undertaking,
+        // and a team that can afford the first may not be able to afford the second.
+        if (!Affordable(team, Bridgeworks.Cost(count), out reason))
+        {
+            return false;
+        }
+
         if (cells.Length == 0)
         {
             return true;
@@ -1281,9 +1310,10 @@ public sealed class SimWorld
         }
 
         ref TeamState state = ref _teams[team];
-        state.Materials -= BridgeMaterials;
-        state.Energy -= BridgeEnergy;
-        state.Water -= BridgeWater;
+        BridgeCost cost = Bridgeworks.Cost(count);
+        state.Materials -= cost.Materials;
+        state.Energy -= cost.Energy;
+        state.Water -= cost.Water;
 
         // Paid for now, built over the next few seconds, which is how a structure works in this
         // game: the cost is the order, and the construction is a period of visibility.

@@ -102,9 +102,10 @@ public sealed class Bridgeworks
     public static int TicksFor(int cells) => SetupTicks + (Math.Max(0, cells) * TicksPerCell);
 
     /// <summary>
-    /// What a crossing of this many cells costs. The cheapest crossing there is — a single cell —
-    /// is <see cref="SetupMaterials"/> and the two other setup costs, which is what a team has to
-    /// be able to afford before the button is worth pressing.
+    /// What a crossing of this many cells costs. The cheapest crossing a player can order is a
+    /// single cell — <see cref="SetupMaterials"/> and the two other setup costs, plus one cell of
+    /// span — and that is what a team has to be able to afford before the button is worth
+    /// pressing, since a button cannot know the site.
     /// </summary>
     public static BridgeCost Cost(int cells)
     {

@@ -560,10 +560,15 @@ public sealed class ProbeRunner
         Emit($"query:   span       {DescribeSpan(world, cells, count)}");
         Emit($"query:   work       {ProbeFormat.Ticks(Bridgeworks.TicksFor(count))} to build, one cell every {ProbeFormat.Ticks(Bridgeworks.TicksPerCell)}");
 
+        BridgeCost cost = Bridgeworks.Cost(count);
+        BridgeCost cheapest = Bridgeworks.Cost(1);
         TeamState state = world.Team(team);
+
         Emit(
-            $"query:   cost       {SimWorld.BridgeMaterials} Π, {SimWorld.BridgeEnergy} Ε, {SimWorld.BridgeWater} Ν; " +
-            $"team {team} has {state.Materials} Π, {state.Energy} Ε, {state.Water} Ν");
+            $"query:   cost       {cost.Materials} Π, {cost.Energy} Ε, {cost.Water} Ν for {ProbeFormat.Count(count, "cell")} " +
+            $"({cheapest.Materials} Π, {cheapest.Energy} Ε, {cheapest.Water} Ν, plus " +
+            $"{Bridgeworks.MaterialsPerCell} Π, {Bridgeworks.EnergyPerCell} Ε, {Bridgeworks.WaterPerCell} Ν per cell)");
+        Emit($"query:   team       {team} has {state.Materials} Π, {state.Energy} Ε, {state.Water} Ν");
 
         if (!build)
         {

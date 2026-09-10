@@ -18,8 +18,11 @@ focus -257 -210
 zoom 170
 pitch -0.90
 
-# The simulation's own answer about a crossing here, and about two sites it refuses.
+# The simulation's own answer about a crossing here, and about two sites it refuses. A crossing is
+# priced by its length — preparation plus so much a cell — so the two accepted spans below, seven
+# cells and fifteen, do not cost the same, and a team that can afford one may not afford the other.
 bridge -257 -210
+bridge -210 -295
 bridge -173 -257
 bridge 0 0
 

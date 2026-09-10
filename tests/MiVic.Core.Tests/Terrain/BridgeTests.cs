@@ -89,6 +89,84 @@ public sealed class BridgeTests
     }
 
     [Fact]
+    public void ABridgeCostsMoreTheLongerItIs()
+    {
+        SimWorld world = WithFactory(out _);
+
+        // The two ends of the price list, on a map that has both: a one-cell site and the widest
+        // crossing there is.
+        int[] plan = new int[SimWorld.MaxBridgeCells];
+        WorldPos single = default;
+        WorldPos widest = default;
+        int widestCells = 0;
+
+        for (int cell = 0; cell < world.TerrainTypes.CellCount; cell++)
+        {
+            if (world.TerrainTypes.TypeAt(cell) is not (TerrainType.ShallowWater or TerrainType.DeepWater))
+            {
+                continue;
+            }
+
+            WorldPos candidate = world.Navigation.CentreOf(cell);
+
+            if (!world.TryPlanBridge(0, candidate, plan, out int count, out _))
+            {
+                continue;
+            }
+
+            if (count == 1)
+            {
+                single = candidate;
+            }
+            else if (count > widestCells)
+            {
+                widestCells = count;
+                widest = candidate;
+            }
+        }
+
+        Assert.True(widestCells > 1, "This seed has no crossing longer than one cell.");
+
+        // The price is the setup plus so much a cell, cell for cell.
+        BridgeCost one = Bridgeworks.Cost(1);
+
+        Assert.Equal(Bridgeworks.SetupMaterials + Bridgeworks.MaterialsPerCell, one.Materials);
+        Assert.Equal(Bridgeworks.SetupEnergy + Bridgeworks.EnergyPerCell, one.Energy);
+        Assert.Equal(Bridgeworks.SetupWater + Bridgeworks.WaterPerCell, one.Water);
+        Assert.Equal(
+            new BridgeCost(
+                Bridgeworks.SetupMaterials + (widestCells * Bridgeworks.MaterialsPerCell),
+                Bridgeworks.SetupEnergy + (widestCells * Bridgeworks.EnergyPerCell),
+                Bridgeworks.SetupWater + (widestCells * Bridgeworks.WaterPerCell)),
+            Bridgeworks.Cost(widestCells));
+
+        Assert.True(Bridgeworks.Cost(widestCells).Materials > one.Materials);
+        Assert.True(Bridgeworks.Cost(widestCells).Energy > one.Energy);
+        Assert.True(Bridgeworks.Cost(widestCells).Water > one.Water);
+
+        // And the simulation charges what it quoted, for the span it actually planned.
+        int before = world.Team(0).Materials;
+        OrderBridge(world, widest, out int planned);
+        world.Step();
+
+        Assert.Equal(widestCells, planned);
+        Assert.Equal(before - Bridgeworks.Cost(planned).Materials, world.Team(0).Materials);
+
+        // A short crossing is cheaper than a long one, and a team that can afford the first may
+        // not be able to afford the second — which is the whole reason the price is quoted per
+        // site rather than on the button.
+        SimWorld poor = WithFactory(out _);
+        poor.TeamRef(0).Materials = one.Materials;
+        poor.TeamRef(0).Energy = one.Energy;
+        poor.TeamRef(0).Water = one.Water;
+
+        Assert.True(poor.CanBuildAnyBridge(0, out _), "The cheapest crossing should be affordable.");
+        Assert.True(poor.CanBuildBridge(0, single, out string shortReason), shortReason);
+        Assert.False(poor.CanBuildBridge(0, widest, out string longReason));
+        Assert.Contains("λείπουν", longReason);
+    }
+
+    [Fact]
     public void ABridgeCostsResources()
     {
         SimWorld world = WithFactory(out int waterCell);
@@ -96,10 +174,10 @@ public sealed class BridgeTests
 
         int before = world.Team(0).Materials;
 
-        world.Enqueue(SimCommand.Bridge(target, world.Tick + 1, 0));
+        OrderBridge(world, target, out int cells);
         world.Step();
 
-        Assert.Equal(before - SimWorld.BridgeMaterials, world.Team(0).Materials);
+        Assert.Equal(before - Bridgeworks.Cost(cells).Materials, world.Team(0).Materials);
     }
 
     [Fact]
@@ -353,22 +431,26 @@ public sealed class BridgeTests
         Assert.Contains("εργοστάσιο", industryReason);
 
         // Each resource on its own, because a player looking at a greyed-out button needs to
-        // know which one they are short of.
+        // know which one they are short of — and how much of it, since the price depends on the
+        // length of the crossing they are pointing at.
         ref TeamState state = ref world.TeamRef(0);
 
-        state.Materials = SimWorld.BridgeMaterials - 1;
+        state.Materials = Bridgeworks.SetupMaterials - 1;
         Assert.False(world.CanBuildBridge(0, water, out string materialsReason));
-        Assert.Contains("πόροι", materialsReason);
+        Assert.Contains("λείπουν", materialsReason);
+        Assert.Contains("Π", materialsReason);
 
         state.Materials = 10_000;
-        state.Energy = SimWorld.BridgeEnergy - 1;
+        state.Energy = Bridgeworks.SetupEnergy - 1;
         Assert.False(world.CanBuildBridge(0, water, out string energyReason));
-        Assert.Contains("πόροι", energyReason);
+        Assert.Contains("λείπουν", energyReason);
+        Assert.Contains("Ε", energyReason);
 
         state.Energy = 10_000;
-        state.Water = SimWorld.BridgeWater - 1;
+        state.Water = Bridgeworks.SetupWater - 1;
         Assert.False(world.CanBuildBridge(0, water, out string waterReason));
-        Assert.Contains("πόροι", waterReason);
+        Assert.Contains("λείπουν", waterReason);
+        Assert.Contains("Ν", waterReason);
 
         state.Water = 10_000;
 
@@ -598,11 +680,15 @@ public sealed class BridgeTests
         Assert.False(world.CanBuildBridge(1, water, out string noIndustrySite));
         Assert.Equal(noIndustry, noIndustrySite);
 
-        // And out of resources, which is the half of the rule the button has to know.
+        // And out of resources. What the button measures is the cheapest crossing there is, since
+        // it cannot know the site — and that is the first thing the site check looks at too, so
+        // the two agree on the shortfall. What a particular span costs on top of it is asked in
+        // the test above, where a team can afford a ditch and not a river.
         world.TeamRef(0).Materials = 0;
-        Assert.False(world.CanBuildAnyBridge(0, out string noMaterials));
-        Assert.False(world.CanBuildBridge(0, water, out string noMaterialsSite));
-        Assert.Equal(noMaterials, noMaterialsSite);
-        Assert.Contains("πόροι", noMaterials);
+        Assert.False(world.CanBuildAnyBridge(0, out string cheapest));
+        Assert.Equal($"λείπουν {Bridgeworks.Cost(1).Materials} Π", cheapest);
+
+        Assert.False(world.CanBuildBridge(0, water, out string nothing));
+        Assert.Equal(cheapest, nothing);
     }
 }

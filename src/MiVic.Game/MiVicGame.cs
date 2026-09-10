@@ -150,6 +150,9 @@ public sealed partial class MiVicGame : XnaGame
     /// <summary>Why not, when it would not. Shown beside the armed button, where the player is looking.</summary>
     private string _bridgeSiteReason = string.Empty;
 
+    /// <summary>Cells the crossing under the cursor would span, which is what its price is for.</summary>
+    private int _bridgeSiteCells;
+
     /// <summary>
     /// Where the client believes the pointer is, when a script rather than a mouse is driving it.
     /// A probe has no mouse, and the preview and the click path both have to be askable about a
@@ -2403,8 +2406,8 @@ public sealed partial class MiVicGame : XnaGame
 
     /// <summary>
     /// Spans the water under the cursor. The simulation decides whether the site is
-    /// any good — not water, too wide, no factory, no resources — and refuses without
-    /// charging, so a misplaced click costs nothing but the click.
+    /// any good — not water, too wide, longer than any span, more than the team can afford — and
+    /// refuses without charging, so a misplaced click costs nothing but the click.
     /// <para>
     /// The site is <em>asked about</em> here before the order is sent, with the same call the
     /// order will be answered by, for two reasons. The player is told why in the same frame
@@ -2560,6 +2563,7 @@ public sealed partial class MiVicGame : XnaGame
         int site = world.TerrainTypes.IndexOfWorld(target.X, target.Z);
 
         _bridgeSiteAllowed = world.TryPlanBridge(PlayerTeam, target, _bridgePreviewCells, out int count, out _bridgeSiteReason);
+        _bridgeSiteCells = site >= 0 ? count : 0;
 
         if (site != _bridgePreviewCell || _bridgePreviewMesh is null)
         {
@@ -5243,7 +5247,8 @@ public sealed partial class MiVicGame : XnaGame
             _simulation!.IsPlayback,
             _simulation!.IsPlaybackFinished,
             _pendingBridge,
-            _pendingBridge && !_bridgeSiteAllowed ? _bridgeSiteReason : string.Empty);
+            _pendingBridge && !_bridgeSiteAllowed ? _bridgeSiteReason : string.Empty,
+            _pendingBridge && _bridgeSiteAllowed ? _bridgeSiteCells : 0);
 
     private bool Pressed(KeyboardState keyboard, Keys key)
         => keyboard.IsKeyDown(key) && !_previousKeyboard.IsKeyDown(key);

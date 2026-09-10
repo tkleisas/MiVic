@@ -68,6 +68,10 @@ public readonly record struct HudCommand(
 /// Why the site under the cursor would be refused, or an empty string when it would be taken.
 /// The ghost says <em>that</em> a site fails; this is the words for why.
 /// </param>
+/// <param name="BridgeSiteCells">
+/// Cells the crossing under the cursor would span, or zero when there is no site. The price of
+/// a bridge depends on its length, so this is what the panel quotes.
+/// </param>
 public readonly record struct HudSnapshot(
     SimBridge Simulation,
     RtsCamera Camera,
@@ -86,7 +90,8 @@ public readonly record struct HudSnapshot(
     bool Playback,
     bool PlaybackFinished,
     bool BridgeArmed = false,
-    string BridgeSiteReason = "");
+    string BridgeSiteReason = "",
+    int BridgeSiteCells = 0);
 
 /// <summary>
 /// The in-game HUD. Every player-facing string is Greek, which is also the
@@ -940,10 +945,16 @@ public sealed class GameHud
             // when a crossing could be paid for, because the two questions are the same
             // question and a second version of it here is a second version to keep in step.
             bool enabled = world.CanBuildAnyBridge(Player, out string bridgeReason);
+            BridgeCost cheapest = Bridgeworks.Cost(1);
 
             ImGui.BeginDisabled(!enabled);
 
-            if (ImGui.Button($"{"Γέφυρα",-24} {SimWorld.BridgeMaterials,4}Π {SimWorld.BridgeEnergy,3}Ε {SimWorld.BridgeWater,3}Ν"))
+            // The price on the button is the price of the smallest crossing there is, plus the
+            // rate for the rest: what a site costs is a question about the site, and the player
+            // is told that below as soon as they point at one.
+            if (ImGui.Button(
+                $"{"Γέφυρα",-24} {cheapest.Materials,4}Π {cheapest.Energy,3}Ε {cheapest.Water,3}Ν " +
+                $"+{Bridgeworks.MaterialsPerCell}Π/κύτταρο"))
             {
                 command = new HudCommand(HudCommandKind.BuildBridge);
             }
@@ -969,9 +980,26 @@ public sealed class GameHud
                     note);
             }
 
+            // What the site under the cursor would cost, on its own line, because it is the one
+            // number that decides whether the player can afford the crossing they are looking
+            // at: a ditch and a hundred metres of water are not the same undertaking, and a
+            // single price on the button could only ever be right for one of them.
+            if (snapshot.BridgeArmed && snapshot.BridgeSiteReason.Length == 0 && snapshot.BridgeSiteCells > 0)
+            {
+                BridgeCost price = Bridgeworks.Cost(snapshot.BridgeSiteCells);
+
+                ImGui.TextColored(
+                    MutedColor,
+                    $"Σημείο: {snapshot.BridgeSiteCells} κύτταρα — {price.Materials} Π, {price.Energy} Ε, {price.Water} Ν");
+            }
+
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("Διασχίζει το νερό στο σημείο που θα δείξετε με κλικ.");
+                ImGui.SetTooltip(
+                    "Διασχίζει το νερό στο σημείο που θα δείξετε με κλικ. " +
+                    $"Η τιμή μεγαλώνει με το μήκος: {Bridgeworks.SetupMaterials} Π, {Bridgeworks.SetupEnergy} Ε, " +
+                    $"{Bridgeworks.SetupWater} Ν, και {Bridgeworks.MaterialsPerCell} Π, {Bridgeworks.EnergyPerCell} Ε, " +
+                    $"{Bridgeworks.WaterPerCell} Ν για κάθε κύτταρο.");
             }
         }
 
