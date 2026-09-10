@@ -387,6 +387,376 @@ technique Lava
 };
 
 // -----------------------------------------------------------------------------
+// Terrain: a treatment per ground surface, chosen per pixel.
+//
+// Grass, mud, sand, snow, rock, ore and woodland floor are the same thing to the
+// rest of the pipeline — a terrain vertex colour out of TerrainMeshBuilder.SurfaceColor
+// — and until now one lit pass shaded all of them, which is why the map read as
+// painted swatches seen from above. Each of those surfaces behaves differently
+// under wind and light, and this is where that difference lives.
+//
+// A surface id in a vertex channel was the alternative and it does not work here.
+// The alpha channel is already the faction paint mask, and the others carry
+// position and normal. Worse, an id stored per vertex *interpolates* across a cell
+// boundary — this pipeline compiles to vs_3_0/ps_3_0 and has no flat interpolation
+// — so a pixel on the edge of a marsh would be 0.4 grass and 0.6 mud and would
+// have to be blended anyway. Classifying the colour the vertex already carries is
+// that same blend for less, and it inherits the builder's own tints for free: a
+// slope already lerped towards rock gets the rock treatment, and a track worn
+// towards mud gets the wet-mud one.
+//
+// The classification is done on chromaticity — colour divided by its own
+// brightness — rather than on raw colour. The builder shades every vertex by slope,
+// so a steep rock face arrives as (87,83,73) rather than as the palette's
+// (112,106,94), and in raw terms that shaded rock is closer to the ore grey than to
+// rock: a cliff would have been classified as a deposit. Dividing by brightness
+// removes the shade and leaves the hue, which is what identifies a surface.
+//
+// Brightness comes back into it for the two treatments that are points of light
+// rather than fields. Rock and ore are the same hue at different brightnesses, and
+// the builder lerps rock towards snow with altitude, which carries a volcano's grey
+// straight through the ore colour on the way: stone that has been tinted pale is not
+// a deposit, and the test for a sparkle says so. See <see cref="PointMatch"/>.
+//
+// Every treatment is a function of world position, never of screen position, so
+// nothing here swims when the camera moves. The fast, fine ones are faded out with
+// distance before they can alias into a shimmer at strategic zoom.
+// -----------------------------------------------------------------------------
+
+/// <summary>
+/// The ground palette, byte for byte what <c>TerrainMeshBuilder.SurfaceColor</c>
+/// bakes into the terrain mesh. A colour changed there and not here shows up as a
+/// treatment on the wrong ground — a visible fault rather than a silent one.
+/// </summary>
+static const float3 GrassColor = float3(74, 98, 56);
+static const float3 MudColor = float3(84, 62, 42);
+static const float3 SandColor = float3(198, 180, 126);
+static const float3 SnowColor = float3(228, 232, 238);
+static const float3 RockColor = float3(112, 106, 94);
+static const float3 ShallowWaterColor = float3(76, 122, 146);
+static const float3 DeepWaterColor = float3(38, 68, 108);
+static const float3 LavaColor = float3(196, 74, 28);
+static const float3 MineColor = float3(92, 88, 82);
+static const float3 ForestColor = float3(40, 66, 38);
+
+/// <summary>
+/// How strongly one palette entry describes a pixel, as an inverse square in
+/// chromaticity space.
+///
+/// Nine distance tests per pixel is nothing, and the chromaticity — colour divided
+/// by its own brightness — is what survives the builder's slope shade, which arrives
+/// at a pixel as a multiplier on all three channels at once. It is also what makes
+/// the test independent of the scale the two colours are written in, which is just
+/// as well: the palette below is in the bytes the mesh builder bakes, and the
+/// vertex attribute arrives normalised to 0..1.
+///
+/// Squared, so an entry wins outright rather than only mostly: at the palette's own
+/// spacing a surface takes more than nine tenths of a pixel's weight, and the field
+/// between two entries — which is exactly what the mesh interpolates along a border
+/// — crosses over in the middle. The divisor keeps a pixel that matches an entry
+/// exactly from dividing by zero, and is small enough to leave eight-bit
+/// quantisation unable to move a pixel's classification.
+/// </summary>
+float SurfaceWeight(float3 chroma, float3 palette)
+{
+    palette /= max(palette.r + palette.g + palette.b, 1.0);
+    float3 d = chroma - palette;
+
+    return 1.0 / (dot(d, d) + 0.00001);
+}
+
+/// <summary>How far a pixel's chromaticity sits from an entry, read back out of its weight.</summary>
+float SurfaceDistance(float weight)
+{
+    return sqrt(max((1.0 / weight) - 0.00001, 0.0));
+}
+
+/// <summary>
+/// How well a pixel really is one of the two surfaces that carry points of light.
+///
+/// A point of light reads as an object sitting on the ground rather than as a shade
+/// of it, so it is held to a stricter test than a wave is — and it needs one, because
+/// the builder's own tints move pixels a long way from the entry they belong to. Rock
+/// high on a volcano is lerped towards snow until its chromaticity is nearer the ore
+/// grey than to rock, and grass a third of the way up towards the snow line arrives
+/// as a pale green-grey that is neither. The first case is a mountain covered in ore
+/// glints and the second a green hillside covered in white ones, and both read as
+/// dust. Requiring the brightness as well as the hue puts the points back where the
+/// ground really is that colour: ore is dark and snow is nearly white, so a pale
+/// rock face fails on brightness even when it passes on hue.
+///
+/// The tolerance on brightness is relative to the entry, because the builder's shade
+/// is a multiplier: a fifth off a dark grey and a fifth off white are the same fault.
+/// </summary>
+float PointMatch(float distance, float luma, float3 palette)
+{
+    float entryLuma = dot(palette, float3(0.299, 0.587, 0.114)) / 255.0;
+
+    return saturate(1.0 - (distance / 0.012) - (abs(luma - entryLuma) / (0.55 * entryLuma)));
+}
+
+/// <summary>
+/// One pseudo-random value per world-space lattice cell, stable for all time.
+///
+/// Taken from the cell's index rather than from the pixel, so a sparkle belongs to
+/// a place on the map: it keeps its position while the camera moves, which a value
+/// hashed from screen coordinates could not do.
+/// </summary>
+float LatticeHash(float2 cell, float salt)
+{
+    return frac(sin(dot(cell, float2(12.9898, 78.233)) + salt) * 43758.5453);
+}
+
+/// <summary>
+/// Sparse bright points on a world-space lattice, for snow and for ore.
+///
+/// <paramref name="rarity"/> is the share of cells that carry a point at all, and
+/// it is what separates a sparkle from static: an even glitter over every cell of
+/// snow reads as television noise at any distance, while one point in forty reads
+/// as a facet catching the sun. Each point twinkles on its own phase, taken from its
+/// cell, so a field of them never pulses together, and the twinkle is squared so that
+/// most points stay faint and a few are bright.
+/// </summary>
+float SparsePoints(
+    float2 position,
+    float cellSize,
+    float rarity,
+    float radius,
+    float salt,
+    float rate)
+{
+    float2 cell = floor(position / cellSize);
+    float present = step(rarity, LatticeHash(cell, salt));
+
+    float2 centre = (cell + float2(LatticeHash(cell, salt + 1.7), LatticeHash(cell, salt + 4.3))) * cellSize;
+    float falloff = saturate(1.0 - (length(position - centre) / radius));
+    float phase = LatticeHash(cell, salt + 7.1);
+    float twinkle = saturate(0.35 + (0.65 * sin((Time * rate) + (phase * 6.2832))));
+
+    // Squared, so most of the points on a field are faint and a few are bright. Points
+    // of even brightness across a whole surface are what makes a sparkle read as
+    // television static; a field where a few catch the sun reads as snow.
+    return present * falloff * falloff * twinkle * twinkle;
+}
+
+/// <summary>
+/// Master gain on every ground treatment. 1 is the shipped look; it exists so a
+/// control render — the same frame with the treatments off — can be taken without
+/// touching anything else in the scene.
+/// </summary>
+static const float TreatmentScale = 1.0;
+
+float4 TerrainPS(VertexOutput input) : COLOR0
+{
+    float3 normal = normalize(input.Normal);
+    float3 base = SurfaceColor(input.Material, input.Tint.rgb);
+
+    // The lit technique's own lighting, unchanged: the treatments go on top of the
+    // light rather than instead of it, so ground still reads as terrain rather than
+    // as a pattern.
+    float hemi = saturate((normal.y * 0.5) + 0.5);
+    float3 ambient = AmbientColor.rgb * lerp(0.58, 1.30, hemi);
+    float lambert = saturate(dot(normal, LightDirection));
+    float wrap = (lambert * 0.6) + 0.4;
+
+    // The vertex colour arrives normalised to 0..1, and the palette below and the
+    // luminance the point treatments are held to are both written in the bytes
+    // TerrainMeshBuilder bakes. Bringing it up to that scale once, here, is what keeps
+    // the two comparable — and the chromaticity comparable as well, since dividing by
+    // a sum that has been clamped at 1.0 is not a chromaticity at all.
+    float3 material = input.Material.rgb * 255.0;
+
+    float3 chroma = material / max(material.r + material.g + material.b, 1.0);
+    float luma = dot(material, float3(0.299, 0.587, 0.114)) / 255.0;
+
+    float wGrass = SurfaceWeight(chroma, GrassColor);
+    float wMud = SurfaceWeight(chroma, MudColor);
+    float wSand = SurfaceWeight(chroma, SandColor);
+    float wSnow = SurfaceWeight(chroma, SnowColor);
+    float wRock = SurfaceWeight(chroma, RockColor);
+    float wMine = SurfaceWeight(chroma, MineColor);
+    float wForest = SurfaceWeight(chroma, ForestColor);
+
+    // The two liquid beds are in the table so that a lake floor is not mistaken for
+    // mud or grass and given a treatment it is about to be covered by anyway. They
+    // take no treatment of their own: water and lava are drawn over them by their
+    // own techniques.
+    float wShallow = SurfaceWeight(chroma, ShallowWaterColor);
+    float wDeep = SurfaceWeight(chroma, DeepWaterColor);
+    float wLava = SurfaceWeight(chroma, LavaColor);
+
+    float scale = 1.0 / (wGrass + wMud + wSand + wSnow + wRock + wMine + wForest + wShallow + wDeep + wLava);
+
+    float grass = wGrass * scale;
+    float mud = wMud * scale;
+    float sand = wSand * scale;
+    float snow = wSnow * scale;
+    float rock = wRock * scale;
+    float mine = wMine * scale;
+    float forest = wForest * scale;
+
+    // Rock and ore share the stone treatment, and are separated only by the glint.
+    // Ore is rock with metal in it, and the ground that most needs to read as layered
+    // rock is the ground the builder's altitude tint has pushed towards the ore grey.
+    float stone = rock + mine;
+
+    // The two point treatments, held to the stricter test described above.
+    float snowMatch = PointMatch(SurfaceDistance(wSnow), luma, SnowColor);
+    float mineMatch = PointMatch(SurfaceDistance(wMine), luma, MineColor);
+
+    float2 p = input.WorldPos.xz;
+    float distanceToCamera = length(input.WorldPos - CameraPosition);
+
+    // How much of the fine detail this pixel can still hold. A five-metre ripple is
+    // nine pixels at seven hundred metres, and fewer than that looking along the
+    // ground from a shallow pitch, where a pixel's footprint is metres wide — and a
+    // pattern finer than the pixels sampling it is not detail, it is aliasing. The
+    // fine treatments fade with distance rather than turning the far half of the map
+    // into a shimmer.
+    float detail = saturate(1.0 - ((distanceToCamera - 180.0) / 380.0));
+
+    // Grass: a gust crossing open ground, which is most of the map, so this is the
+    // strongest of the treatments. It travels along the bearing the trees already
+    // lean on in FoliageVS, because ground and wood disagreeing about the wind is
+    // the kind of detail that reads as a bug.
+    float2 wind = float2(0.82, 0.57);
+    float along = dot(p, wind);
+    float across = dot(p, float2(-wind.y, wind.x));
+
+    // Two waves on that bearing at the same speed: a long gust, seventy metres from
+    // crest to crest, which is the one a strategic camera sees, and a short ripple
+    // riding inside it, which is the one the ground shows. Both would be one scale of
+    // nothing on its own — a field seen from seven hundred metres is inside a single
+    // band of a twenty-metre wave, and a field seen from thirty metres is inside a
+    // single band of a seventy-metre one.
+    float gust = sin((along * 0.09) - (Time * 0.85));
+    float ripple = sin((along * 0.27) - (Time * 2.55));
+
+    // A gust is not a wave train: the envelope breaks it into fronts with still air
+    // between them, so the field pulses rather than rippling evenly.
+    float envelope = 0.55 + (0.45 * sin((across * 0.052) + (Time * 0.21)));
+
+    // Crop rows, running with the wind and bending under the gust that crosses them.
+    // Fine enough to be gone by the time a pixel covers one, which is what the
+    // distance fade is for.
+    float rows = sin((across * 0.55) + (gust * 0.6));
+    float grassWave = (gust * envelope * 0.16) + (ripple * 0.07) + (rows * 0.06 * detail);
+
+    // Woodland floor: dappled shade, patchy and still. It does not move because the
+    // trees do — a wood whose floor shifted under a fixed canopy would be a light
+    // show, and the movement in a wood should come from the wood. Crossed pairs of
+    // sines give patches at three scales, which is what a canopy's gaps look like: a
+    // break in the crown, smaller gaps inside it, and small ones inside those.
+    float dapple = (0.45 * ((sin((p.x * 0.079) + 1.3) * sin((p.y * 0.061) - 0.7)) +
+        (0.55 * sin((p.x * 0.028) - 2.2) * sin((p.y * 0.037) + 0.5)))) +
+        (0.30 * sin((p.x * 0.23) + 0.7) * sin((p.y * 0.19) - 1.9));
+
+    // Mud: a wet sheen that shifts as the film drains and pools, and darker where it
+    // has gathered. The sheen is the sun on a surface that is not flat, so it takes a
+    // normal whose tilt follows the damp field — the same trick the water plays with
+    // its waves, at a fraction of the slope, because a puddle is a millimetre of water
+    // and not a swell.
+    float damp = sin((p.x * 0.21) - (Time * 0.42)) * cos((p.y * 0.17) + (Time * 0.33));
+    float2 dampSlope = float2(
+        cos((p.x * 0.21) - (Time * 0.42)) * 0.21,
+        sin((p.y * 0.17) + (Time * 0.33)) * 0.17);
+    float3 sheenNormal = normalize(float3(-dampSlope.x * 3.5, 1.0, -dampSlope.y * 3.5));
+    float3 toCamera = normalize(CameraPosition - input.WorldPos);
+    float3 half = normalize(-LightDirection + toCamera);
+
+    // Absolute alignment, like the water's glint: the sign convention of the light
+    // vector is the lit shader's business, and a highlight that never happens
+    // because of it is a highlight nobody notices is missing.
+    float sheen = pow(saturate(abs(dot(sheenNormal, half))), 18.0);
+
+    // Sand: fine ripples, low and fast. The second harmonic is what makes them
+    // asymmetric — a ripple's windward face is longer than its lee — and it is why
+    // this is a shaped wave rather than a sine.
+    float warp = sin(p.y * 0.17) * 2.0;
+    float ripples = 0.74 * (sin((p.x * 1.25) + warp) - (0.35 * sin((p.x * 2.5) + (warp * 2.0))));
+
+    // Snow: points, not glitter, and cool ones. One cell in forty holds one, and the
+    // lattice is half a metre across, which puts the points at the scale of a facet
+    // of ice rather than of a field of them.
+    float sparkle = SparsePoints(p, 0.55, 0.975, 0.26, 11.0, 1.8);
+
+    // Ore: the same idea on a coarser lattice and a slower twinkle, warm rather than
+    // white. A deposit is mineral in rock and should catch the eye from across a
+    // valley without being a beacon that outshines the units beside it.
+    float oreGlint = SparsePoints(p, 1.15, 0.94, 0.40, 43.0, 1.1);
+
+    // Rock and ore: bedding planes, so a cliff reads as a layered face rather than a
+    // grey wall. The banding follows height because beds are horizontal, and it is
+    // warped by a slow function of the ground position so the bands are not a ruler
+    // laid against the mountain. Static: geology is the one thing on this map with no
+    // business moving.
+    float bed = (input.WorldPos.y * 0.9) + (sin(p.x * 0.035) * 1.6) + (cos(p.y * 0.041) * 1.2);
+    float band = sin(bed);
+
+    // Shaped into long plateaus with quick edges, because a bedding plane is a hard
+    // change from one rock to the next with a stretch of the same rock in between: a
+    // plain sine reads as a soft gradient, and a soft gradient is a lighting effect
+    // rather than geology.
+    float plateau = band / (0.35 + (0.65 * abs(band)));
+
+    // And a narrow dark seam where two beds meet, which is what a joint in the rock
+    // looks like from a distance. Its average is taken back out below, because a seam
+    // is one-sided and would otherwise darken every cliff it is drawn on.
+    float seam = pow(saturate(1.0 - abs(band)), 6.0);
+    float seamAverage = 0.047;
+
+    // Not every bed is as hard as the next, so the contrast between them varies slowly
+    // with height too — which is also what stops a cliff reading as corduroy.
+    float bedStrength = 0.72 + (0.28 * sin((bed * 0.31) + 2.3));
+
+    float strata = (0.78 * plateau * bedStrength) - (0.55 * (seam - seamAverage));
+
+    // Weighted towards faces that are actually exposed. A flat shelf of rock shows a
+    // band as a flat wash of one bed's colour, which is a stain rather than strata.
+    float face = saturate((1.0 - normal.y) * 2.4);
+
+    // Every treatment is a modulation that averages to nothing over its own pattern,
+    // so the ground does not gain or lose brightness overall: a tank has to stand out
+    // against grass exactly as well as it did before there was any of this.
+    float common = 1.0
+        + (TreatmentScale * ((grass * grassWave)
+        - (mud * damp * 0.18)
+        + (sand * ripples * 0.08 * detail)
+        + (stone * strata * (0.06 + (0.18 * face)))));
+
+    // The wood is the one treatment that is not neutral in colour: its lit patches
+    // are a touch greener than its shaded ones, which is what keeps dappled shade
+    // from reading as a grey stain.
+    float forestGain = TreatmentScale * forest * dapple;
+
+    float3 gain = float3(
+        common + (forestGain * 0.14),
+        common + (forestGain * 0.17),
+        common + (forestGain * 0.11));
+
+    float3 color = base * (ambient + (wrap * 0.68)) * gain;
+
+    // The three that add light rather than scale it. Kept to a small share of the
+    // frame in every case: a sparkle that covers a tenth of the snow it falls on is
+    // no longer a sparkle, and the ground must not gain brightness on average, or a
+    // unit would stop standing out against it.
+    color += float3(1.00, 0.97, 0.92) * TreatmentScale * mud * sheen * 0.32;
+    color += float3(0.93, 0.97, 1.00) * TreatmentScale * snow * sparkle * 0.78 * detail * snowMatch;
+    color += float3(1.00, 0.86, 0.50) * TreatmentScale * mine * oreGlint * 0.82 * detail * mineMatch;
+
+    return float4(ApplyFog(color, input.WorldPos), input.Tint.a);
+}
+
+technique Terrain
+{
+    pass P0
+    {
+        VertexShader = compile VS_SHADERMODEL MainVS();
+        PixelShader  = compile PS_SHADERMODEL TerrainPS();
+    }
+};
+
+// -----------------------------------------------------------------------------
 // Foliage: trees, the one thing on the map that moves without being told to.
 //
 // A wood is drawn as one instanced mesh per species, so the sway has to happen in

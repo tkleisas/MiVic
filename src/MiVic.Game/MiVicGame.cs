@@ -544,6 +544,11 @@ public sealed class MiVicGame : XnaGame
             FocusOnForest();
         }
 
+        if (_options.GroundDemo)
+        {
+            FocusOnGround();
+        }
+
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Content", "Fonts", "NotoSans-Regular.ttf");
         _imgui = new ImGuiController(GraphicsDevice, Window, fontPath, _options.FontSize);
         _fontCoverage = _imgui.MeasureCoverage(SelfTestReport.GreekSample);
@@ -895,7 +900,14 @@ public sealed class MiVicGame : XnaGame
         _drawCalls = 0;
         _instancesSubmitted = 0;
 
+        // The ground is drawn with its own technique: the shader classifies each
+        // pixel's vertex colour against the surface palette and gives grass, mud,
+        // sand, snow, rock and ore their own treatment. It goes back to the lit
+        // technique immediately, because a unit drawn with it would be treated as
+        // whatever surface its hull resembles.
+        _renderer.BeginTerrain();
         DrawSingle(_terrainMesh!, Matrix.Identity, Color.White);
+        _renderer.EndTerrain();
 
         // Immediately over the ground they lie on, and under everything else: water
         // drawn after the units would put a lake in front of the tanks standing in it.
@@ -3184,6 +3196,441 @@ public sealed class MiVicGame : XnaGame
                 _simulation.World.LegalSpawnSite(wanting),
                 Fix32.FromInt(watcher.SpeedMmPerTick),
                 watcher.Health);
+        }
+    }
+
+    /// <summary>
+    /// How far out the ground fixture scores the surfaces around a cell, in metres,
+    /// and how far out it rings its observers. Roughly the half-width of the frame
+    /// the camera ends up at, so the score counts the ground that will actually be
+    /// in the picture rather than ground that merely exists somewhere nearby.
+    /// </summary>
+    private const float GroundFrameRadiusMetres = 110f;
+
+    /// <summary>How many kinds of ground a cell's neighbourhood is worth, by surface.</summary>
+    private static int GroundWeight(TerrainType type) => type switch
+    {
+        // The three that are picky about where they form: sand lies on a shore, rock on
+        // a slope, mud where the water table reaches the surface. A frame holding all
+        // three is the frame this fixture exists to find.
+        TerrainType.Mud or TerrainType.Sand or TerrainType.Rock or TerrainType.Mine => 3,
+
+        // Woodland and snow are less fussy but still read as a different place.
+        TerrainType.Snow or TerrainType.Forest => 2,
+
+        // Open ground is the baseline — it is everywhere, and a score that counted it
+        // heavily would pick a cell in the middle of an empty field.
+        TerrainType.Grass => 1,
+
+        // Water and lava have had their own shaders for longer than this fixture has
+        // existed, and a view that is mostly sea says nothing about the ground.
+        _ => 0,
+    };
+
+    /// <summary>
+    /// How good a frame of ground is, as the weighted variety in it.
+    /// <para>
+    /// Counted by area rather than by presence: a seven-cell patch of rock in the
+    /// corner of a shot five hundred cells wide is not a frame that shows what rock
+    /// looks like, and scoring mere presence picks exactly those frames. Water counts
+    /// against the score, because a shoreline offers four kinds of ground in a thin
+    /// strip along the top of a lake and would otherwise win every map with a coast.
+    /// </para>
+    /// </summary>
+    private static float GroundScore(int[] counts, int frameCells)
+    {
+        float enough = frameCells * 0.03f;
+        float score = 0f;
+
+        for (int surface = 0; surface < counts.Length; surface++)
+        {
+            score += GroundWeight((TerrainType)surface) * Math.Min(1f, counts[surface] / enough);
+        }
+
+        int liquid = counts[(int)TerrainType.ShallowWater] +
+            counts[(int)TerrainType.DeepWater] +
+            counts[(int)TerrainType.Lava];
+
+        return score - (10f * liquid / frameCells);
+    }
+
+    /// <summary>
+    /// The middle of the thickest patch of one surface inside a frame.
+    /// <para>
+    /// Taken as the cell with the most of its own kind within two cells of it, the way
+    /// the wood fixture takes the middle of a wood: aiming at the first cell of a kind
+    /// that happens to be in the frame aims at its ragged edge, which is the one place
+    /// a surface is least like itself.
+    /// </para>
+    /// </summary>
+    private static (int X, int Z) DensestPatch(TerrainLayer terrain, int centreX, int centreZ, int reach, TerrainType type)
+    {
+        int bestX = centreX;
+        int bestZ = centreZ;
+        int bestScore = -1;
+
+        for (int dz = -reach; dz <= reach; dz++)
+        {
+            for (int dx = -reach; dx <= reach; dx++)
+            {
+                int x = centreX + dx;
+                int z = centreZ + dz;
+
+                if (terrain.TypeAtCell(x, z) != type)
+                {
+                    continue;
+                }
+
+                int score = 0;
+
+                for (int nz = -2; nz <= 2; nz++)
+                {
+                    for (int nx = -2; nx <= 2; nx++)
+                    {
+                        if (terrain.TypeAtCell(x + nx, z + nz) == type)
+                        {
+                            score++;
+                        }
+                    }
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestX = x;
+                    bestZ = z;
+                }
+            }
+        }
+
+        return (bestX, bestZ);
+    }
+
+    /// <summary>
+    /// Whether a cell lies within <paramref name="cells"/> of water, which is where a
+    /// beach goes. Checked over the eight neighbours rather than the four so a cell on
+    /// the diagonal of a shoreline counts as shore too.
+    /// </summary>
+    private static bool IsShore(TerrainLayer terrain, int cellX, int cellZ, int cells = 1)
+    {
+        for (int dz = -cells; dz <= cells; dz++)
+        {
+            for (int dx = -cells; dx <= cells; dx++)
+            {
+                TerrainType type = terrain.TypeAtCell(cellX + dx, cellZ + dz);
+
+                if (type is TerrainType.ShallowWater or TerrainType.DeepWater)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The middle of the widest patch of one surface on the map: the cell with the
+    /// most of its own kind within four cells of it. Where <see cref="DensestPatch"/>
+    /// answers "where in this frame", this answers "where on the map".
+    /// </summary>
+    private static (int X, int Z) WidestPatch(TerrainLayer terrain, TerrainType type)
+    {
+        const int Radius = 4;
+        int bestX = 0;
+        int bestZ = 0;
+        int bestScore = -1;
+
+        for (int z = 0; z < terrain.Size; z++)
+        {
+            for (int x = 0; x < terrain.Size; x++)
+            {
+                if (terrain.TypeAtCell(x, z) != type)
+                {
+                    continue;
+                }
+
+                int score = 0;
+
+                for (int nz = -Radius; nz <= Radius; nz++)
+                {
+                    for (int nx = -Radius; nx <= Radius; nx++)
+                    {
+                        if (terrain.TypeAtCell(x + nx, z + nz) == type)
+                        {
+                            score++;
+                        }
+                    }
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestX = x;
+                    bestZ = z;
+                }
+            }
+        }
+
+        return (bestX, bestZ);
+    }
+
+    /// <summary>
+    /// Points the camera at the most varied ground on the map.
+    /// <para>
+    /// Grass, mud, sand and rock are not neighbours anywhere: sand lies along a shore,
+    /// rock on a slope, mud where the ground is wet, and which of them a given seed
+    /// puts where is not something anyone can find by dragging a camera over six
+    /// hundred metres of map. So the fixture scores every cell by how many kinds of
+    /// ground lie around it and frames the best one, and one screenshot then shows
+    /// several surface treatments at once instead of one at a time.
+    /// </para>
+    /// <para>
+    /// It rings the frame with observers, for the reason the wood fixture does: vision
+    /// comes from units, and ground nobody can see is ground drawn as fog.
+    /// </para>
+    /// </summary>
+    private void FocusOnGround()
+    {
+        if (_simulation is null || _camera is null)
+        {
+            return;
+        }
+
+        TerrainLayer terrain = _simulation.World.TerrainTypes;
+
+        foreach (TerrainType type in Enum.GetValues<TerrainType>())
+        {
+            int cells = terrain.CountOf(type);
+
+            if (cells > 0)
+            {
+                Console.WriteLine($"ground-demo: {cells} cells of {type}");
+            }
+        }
+
+        int reach = Math.Max(1, (int)(GroundFrameRadiusMetres * WorldPos.MmPerMetre) / terrain.CellSizeMm);
+        int frameCells = ((2 * reach) + 1) * ((2 * reach) + 1);
+        int bestCell = -1;
+        float bestScore = float.MinValue;
+
+        int[] counts = new int[10];
+
+        for (int z = 0; z < terrain.Size; z++)
+        {
+            for (int x = 0; x < terrain.Size; x++)
+            {
+                Array.Clear(counts);
+
+                for (int dz = -reach; dz <= reach; dz++)
+                {
+                    for (int dx = -reach; dx <= reach; dx++)
+                    {
+                        counts[(int)terrain.TypeAtCell(x + dx, z + dz)]++;
+                    }
+                }
+
+                float score = GroundScore(counts, frameCells);
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestCell = (z * terrain.Size) + x;
+                }
+            }
+        }
+
+        if (bestCell < 0)
+        {
+            Console.WriteLine("ground-demo: nothing to frame");
+            return;
+        }
+
+        int cellX = bestCell % terrain.Size;
+        int cellZ = bestCell / terrain.Size;
+
+        var centre = new Vector3(
+            (terrain.OriginMm + (cellX * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre,
+            0f,
+            (terrain.OriginMm + (cellZ * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre);
+
+        // What is actually in the frame, rather than what is merely on the map: the
+        // census above counts the whole six hundred metres, and a treatment that is
+        // missing from the picture is a treatment this fixture has not shown.
+        int[] inFrame = new int[10];
+
+        // A beach, laid by hand.
+        //
+        // The generator cannot currently produce sand at all: its sand band is the
+        // heights between the mud line and an eighth of the map's relief, and at this
+        // map's relief the mud line is the higher of the two, so every cell that could
+        // be sand is claimed by mud first. Nothing in the simulation ever makes sand
+        // either — the only terraforming is weather control, and that lays mud.
+        //
+        // So the one surface this fixture cannot find is the one it has to place. It
+        // goes along the shore, which is where a beach belongs, and it goes in through
+        // the same API a weather effect uses, so it takes the same route into the mesh
+        // as ground the simulation changed itself.
+        int sandCells = 0;
+
+        for (int dz = -reach; dz <= reach; dz++)
+        {
+            for (int dx = -reach; dx <= reach; dx++)
+            {
+                int x = cellX + dx;
+                int z = cellZ + dz;
+
+                // Two cells deep, so the beach is a strip wide enough to look at
+                // rather than a line of paint along the water's edge.
+                if (terrain.TypeAtCell(x, z) != TerrainType.Grass ||
+                    !(IsShore(terrain, x, z) || IsShore(terrain, x, z, 2)))
+                {
+                    continue;
+                }
+
+                terrain.SetType((z * terrain.Size) + x, TerrainType.Sand);
+                sandCells++;
+            }
+        }
+
+        Console.WriteLine($"ground-demo: laid {sandCells} cells of beach along the shore");
+
+        for (int dz = -reach; dz <= reach; dz++)
+        {
+            for (int dx = -reach; dx <= reach; dx++)
+            {
+                inFrame[(int)terrain.TypeAtCell(cellX + dx, cellZ + dz)]++;
+            }
+        }
+
+        Console.WriteLine(
+            $"ground-demo: cell {cellX},{cellZ} at {centre.X:0},{centre.Z:0} m scores {bestScore}, " +
+            $"in frame " +
+            string.Join(
+                ", ",
+                Enum.GetValues<TerrainType>()
+                    .Where(type => inFrame[(int)type] > 0)
+                    .Select(type => $"{type} {inFrame[(int)type]}")));
+
+        // A named surface overrides the choice above. The default frame is picked for
+        // variety, which makes it a good look at the ground in general and a poor look
+        // at any one kind of it: a surface judged from a frame that contains a patch of
+        // it is a surface judged at four pixels. A named one is searched for over the
+        // whole map instead, taking the widest patch of it — the patch where it is most
+        // itself rather than most bordered.
+        if (_options.GroundSurface is { } wanted &&
+            Enum.TryParse(wanted, ignoreCase: true, out TerrainType requested) &&
+            terrain.CountOf(requested) > 0)
+        {
+            (int patchX, int patchZ) = WidestPatch(terrain, requested);
+
+            centre = new Vector3(
+                (terrain.OriginMm + (patchX * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre,
+                0f,
+                (terrain.OriginMm + (patchZ * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre);
+
+            Console.WriteLine(
+                $"ground-demo: framed {requested} at {patchX},{patchZ} — {centre.X:0},{centre.Z:0} m, " +
+                $"{terrain.CountOf(requested)} cells on the map");
+        }
+        else if (_options.GroundSurface is { } missing)
+        {
+            Console.WriteLine($"ground-demo: no {missing} on this map to frame");
+        }
+
+        // The frame's own relief, because the rock treatment is a function of height
+        // and a frame with no height in it cannot show strata.
+        MiVic.Core.Terrain.HeightMap map = _simulation.World.Terrain;
+        int low = int.MaxValue;
+        int high = int.MinValue;
+
+        for (int dz = -reach; dz <= reach; dz++)
+        {
+            for (int dx = -reach; dx <= reach; dx++)
+            {
+                int height = map.SampleHeightMm(
+                    terrain.OriginMm + ((cellX + dx) * terrain.CellSizeMm),
+                    terrain.OriginMm + ((cellZ + dz) * terrain.CellSizeMm));
+
+                low = Math.Min(low, height);
+                high = Math.Max(high, height);
+            }
+        }
+
+        Console.WriteLine($"ground-demo: frame relief {low / 1000f:0.0} to {high / 1000f:0.0} m");
+
+        // Where each kind of ground sits inside the frame, so a close-up can be aimed
+        // at one surface. The default frame is two hundred metres wide and a treatment
+        // judged from that distance is a treatment judged at four pixels.
+        foreach (TerrainType type in Enum.GetValues<TerrainType>())
+        {
+            if (inFrame[(int)type] == 0)
+            {
+                continue;
+            }
+
+            (int patchX, int patchZ) = DensestPatch(terrain, cellX, cellZ, reach, type);
+
+            var patch = new Vector3(
+                (terrain.OriginMm + (patchX * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre,
+                0f,
+                (terrain.OriginMm + (patchZ * terrain.CellSizeMm) + (terrain.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre);
+
+            Console.WriteLine(
+                $"ground-demo:   {type} from {patch.X:0},{patch.Z:0} m " +
+                $"({inFrame[(int)type]} cells in frame)");
+        }
+
+        // The screenshot options win when they are given, so the fixture can be looked
+        // at from closer in, from further out and from over any patch of it without a
+        // rebuild. The observers follow the target, or a close-up would be a close-up
+        // of fog.
+        var focus = new Vector3(
+            _options.ScreenshotTargetX ?? centre.X,
+            0f,
+            _options.ScreenshotTargetZ ?? centre.Z);
+
+        _camera.ZoomTo(_options.ScreenshotZoom ?? 210f);
+        _camera.TiltTo(_options.ScreenshotPitch ?? -0.70f);
+        _camera.Yaw = _options.ScreenshotYaw ?? 0.62f;
+        _camera.FocusOn(focus);
+
+        // Eight watchers round the frame. One at the middle would leave its corners
+        // under fog, and a treatment nobody can see is a treatment drawn as fog.
+        UnitDefinition watcher = UnitCatalog.Get(UnitKind.Infantry);
+
+        for (int i = 0; i < 8; i++)
+        {
+            double angle = i * Math.PI / 4d;
+            var wanting = WorldPos.FromMetres(
+                (int)focus.X + (int)(Math.Cos(angle) * GroundFrameRadiusMetres * 0.62f),
+                0,
+                (int)focus.Z + (int)(Math.Sin(angle) * GroundFrameRadiusMetres * 0.62f));
+
+            _simulation.World.Spawn(
+                Faction.Soviet,
+                PlayerTeam,
+                UnitKind.Infantry,
+                _simulation.World.LegalSpawnSite(wanting),
+                Fix32.FromInt(watcher.SpeedMmPerTick),
+                watcher.Health);
+        }
+
+        // Two vehicles in the middle of it. The treatments are all modulations of the
+        // light, so the thing they have to be checked against is a unit: a tank that no
+        // longer stands out against the ground it is standing on is a failed treatment
+        // however good the ground looks on its own.
+        UnitDefinition tank = UnitCatalog.Get(UnitKind.Tank);
+
+        foreach ((int dx, int dz) in new[] { (-16, 12), (20, -14) })
+        {
+            _simulation.World.Spawn(
+                Faction.Western,
+                PlayerTeam,
+                UnitKind.Tank,
+                _simulation.World.LegalSpawnSite(WorldPos.FromMetres((int)focus.X + dx, 0, (int)focus.Z + dz)),
+                Fix32.FromInt(tank.SpeedMmPerTick),
+                tank.Health);
         }
     }
 

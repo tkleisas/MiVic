@@ -209,6 +209,28 @@ public sealed class InstancedRenderer : IDisposable
     }
 
     /// <summary>
+    /// Switches to the terrain technique, which gives each ground surface its own
+    /// treatment. The caller must call <see cref="Begin"/> first; <see cref="EndTerrain"/>
+    /// switches back, and it is not optional — the terrain technique classifies a
+    /// vertex colour against the terrain palette, so a unit drawn with it would be
+    /// wearing whichever surface its hull happened to resemble.
+    /// </summary>
+    public void BeginTerrain()
+    {
+        _particles = false;
+        _effect.CurrentTechnique = _effect.Techniques["Terrain"];
+        _effect.CurrentTechnique.Passes[0].Apply();
+    }
+
+    /// <summary>Returns to the lit technique after the terrain pass.</summary>
+    public void EndTerrain()
+    {
+        _particles = false;
+        _effect.CurrentTechnique = _effect.Techniques["Instanced"];
+        _effect.CurrentTechnique.Passes[0].Apply();
+    }
+
+    /// <summary>
     /// Switches to the foliage technique, which sways a mesh in the wind. The caller
     /// must call <see cref="Begin"/> first; <see cref="EndFoliage"/> switches back.
     /// </summary>

@@ -99,7 +99,7 @@ public sealed record LaunchOptions
     /// thing the fixture exists to show.
     /// </para>
     /// </summary>
-    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo;
+    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo;
 
     /// <summary>Spawns a burst of explosions at startup, so a screenshot can show the particle system.</summary>
     public bool ParticleDemo { get; init; }
@@ -115,6 +115,16 @@ public sealed record LaunchOptions
 
     /// <summary>Points the camera at the densest wood on the map, to look at the trees.</summary>
     public bool ForestDemo { get; init; }
+
+    /// <summary>Points the camera at the most varied ground on the map, to look at the surfaces.</summary>
+    public bool GroundDemo { get; init; }
+
+    /// <summary>
+    /// Names one surface for the ground fixture to frame instead of the most varied
+    /// ground: "Mud", "Sand", "Rock" and so on. A treatment is judged from a frame that
+    /// is mostly the surface it belongs to, which the varied frame is not.
+    /// </summary>
+    public string? GroundSurface { get; init; }
 
     /// <summary>When set, export one WAV per faction theme and exit.</summary>
     public string? RenderAudioPath { get; init; }
@@ -351,6 +361,21 @@ public sealed record LaunchOptions
 
                 case "--forest-demo":
                     options = options with { ForestDemo = true, ShowHelp = false, ScreenshotFrame = 60 };
+                    break;
+
+                case "--ground-demo":
+                    options = options with { GroundDemo = true, ShowHelp = false, ScreenshotFrame = 60 };
+                    break;
+
+                case "--ground-surface":
+                    options = options with
+                    {
+                        GroundDemo = true,
+                        GroundSurface = NextValue(args, ref i, arg),
+                        ShowHelp = false,
+                        ScreenshotFrame = 60,
+                    };
+
                     break;
 
                 case "--combat-demo":
