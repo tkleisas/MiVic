@@ -99,6 +99,65 @@ their own firing sounds and hits play an impact.
 
 ---
 
+## 4. Limits on what a faction can field
+
+Two constraints, both asked for, and they interact — worth designing together rather than
+one after the other.
+
+**Command capacity.** Today `UnitDefinition.MaxAlive` exists and is enforced, but exactly
+one role uses it: the Σοβιετικοί Ηλεκτροπυροβόλο is capped at two, which is the prototype
+rule working as designed. Nothing limits a *team*. The proposal is capacity granted by
+structures — a command centre supports so many units, a factory fewer — so that fielding
+more means building more, and the factions differ on a new axis: the Κινέζοι field more
+because mass production is their identity, the Σοβιετικοί fewer but better. Capacity derived
+from live structures means no new hashed state, and the enforcement point already exists in
+the queue path, so the AI inherits it.
+
+The decision that has to be made first: **the skirmish currently opens with 166 units a
+side.** A cap in the usual 60–80 range would make the opening force illegal on tick zero, so
+either the cap accommodates the opening — and is therefore decorative — or the opening
+forces shrink. The second is a real change to the skirmish and the campaign.
+
+And the AI has to build capacity when it is capped, or it stalls at its limit producing
+nothing.
+
+**Power.** Energy exists as a stockpile that accrues and is spent on construction, with
+power plants and a nuclear plant generating it. There is no persistent *draw*: nothing a
+structure owns costs anything to keep running. The proposal is a per-structure draw, with
+the command centre carrying a built-in generator so that a minimal base never blacks out —
+which sidesteps the death spiral where losing your power plant switches off the ability to
+rebuild it. When generation falls short of draw, the stockpile drains, and at zero the base
+**browns out**: systems shut down in a documented priority order — detection first, then
+defensive weapons, then production speed.
+
+Two things to note. The economy needs rebalancing if this lands: income is a few units a
+tick, and a base with five structures drawing one or two each would spend its whole income
+on standing still. And **the payoff arrives with the defensive structures** — turrets, AA
+guns, radar — which do not exist yet. What can be switched off today is production and the
+command centre's dish, and a power system with nothing to brown out is a number rather than
+a mechanic.
+
+**Generation is going to be plural, and the variants are faction and terrain specific.**
+Hydro plants must stand near water, which makes the ground under a power plant a decision
+rather than a formality — and it is the first building whose placement the terrain work
+actually constrains. Solar is available to the Κινέζοι and the Δυτικοί and not to the
+Σοβιετικοί, which leaves the Soviets on nuclear and thermal: heavier, dearer, and reliable,
+which is a fair description of how they already play.
+
+One consequence worth having deliberately: solar is the only generator whose output the
+weather could take away, and **weather control belongs to the faction that cannot build
+solar panels at all.** A Soviet weather ability that puts cloud over a Δυτικοί solar farm
+is a better use of that ability than anything it does today, and it makes the asymmetry
+bite in both directions instead of reading as a list of who may build what.
+
+Note also what hydro cannot be: the water in this game is a level rather than a body, so a
+plant can be required to stand near it but cannot draw on a current, because there is no
+flow to measure.
+
+The dish is worth more than it looks here, incidentally: it is now a **visible** thing that
+turns, so switching it off communicates itself without a UI widget, which is exactly what a
+power system needs.
+
 ## Also outstanding, from the art and rendering work
 
 Not on the list above, but open:
