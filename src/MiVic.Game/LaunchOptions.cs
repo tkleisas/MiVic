@@ -99,7 +99,7 @@ public sealed record LaunchOptions
     /// thing the fixture exists to show.
     /// </para>
     /// </summary>
-    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || EmplacementDemo || IsProbe;
+    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || EmplacementDemo || DetectionDemo || IsProbe;
 
     /// <summary>
     /// When set, run the probe script in this file and exit.
@@ -154,6 +154,13 @@ public sealed record LaunchOptions
     /// </para>
     /// </summary>
     public bool EmplacementDemo { get; init; }
+
+    /// <summary>
+    /// A defensive post whose reach comes from the radar behind it, and a stealthy enemy
+    /// walking into the line where it starts being seen. Read with the probe's own
+    /// <c>range</c>, <c>power</c>, <c>detect</c> and <c>exposure</c> queries.
+    /// </summary>
+    public bool DetectionDemo { get; init; }
 
     /// <summary>
     /// Names one surface for the ground fixture to frame instead of the most varied
@@ -442,6 +449,14 @@ public sealed record LaunchOptions
                     // and to have fired a few times: the gun's reload is two and a half
                     // seconds and the emplacement takes nine to rise.
                     options = options with { EmplacementDemo = true, ShowHelp = false, ScreenshotFrame = 260 };
+                    break;
+
+                case "--detection-demo":
+                    // Framed from above and from one side, close enough that a radar, the gun
+                    // in front of it and the stalker coming down the column are all in the
+                    // picture: the claim being looked at is a distance, and a distance needs
+                    // both ends of it in the frame.
+                    options = options with { DetectionDemo = true, ShowHelp = false, ScreenshotFrame = 200 };
                     break;
 
                 case "--render-audio":

@@ -121,6 +121,41 @@ public struct TeamState
     public int WagesPerTick;
 
     /// <summary>
+    /// Energy this team's structures generate per tick, before anything is taken out of
+    /// it. Recomputed from the buildings standing, so it is not part of the state hash —
+    /// the same reason <see cref="EnergyPerTick"/> is not.
+    /// </summary>
+    public int PowerGeneration;
+
+    /// <summary>
+    /// Energy this team's structures occupy per tick. Includes only the radars that are
+    /// actually on the air: a set that has been shed draws nothing, which is what stops a
+    /// brown-out from holding itself down. See <see cref="PowerSystem"/>.
+    /// </summary>
+    public int PowerDraw;
+
+    /// <summary>Radar stations of this team that have power and are turning.</summary>
+    public int RadarsLit;
+
+    /// <summary>Radar stations of this team that the grid cannot run. Zero in a healthy base.</summary>
+    public int RadarsDark;
+
+    /// <summary>
+    /// Energy a team would have to generate to run everything it has built. Zero when
+    /// nothing was shed, which is the only state a base is ever allowed to stay in.
+    /// </summary>
+    public int PowerShortfall;
+
+    /// <summary>
+    /// True when this team wanted more power than it generates. Detection is the first
+    /// thing shed, so this is true exactly when at least one radar is dark.
+    /// </summary>
+    public readonly bool IsDimmed => RadarsDark > 0;
+
+    /// <summary>Generation left over after this team's structures have taken their share.</summary>
+    public readonly int PowerSurplus => PowerGeneration - PowerDraw;
+
+    /// <summary>
     /// Tick each ability becomes available again, indexed by
     /// <see cref="AbilityCatalog.IndexOf"/>. Allocated by the world, one array per
     /// team, because the number of abilities is data.

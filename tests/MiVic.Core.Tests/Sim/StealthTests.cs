@@ -55,16 +55,24 @@ public sealed class StealthTests
 
         EntityId stalker = world.Spawn(Faction.Western, 2, UnitKind.StealthRecon, centre, Fix32.Zero, 1_000);
 
-        // Inside the detection radius, the stalker is no longer hidden.
+        // Inside the radius at which the tank's own eyes find a stealthed enemy, which is a
+        // third of the 130 m it sees an ordinary one at — see
+        // VisionSystem.StealthDetectionPermille. Twenty metres is well inside that, so this
+        // is a test of detection and not a test of where the boundary happens to fall.
         world.Spawn(
             Faction.Soviet,
             0,
             UnitKind.Tank,
-            new WorldPos(centre.X + (SimWorld.DetectionRadiusMm / 2), 0, centre.Z),
+            new WorldPos(centre.X + 20_000, 0, centre.Z),
             Fix32.Zero,
             5_000);
 
-        world.Step();
+        // Detection is stamped by the vision pass, which is spread over ticks: a unit
+        // contributes its disc once every UpdateInterval ticks, so a single Step is not
+        // enough for anything to have looked. It is the same stagger the fog has always
+        // had, and the reason it is now visible here is that detection reads the same grid
+        // the fog does instead of scanning for a nearby enemy on demand.
+        world.RunTicks(VisionSystem.UpdateInterval);
 
         Assert.False(world.IsHiddenFrom(0, stalker.Slot), "A nearby enemy failed to detect it.");
     }

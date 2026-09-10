@@ -266,6 +266,18 @@ public sealed class ProbeRunner
             case "hud":
                 Hud(command);
                 break;
+            case "range":
+                Range(command);
+                break;
+            case "power":
+                Power(command);
+                break;
+            case "detect":
+                Detect(command);
+                break;
+            case "exposure":
+                Exposure(command);
+                break;
             case "expect":
                 Expect(command);
                 break;
@@ -273,7 +285,8 @@ public sealed class ProbeRunner
                 throw new ProbeException(
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
                     "surfaces, attributes, units, unit, count, parts, model, visible, events, bridge, " +
-                    "structure, structures, bridges, block, blast, arm, hover, click, hud, expect");
+                    "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
+                    "range, power, detect, exposure, expect");
         }
     }
 
@@ -1400,6 +1413,139 @@ public sealed class ProbeRunner
             $"({ProbeFormat.Metres(entity.SpeedMmPerTick.ToFloat() / WorldPos.MmPerMetre)} per tick)");
         Emit($"query:   structure  building {(definition.IsBuilding ? "yes" : "no")}, queued {ProbeFormat.Count(entity.QueueLength, "job")}, construction {DescribeConstruction(ref entity)}");
         Emit($"query:   render     {(visible ? "drawn" : "not drawn (fog or stealth)")}, camera at {ProbeFormat.Metres(Vector3.Distance(camera.Position, SimBridge.ToMetres(entity.Position)))}");
+    }
+
+    /// <summary>
+    /// The sensor chain for one entity: what it can see, what it can shoot, and how far a
+    /// radar is pushing both.
+    /// <para>
+    /// This is the verb the detection work is read with. Detection and firing range are two
+    /// different numbers in this engine and the difference between them is the whole of the
+    /// radar, so a report that showed only the weapon's range would show a gun that is always
+    /// at full reach — which is exactly the thing that is no longer true.
+    /// </para>
+    /// </summary>
+    private void Range(ProbeCommand command)
+    {
+        int slot = command.Whole(0, "a slot number", "range <slot>", 0, MaxSlot);
+        SimWorld world = _host.Simulation.World;
+
+        if (!world.IsAliveSlot(slot))
+        {
+            throw new ProbeException($"slot {slot} holds nothing alive — range <slot>; `units` lists what does");
+        }
+
+        ref Entity entity = ref world.GetRefBySlot(slot);
+        UnitDefinition definition = UnitCatalog.Get(entity.Kind);
+
+        int eyes = VisionSystem.SensorRadiusMm(world, in entity);
+        int finds = (eyes * VisionSystem.StealthDetectionPermille) / 1_000;
+        int reach = CombatSystem.EngagementRadiusMm(world, slot);
+        bool covered = world.Radars.Covers(world, entity.TeamId, entity.Position);
+
+        Emit($"query: range {slot} {ProbeLabels.KindName(entity.Kind)} {ProbeFormat.Ground(entity.Position)}");
+        Emit(
+            $"query:   gun        {(definition.IsArmed ? ProbeFormat.Millimetres(definition.AttackRangeMm) : "unarmed")}, " +
+            $"{definition.AttackDamage} damage every {ProbeFormat.Count(definition.AttackCooldownTicks, "tick")}");
+        Emit($"query:   eyes       {ProbeFormat.Millimetres(eyes)} — as far as its own sensors reach");
+        Emit($"query:   stealth    {ProbeFormat.Millimetres(finds)} — as far as they find a hidden enemy");
+        Emit($"query:   radar      {(covered ? "under coverage" : "not under coverage")}, team {entity.TeamId} has " +
+             $"{ProbeFormat.Count(world.Radars.Count(entity.TeamId), "radar")} on the air");
+        Emit($"query:   reach      {ProbeFormat.Millimetres(reach)} — the furthest it can engage anything at");
+
+        if (entity.Kind == UnitKind.RadarStation)
+        {
+            Emit(
+                $"query:   coverage   {(world.IsRadarLit(slot) ? ProbeFormat.Millimetres(VisionSystem.RadarCoverageMm) : "none — the grid cannot run it")}");
+        }
+    }
+
+    /// <summary>
+    /// The power ledger for a team: what it generates, what its structures take, and which of
+    /// its radars the grid can therefore run.
+    /// </summary>
+    private void Power(ProbeCommand command)
+    {
+        int team = (int)command.OptionalNumber(0, 0f, "a team number", "power [team]");
+
+        if ((uint)team >= SimConstants.TeamCount)
+        {
+            throw new ProbeException($"team {team} is not one of the {SimConstants.TeamCount} — power [team]");
+        }
+
+        TeamState state = _host.Simulation.World.Team(team);
+
+        Emit($"query: power team {team}");
+        Emit($"query:   generation {state.PowerGeneration} Ε per tick, from the structures standing");
+        Emit($"query:   draw       {state.PowerDraw} Ε per tick, including the radars that are on");
+        Emit($"query:   surplus    {state.PowerSurplus} Ε per tick");
+        Emit($"query:   radars     {state.RadarsLit} lit, {state.RadarsDark} dark, {state.PowerShortfall} Ε short of running them all");
+        Emit($"query:   brown-out  {(state.IsDimmed ? PowerSystem.DimmedReason(state) : "none")}");
+    }
+
+    /// <summary>
+    /// Whether one team can see one entity, and which of the three channels says so. The
+    /// stealth check is the interesting one: the same entity can be inside a team's sight and
+    /// outside its detection, which is what being stealthed means.
+    /// </summary>
+    private void Detect(ProbeCommand command)
+    {
+        int team = command.Whole(0, "a team number", "detect <team> <slot>", 0, SimConstants.TeamCount - 1);
+        int slot = command.Whole(1, "a slot number", "detect <team> <slot>", 0, MaxSlot);
+        SimWorld world = _host.Simulation.World;
+
+        if (!world.IsAliveSlot(slot))
+        {
+            throw new ProbeException($"slot {slot} holds nothing alive — detect <team> <slot>; `units` lists what does");
+        }
+
+        ref Entity entity = ref world.GetRefBySlot(slot);
+        int cell = world.Navigation.IndexOfWorld(entity.Position);
+        bool hidden = world.IsHiddenFrom(team, slot);
+        bool visible = world.Visibility.IsVisible(team, cell);
+        bool detected = world.Visibility.IsDetected(team, cell);
+        bool friendly = entity.TeamId == team;
+
+        Emit(
+            $"query: detect {slot} {entity.Faction.ToString().ToLowerInvariant()}/{ProbeLabels.KindName(entity.Kind)} " +
+            $"at {ProbeFormat.Ground(entity.Position)} against team {team}");
+        Emit($"query:   hidden     {(hidden ? "yes — no weapon of team " + team + " may engage it" : "no")}");
+        Emit($"query:   sight      the cell is {(visible ? "visible" : "not visible")} to team {team}");
+        Emit($"query:   detection  the cell is {(detected ? "detected" : "not detected")} by team {team}, which is the channel stealth is hidden from");
+        Emit($"query:   revealed   {(entity.RevealedUntilTick > world.Tick ? $"yes, until tick {entity.RevealedUntilTick} — it fired" : "no")}, own team {friendly}");
+
+        if (hidden && entity.RevealedUntilTick == 0)
+        {
+            Emit($"query:   that means {(visible ? "the ground is watched and the unit is not on it" : "nobody of team " + team + " is looking closely enough")}");
+        }
+    }
+
+    /// <summary>
+    /// What one team knows about a point on the ground: whether it is watched, whether it is
+    /// detected, and whether a powered radar of that team covers it. Asked of a place rather
+    /// than of a unit, so a boundary can be walked across one query at a time.
+    /// </summary>
+    private void Exposure(ProbeCommand command)
+    {
+        int team = command.Whole(0, "a team number", "exposure <team> <x> <z>", 0, SimConstants.TeamCount - 1);
+        float x = command.Number(1, "an x in metres", "exposure <team> <x> <z>");
+        float z = command.Number(2, "a z in metres", "exposure <team> <x> <z>");
+        SimWorld world = _host.Simulation.World;
+
+        var point = new WorldPos((int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre));
+        int cell = world.Navigation.IndexOfWorld(point);
+
+        if (cell < 0)
+        {
+            throw new ProbeException($"({x}, {z}) m is off the map — exposure <team> <x> <z>, and the map is +-300 m");
+        }
+
+        bool covered = world.Radars.Covers(world, team, point);
+
+        Emit($"query: exposure ({x:0.#}, {z:0.#}) m against team {team}, cell {cell % world.Navigation.Size},{cell / world.Navigation.Size}");
+        Emit($"query:   radar      {(covered ? "inside a powered radar's coverage" : "outside every radar team " + team + " has on the air")}");
+        Emit($"query:   sight      the cell is {(world.Visibility.IsVisible(team, cell) ? "visible" : "not visible")} to team {team}");
+        Emit($"query:   detection  the cell is {(world.Visibility.IsDetected(team, cell) ? "detected" : "not detected")} by team {team}");
     }
 
     private static string DescribeAttack(SimWorld world, ref Entity entity, UnitDefinition definition)

@@ -376,9 +376,16 @@ a strategic commitment rather than a button:
   expensive, excellent units: you cannot shoot what you cannot see. Built as
   `UnitDefinition.Stealthy` and the **Καταδρομέας** (fast, hard-hitting, fragile,
   Δυτικοί-only, era V). A stealthed unit is hidden from an enemy team until it
-  fires — a shot sets `Entity.RevealedUntilTick` for 100 ticks — or until one of
-  that team's units comes within 40 m. Hidden units are not targetable and are not
-  drawn, so the mechanic applies to the simulation and the interface alike.
+  fires — a shot sets `Entity.RevealedUntilTick` for 100 ticks — or until that team
+  has looked *closely* at the ground it stands on: every sensor stamps two discs into
+  the visibility grid, its sight and half of it, and a hidden unit is seen by the
+  second one only. Detecting a stalker is therefore a smaller radius than seeing a
+  tank, and the radius is not fixed: a 40 m constant became each role's own eyes,
+  which is 85 m for a Πυροβολείο and 130 m under a Σταθμός Ραντάρ — past the 120 m
+  the stalker itself shoots at, so under an umbrella the defence fires first. Hidden
+  units are not targetable and are not drawn, so the mechanic applies to the
+  simulation and the interface alike. See `docs/PROBE.md`,
+  `tools/probe/detection.probe`.
 
 Abilities are data in `AbilityCatalog` and resolved by `SimWorld.TryUseAbility`,
 which validates faction, era, prerequisite project, prerequisite structure,

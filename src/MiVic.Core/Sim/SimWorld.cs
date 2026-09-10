@@ -26,6 +26,7 @@ public sealed class SimWorld
     private readonly PathFinder _pathFinder;
     private readonly SpatialIndex _spatial;
     private readonly VisibilityGrid _visibility;
+    private readonly PowerSystem.RadarNetwork _radars;
     private readonly List<SimCommand> _commandQueue = new();
     private readonly List<SimCommandRecord> _recordedCommands = [];
     private ObjectiveState[] _objectives = [];
@@ -76,6 +77,7 @@ public sealed class SimWorld
         _teams = new TeamState[SimConstants.TeamCount];
         _spatial = new SpatialIndex(capacity, SimConstants.MapExtentMm);
         _visibility = new VisibilityGrid(Navigation.Size);
+        _radars = new PowerSystem.RadarNetwork(capacity);
 
         // Every faction starts able to build its tier-1 hardware: infantry and
         // structures. Research raises the tier from there.
@@ -112,6 +114,13 @@ public sealed class SimWorld
 
     /// <summary>Per-team visibility and explored map.</summary>
     public VisibilityGrid Visibility => _visibility;
+
+    /// <summary>
+    /// The radar stations each team has on the air, and the coverage they project.
+    /// Rebuilt every tick from the structures standing and the generation available, so
+    /// what a radar covers is never stored state that a replay could disagree about.
+    /// </summary>
+    public PowerSystem.RadarNetwork Radars => _radars;
 
     /// <summary>How the battle ended; <see cref="GameOutcome.Ongoing"/> while it lasts.</summary>
     public GameOutcome Outcome { get; private set; }
@@ -619,6 +628,11 @@ public sealed class SimWorld
             Profiler.Mark(ref Profiler.Ai, ref Profiler.WorstAi);
             _spatial.Rebuild(this);
             Profiler.Mark(ref Profiler.Spatial, ref Profiler.WorstSpatial);
+
+            // Power is decided before anything that depends on it: a radar that the grid
+            // cannot run stamps no coverage into the fog and extends nobody's reach, and
+            // the vision system is what stamps it.
+            PowerSystem.Tick(this);
             VisionSystem.Tick(this);
             Profiler.Mark(ref Profiler.Vision, ref Profiler.WorstVision);
             EconomySystem.Tick(this);
@@ -921,16 +935,23 @@ public sealed class SimWorld
         return true;
     }
 
-    /// <summary>How close a hostile unit must be to spot a stealthed one, in millimetres.</summary>
-    public const int DetectionRadiusMm = 40_000;
-
     /// <summary>Ticks a stealthed unit stays visible after it fires.</summary>
     public const int StealthRevealTicks = 100;
 
     /// <summary>
     /// True when <paramref name="slot"/> cannot be seen by <paramref name="viewerTeam"/>:
-    /// it is stealthed, it is not the viewer's own, it has not just fired, and no
-    /// unit of the viewer's team is close enough to detect it.
+    /// it is stealthed, it is not the viewer's own, it has not just fired, and no sensor of
+    /// the viewer's team has looked closely enough at the ground it is standing on.
+    /// <para>
+    /// <b>The last clause is a lookup and not a search.</b> This used to walk every live
+    /// entity of the team and test a fixed radius against each, which meant the answer to
+    /// "can team 0 see the stalker" came from a different place than the answer to "can team
+    /// 0 see that cell" — and the two were free to disagree the moment anything changed how
+    /// far a unit could see. <see cref="VisionSystem"/> now stamps the close-detection disc
+    /// into the same grid it stamps the sight disc into, from the same radius, on the same
+    /// tick, so a radar that lights a cell is a radar that can find a man standing on it,
+    /// and there is exactly one place in the engine that decides what a team knows.
+    /// </para>
     /// </summary>
     public bool IsHiddenFrom(int viewerTeam, int slot)
     {
@@ -951,36 +972,19 @@ public sealed class SimWorld
             return false;
         }
 
-        return !HasDetectorNear(viewerTeam, target.Position);
+        int cell = Navigation.IndexOfWorld(target.Position);
+
+        return cell < 0 || !_visibility.IsDetected(viewerTeam, cell);
     }
 
-    /// <summary>True when any live unit of the team is within detection range.</summary>
-    private bool HasDetectorNear(int team, WorldPos position)
-    {
-        long radiusSquared = (long)DetectionRadiusMm * DetectionRadiusMm;
-
-        for (int slot = 0; slot < _entities.Length; slot++)
-        {
-            if (!IsAliveSlot(slot))
-            {
-                continue;
-            }
-
-            ref Entity watcher = ref _entities[slot];
-
-            if (watcher.TeamId != team)
-            {
-                continue;
-            }
-
-            if (watcher.Position.DistanceSquaredTo(position) <= radiusSquared)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    /// <summary>
+    /// True when a radar station is on the air: it exists, and the team's generation is
+    /// still covering it. The one question the client asks about a dish.
+    /// </summary>
+    public bool IsRadarLit(int slot)
+        => IsAliveSlot(slot) &&
+           _entities[slot].Kind == UnitKind.RadarStation &&
+           _radars.IsLit(_entities[slot].TeamId, slot);
 
     /// <summary>True when the slot holds a structure that has finished being raised.</summary>
     public bool IsComplete(int slot)

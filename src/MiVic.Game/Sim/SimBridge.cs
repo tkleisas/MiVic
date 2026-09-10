@@ -346,6 +346,141 @@ public sealed class SimBridge
     }
 
     /// <summary>
+    /// A defensive post whose reach depends on a radar, a radar whose reach depends on the
+    /// grid, and a stealthy enemy walking across the line where it starts being seen.
+    /// <para>
+    /// <b>Everything stands on the map's centre column, x = 0.</b> That is not a style
+    /// choice: the western half of this map is a sea with a band of lava and snow across the
+    /// middle, and the distances this fixture is built out of — a gun that sees 170 m and
+    /// shoots 200, a radar that covers 260, a stalker that is found at half of whichever
+    /// applies — only mean anything if the ground under them is the same ground. The centre
+    /// column came out of the generator as open land from one end to the other, and using it
+    /// means no unit in the demonstration is standing in a crater, blinded by snow or floating
+    /// in the sea.
+    /// </para>
+    /// <para>
+    /// The line-up, up the column from the south:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>a Καταδρομέας at z = −265, walking north to z = −235: it starts 145 m from the
+    /// radar — outside the 130 m the radar finds a hidden enemy at — and crosses that line
+    /// while it is still 180 m from the gun, so nothing it does can reveal it. What catches
+    /// it is the radar and only the radar.</item>
+    /// <item>the radar itself at z = −120, and the Πυροβολείο it serves at z = −70, fifty
+    /// metres in front of it.</item>
+    /// <item>a tank at z = 120, held at 190 m from the gun: inside the gun's 200 m and outside
+    /// the 170 m it can see, so it is engaged only for as long as the radar is looking.</item>
+    /// <item>the base — headquarters, power plant, two factories and a design bureau — 100 m
+    /// off the column, because a factory's own eyes reach 65 m for a hidden enemy and a
+    /// demonstration of what the radar finds would be worthless if something else found it
+    /// first.</item>
+    /// </list>
+    /// <para>
+    /// The ledger is the other half of it: 6 Ε of standby from the headquarters and 10 from the
+    /// power plant against 4 + 4 + 3 of industry, which leaves exactly 1 Ε spare and one radar
+    /// running. One more factory is therefore enough to shed it, which is what the probe does
+    /// to this scene — build industry, watch the dish stop and the gun lose thirty metres.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateDetectionDemo(ulong seed)
+    {
+        var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
+
+        SimWorld world = bridge.World;
+        Clear(world);
+
+        ref TeamState state = ref world.TeamRef(0);
+        state.TechTier = 1;
+        state.Materials = 6_000;
+        state.Energy = 2_000;
+        state.Water = 4_000;
+
+        // The base, well off the column and up it. The clearance is the point, twice over: a
+        // stalker is revealed the moment it fires and its own weapon reaches 120 m, so every
+        // friendly structure has to stand further from its path than that; and the middle of
+        // this map is a band of lava, which would have burned a power plant a hit point at a
+        // time for the whole run and left the demonstration's own ledger looking damaged.
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.CommandCentre, 240, -60);
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.PowerPlant, 240, 0);
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.Factory, 240, 60);
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.Factory, 240, 120);
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.DesignBureau, 240, 180);
+
+        // The post: the radar first, so it is the lower slot and the ledger lights it first.
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.RadarStation, 0, -120);
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.GunEmplacement, 0, -70);
+
+        // The tank up the column, and the stalker coming down it. Both are targets rather than
+        // combatants — see SpawnTarget — because a subject that dies in the middle of a
+        // measurement cannot be asked about the rest of it.
+        //
+        // And both stand on the neutral fourth team, which no faction owns and the computer
+        // does not play. That is not tidiness: the computer opponent owns team 2, and an
+        // opponent that has a headquarters orders the armour standing near it to gather, which
+        // would walk the 190 m this whole demonstration is measured at out of the experiment.
+        SpawnTarget(world, Faction.Western, NeutralTeam, UnitKind.Tank, 0, 120, MeasurementHealth);
+
+        // And a Δυτικοί headquarters, far away and doing nothing, because a world with only one
+        // side left in it is a world the victory system calls within a few seconds — and the
+        // banner it raises across the middle of the frame is drawn over the very ring this scene
+        // exists to photograph. Its team is given nothing to spend, so the computer opponent
+        // that owns it has a base and no army and stays out of the way.
+        SpawnAbsolute(world, Faction.Western, 2, UnitKind.CommandCentre, -140, 220);
+        world.TeamRef(2).Materials = 0;
+        world.TeamRef(2).Water = 0;
+        world.TeamRef(2).Energy = 0;
+        world.TeamRef(1).Materials = 0;
+        world.TeamRef(1).Water = 0;
+        world.TeamRef(1).Energy = 0;
+
+        EntityId stalker = SpawnTarget(
+            world, Faction.Western, NeutralTeam, UnitKind.StealthRecon, 0, -265, MeasurementHealth);
+
+        // North to 125 m from the radar, which is inside the 130 m the radar finds it at and
+        // outside the 120 m its own weapon reaches. It is the whole reason this walk is
+        // scripted rather than left to a destination: a stalker that walked five metres further
+        // would open fire on the radar, be revealed by its own muzzle, and the demonstration
+        // would be showing a firing reveal while claiming to show a sensor.
+        world.OrderMove(stalker, WorldPos.GroundMetres(0, -245), NeutralTeam);
+
+        return bridge;
+    }
+
+    /// <summary>
+    /// Hit points for the two subjects of the detection demonstration: enough to survive the
+    /// whole run.
+    /// <para>
+    /// A Πυροβολείο does 45 damage every fifty ticks, and the demonstration lasts several
+    /// hundred — so a catalogue-health tank would be destroyed about a third of the way
+    /// through and the interesting part, what happens to it when the radar goes dark, would
+    /// have no subject left to happen to. Nothing else about them is changed: same speed, same
+    /// weapons, same factions.
+    /// </para>
+    /// </summary>
+    private const int MeasurementHealth = 100_000;
+
+    /// <summary>
+    /// The team the measurement subjects stand on: the fourth slot, which carries no faction and
+    /// is played by nobody. Enemies of everybody, ordered about by nobody.
+    /// </summary>
+    private const int NeutralTeam = 3;
+
+    /// <summary>Spawns one unit at an exact position with hit points of the caller's choosing.</summary>
+    private static EntityId SpawnTarget(
+        SimWorld world, Faction faction, int team, UnitKind kind, int x, int z, int health)
+    {
+        UnitDefinition definition = UnitCatalog.Get(kind);
+
+        return world.Spawn(
+            faction,
+            team,
+            kind,
+            WorldPos.GroundMetres(x, z),
+            Fix32.FromInt(definition.SpeedMmPerTick),
+            health);
+    }
+
+    /// <summary>
     /// The largest patch of open ground on the map, as a cell index and the number of open
     /// cells within <paramref name="metres"/> of it.
     /// <para>

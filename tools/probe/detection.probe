@@ -1,0 +1,119 @@
+# Q: does a radar give the guns behind it their reach — and what is left of a defensive line
+#    when the grid can no longer run the set?
+#
+#   MiVic.Game.exe --probe tools/probe/detection.probe --probe-out artifacts/probe/detection.txt --detection-demo
+#
+# The scene is SimBridge.CreateDetectionDemo, which is built for exactly this reading and
+# nothing else. Up the map's centre column: a Καταδρομέας at z = -265 walking north, a
+# Σταθμός Ραντάρ at z = -120 and the Πυροβολείο it serves at z = -70, a Δυτικοί tank held at
+# 190 m from the gun, and — 240 m off the column, where nothing it does can be confused with
+# the sensor — a base of a headquarters, a power plant, two factories and a design bureau.
+#
+# The slots are the fixture's own and are stable: the spawn helper hands out the lowest free
+# slot first, so the subject it creates last is slot 500 and the gun and radar it creates
+# before them are 503 and 504. `units` at the top of any reading shows them.
+#
+# The three claims, in the order they are read:
+#   1. a Πυροβολείο sees 170 m and shoots 200, so the tank at 190 m is engaged on the first
+#      tick *because the radar is looking*, and would not be engaged at all without one;
+#   2. a radar finds a hidden enemy at half its radius — 130 m, which is ten metres past the
+#      120 m that enemy's own weapon reaches, so under an umbrella the defence shoots first;
+#   3. one more factory is more load than the grid has, and the radar is what is shed. The
+#      gun's reach falls to 170 m, the tank is let go, and the dish stops where it stood.
+
+# --- the ledger, and the post: the gun's reach, and the radar that is the reason for it -----
+tick 1
+power 0
+range 503
+range 504
+
+# --- the stalker walking down the column, and the line it stops being invisible at ----------
+# Three readings as it closes on the radar: 145 m, 133 m, 128 m. It never comes within the
+# 120 m its own weapon reaches, so the change from hidden to seen is the radar's doing and not
+# a firing reveal wearing a detection's clothes.
+detect 0 500
+tick 20
+detect 0 500
+tick 10
+detect 0 500
+tick 10
+detect 0 500
+
+# --- what the team knows about the tank's ground, now that the grid has been stamped --------
+# The tank is 240 m from the radar: inside its coverage, and outside the 170 m the gun's own
+# eyes reach, which is the gap the radar fills.
+exposure 0 0 120
+exposure 0 0 160
+
+# --- the gun shooting it, from the first tick, with no order from anybody -------------------
+tick 100
+unit 502
+unit 503
+events 4
+
+# --- what the ring looks like while the radar is lit ----------------------------------------
+# The click selects the gun, which is what puts its reach on the ground: 200 m of it, the
+# whole of the weapon, because the radar behind it is looking. Photographed without the HUD,
+# because a panel over the frame is a panel over the answer.
+focus 0 -70
+zoom 640
+pitch -1.30
+yaw 0
+hover 0 -70
+click
+settle
+shot artifacts/probe/detection-covered.png
+
+# --- and ninety ticks later, still shooting -------------------------------------------------
+tick 90
+unit 502
+
+# --- one more factory, which is more load than the grid has --------------------------------
+structure Factory 200 -140 0 build
+tick 300
+power 0
+range 503
+exposure 0 0 120
+
+# --- and the player is told, in Greek, without having to work it out from a stopped dish -----
+hud
+
+# --- the gun has let it go, and it has stopped being hit -----------------------------------
+unit 503
+unit 502
+tick 60
+unit 502
+events 4
+
+# --- and the dish has stopped where it stood -------------------------------------------------
+# Two samples forty ticks apart. Before the brown-out this part was turning at 1.1 degrees a
+# tick, which is what tools/probe/radar.probe measures; here the second sample reports that no
+# motion was applied at all, on the same part of the same model.
+parts 504 radar
+tick 40
+parts 504 radar
+
+# --- what the same ring looks like when the radar is dark -----------------------------------
+# Same gun, same camera, same question: the ring is 30 m smaller, and the notice the HUD puts
+# at the bottom of the frame says why, in Greek. The `hud` line above is the same sentence the
+# player is reading.
+hud on
+focus 0 -70
+zoom 640
+pitch -1.30
+yaw 0
+hover 0 -70
+click
+settle
+shot artifacts/probe/detection-dark.png
+
+# --- the ledger of measurements --------------------------------------------------------------
+# Written down as the numbers they were read as. A Πυροβολείο's gun is 200 m and its eyes are
+# 170: the tank at 190 m is outside the second and inside the first, so the engagement, and the
+# loss of it, is entirely the radar's.
+expect "the gun's own eyes" 170.0 170.0 0
+expect "the gun's gun" 200.0 200.0 0
+expect "with the radar lit, its reach is the whole of the gun" 200.0 200.0 0
+expect "a radar covers 260 m" 260.0 260.0 0
+expect "and finds a hidden enemy at half of it" 130.0 130.0 0
+expect "with the radar dark, its reach is its eyes" 170.0 170.0 0

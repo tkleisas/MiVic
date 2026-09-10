@@ -34,7 +34,53 @@ public static class CombatSystem
     /// </summary>
     private const int HeldTargetReachMm = 1_000_000_000;
 
-    /// <summary>Runs one combat tick.</summary>
+    /// <summary>
+    /// The furthest this structure can engage anything at, right now, in millimetres — zero
+    /// for a role with no gun on it or one that is still being raised.
+    /// <para>
+    /// It is the same chain <see cref="CanEngage"/> walks, answered as a distance instead of as
+    /// a yes: the weapon's range, capped by the shooter's own eyes unless a powered radar
+    /// covers the ground it stands on. A Πυροβολείο therefore reports 170 m on its own and
+    /// 200 m under an umbrella, and that difference is the whole reason a Σταθμός Ραντάρ is
+    /// worth 240 Π.
+    /// </para>
+    /// <para>
+    /// It exists so the interface can draw the reach without deriving it. A ring drawn from a
+    /// second copy of this arithmetic is a ring that will one day disagree with the gun — and
+    /// "the circle said I could shoot it" is the kind of bug a player never forgives. The
+    /// figure is the <em>furthest</em> the weapon reaches, which is the radius of a circle
+    /// rather than the exact shape of the reach: under an umbrella the last few metres of it
+    /// exist only where the radar also paints, and a ring that showed that would be a
+    /// crescent.
+    /// </para>
+    /// </summary>
+    public static int EngagementRadiusMm(SimWorld world, int slot)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        if (!world.IsAliveSlot(slot))
+        {
+            return 0;
+        }
+
+        ref Entity entity = ref world.GetRefBySlot(slot);
+        UnitDefinition weapon = UnitCatalog.Get(entity.Kind);
+
+        if (!weapon.IsArmed || (weapon.IsBuilding && !world.IsComplete(slot)))
+        {
+            return 0;
+        }
+
+        int eyes = VisionSystem.SensorRadiusMm(world, in entity);
+
+        return world.Radars.Covers(world, entity.TeamId, entity.Position)
+            ? weapon.AttackRangeMm
+            : Math.Min(weapon.AttackRangeMm, eyes);
+    }
+
+    /// <summary>
+    /// Resolves one combat tick.
+    /// </summary>
     public static void Tick(SimWorld world)
     {
         ArgumentNullException.ThrowIfNull(world);
@@ -85,9 +131,13 @@ public static class CombatSystem
             // Validate the current target; a dead or illegal one is dropped. A held
             // target is allowed to be out of reach — see CanEngage — because a unit
             // under an attack order is on its way to it, and the order would be thrown
-            // away by the first tick the enemy stepped back.
+            // away by the first tick the enemy stepped back. It is also allowed to be
+            // one this weapon cannot currently *see*: losing sight of a target is not
+            // the same as being done with it, and a gun whose radar has just gone dark
+            // should go quiet for as long as the power is out and open up again when it
+            // comes back, rather than forget what it was shooting at.
             if (attacker.TargetSlot >= 0 &&
-                !CanEngage(world, ref attacker, attacker.TargetSlot, weapon, HeldTargetReachMm))
+                !CanEngage(world, ref attacker, attacker.TargetSlot, weapon, HeldTargetReachMm, mustSee: false))
             {
                 attacker.TargetSlot = -1;
                 attacker.HasAttackOrder = false;
@@ -115,7 +165,12 @@ public static class CombatSystem
 
             ref Entity target = ref world.GetRefBySlot(attacker.TargetSlot);
 
-            if (!InRange(ref attacker, ref target, weapon.AttackRangeMm))
+            // Firing asks the same question acquisition asked, with the weapon's own range:
+            // a gun shoots what it can both reach *and* see, and nothing else. The two used
+            // to be a bare range test here and the full predicate there, which was harmless
+            // while reach and sight could not part company — and they can now, because a
+            // radar can be switched off under a gun that is already shooting.
+            if (!CanEngage(world, ref attacker, attacker.TargetSlot, weapon, weapon.AttackRangeMm))
             {
                 // An ordered attack closes the distance; auto-acquired targets do
                 // not drag a unit across the map.
@@ -322,23 +377,28 @@ public static class CombatSystem
     /// <para>
     /// Everything that decides it lives here — whether the slot holds a live enemy, whether
     /// the attacker can see it at all, what class of thing the weapon is allowed to shoot,
-    /// and whether it is close enough — so that "in range" and "the right kind of target"
-    /// are one predicate rather than two tests that a caller can forget to pair. The two
-    /// bugs this shape prevents are the obvious ones: a gun that shoots aircraft because
-    /// the air clause was left out of one of the two call sites, and an anti-aircraft
+    /// and whether it is close enough — so that "in range", "the right kind of target" and
+    /// "actually visible" are one predicate rather than three tests that a caller can forget
+    /// to pair. The bugs this shape prevents are the obvious ones: a gun that shoots aircraft
+    /// because the air clause was left out of one of the two call sites, and an anti-aircraft
     /// emplacement that kills tanks for the same reason.
     /// </para>
     /// <para>
-    /// <b>This is where the sensor chain will land.</b> What is being built today is a
-    /// firing range and a target class, which is all this engine has. The direction of
-    /// travel is that a structure detects as well as fires: a detection radius that is not
-    /// the same number as its range, stealthy vehicles and aircraft detected at a smaller
-    /// one, and a radar structure extending detection over an area while drawing power —
-    /// at which point vision, detection, acquisition and fire become a chain rather than a
-    /// single comparison. All of that belongs inside this method, in the clause about
-    /// whether the attacker can see the target, and in the <paramref name="reachMm"/> the
-    /// caller passes. Nothing about it is half-built here: no detection field is set by
-    /// anything, because a field nothing writes is a feature that never happens.
+    /// <b>Detection is not firing range, and this is where the difference is settled.</b> A
+    /// weapon reaches <paramref name="reachMm"/>, and it may fire at what it can see within
+    /// that. What it can see is the sensor chain: the shooter's own eyes —
+    /// <see cref="VisionSystem.SensorRadiusMm"/>, the same number the fog is drawn from — or,
+    /// failing that, a friendly radar's coverage over <em>both</em> the shooter and the
+    /// target. So a Πυροβολείο's 200 m of gun is worth 170 m on its own and the whole 200
+    /// under a Σταθμός Ραντάρ, which is what makes a radar a multiplier for the guns around
+    /// it instead of a lone sensor in a corner.
+    /// </para>
+    /// <para>
+    /// The radar clause asks the question of the ground rather than of the shooter, and both
+    /// ends of the shot have to be inside the same umbrella: a gun may shoot anything the
+    /// radar paints, and nothing a radar standing next to it does not. That is deliberately
+    /// stricter than "the shooter is under coverage", because the alternative lets a gun at
+    /// the edge of the umbrella reach 200 m in the one direction nobody is looking.
     /// </para>
     /// </summary>
     /// <param name="world">The world both of them stand in.</param>
@@ -352,12 +412,19 @@ public static class CombatSystem
     /// questions sharing one body: the held target may legitimately be out of reach while
     /// the attacker closes on it.
     /// </param>
+    /// <param name="mustSee">
+    /// Whether the sensor chain has to be satisfied. True for everything a weapon is about to
+    /// do — acquiring and firing — and false for the one question that is only about
+    /// remembering: a unit under an attack order keeps its target while it cannot see it,
+    /// because the order outlives the radar that was helping it.
+    /// </param>
     private static bool CanEngage(
         SimWorld world,
         ref Entity attacker,
         int slot,
         in UnitDefinition weapon,
-        int reachMm)
+        int reachMm,
+        bool mustSee = true)
     {
         if (!world.IsAliveSlot(slot))
         {
@@ -372,10 +439,9 @@ public static class CombatSystem
         }
 
         // A stealthed enemy is not a target until it fires or something gets close
-        // enough to detect it. This is the whole of detection in this engine today, and
-        // it is already per-viewer rather than per-shooter: what will change is that a
-        // structure's own detection radius, and a radar's coverage of the ground around
-        // it, become part of the same answer.
+        // enough to detect it. The answer comes from the visibility grid, which is the
+        // same grid the fog is built from, so a cell the player can see is a cell the
+        // guns can shoot into and the two cannot drift apart.
         if (world.IsHiddenFrom(attacker.TeamId, slot))
         {
             return false;
@@ -391,7 +457,39 @@ public static class CombatSystem
             return false;
         }
 
-        return InRange(ref attacker, ref target, reachMm);
+        if (!InRange(ref attacker, ref target, reachMm))
+        {
+            return false;
+        }
+
+        return !mustSee || InSensorChain(world, ref attacker, target.Position);
+    }
+
+    /// <summary>
+    /// True when the point a weapon is aiming at is in view of the side that owns the weapon:
+    /// inside the shooter's own eyes, or inside a powered radar's coverage that covers the
+    /// shooter as well.
+    /// <para>
+    /// Both halves go through <see cref="VisionSystem"/> and <see cref="PowerSystem"/>, which
+    /// own the two numbers respectively — one role's sensor radius, and which radars the grid
+    /// can run. Nothing here re-derives either, which is what keeps "how far can this gun
+    /// shoot" and "what can this team see" the same question asked twice rather than two
+    /// questions that happen to have similar answers.
+    /// </para>
+    /// </summary>
+    private static bool InSensorChain(SimWorld world, ref Entity attacker, WorldPos target)
+    {
+        int sensor = VisionSystem.SensorRadiusMm(world, in attacker);
+        int dx = attacker.Position.X - target.X;
+        int dz = attacker.Position.Z - target.Z;
+
+        if (((long)dx * dx) + ((long)dz * dz) <= (long)sensor * sensor)
+        {
+            return true;
+        }
+
+        return world.Radars.Covers(world, attacker.TeamId, attacker.Position) &&
+               world.Radars.Covers(world, attacker.TeamId, target);
     }
 
     /// <summary>

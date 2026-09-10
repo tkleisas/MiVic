@@ -261,6 +261,28 @@ public static class UnitCatalog
         new(UnitKind.AntiAirEmplacement, 200, 45, 200, 1_200, 0, 2, UnitKind.CommandCentre, true,
             30, 180_000, 12, true, 60, CanHitGround: false,
             FootprintRadiusCells: 1),
+
+        // Σταθμός Ραντάρ: the first structure in the game with no gun on it whose whole
+        // purpose is what the guns around it can do.
+        //
+        // What it sells is reach. A gun emplacement sees 170 m and shoots 200; inside a radar's
+        // coverage it shoots the 200 it was built for, because the radar is what is looking. So a
+        // radar is never bought for its own sake — it is bought because a defensive line is
+        // several guns short of their range without one, and the enemy knows it.
+        //
+        // It is deliberately unarmed. A radar with a gun would be a gun emplacement that also
+        // multiplies the other guns, which is not a decision, it is a purchase everyone makes. It
+        // is also deliberately fragile (900 hit points, less than a power plant) and it is priced
+        // above the emplacement it serves, because the thing worth raiding should be the thing
+        // that costs the raider something to ignore — see PowerSystem, where the same building is
+        // the first load a base sheds when its generation is short.
+        //
+        // Era I, like the gun emplacement, and for the same reason: detection is the *first*
+        // problem, not a reward for having solved the others. A player who has just built a gun
+        // and cannot work out why it is not shooting at the tank 190 m away has a radar to build,
+        // and can afford neither the wait nor the research.
+        new(UnitKind.RadarStation, 240, 40, 220, 900, 0, 1, UnitKind.CommandCentre, true, WaterCost: 70,
+            FootprintRadiusCells: 1),
     ];
 
     /// <summary>Every defined role.</summary>
@@ -433,6 +455,7 @@ public static class UnitCatalog
         UnitKind.DesignBureau => "Γραφείο Σχεδιασμού",
         UnitKind.GunEmplacement => "Πυροβολείο",
         UnitKind.AntiAirEmplacement => "Αντιαεροπορικό Πυροβολείο",
+        UnitKind.RadarStation => "Σταθμός Ραντάρ",
         _ => "Άγνωστο",
     };
 

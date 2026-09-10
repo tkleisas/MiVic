@@ -2282,6 +2282,363 @@ def build_aa_western():
 
 
 # --------------------------------------------------------------------------
+# The radar station: the one defensive structure with nothing on it that shoots
+#
+# A set that looks 260 metres over the ground around it, for the emplacements beside it.
+# It has one thing to say and it says it on top: the array. Everything named `radar` in
+# this file turns, but this is the only model in the game whose whole read *is* the
+# turning — the client sweeps the array every tick and stops sweeping it when the team
+# cannot power the set, so a stopped array and a dead grid are the same picture, and the
+# array therefore has to be the largest and plainest thing on the model.
+#
+# That is also what keeps the station apart from the two emplacements it serves. There is
+# no pit and no revetment, so there is no position to read; there is no turret and no
+# barrel, so there is nothing on it to mistake for a gun; and the compound is one small
+# equipment room with the mast beside it, not a stepped headquarters or a hall under a
+# flue. Each faction's array is its own language, the same way its gun mount is: a cast
+# counterweighted dish on a lattice mast, a bedspring of identical bars in an angle-iron
+# frame, a shallow precision dish fed on struts on a clean drum.
+#
+# Front is +Y in all three, like every other model here: the door faces it, the array
+# leans out over it, and each compound is deeper along Y than it is wide along X — 12.6 by
+# 10.6, 12.8 by 10.8, 12.4 by 10.4 — so the loader's own quarter turn aims that front at
+# +X and the catalogue's `GeneratedYaw` is the right offset for all three.
+# --------------------------------------------------------------------------
+
+
+def strut(part, a, b, thickness, material, variation=0.05):
+    """One bar between two points, turned into place about the axis it mostly runs along.
+
+    Diagonals are the whole of a lattice and the whole of a feed horn's mounting: a set of
+    bars between two points, none of them on an axis. Each is authored along X or along Y
+    and turned about the other horizontal axis *through its own midpoint*, which is the one
+    rotation that cannot move either end off the point it was fitted to.
+    """
+    mid = ((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5, (a[2] + b[2]) * 0.5)
+    dx, dy, dz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+    start = part.mark()
+
+    if abs(dx) >= abs(dy):
+        part.box(mid, (math.hypot(dx, dz), thickness, thickness), material, variation)
+        part.rotate(start, math.degrees(math.atan2(-dz, dx)), "y", about=mid)
+    else:
+        part.box(mid, (thickness, math.hypot(dy, dz), thickness), material, variation)
+        part.rotate(start, math.degrees(math.atan2(dz, dy)), "x", about=mid)
+
+
+def lattice_mast(model, name, x, y, z0, height, half, top_half, bays, leg=0.24, rung=0.13,
+                 material=STEEL, brace=DARK, variation=0.05):
+    """A four-legged lattice mast: legs, a rung at every level and a diagonal in every bay.
+
+    A mast is the one piece of a radar station that has to look *erected* rather than
+    poured, so it is a truss and not a column: four legs, a rung round each level and a
+    diagonal across every face of every bay, alternating direction so the bracing reads
+    from any angle instead of only from one. The legs taper one bay at a time, because a
+    box cannot lean, which is also how the real thing is built.
+    """
+    part = model.part(name)
+    corners = ((-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0))
+    levels = [(z0 + (height * i / bays), half + ((top_half - half) * i / bays))
+              for i in range(bays + 1)]
+
+    for i in range(bays):
+        (z_low, low) = levels[i]
+        (z_high, high) = levels[i + 1]
+        mid = (low + high) * 0.5
+
+        for (sx, sy) in corners:
+            part.box((x + (sx * mid), y + (sy * mid), (z_low + z_high) * 0.5),
+                     (leg, leg, z_high - z_low + 0.02), material, variation)
+
+        for k in range(4):
+            (px, py) = corners[k]
+            (qx, qy) = corners[(k + 1) % 4]
+            low_p = (x + (px * mid), y + (py * mid), z_low)
+            high_p = (x + (px * mid), y + (py * mid), z_high)
+            high_q = (x + (qx * mid), y + (qy * mid), z_high)
+            strut(part, high_p, high_q, rung, brace, variation)
+
+            if i % 2 == 0:
+                strut(part, low_p, high_q, rung, brace, variation)
+            else:
+                strut(part, high_p, (x + (qx * mid), y + (qy * mid), z_low), rung, brace, variation)
+
+
+def dish_shell(part, radius, depth, z0=0.0, thickness=0.2, rings=5, segments=18, mat=PANEL):
+    """A reflector as one closed surface of revolution: its back, its rim and its face.
+
+    `revolve` closes whatever profile it is handed at both ends, so a dish built as a
+    single outward profile comes out *solid*: a filled dome with a flat cap where the
+    concave face should be, which from the game's camera is a dinner plate on a pole. This
+    walks the profile out along the back, across the rim edge and back down the concave
+    face instead, the same way `platform_pit` builds its round pit. The winding of each
+    band then faces the way that band is actually seen, so the inside of the dish is lit as
+    an inside and the outside as an outside — which is the whole of what makes a bowl read
+    as a bowl from above.
+    """
+    back = []
+    face = []
+
+    for i in range(rings + 1):
+        t = i / rings
+        # 76 degrees of arc: deep enough to read as a bowl from two hundred metres, shallow
+        # enough that the rim is still a rim and not the start of a cylinder.
+        r = max(radius * math.sin(math.radians(76.0 * t)), 0.05)
+        z = z0 + (depth * (1.0 - math.cos(math.radians(76.0 * t))))
+        back.append((r, z - thickness))
+        face.append((r, z))
+
+    part.revolve(back + [face[-1]] + list(reversed(face[:-1])), segments, mat)
+
+
+def radar_mount(model, tag, style, x, y, z, radius, height=0.0, tilt=32.0, mast=1.6, bars=9,
+                mat=PANEL, frame=DARK, screen=GLASS, accent=HAZARD):
+    """The turning assembly of a radar station, named `radar`, built around its own origin.
+
+    The client turns every node whose name starts with `radar` about the vertical, once per
+    tick, and stops turning it when the team cannot feed the set its power. On this model
+    that part is not decoration: it is the read-out, which is why it is five or six metres
+    across when the director on an anti-aircraft emplacement is one and a half, and why the
+    whole assembly is one node placed with `Part.place` on top of the mast — array, yoke and
+    the short stub column they swing on. A dish built around the middle of the site instead
+    would swing round the site rather than sweep, and a drive head left behind on the mast
+    would be a dish that has come off its mounting.
+
+    `style` is the faction's array language, the same three shapes its gun mounts wear:
+
+        dish    a cast bowl with a counterweight on the back of it (Σοβιετικοί)
+        array   a bedspring of identical bars in an angle-iron frame (Κινέζοι)
+        sharp   a shallow precision bowl, fed out at the focus on struts (Δυτικοί)
+
+    `radius` is the bowl's radius or the array's half-width; `height` is the array's own
+    height, and is ignored by the two bowl styles, which take their depth from the radius.
+    """
+    part = model.part("radar").place((x, y, z))
+
+    # The drive head: a stub column and the yoke bracket the array swings on. Short, and in
+    # the turning node rather than in the mast, because this really does turn with it.
+    part.revolve([(radius * 0.17, 0.0), (radius * 0.12, mast)], 12, frame)
+    part.box((0.0, 0.0, mast - 0.2), (radius * 0.66, 0.44, 0.32), frame, 0.05)
+
+    start = part.mark()
+    lean = -tilt
+
+    # A bowl stands off its trunnion on a short neck, tilted with it. That neck is the fix
+    # for the one mistake that cost this part a pass: a reflector whose vertex sits *on* the
+    # pivot has its concave face within a few millimetres of the pivot near the middle, so
+    # the top of the column under it comes out through the middle of the dish as a black
+    # sliver — and because the bowl is tipped forward, it comes out through the *front* of
+    # the middle, which is the first thing the eye finds on the model. Raising the vertex and
+    # carrying the dish on a neck is also how the real thing is mounted.
+    stand = radius * 0.14
+
+    if style == "dish":
+        depth = radius * 0.42
+        part.revolve([(radius * 0.16, mast - 0.2), (radius * 0.2, mast + stand - 0.06)], 12,
+                     frame, variation=0.05)
+        dish_shell(part, radius, depth, z0=mast + stand, mat=mat)
+
+        # The counterweight, on the back of the bowl and on the far side of the pivot from
+        # it: the piece that makes a Σοβιετικοί dish read as machinery and not as a saucer.
+        # Cast steel rather than the near-black of the gun kit, because from a camera
+        # looking down at a dish tipped forward this sits *behind* the bowl on the screen
+        # as well, and a black mass across the one shape the player has to read is worse
+        # than no counterweight at all.
+        part.box((0.0, -radius * 0.6, mast - 0.3), (0.5, radius * 0.8, 0.4), STEEL, 0.05)
+        part.box((0.0, -radius * 0.9, mast - 0.5), (radius * 0.62, radius * 0.55, radius * 0.42),
+                 STEEL, 0.06)
+    elif style == "array":
+        panel = height if height > 0.0 else radius * 1.15
+        half_h = panel * 0.5
+
+        # The screen the elements are wound on, the angle-iron frame round it, and the two
+        # brackets that bolt the frame to the yoke. The bottom bar is the faction's one
+        # piece of colour, and it is the same hazard stripe its gun pits wear.
+        part.box((0.0, -0.15, mast), (radius * 2.0, 0.16, panel), screen, 0.05)
+        part.box((0.0, 0.0, mast + half_h), (radius * 2.0, 0.34, 0.24), frame, 0.05)
+        part.box((0.0, 0.0, mast - half_h), (radius * 2.0, 0.34, 0.24), accent, 0.03)
+
+        for side in (-1.0, 1.0):
+            part.box((side * radius, 0.0, mast), (0.24, 0.34, panel), frame, 0.05)
+            part.box((side * radius * 0.42, 0.0, mast - 0.1), (radius * 0.34, 0.3, 0.3),
+                     frame, 0.05)
+
+        # The elements: the same bar, over and over, which is the faction's whole method.
+        for i in range(bars):
+            t = (i + 0.5) / bars
+            part.box((0.0, 0.16, mast - half_h + (panel * t)), (radius * 1.9, 0.14, 0.14),
+                     mat, 0.04)
+
+        lean = tilt
+    else:
+        depth = radius * 0.44
+        part.revolve([(radius * 0.18, mast - 0.2), (radius * 0.22, mast + stand - 0.06)], 14,
+                     mat, variation=0.05)
+        dish_shell(part, radius, depth, z0=mast + stand, thickness=0.16, mat=mat)
+
+        # The feed, held out at the focus on four struts and a short horn: the difference
+        # between a precision dish and a saucer is that you can see what holds the feed.
+        focus = mast + stand + (depth * 0.78)
+        rim_z = mast + stand + (depth * (1.0 - math.cos(math.radians(76.0))))
+
+        for (ux, uy) in ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)):
+            strut(part,
+                  (ux * radius * 0.9, uy * radius * 0.9, rim_z - 0.1),
+                  (0.0, 0.0, focus), 0.09, frame, 0.04)
+
+        part.revolve([(0.18, focus - 0.3), (0.18, focus + 0.12)], 8, frame, variation=0.04)
+
+    # Everything above the drive head leans as one assembly, about the trunnion the yoke
+    # holds: the bowls tip their open face forward over the front of the site, the array
+    # leans back from it, which is the difference between looking up and looking out.
+    part.rotate(start, lean, "x", about=(0.0, 0.0, mast))
+    return part
+
+
+def build_radar_soviet():
+    """Σοβιετικοί radar station: a cast dish on a lattice mast over a poured bunker.
+
+    The faction builds a radar the way it builds everything else: one poured equipment room
+    behind a battered plinth, with form-tie bands up its walls and half a metre of concrete
+    in front of every window, and in front of that one enormous piece of steelwork standing
+    on a cast pedestal. The dish is nearly six metres across and it carries a counterweight,
+    because a Σοβιετικοί dish was never going to be light enough to turn without one.
+
+    Front is +Y: the bunker's door is in it, the dish leans out over it, and the site is
+    12.6 m deep against 10.6 m wide.
+    """
+    m = Model("soviet_radar")
+
+    apron(m, "apron", 0.0, 0.0, 10.6, 12.6, 0.3, 1.3, CONCRETE, PAINT)
+
+    # The equipment room, at the back of the pad.
+    plinth(m, "bunker_plinth", 0.0, -3.7, 9.6, 5.0, 0.3, 1.0, 0.6, CONCRETE, TRIM, 0.35)
+    walls(m, "bunker", 0.0, -3.7, 8.0, 3.4, 1.2, 4.6, ((2.2, 3.4),), pitch=2.6, win=1.3,
+          thickness=0.9, reveal=0.55, wall=CONCRETE, glass=GLASS, sill=0.3,
+          gap=("+y", -1.1, 1.1))
+    doorway(m, "bunker", "+y", -2.0, 0.0, 2.2, 2.6, 1.2, depth=1.2, canopy=1.8, steps=3,
+            hazard=True)
+    ribbons(m, "bunker_bands", 0.0, -3.7, 8.0, 3.4, 1.2, 4.6, 1.5, 0.14, CONCRETE)
+    roof(m, "bunker", 0.0, -3.7, 8.0, 3.4, 4.6, overhang=0.8, parapet=1.1, mat=ROOF, fascia=TRIM)
+    hvac_row(m, "bunker_plant", (2.4, -3.7), 5.6, 2, 2.2, (1.8, 1.5, 1.3), PANEL, "y")
+    chimney(m, "flue", -3.3, -4.7, 5.6, 3.2, 0.5, CONCRETE, TRIM, bands=1)
+
+    # The mast: a cast pedestal under a lattice tower, and the array on top of that. The
+    # station is the only structure in the game whose mast is taller than its roof by
+    # design rather than as a flue, so the pedestal is measured to be read from the ridge.
+    m.part("mast_base").frustum((0.0, 2.6, 0.3), (4.2, 4.2), (3.0, 3.0), 1.3, CONCRETE)
+    collar(m, "mast_base_cap", 0.0, 2.6, 3.0, 3.0, 1.6, 0.34, 0.24, TRIM)
+    lattice_mast(m, "mast", 0.0, 2.6, 1.6, 6.2, half=1.0, top_half=0.5, bays=5)
+    radar_mount(m, "mast_radar", "dish", 0.0, 2.6, 7.8, radius=2.8, tilt=34.0, mast=1.2)
+
+    # The apron furniture: the cable duct run out to the mast, a drum of it, the set's
+    # generator, and the antenna the station talks to its battery with.
+    m.part("duct").box((0.0, -0.3, 0.46), (1.3, 1.6, 0.3), CONCRETE, 0.05)
+    m.part("cable_drum").revolve([(0.55, 0.3), (0.55, 0.8)], 12, RUST, offset=(-4.2, 1.4, 0.0))
+    m.part("generator").box((4.1, 4.4, 0.85), (1.8, 1.4, 1.1), PANEL, 0.06)
+    mast(m, "antenna", -4.4, 5.0, 0.3, 4.6, 0.1, STEEL, arms=1)
+
+    return m.build()
+
+
+def build_radar_chinese():
+    """Κινέζοι radar station: two identical brick sheds and a bedspring array on a tower.
+
+    Mass production applied to a radar. The compound is a pair of the same shed with the
+    same barrel-vaulted roof and the same corrugated ribbing every 1.1 metres, standing on
+    a concrete plinth, and the mast is a brick tower carrying the same band of windows
+    twice. The array is the faction's method in one object — the same bar, nine times, in
+    an angle-iron frame — and the only colour on the site is the danger stripe along the
+    bottom of that frame and the one painted across the front of the pad.
+
+    Front is +Y: the sheds' doors are in it, the array leans back over it, and the site is
+    12.8 m deep against 10.8 m wide.
+    """
+    m = Model("chinese_radar")
+
+    apron(m, "apron", 0.0, 0.0, 10.8, 12.8, 0.3, 1.4, CONCRETE, PAINT)
+
+    # Two of the same shed, side by side, with the same door in the same corner of each.
+    plinth(m, "shed_plinth", 0.0, -3.9, 10.0, 5.0, 0.3, 0.5, 0.3, CONCRETE, TRIM, 0.2)
+
+    for i, x in enumerate((-2.6, 2.6)):
+        walls(m, f"shed{i}", x, -3.9, 4.6, 4.2, 0.8, 3.7, ((1.7, 2.7),), pitch=2.4, win=1.3,
+              thickness=0.6, reveal=0.3, wall=BRICK, glass=GLASS, sill=0.22,
+              gap=("+y", x + 0.3, x + 1.7))
+        doorway(m, f"shed{i}", "+y", -1.8, x + 1.0, 1.4, 2.2, 0.8, depth=0.8, frame=CONCRETE,
+                hazard=True)
+        ribs(m, f"shed{i}_ribs", x, -3.9, 4.6, 4.2, 0.95, 3.7, 1.1, 0.2, 0.15, PANEL)
+        vault(m, f"shed{i}_vault", x - 2.3, x + 2.3, -3.9, 2.1, 3.7, segments=10)
+
+    # The brick tower the array stands on, carrying the same window band twice so that even
+    # the mast is a repetition.
+    plinth(m, "tower_plinth", 0.0, 2.4, 4.4, 4.4, 0.3, 0.5, 0.3, CONCRETE, TRIM, 0.2)
+    walls(m, "tower", 0.0, 2.4, 3.4, 3.4, 0.8, 5.9, ((1.6, 2.8), (3.8, 5.0)), pitch=2.6,
+          win=1.4, thickness=0.6, reveal=0.3, wall=BRICK, glass=GLASS, sill=0.22)
+    ribs(m, "tower_ribs", 0.0, 2.4, 3.4, 3.4, 0.95, 5.9, 1.1, 0.2, 0.15, PANEL)
+    roof(m, "tower", 0.0, 2.4, 3.4, 3.4, 5.9, overhang=0.5, parapet=0.9, mat=ROOF, fascia=TRIM)
+
+    radar_mount(m, "tower_radar", "array", 0.0, 2.4, 6.9, radius=2.6, height=3.0, tilt=20.0,
+                mast=2.8, bars=9)
+
+    # The yard: a hazard stripe across the front of the pad, two identical drums of cable,
+    # and the water tower the rest of the faction's buildings all carry as well.
+    m.part("hazard").box((0.0, 5.7, 0.38), (9.6, 0.14, 0.14), HAZARD, 0.03)
+
+    for x in (-4.3, 4.3):
+        m.part("cable_drums").revolve([(0.55, 0.3), (0.55, 0.8)], 12, RUST, offset=(x, -1.2, 0.0))
+
+    tank(m, "water_tank", -3.6, 4.6, 0.3, 1.1, 1.9, PANEL)
+
+    return m.build()
+
+
+def build_radar_western():
+    """Δυτικοί radar station: a precision dish on a clean drum, beside a flat-roofed block.
+
+    The faction that designs its buildings gets the radar that looks designed: an
+    operations block in panels with one band of glazing behind thin mullions, a projecting
+    base course, its plant laid out in a row on the flat roof, and the dish on a tapered
+    drum in the middle of its own half of the pad with the feed held out at the focus on
+    four struts. Nothing is improvised and nothing is repeated further than it has to be,
+    which is the opposite of the Κινέζοι answer to the same problem.
+
+    Front is +Y: the block's door is in it, the dish looks out over it, and the site is
+    12.4 m deep against 10.4 m wide.
+    """
+    m = Model("western_radar")
+
+    apron(m, "apron", 0.0, 0.0, 10.4, 12.4, 0.25, 1.2, CONCRETE, PAINT)
+
+    collar(m, "block_base", 0.0, -3.6, 8.8, 4.2, 0.25, 0.3, 0.14, TRIM)
+    walls(m, "block", 0.0, -3.6, 8.8, 4.2, 0.25, 3.6, ((1.4, 3.0),), pitch=2.3, win=1.9,
+          thickness=0.5, reveal=0.1, wall=PANEL, glass=GLASS, mullion=0.34, lit_every=4,
+          sill=0.25, gap=("+y", -1.0, 1.0))
+    doorway(m, "block", "+y", -1.5, 0.0, 2.0, 2.4, 0.25, depth=1.0, frame=STEEL, canopy=1.6)
+    roof(m, "block", 0.0, -3.6, 8.8, 4.2, 3.6, overhang=0.7, parapet=0.9, mat=ROOF, fascia=TRIM)
+    hvac_row(m, "block_plant", (2.6, -3.6), 4.6, 2, 2.2, (1.8, 1.5, 1.3), PANEL, "y")
+    vents(m, "block_vents", [(-2.9, -3.6)], 4.6, 0.45, 1.4, PANEL)
+
+    # The pedestal: a base ring, a tapered drum and a flat drive head, with the dish on top
+    # of that. Round and clean, because everything the faction builds in front of a
+    # building is a piece of equipment and not a position.
+    m.part("pedestal").revolve([(1.8, 0.25), (1.8, 0.6)], 20, TRIM, variation=0.04)
+    m.part("pedestal").revolve([(1.75, 0.25), (1.62, 0.9), (1.1, 3.2)], 20, PANEL,
+                               offset=(0.0, 2.5, 0.0))
+    collar(m, "pedestal_head", 0.0, 2.5, 1.6, 1.6, 3.2, 0.5, 0.35, PANEL)
+    radar_mount(m, "pedestal_radar", "sharp", 0.0, 2.5, 3.7, radius=2.5, tilt=30.0, mast=1.1)
+
+    # The cable duct out to the pedestal, a pair of instrument cabinets and a whip: the
+    # faction's neatness is the point, so its loose ends are laid out in a line too.
+    m.part("duct").box((0.0, -0.6, 0.4), (0.9, 3.0, 0.3), PANEL, 0.05)
+    m.part("cabinets").box((4.0, -1.1, 0.75), (1.2, 1.4, 1.0), PANEL, 0.05)
+    m.part("cabinets").box((4.0, 0.6, 0.75), (1.2, 1.4, 1.0), PANEL, 0.05)
+    mast(m, "antenna", -4.2, 4.6, 0.25, 4.4, 0.1, PANEL, arms=1)
+
+    return m.build()
+
+
+# --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
 
@@ -2292,12 +2649,19 @@ STRUCTURES = (
     ("nuclear", build_nuclear_soviet, build_nuclear_chinese, build_nuclear_western),
     ("bureau", build_bureau_soviet, build_bureau_chinese, build_bureau_western),
 
-    # The two defensive structures. `gun` and `aa` rather than `antiair`, because the
+    # The three defensive structures. `gun` and `aa` rather than `antiair`, because the
     # mobile mount already owns `soviet_antiair.glb` and a file name that a reader has to
     # tell apart by which generator wrote it is a file name that will eventually be
     # confused for the other one.
+    #
+    # `radar` is the one that carries nothing that shoots: it is a defensive structure
+    # because what it defends with is what it can see, and because the emplacements beside
+    # it are half a structure without it. Its file names are the three the catalogue
+    # already points at — `soviet_radar.glb`, `chinese_radar.glb`, `western_radar.glb` —
+    # and its whole read is the array named `radar` inside them.
     ("gun", build_gun_soviet, build_gun_chinese, build_gun_western),
     ("aa", build_aa_soviet, build_aa_chinese, build_aa_western),
+    ("radar", build_radar_soviet, build_radar_chinese, build_radar_western),
 )
 
 
@@ -2317,8 +2681,10 @@ def main():
         export(path)
         written.append(path)
 
-    # Three factions, five roles, and no two of the fifteen are the same building:
-    # the file names and the roles they serve are the contract with ModelCatalog.
+    # Three factions, six roles, and no two of the eighteen are the same building:
+    # the file names and the roles they serve are the contract with ModelCatalog. The
+    # three radar stations are `*_radar.glb`, one per faction, written by the three
+    # `build_radar_*` generators at the end of the defensive structures.
     for (kind, soviet, chinese, western) in STRUCTURES:
         emit(f"soviet_{kind}", soviet)
         emit(f"chinese_{kind}", chinese)

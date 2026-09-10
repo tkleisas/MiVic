@@ -381,7 +381,86 @@ public sealed class DeterminismTests
     /// at all.
     /// </para>
     /// </summary>
+    /// <para>
+    /// <b>It did not move when detection and power arrived, and that is recorded rather than
+    /// assumed.</b> This scenario has no emplacement, no radar, no stealth and nothing whose
+    /// weapon outranges its eyes — it is sixty tanks, three headquarters and three power
+    /// plants — so the sensor chain has nothing here to decide differently. A tank sees 130 m
+    /// and shoots 110, which is the one case where reach and sight already agreed. The new
+    /// systems are pinned by <see cref="GoldenSensorScenarioHash_IsStable"/> instead, which is
+    /// a scenario built to exercise them.
+    /// </para>
+    /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
         => Assert.Equal(16140099771963057552UL, HashScenario(20250101));
+
+    /// <summary>
+    /// A fixed defensive scene with the whole sensor chain in it: a Σοβιετικοί line of two gun
+    /// emplacements with a radar station and a power plant behind them, industry competing for
+    /// the same generation, and a Δυτικοί tank and a Καταδρομέας walking in on it.
+    /// <para>
+    /// It exists because the older golden scenario does not contain a single thing the sensor
+    /// chain changes — see the note on it — so a change that broke detection, radar coverage or
+    /// the power ledger would move no hash at all. This one does: the tank is engaged at 190 m
+    /// only while the radar has power, the stalker flickers in and out of view as the fraction
+    /// of the radius catches it and loses it, and whether the second gun emplacement is lit
+    /// depends on what the factory took off the grid first.
+    /// </para>
+    /// <para>
+    /// Last changed by the arrival of exactly that: a detection radius per role, radar coverage
+    /// stamped into the fog, stealth detected at a fraction of it, and a power ledger that sheds
+    /// radars before anything else. This is its first value.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void GoldenSensorScenarioHash_IsStable()
+    {
+        Assert.Equal(HashSensorScenario(20250101), HashSensorScenario(20250101));
+        Assert.Equal(15054154362551790067UL, HashSensorScenario(20250101));
+    }
+
+    /// <summary>
+    /// The sensor scenario. Everything stands on the lane at z = −70 m, which is the one line
+    /// across the standard map with no lava and no snow on it: a hash taken over a fight in a
+    /// crater or a snowdrift would be pinning the weather rather than the sensor chain.
+    /// <para>
+    /// The line-up is chosen so the radar is doing real work rather than being scenery. The
+    /// tank arrives at 180 m from the nearest Πυροβολείο, which is inside the gun's 200 m and
+    /// outside the 170 m it can see — so it is engaged on the first tick *because the radar is
+    /// looking*, and would not be engaged at all without one. The Καταδρομέας crosses the same
+    /// ground under the umbrella and is found by it at half the radius, which puts both ends of
+    /// the sensor chain in the hash. The base sits one unit of load below the point where the
+    /// grid would shed a radar, so any move in the power numbers moves this number too.
+    /// </para>
+    /// </summary>
+    private static ulong HashSensorScenario(ulong seed)
+    {
+        SimWorld world = new(seed, capacity: 64);
+
+        WorldPos Stand(int xMetres) => WorldPos.GroundMetres(xMetres, -70);
+
+        world.Spawn(Faction.Soviet, 0, UnitKind.CommandCentre, Stand(200), Fix32.Zero, 5_000);
+        world.Spawn(Faction.Soviet, 0, UnitKind.PowerPlant, Stand(140), Fix32.Zero, 1_200);
+        world.Spawn(Faction.Soviet, 0, UnitKind.Factory, Stand(80), Fix32.Zero, 2_000);
+        world.Spawn(Faction.Soviet, 0, UnitKind.DesignBureau, Stand(20), Fix32.Zero, 1_500);
+
+        // Two radars and two guns: generation 16 against a load of 15, so both sets run and
+        // one more factory would put one of them out.
+        world.Spawn(Faction.Soviet, 0, UnitKind.RadarStation, Stand(-60), Fix32.Zero, 900);
+        world.Spawn(Faction.Soviet, 0, UnitKind.RadarStation, Stand(-160), Fix32.Zero, 900);
+        world.Spawn(Faction.Soviet, 0, UnitKind.GunEmplacement, Stand(-140), Fix32.Zero, 1_400);
+        world.Spawn(Faction.Soviet, 0, UnitKind.GunEmplacement, Stand(-220), Fix32.Zero, 1_400);
+
+        EntityId tank = world.Spawn(
+            Faction.Western, 2, UnitKind.Tank, Stand(40), Fix32.FromInt(400), 320);
+        EntityId stalker = world.Spawn(
+            Faction.Western, 2, UnitKind.StealthRecon, WorldPos.GroundMetres(150, -70), Fix32.FromInt(420), 120);
+
+        world.OrderMove(tank, Stand(-140), 0);
+        world.OrderMove(stalker, WorldPos.GroundMetres(-60, -150), 0);
+        world.RunTicks(500);
+
+        return StateHash.Compute(world);
+    }
 }

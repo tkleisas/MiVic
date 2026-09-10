@@ -126,6 +126,11 @@ public sealed partial class MiVicGame : IProbeHost
         // the preview the player would have seen.
         UpdatePlacementPreview();
 
+        // And the selected structure's reach, for the same reason: the ring is what tells a
+        // player where a gun stops being able to shoot, and a script that could not photograph
+        // it could not show that a radar had changed it.
+        UpdateCoverageRing();
+
         DrawScene();
         DrawWorldLabels();
 
@@ -233,7 +238,7 @@ public sealed partial class MiVicGame : IProbeHost
         // turret's aim for itself would be able to disagree with the turret.
         for (int i = 0; i < batch.Parts.Length; i++)
         {
-            batch.Locals[i] = AnimatePart(batch.Parts[i], ref entity, world);
+            batch.Locals[i] = AnimatePart(batch.Parts[i], ref entity, world, slot);
         }
 
         Vector3 position = _simulation.GetRenderPosition(slot, interpolate: false);

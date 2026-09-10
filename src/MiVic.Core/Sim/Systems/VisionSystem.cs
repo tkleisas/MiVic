@@ -6,7 +6,7 @@ using MiVic.Core.Terrain;
 namespace MiVic.Core.Sim;
 
 /// <summary>
-/// Recomputes what each team can see.
+/// Recomputes what each team can see and what it can detect.
 /// <para>
 /// Vision is stamped from every entity into the navigation grid: a circle of the
 /// unit's sight radius. The work is <em>staggered</em> rather than done in one
@@ -22,6 +22,17 @@ namespace MiVic.Core.Sim;
 /// it as visible until the unit that saw it comes round again, so nothing needs
 /// clearing and the answer is identical from the player's point of view.
 /// </para>
+/// <para>
+/// <b>This is the only place that decides how far anything can be sensed, and the
+/// only place that writes what a team knows.</b> Fog of war reads the disc each
+/// entity stamps; a weapon reads <see cref="SensorRadiusMm"/> to decide whether it
+/// can shoot at what it is looking at, and the same disc, reduced by
+/// <see cref="StealthDetectionPermille"/>, decides whether a stealthed enemy is
+/// found. A radar station is not a special case in any of that: it stamps a large
+/// disc like anything else, and its coverage is the disc. Adding a second answer to
+/// "can team 0 see this cell" — a scan beside the grid, or a detection field beside
+/// the fog — is how the two answers come to disagree.
+/// </para>
 /// </summary>
 public static class VisionSystem
 {
@@ -35,7 +46,54 @@ public static class VisionSystem
     /// </summary>
     public const int SnowSightPermille = 650;
 
-    /// <summary>Sight radius for a role, in millimetres.</summary>
+    /// <summary>
+    /// The radius at which a sensor finds a <em>stealthed</em> enemy, as a fraction of the
+    /// radius it finds an ordinary one, in permille.
+    /// <para>
+    /// This is the whole of what stealth buys, and the number is not free. The only stealthed
+    /// role in the game is the Δυτικοί Καταδρομέας, whose weapon reaches 120 m, so a stealth
+    /// modifier is worth nothing unless it changes what happens at that distance: a gun's own
+    /// eyes are 170 m, and half of that is 85 m — well inside 120 m, so a stalker walking up
+    /// to a lone emplacement is invisible until the moment it opens fire and still gets the
+    /// first shot. A radar's coverage is 260 m, and half of that is 130 m, which is *past* the
+    /// stalker's reach: under an umbrella, the defence sees it ten metres before it can shoot,
+    /// and the first shot is the defender's.
+    /// </para>
+    /// <para>
+    /// A half rather than a third for exactly that reason: a third puts a radar's detection at
+    /// 91 m, inside the stalker's own reach, and stealth detection then never decides anything
+    /// a gunfight has not already decided by the stalker firing. Stealth that cannot be beaten
+    /// to the trigger is not a mechanic, it is a delay.
+    /// </para>
+    /// </summary>
+    public const int StealthDetectionPermille = 500;
+
+    /// <summary>
+    /// How far a radar station projects detection, in millimetres. Also the station's own
+    /// sight radius: a radar is one disc, not a coverage field beside an eyesight number, so
+    /// the ground it lights for the team is exactly the ground it lights for the guns.
+    /// <para>
+    /// 260 m against a gun emplacement's 200 m of reach, and the margin is the design. A radar
+    /// whose coverage merely matched the longest gun would only have to be dropped near enough
+    /// to the gun, and placement would stop being a decision; 60 m of umbrella beyond the
+    /// farthest gun means a station covers a *position* — several guns, an approach, a flank —
+    /// rather than one emplacement.
+    /// </para>
+    /// </summary>
+    public const int RadarCoverageMm = 260_000;
+
+    /// <summary>
+    /// Sight radius for a role, in millimetres — which is also its sensor radius, and the
+    /// number a weapon is measured against. There is one table because there is one question.
+    /// <para>
+    /// Two structures carry a number smaller than the gun they carry: a Πυροβολείο reaches
+    /// 200 m and sees 170, and an Αντιαεροπορικό Πυροβολείο reaches 180 m and sees 160. That
+    /// gap is the entire reason a radar station is worth 240 Π, and it is deliberately a
+    /// property of the role rather than a special case in the combat system: a mobile hull is
+    /// assumed to have its own optics good enough for its own gun, and a fixed emplacement is
+    /// assumed not to, because a concrete pit has no observer in it.
+    /// </para>
+    /// </summary>
     public static int SightRadiusMm(UnitKind kind) => kind switch
     {
         UnitKind.Infantry => 110_000,
@@ -55,8 +113,45 @@ public static class VisionSystem
         UnitKind.NuclearPlant => 140_000,
         UnitKind.Factory => 130_000,
         UnitKind.DesignBureau => 120_000,
+        UnitKind.GunEmplacement => 170_000,
+        UnitKind.AntiAirEmplacement => 160_000,
+        UnitKind.RadarStation => RadarCoverageMm,
         _ => 100_000,
     };
+
+    /// <summary>
+    /// How far this entity can sense an ordinary enemy, in millimetres: its role's eyes,
+    /// scaled by the team's optics research and shortened by standing in snow.
+    /// <para>
+    /// This is the number the whole sensor chain asks about, and it is answered in one place
+    /// for that reason: fog stamps a disc of it, a weapon compares its range against it, and
+    /// the stealth disc is a fraction of it. A caller that recomputed any of those three from
+    /// the catalogue would be a second answer waiting to disagree with the first.
+    /// </para>
+    /// </summary>
+    public static int SensorRadiusMm(SimWorld world, in Entity entity)
+    {
+        int visionPermille = world.Team(entity.TeamId).VisionPermille;
+        int radius = visionPermille > 0
+            ? (SightRadiusMm(entity.Kind) * visionPermille) / 1_000
+            : SightRadiusMm(entity.Kind);
+
+        // Snow shortens how far a unit can see. It also hides: the ground that
+        // slows a column is the ground that conceals it, which is what makes
+        // fighting in snow a different problem from fighting in mud. Aircraft are
+        // above the weather, so only something on the ground pays it.
+        if (entity.AltitudeMm == 0)
+        {
+            int cell = world.Navigation.IndexOfWorld(entity.Position);
+
+            if (cell >= 0 && world.TerrainTypes.TypeAt(cell) == TerrainType.Snow)
+            {
+                radius = (radius * SnowSightPermille) / 1_000;
+            }
+        }
+
+        return radius;
+    }
 
     /// <summary>Stamps this tick's share of the entities.</summary>
     public static void Tick(SimWorld world)
@@ -86,23 +181,38 @@ public static class VisionSystem
                 continue;
             }
 
-            int visionPermille = world.Team(entity.TeamId).VisionPermille;
-            int sight = visionPermille > 0
-                ? (SightRadiusMm(entity.Kind) * visionPermille) / 1_000
-                : SightRadiusMm(entity.Kind);
-
-            // Snow shortens how far a unit can see. It also hides: the ground that
-            // slows a column is the ground that conceals it, which is what makes
-            // fighting in snow a different problem from fighting in mud.
-            int cell = world.Navigation.IndexOfWorld(entity.Position);
-
-            if (entity.AltitudeMm == 0 && cell >= 0 &&
-                world.TerrainTypes.TypeAt(cell) == TerrainType.Snow)
+            if (entity.ConstructionTicksRemaining > 0)
             {
-                sight = (sight * SnowSightPermille) / 1_000;
+                // A building site is not watching anything yet, which is the same rule that
+                // keeps a half-raised emplacement from firing: the dish goes on the roof when
+                // the roof goes on.
+                continue;
             }
 
-            Stamp(world, entity.TeamId, entity.Position, sight);
+            int sensor = SensorRadiusMm(world, in entity);
+
+            // A radar station with no power is not watching anything either. It is the same
+            // fact as the guns losing their reach — the set is not running — and it has to be
+            // written here rather than left out, or a base that had lost its generation would
+            // keep the radar picture it can no longer pay for while its guns went blind, which
+            // is the one combination that would make the whole brown-out incoherent.
+            if (entity.Kind == UnitKind.RadarStation && !world.IsRadarLit(slot))
+            {
+                continue;
+            }
+
+            Stamp(world, entity.TeamId, entity.Position, sensor, false);
+
+            int stealth = (sensor * StealthDetectionPermille) / 1_000;
+
+            // The same disc again, a third of the size, into the channel that decides
+            // whether a stealthed enemy is found. It is stamped by the same loop from the
+            // same number so that "what can team 0 see" and "can team 0 see the stalker"
+            // cannot drift apart: a radar lights both, because a radar lights both.
+            if (stealth > 0)
+            {
+                Stamp(world, entity.TeamId, entity.Position, stealth, true);
+            }
         }
     }
 
@@ -115,7 +225,7 @@ public static class VisionSystem
     /// that alone cost over a hundred milliseconds.
     /// </para>
     /// </summary>
-    private static void Stamp(SimWorld world, int team, WorldPos centre, int radiusMm)
+    private static void Stamp(SimWorld world, int team, WorldPos centre, int radiusMm, bool stealth)
     {
         NavGrid nav = world.Navigation;
         VisibilityGrid grid = world.Visibility;
@@ -152,7 +262,14 @@ public static class VisionSystem
 
             for (int x = firstX; x <= lastX; x++)
             {
-                grid.MarkVisible(team, rowBase + x);
+                if (stealth)
+                {
+                    grid.MarkDetected(team, rowBase + x);
+                }
+                else
+                {
+                    grid.MarkVisible(team, rowBase + x);
+                }
             }
         }
     }

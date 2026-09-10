@@ -315,6 +315,12 @@ public sealed class ModelCatalog : IDisposable
         // fact that one of the two files failed to load.
         UnitKind.GunEmplacement => MeshBuilder.Box(9f, 3.4f, 10f),
         UnitKind.AntiAirEmplacement => MeshBuilder.Cylinder(4.6f, 5f),
+
+        // And the radar station, until its model arrives: a mast, because the one thing that
+        // has to survive a missing file is the silhouette. A player who cannot see that the
+        // thing on the ridge turns has no way to tell a radar that is working from one whose
+        // power has been cut, and the sweep is the whole of that signal.
+        UnitKind.RadarStation => MeshBuilder.Cylinder(2.2f, 8f),
         _ => MeshBuilder.Box(1f, 1f, 1f),
     };
 
@@ -406,6 +412,14 @@ public sealed class ModelCatalog : IDisposable
             [CacheKeyOf(Faction.Soviet, UnitKind.GunEmplacement)] = new("Generated", "soviet_gun.glb", 11.5f, GeneratedYaw),
             [CacheKeyOf(Faction.Soviet, UnitKind.AntiAirEmplacement)] = new("Generated", "soviet_aa.glb", 11.5f, GeneratedYaw),
 
+            // The radar station, which is a mast with a dish on it rather than a position.
+            // `GeneratedYaw` like the emplacements beside it and for the same reason: the
+            // generator authors it front-first along +Y with its compound deeper than it is
+            // wide, so the loader's own quarter turn puts its front on +X. Its dish is named
+            // `radar`, which is the part the client turns — and stops turning when the grid
+            // cannot run the set.
+            [CacheKeyOf(Faction.Soviet, UnitKind.RadarStation)] = new("Generated", "soviet_radar.glb", 13f, GeneratedYaw),
+
             // ---- Κινέζοι: light hulls, mass-produced patterns ----
             [CacheKeyOf(Faction.Chinese, UnitKind.Infantry)] = new("Generated", "chinese_infantry.glb", 1.92f, AcrossYaw),
             [CacheKeyOf(Faction.Chinese, UnitKind.Tank)] = new("Generated", "chinese_tank.glb", 5.4f, GeneratedYaw),
@@ -422,6 +436,7 @@ public sealed class ModelCatalog : IDisposable
             [CacheKeyOf(Faction.Chinese, UnitKind.NuclearPlant)] = new("Generated", "chinese_nuclear.glb", 18f, AcrossYaw),
             [CacheKeyOf(Faction.Chinese, UnitKind.GunEmplacement)] = new("Generated", "chinese_gun.glb", 11f, GeneratedYaw),
             [CacheKeyOf(Faction.Chinese, UnitKind.AntiAirEmplacement)] = new("Generated", "chinese_aa.glb", 11f, GeneratedYaw),
+            [CacheKeyOf(Faction.Chinese, UnitKind.RadarStation)] = new("Generated", "chinese_radar.glb", 13f, GeneratedYaw),
 
             // ---- Δυτικοί: the most refined vehicles and buildings ----
             [CacheKeyOf(Faction.Western, UnitKind.Infantry)] = new("Generated", "western_infantry.glb", 1.82f, AcrossYaw),
@@ -439,6 +454,7 @@ public sealed class ModelCatalog : IDisposable
             [CacheKeyOf(Faction.Western, UnitKind.NuclearPlant)] = new("Generated", "western_nuclear.glb", 22f, GeneratedYaw),
             [CacheKeyOf(Faction.Western, UnitKind.GunEmplacement)] = new("Generated", "western_gun.glb", 12f, GeneratedYaw),
             [CacheKeyOf(Faction.Western, UnitKind.AntiAirEmplacement)] = new("Generated", "western_aa.glb", 12f, GeneratedYaw),
+            [CacheKeyOf(Faction.Western, UnitKind.RadarStation)] = new("Generated", "western_radar.glb", 13f, GeneratedYaw),
         };
 
         private static int CacheKeyOf(Faction faction, UnitKind kind) => ((int)faction << 8) | (int)kind;

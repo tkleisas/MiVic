@@ -24,6 +24,12 @@ $p.ExitCode      # 0 = every command ran and every check held
 `--turret-demo --probe tools/probe/turret.probe` puts two tanks 70 m apart and then answers
 questions about them.
 
+Two fixtures exist because a probe cannot place a unit. They are `--emplacement-demo`, which
+clears the field and puts a command centre and three enemies on the clearest ground the map
+has, and `--detection-demo`, which lays a defensive post, a radar and a base up the map's centre
+column with a tank held at 190 m and a Καταδρομέας walking down it — see
+`tools/probe/detection.probe` below for what that one is for.
+
 **PowerShell does not wait for this executable.** The client is a `WinExe`, so `& $exe …`
 returns immediately and `$LASTEXITCODE` is empty. Use `Start-Process -Wait -PassThru` (as
 above), `cmd /c`, or read the transcript file after waiting. This is the only piece of
@@ -105,6 +111,10 @@ shot out/frame-later.png
 | `structures [team]` | every structure a team has: its role, the cell it stands on, how much of it is up, and its hit points |
 | `block <x> <z>` | what deck stands on one cell: how much is left of it, which team owns it, which way it runs — including whether it is a **junction**, which is a fact about the cell rather than about any crossing — and which crossings pass through it |
 | `blast <x> <z> [radius] [damage] [team]` | drops a blast on the ground, as a salvo or a strike does, and reports how many blocks of deck it knocked out and what is left of the one at the centre |
+| `range <slot>` | the sensor chain for one entity: the weapon's range, its own eyes, the radius those eyes find a hidden enemy at, whether a powered radar is covering it, and **the furthest it can engage anything at** — which is the smaller of the first two until a radar changes the answer |
+| `power [team]` | one team's power ledger: energy generated, energy drawn by the structures that are on, the surplus, how many radars are lit and how many the grid had to shed, and the reason the interface gives for a brown-out, in Greek |
+| `detect <team> <slot>` | whether one team can see one entity, and by which channel: hidden, the cell's sight, the cell's detection, and whether the target has revealed itself by firing |
+| `exposure <team> <x> <z>` | what one team knows about a point on the ground: whether a powered radar covers it, whether the cell is visible, and whether it is detected — the query to walk a boundary across one reading at a time |
 
 ### What the player would see
 
@@ -581,6 +591,82 @@ Five facts, and each of them is a different failure mode:
 The `events` stream is the evidence rather than a summary of it: those lines come from
 `SimBridge` watching `AttackCooldown`, so a shot in the transcript and a tracer on screen are
 the same shot.
+
+## Worked example: does a radar give the guns behind it their reach?
+
+Detection is not firing range in this game. A Πυροβολείο's weapon reaches 200 m and its own
+eyes reach 170, so a tank at 190 m is inside the first and outside the second — engaged only
+while something else is looking, which is what a Σταθμός Ραντάρ is for. None of that can be
+asserted into existence: the answer is a distance that changes, and the change has to be read
+off a running world.
+
+`tools/probe/detection.probe`, run against `--detection-demo` — a fixture that lays a
+defensive post and a base up the map's centre column, holds a tank 190 m from the gun, walks a
+Καταδρομέας down the column, and lets the probe build one more factory than the grid can run.
+Trimmed to the answers (`…` marks lines cut out of the middle):
+
+```
+cmd: power 0
+query:   generation 16 Ε per tick, from the structures standing
+query:   draw       15 Ε per tick, including the radars that are on
+query:   radars     1 lit, 0 dark, 0 Ε short of running them all
+cmd: range 503
+query:   gun        200.0 m, 45 damage every 50 ticks
+query:   eyes       170.0 m — as far as its own sensors reach
+query:   stealth    85.0 m — as far as they find a hidden enemy
+query:   radar      under coverage, team 0 has 1 radar on the air
+query:   reach      200.0 m — the furthest it can engage anything at
+cmd: detect 0 500
+query: detect 500 western/StealthRecon (Καταδρομέας) at (x 0.1, z -264.6) m against team 0
+query:   hidden     yes — no weapon of team 0 may engage it
+cmd: tick 20
+cmd: detect 0 500
+query: detect 500 western/StealthRecon (Καταδρομέας) at (x 2.4, z -256.5) m against team 0
+query:   hidden     yes — no weapon of team 0 may engage it
+cmd: tick 10
+cmd: detect 0 500
+query: detect 500 western/StealthRecon (Καταδρομέας) at (x 3.5, z -252.5) m against team 0
+query:   hidden     no
+query:   revealed   no, own team False
+…
+query:   #255 tick 103 shot      slot  503 soviet/GunEmplacement … firing at western/Tank (slot 502), direction (0.00, 0.00, 1.00) bearing 90.0°, 190.0 m away
+cmd: structure Factory 200 -140 0 build
+ok: Εργοστάσιο ordered for team 0 at (x 201.5, z -136.0) m, executing on tick 232
+cmd: tick 300
+cmd: power 0
+query:   radars     0 lit, 1 dark, 3 Ε short of running them all
+query:   brown-out  λείπει ισχύς 3 Ε
+cmd: range 503
+query:   radar      not under coverage, team 0 has 0 radars on the air
+query:   reach      170.0 m — the furthest it can engage anything at
+cmd: hud
+query: hud — the HUD is drawn into probe frames, notice "Σταθμός Ραντάρ: λείπει ισχύς 3 Ε."
+query:   #255 tick 460 hit       slot  502 western/Tank … took 44 damage
+cmd: tick 60
+query:   health     99560/320 (31112%)
+```
+
+Five facts, and each of them is a different failure mode:
+
+- **the same gun reports 200.0 m and then 170.0 m**, with nothing about the gun changing: at
+  tick 1 it is under a lit radar's coverage and at tick 531 the grid has shed that radar. The
+  difference between the two numbers is 30 m of reach and it exists only because something
+  stopped looking;
+- **the tank at 190 m is shot for as long as that is true and not afterwards** — hits at ticks
+  52, 103, … 460, and then 99560 hit points at tick 531 and the same 99560 sixty ticks later.
+  `unit 503` still names the target after the brown-out, which is the other half of the rule:
+  a gun that has lost sight of what it was shooting keeps hold of it rather than forgetting;
+- **the Καταδρομέας crosses the line between two readings** — hidden at 145 m and at 133 m from
+  the radar, seen at 128 m. That is half of the radar's 260 m, and it is the radar doing it:
+  `revealed no` on every line says the stalker never fired, so nothing here is a firing reveal
+  wearing a detection's clothes;
+- **`draw 15` against `generation 16`** — one more factory is 19 against 16, the ledger sheds
+  the radar, and `brown-out λείπει ισχύς 3 Ε` is the same sentence the player is shown. The
+  dish stops where it stood, which `parts 504 radar` reports as `did not turn over the last 40
+  ticks` on a part that was turning at 1.1° a tick;
+- **the two shots** (`detection-covered.png`, `detection-dark.png`) are the same gun from the
+  same camera with the HUD on: the ring on the ground is the reach, and it is visibly smaller
+  in the second one.
 
 ## `parts <slot>` in full
 

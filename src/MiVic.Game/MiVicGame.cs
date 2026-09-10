@@ -144,6 +144,25 @@ public sealed partial class MiVicGame : XnaGame
     /// <summary>The ghost of the placement the player has not committed to yet.</summary>
     private PlacementPreview? _placementPreview;
 
+    /// <summary>The ring that shows how far the selected structure reaches. Owns its own mesh.</summary>
+    private PlacementPreview? _coveragePreview;
+
+    /// <summary>Ring mesh for the selected structure, rebuilt only when the reach changes.</summary>
+    private InstancedRenderer.Mesh? _coverageMesh;
+
+    /// <summary>Slot the ring mesh was built for, so a selection change rebuilds it.</summary>
+    private int _coverageSlot = -1;
+
+    /// <summary>Radius the ring mesh was built for, so a radar coming back on rebuilds it.</summary>
+    private int _coverageRadiusMm;
+
+    /// <summary>
+    /// Whether the last frame told the player about a dark radar, so the notice is raised on
+    /// the change rather than on every frame. The HUD restarts its four-second timer on every
+    /// call, so a notice raised per frame would sit on the screen for ever.
+    /// </summary>
+    private bool _radarNoticeShown;
+
     /// <summary>Draws the decks of the crossings that have been built.</summary>
     private BridgeRenderer? _bridges;
 
@@ -528,6 +547,16 @@ public sealed partial class MiVicGame : XnaGame
             _camera.TiltTo(_options.ScreenshotPitch ?? -0.72f);
             _camera.Yaw = _options.ScreenshotYaw ?? 0.55f;
         }
+        else if (_options.DetectionDemo)
+        {
+            // Down the column the demonstration is laid along, tilted enough to see the
+            // ground between the radar and the stalker: what is being looked at is where a
+            // boundary falls, and a boundary is a distance rather than a thing.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 320f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.80f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 0f;
+            _camera.FocusOn(new Vector3(0f, 0f, -80f));
+        }
         else if (_options.ScreenshotPath is not null)
         {
             _camera.ZoomTo(_options.ScreenshotZoom ?? 430f);
@@ -552,7 +581,9 @@ public sealed partial class MiVicGame : XnaGame
                                     ? SimBridge.CreateFlightDemo(_options.Seed)
                                     : _options.EmplacementDemo
                                         ? SimBridge.CreateEmplacementDemo(_options.Seed)
-                                        : new SimBridge(_options.Seed, _options.IsModelGallery);
+                                        : _options.DetectionDemo
+                                            ? SimBridge.CreateDetectionDemo(_options.Seed)
+                                            : new SimBridge(_options.Seed, _options.IsModelGallery);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
@@ -598,6 +629,13 @@ public sealed partial class MiVicGame : XnaGame
         // its own: the footprint is built from the cells the simulation says would be taken,
         // and rebuilt only when the site moves to another cell.
         _placementPreview = new PlacementPreview(GraphicsDevice, _renderer);
+
+        // The coverage ring: how far the selected structure reaches, which the simulation
+        // answers and this draws. A second preview rather than a share of the first, because a
+        // placement is one ghost at a time and a selected gun's reach is not a placement at all
+        // — the two can be on screen together the moment a player selects a gun and then arms
+        // one, which is exactly when they are comparing the two.
+        _coveragePreview = new PlacementPreview(GraphicsDevice, _renderer);
 
         // The decks of the crossings the simulation has built, drawn from its own record of
         // where each span runs and how much of it is up.
@@ -742,6 +780,12 @@ public sealed partial class MiVicGame : XnaGame
 
     protected override void Update(GameTime gameTime)
     {
+        // Raised before the probe's own return, because a probe reads it: `hud` reports the
+        // notice currently on screen, and a notice the script could never trigger would be a
+        // line of interface no test could reach. It reads the world and writes one string, so
+        // running it on every frame including a script's own costs nothing.
+        NotifyDimmedRadars();
+
         // A probe script owns the frame while it runs. It advances the simulation from its
         // own commands rather than from the wall clock, so the same script produces the same
         // transcript on a slow machine and a fast one — and the client's own per-frame work
@@ -900,6 +944,11 @@ public sealed partial class MiVicGame : XnaGame
         VerifyPendingBridge();
         VerifyPendingStructure();
         UpdatePlacementPreview();
+
+        // The cover the player's own defences are standing under. The notice is raised at the
+        // top of the frame instead — a script has to be able to read it — and this is the half
+        // that has to happen before the HUD is drawn.
+        UpdateCoverageRing();
 
         _previousScrollWheel = mouse.ScrollWheelValue;
         _previousKeyboard = keyboard;
@@ -1268,6 +1317,11 @@ public sealed partial class MiVicGame : XnaGame
             _drawCalls++;
         }
 
+        if (_coveragePreview?.Draw() == true)
+        {
+            _drawCalls++;
+        }
+
         _renderer.End();
     }
 
@@ -1551,7 +1605,7 @@ public sealed partial class MiVicGame : XnaGame
             // lets a turret turn and take its barrel with it.
             for (int i = 0; i < batch.Parts.Length; i++)
             {
-                batch.Locals[i] = AnimatePart(batch.Parts[i], ref entity, world);
+                batch.Locals[i] = AnimatePart(batch.Parts[i], ref entity, world, slot);
             }
 
             for (int i = 0; i < batch.Parts.Length; i++)
@@ -1683,7 +1737,7 @@ public sealed partial class MiVicGame : XnaGame
     /// same animation without any of it being recorded.
     /// </para>
     /// </summary>
-    private Matrix AnimatePart(PartBatch part, ref Entity entity, SimWorld world)
+    private Matrix AnimatePart(PartBatch part, ref Entity entity, SimWorld world, int slot)
     {
         if (part.ParentIndex < 0 && part.LocalTransform == Matrix.Identity)
         {
@@ -1723,7 +1777,21 @@ public sealed partial class MiVicGame : XnaGame
             // world the game draws in. Turning about it swung the dish through the
             // vertical plane instead: it climbed over the tower, went through the roof
             // and came back out, which is exactly what it looked like from a distance.
-            float sweep = world.Tick * 0.02f;
+            //
+            // <b>And a dish with no power behind it stops.</b> A Σταθμός Ραντάρ draws its
+            // generation continuously and the grid sheds it before anything else, so the
+            // one building whose whole purpose is the sweep is also the one that loses it.
+            // Stopping rather than slowing: a dish crawling round reads as a slow radar
+            // rather than as a dead one, and a player who has to ask whether it is moving
+            // has been given no signal at all. It stops where it stood, which is a pose a
+            // still frame can be read from — see tools/probe/detection.probe, which samples
+            // this part twice and compares.
+            //
+            // Only structures pay it. The same part name is on a drone's four rotors and on
+            // a harvester's beacon, and neither of them is plugged into a base: stopping the
+            // rotors of an aircraft because a power plant elsewhere on the map was bombed
+            // would be a bug a player would report as one.
+            float sweep = IsRadarDark(in entity, world, slot) ? 0f : world.Tick * 0.02f;
             return Matrix.CreateRotationY(sweep) * part.LocalTransform;
         }
         else if (IsLimb(name))
@@ -1733,6 +1801,29 @@ public sealed partial class MiVicGame : XnaGame
 
         return part.LocalTransform;
     }
+
+    /// <summary>
+    /// True when this entity is a radar station whose dish is not turning: the team's
+    /// generation could not cover it and the grid shed it.
+    /// <para>
+    /// It asks the simulation rather than working it out, which is the point of asking at all.
+    /// The client has no opinion about power: <see cref="SimWorld.IsRadarLit"/> is the same
+    /// answer the guns get, so a dish that has stopped and a gun that has lost its reach are
+    /// always the same event. The alternative — re-deriving a brown-out in the renderer from
+    /// the energy stockpile — is how a picture comes to disagree with the game it is drawing.
+    /// </para>
+    /// <para>
+    /// It is deliberately only the radar station. A <c>radar*</c> part is also a factory's
+    /// extractor fan, a power plant's cooling fan and a drone's four rotors, and none of those
+    /// is a sensor: stopping a hall's ventilation because the grid is short would say
+    /// "production has stopped", which is a rule this game does not have and a later brown-out
+    /// step at that.
+    /// </para>
+    /// </summary>
+    private static bool IsRadarDark(in Entity entity, SimWorld world, int slot)
+        => entity.Kind == UnitKind.RadarStation &&
+           entity.ConstructionTicksRemaining <= 0 &&
+           !world.IsRadarLit(slot);
 
     /// <summary>Parts that belong to a walking rig, matched by the contract name.</summary>
     private static bool IsLimb(string name)
@@ -2860,6 +2951,163 @@ public sealed partial class MiVicGame : XnaGame
     /// </para>
     /// </summary>
     private const float StructureGhostOpacity = 0.66f;
+
+    /// <summary>
+    /// Draws the reach of the single selected structure on the ground.
+    /// <para>
+    /// <b>A radius a player cannot see is a radius a player cannot use.</b> Detection is not
+    /// firing range in this game, a radar is what turns one into the other, and the whole
+    /// decision a Σταθμός Ραντάρ creates — put the guns under the umbrella — is invisible
+    /// without a ring on the ground. So a selected gun draws the distance it can actually
+    /// engage at, and a selected radar draws the ground it lights. Select a gun, watch its ring
+    /// grow when a radar is lit beside it and shrink when the grid sheds it, and the mechanic
+    /// has been taught without a word of explanation.
+    /// </para>
+    /// <para>
+    /// The number comes from the simulation — <see cref="CombatSystem.EngagementRadiusMm"/> and
+    /// <see cref="VisionSystem.RadarCoverageMm"/> — so the ring and the gun cannot disagree.
+    /// A dark radar draws nothing at all, because its coverage is zero and a ring would be a
+    /// promise the guns cannot keep; the notice in the HUD says why it went.
+    /// </para>
+    /// </summary>
+    private void UpdateCoverageRing()
+    {
+        if (_coveragePreview is null || _simulation is null || IsPlayback)
+        {
+            _coveragePreview?.Hide();
+            return;
+        }
+
+        SimWorld world = _simulation.World;
+        int slot = SelectedCoverageSlot();
+
+        if (slot < 0)
+        {
+            _coveragePreview.Hide();
+            _coverageSlot = -1;
+            return;
+        }
+
+        ref Entity entity = ref world.GetRefBySlot(slot);
+
+        int radiusMm = entity.Kind == UnitKind.RadarStation
+            ? (world.IsRadarLit(slot) ? VisionSystem.RadarCoverageMm : 0)
+            : CombatSystem.EngagementRadiusMm(world, slot);
+
+        if (radiusMm <= 0)
+        {
+            _coveragePreview.Hide();
+            _coverageSlot = slot;
+            _coverageRadiusMm = 0;
+            return;
+        }
+
+        if (slot != _coverageSlot || radiusMm != _coverageRadiusMm || _coverageMesh is null)
+        {
+            _coverageMesh?.Dispose();
+            _coverageMesh = _renderer!.CreateMesh(PlacementPreview.CoverageRing(
+                world.Navigation,
+                entity.Position,
+                radiusMm,
+                CoverageRingBandMm,
+                cell => DrawnHeightMm(world, world.TerrainTypes, cell, world.Navigation.CentreOf(cell))));
+
+            _coverageSlot = slot;
+            _coverageRadiusMm = radiusMm;
+        }
+
+        // Identity, like the bridge footprint: the ring's vertices are already where they go.
+        _coveragePreview.Show(_coverageMesh, Matrix.Identity, CoverageTint);
+    }
+
+    /// <summary>
+    /// The slot whose reach should be drawn: a structure the player could aim at something
+    /// with, or a radar station — whose reach is everybody else's.
+    /// <para>
+    /// It deliberately does not go through <see cref="SelectedBuildingSlot"/>, which answers a
+    /// different question and filters through a narrower client-side idea of what a building is.
+    /// Every role here is one a player has to place rather than order about, and one this ring
+    /// has something to say about.
+    /// </para>
+    /// </summary>
+    private int SelectedCoverageSlot()
+    {
+        if (_selection.Count != 1 || _simulation is null)
+        {
+            return -1;
+        }
+
+        if (!_simulation.World.TryGetRef(_selection.Selected[0], out _, out int slot))
+        {
+            return -1;
+        }
+
+        ref Entity entity = ref _simulation.World.GetRefBySlot(slot);
+        UnitDefinition definition = UnitCatalog.Get(entity.Kind);
+
+        // A radar, whose reach is everybody else's, or a structure with a gun on it, whose
+        // reach is the thing the radar changes. Not every unit: a hull carries its range with
+        // it and a ring under the whole selection would be a map covered in circles.
+        bool interesting = entity.Kind == UnitKind.RadarStation || (definition.IsArmed && definition.IsBuilding);
+
+        return interesting ? slot : -1;
+    }
+
+    /// <summary>
+    /// How thick the coverage band is: about three navigation cells, which is 28 m of ground.
+    /// One cell is a dotted suggestion from the height this game is played at, and a band wide
+    /// enough to be seen without squinting stops reading as a line and starts reading as a
+    /// filled disc with a hole in it.
+    /// </summary>
+    private const int CoverageRingBandMm = 28_000;
+
+    /// <summary>
+    /// The coverage ring's colour: a bright cold blue at more than half opacity, and neither of
+    /// the two the placement ghost uses. Green means a site would be accepted and red that it
+    /// would not, and a ring that borrowed either would read as a verdict about something the
+    /// player is not placing.
+    /// <para>
+    /// Bright and opaque because the ghost pass is fogged like everything else on the ground,
+    /// and remembered ground washes a thin colour out to the colour of the fog — which on this
+    /// map is a warm haze, so a faint blue ring arrives as a brown one. This is the ring that
+    /// matters most at the edge of what a player knows, so it has to survive the walk.
+    /// </para>
+    /// </summary>
+    private static readonly Vector4 CoverageTint = new(0.35f, 0.95f, 1f, 0.55f);
+
+    /// <summary>
+    /// The Greek line the interface shows when the grid cannot run every radar a team has
+    /// built, raised once per change.
+    /// <para>
+    /// Once per change and not once per frame: <see cref="GameHud.Notify"/> restarts its
+    /// four-second timer every time it is called, so a notice raised on every frame of a
+    /// brown-out would never leave the screen. The player is told when it happens, which is
+    /// what a notice is for; the dish that has stopped is what tells them it is still true.
+    /// </para>
+    /// </summary>
+    private void NotifyDimmedRadars()
+    {
+        if (_simulation is null)
+        {
+            return;
+        }
+
+        string reason = PowerSystem.DimmedReason(_simulation.World.Team(PlayerTeam));
+
+        if (reason.Length == 0)
+        {
+            _radarNoticeShown = false;
+            return;
+        }
+
+        if (_radarNoticeShown)
+        {
+            return;
+        }
+
+        _radarNoticeShown = true;
+        _hud.Notify($"{FactionPalette.UnitLabel(UnitKind.RadarStation)}: {reason}.");
+    }
 
     /// <summary>
     /// Calls the pending ability in at the ground point under the cursor. The
@@ -5598,6 +5846,7 @@ public sealed partial class MiVicGame : XnaGame
         _healthFillMesh?.Dispose();
         _axisMesh?.Dispose();
         _bridgePreviewMesh?.Dispose();
+        _coverageMesh?.Dispose();
         _bridges?.Dispose();
         _fog?.Dispose();
 

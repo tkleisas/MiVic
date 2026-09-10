@@ -8,6 +8,16 @@ namespace MiVic.Core.Sim;
 /// apart is what makes scouting meaningful — you keep the map you have uncovered
 /// but lose the ability to watch it.
 /// </para>
+/// <para>
+/// <b>There is a third channel, and it is not a second vision system.</b> A cell
+/// is <em>detected</em> when a sensor looked at it closely enough to find something
+/// that is hiding: the same disc <see cref="VisionSystem"/> stamps for fog, scaled by
+/// <see cref="VisionSystem.StealthDetectionPermille"/>. It lives here, in the same
+/// class, written by the same loop on the same tick, for one reason — "can team 0 see
+/// this cell" and "can team 0 see the stalker standing on it" have to be answered by
+/// the same pass over the same numbers, or a radar will light one and not the other
+/// and the fog will show a man the guns cannot shoot.
+/// </para>
 /// </summary>
 public sealed class VisibilityGrid
 {
@@ -22,6 +32,7 @@ public sealed class VisibilityGrid
     public const byte UnknownFogLevel = 232;
 
     private readonly int[] _visibleTick;
+    private readonly int[] _detectedTick;
     private readonly bool[] _explored;
     private long _tick;
 
@@ -35,10 +46,12 @@ public sealed class VisibilityGrid
 
         Size = size;
         _visibleTick = new int[size * size * SimConstants.TeamCount];
+        _detectedTick = new int[size * size * SimConstants.TeamCount];
         _explored = new bool[size * size * SimConstants.TeamCount];
 
         // Sentinel: no cell has ever been seen, so nothing is visible at tick 0.
         Array.Fill(_visibleTick, -1_000_000);
+        Array.Fill(_detectedTick, -1_000_000);
     }
 
     /// <summary>Cells along each axis.</summary>
@@ -68,10 +81,27 @@ public sealed class VisibilityGrid
         _explored[index] = true;
     }
 
+    /// <summary>
+    /// Marks a cell as closely detected for a team. Every detected cell is also a
+    /// visible one, because the disc stamped here is a fraction of the disc stamped
+    /// for fog — but the two are written separately, and the fog is not derived from
+    /// this, so that a future sensor that detects without looking (a seismic line, a
+    /// listening post) does not have to fake having eyes.
+    /// </summary>
+    public void MarkDetected(int team, int cell) => _detectedTick[(team * CellCount) + cell] = (int)_tick;
+
     /// <summary>True when a team currently has eyes on a cell.</summary>
     public bool IsVisible(int team, int cell)
         => (uint)team < SimConstants.TeamCount &&
            _tick - _visibleTick[(team * CellCount) + cell] < VisibleWindowTicks;
+
+    /// <summary>
+    /// True when a team has looked at this cell closely enough to find a stealthed
+    /// enemy on it. The question a stealth check asks, and the only one it asks.
+    /// </summary>
+    public bool IsDetected(int team, int cell)
+        => (uint)team < SimConstants.TeamCount &&
+           _tick - _detectedTick[(team * CellCount) + cell] < VisibleWindowTicks;
 
     /// <summary>True when a team has ever seen a cell.</summary>
     public bool IsExplored(int team, int cell)

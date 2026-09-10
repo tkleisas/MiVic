@@ -18,7 +18,7 @@ diff.
 |---|---|
 | `build_vehicles.py` | the shared mesh/material kit, tanks, self-propelled guns, anti-air, the harvester, Κατιούσα, the electro prototype, the drone and the aircraft |
 | `build_figures.py` | soldiers: infantry, commissar, robot infantry, mercenary, stealth reconnaissance |
-| `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau, gun emplacement, anti-aircraft emplacement |
+| `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau, gun emplacement, anti-aircraft emplacement, radar station |
 
 `tools/blender/build_all.ps1` runs all of them in order. Each generator writes only
 its own files, so they never conflict.
@@ -26,7 +26,7 @@ its own files, so they never conflict.
 ## Slots
 
 `src/MiVic.Game/Data/ModelCatalog.cs` maps every (faction, role) pair to a file
-here. At present all 46 slots are generated; `--inspect-models` reports
+here. At present all 49 slots are generated; `--inspect-models` reports
 `failures=0 missing=0` when that is true.
 
 ## Materials and the faction paint mask
@@ -58,7 +58,7 @@ them at will:
 | `wheel_*` | rolls, at the rate its own radius implies for the distance travelled |
 | `turret` | traverses to face the unit's current target |
 | `barrel` | elevates: authored with its elevation, and a child of the `turret` it hangs off |
-| `radar*` | sweeps continuously |
+| `radar*` | sweeps continuously — and stops when the structure that owns it has no power |
 | `Leg*`, `Shin*` | a stride; the shin bends behind the thigh on the forward swing |
 | `Arm*` | swings against the leg on the same side |
 | `Body`, `Head` | bob with the footfalls |

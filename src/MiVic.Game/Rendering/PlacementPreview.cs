@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using MiVic.Core.Numerics;
 using MiVic.Core.Pathfinding;
 using Microsoft.Xna.Framework;
@@ -105,6 +106,26 @@ public sealed class PlacementPreview
         _staged = true;
     }
 
+    /// <summary>
+    /// Stages a mesh in a colour the caller chooses, for the overlays that are not a verdict.
+    /// <para>
+    /// A placement ghost is green or red because it is answering one question — may this go
+    /// here — and colouring it any other way would be a lie about that answer. A coverage ring
+    /// answers a different question: how far this gun reaches. It has no valid state and no
+    /// invalid state, it has a size, so it picks its own colour instead of borrowing one of
+    /// the two.
+    /// </para>
+    /// </summary>
+    public void Show(InstancedRenderer.Mesh mesh, in Matrix transform, Vector4 tint)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+
+        _mesh = mesh;
+        _transform = transform;
+        _tint = tint;
+        _staged = true;
+    }
+
     /// <summary>Stages nothing, so nothing is drawn. Used when the player is not placing.</summary>
     public void Hide() => _staged = false;
 
@@ -201,5 +222,75 @@ public sealed class PlacementPreview
         }
 
         return new MeshData(vertices, indices);
+    }
+
+    /// <summary>
+    /// A flat quad per cell of an <em>annulus</em>: the ring that shows how far something
+    /// reaches. The same mesh as <see cref="Footprint"/> with a hole in it, and for the same
+    /// reason it is built out of cells — it drapes over the ground it crosses instead of
+    /// floating through a hillside.
+    /// </summary>
+    /// <param name="navigation">The lattice the cells are indices into.</param>
+    /// <param name="centre">What the ring is drawn around, in world millimetres.</param>
+    /// <param name="radiusMm">Distance from the centre to the middle of the band.</param>
+    /// <param name="bandMm">
+    /// How thick the band is. A cell is 9.4 m across and the ring is a diagram rather than a
+    /// measurement, so a band of about two cells is what reads as a line from the camera the
+    /// game is played at; a hairline one cell wide is a dotted suggestion, and a wide one is a
+    /// filled disc with a hole in it.
+    /// </param>
+    /// <param name="heightOfCell">Height to lay each cell's quad at, in millimetres.</param>
+    public static MeshData CoverageRing(
+        NavGrid navigation,
+        WorldPos centre,
+        int radiusMm,
+        int bandMm,
+        Func<int, int> heightOfCell)
+    {
+        ArgumentNullException.ThrowIfNull(navigation);
+        ArgumentNullException.ThrowIfNull(heightOfCell);
+
+        if (radiusMm <= 0 || bandMm <= 0)
+        {
+            return MeshData.Empty;
+        }
+
+        int size = navigation.Size;
+        int cell = navigation.CellSizeMm;
+        int origin = navigation.OriginMm;
+        int half = cell / 2;
+
+        long inner = Math.Max(0, radiusMm - (bandMm / 2));
+        long outer = radiusMm + (bandMm / 2);
+        long innerSquared = inner * inner;
+        long outerSquared = outer * outer;
+
+        // The band is not a filled disc: only the cells whose centres fall between the two
+        // radii go in, which is why this is a census rather than a fill. It is a few thousand
+        // cells for a 260 m ring, built once and cached, so the cost never lands in a frame.
+        List<int> cells = [];
+
+        int minCellX = Math.Max(0, (centre.X - radiusMm - bandMm - origin) / cell);
+        int maxCellX = Math.Min(size - 1, (centre.X + radiusMm + bandMm - origin) / cell);
+        int minCellZ = Math.Max(0, (centre.Z - radiusMm - bandMm - origin) / cell);
+        int maxCellZ = Math.Min(size - 1, (centre.Z + radiusMm + bandMm - origin) / cell);
+
+        for (int z = minCellZ; z <= maxCellZ; z++)
+        {
+            long dz = (origin + (z * cell) + half) - (long)centre.Z;
+
+            for (int x = minCellX; x <= maxCellX; x++)
+            {
+                long dx = (origin + (x * cell) + half) - (long)centre.X;
+                long squared = (dx * dx) + (dz * dz);
+
+                if (squared >= innerSquared && squared <= outerSquared)
+                {
+                    cells.Add((z * size) + x);
+                }
+            }
+        }
+
+        return Footprint(navigation, CollectionsMarshal.AsSpan(cells), heightOfCell);
     }
 }

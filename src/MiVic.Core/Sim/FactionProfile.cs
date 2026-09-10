@@ -83,6 +83,13 @@ public enum UnitKind : byte
     /// of range bottled into one building, and no answer at all to anything on the ground.
     /// </summary>
     AntiAirEmplacement = 20,
+
+    /// <summary>
+    /// Σταθμός Ραντάρ — a radar station: an unarmed structure that projects detection
+    /// over the ground around it, and draws power for as long as it does. It is the one
+    /// structure whose weapon is everybody else's.
+    /// </summary>
+    RadarStation = 21,
 }
 
 /// <summary>
