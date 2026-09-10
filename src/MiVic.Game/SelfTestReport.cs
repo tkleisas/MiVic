@@ -51,6 +51,7 @@ public static class SelfTestReport
         string clickCheck,
         string moveOrderCheck,
         string combatCheck,
+        int healthBarsDrawn,
         string aiCheck,
         string replayCheck,
         string missionCheck,
@@ -118,6 +119,11 @@ public static class SelfTestReport
         Append(report, $"replay round-trip    : {replayCheck}");
         Append(report, $"mission objectives   : {missionCheck}");
         Append(report, $"particles            : {particleCheck}");
+
+        // A bar is only drawn over something damaged or selected, so a non-zero
+        // count is the proof that damage reached the interface and not just the
+        // simulation.
+        Append(report, $"health bars drawn    : {healthBarsDrawn}");
         Append(report, $"sound effects        : {sfxCheck}");
         Append(report, $"garbage collection   : {gcCheck}");
         Append(report, $"imgui capture        : {captureCheck}");

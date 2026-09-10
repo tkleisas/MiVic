@@ -680,6 +680,12 @@ public sealed class SimWorld
             return TryUseAbility(command.Ability, command.Destination, command.IssuerTeam);
         }
 
+        // A bridge is engineering work on the ground, not an order to a unit.
+        if (command.Kind == SimCommandKind.BuildBridge)
+        {
+            return TryBuildBridge(command.Destination, command.IssuerTeam);
+        }
+
         if (!TryResolve(command.Target, out int slot))
         {
             return false;
@@ -1050,6 +1056,160 @@ public sealed class SimWorld
 
         return true;
     }
+
+    /// <summary>Materials a bridge costs.</summary>
+    public const int BridgeMaterials = 150;
+
+    /// <summary>Energy a bridge costs.</summary>
+    public const int BridgeEnergy = 40;
+
+    /// <summary>Water a bridge costs — concrete needs a great deal of it.</summary>
+    public const int BridgeWater = 30;
+
+    /// <summary>Furthest a span will reach from where it is placed, in cells.</summary>
+    public const int MaxBridgeSpan = 24;
+
+    /// <summary>
+    /// True when a team could build a crossing at this position, and why not if it
+    /// could not. Split out from the work so the interface can grey a button out for
+    /// the right reason.
+    /// </summary>
+    public bool CanBuildBridge(int team, WorldPos target, out string reason)
+    {
+        reason = string.Empty;
+
+        if ((uint)team >= SimConstants.TeamCount)
+        {
+            reason = "άγνωστη ομάδα";
+            return false;
+        }
+
+        // Bridges are made in a factory. A team with no industry cannot span a river.
+        if (!HasStructure(team, UnitKind.Factory))
+        {
+            reason = "χρειάζεται εργοστάσιο";
+            return false;
+        }
+
+        int cell = TerrainTypes.IndexOfWorld(target.X, target.Z);
+
+        if (cell < 0)
+        {
+            reason = "έξω από τον χάρτη";
+            return false;
+        }
+
+        if (!IsWater(TerrainTypes.TypeAt(cell)))
+        {
+            reason = "χρειάζεται νερό";
+            return false;
+        }
+
+        ref TeamState state = ref _teams[team];
+
+        if (state.Materials < BridgeMaterials || state.Energy < BridgeEnergy || state.Water < BridgeWater)
+        {
+            reason = "λείπουν πόροι";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Spans the water at a position.
+    /// <para>
+    /// The span runs along whichever axis stays wet longest, so placing it on a river
+    /// crosses the river rather than running along the bank. Every water cell it
+    /// covers becomes a ford, which is the same surface the generator carves for its
+    /// own crossings — a bridge is a ford a player chose the site of.
+    /// </para>
+    /// <para>
+    /// Permanent once built. A bridge is engineering work, not a unit: there is
+    /// nothing to shoot that would put the river back, and modelling demolition would
+    /// need the original depths stored per span for no gameplay the design asks for.
+    /// </para>
+    /// </summary>
+    private bool TryBuildBridge(WorldPos target, int team)
+    {
+        if (!CanBuildBridge(team, target, out _))
+        {
+            return false;
+        }
+
+        int cell = TerrainTypes.IndexOfWorld(target.X, target.Z);
+        int x = Navigation.CellX(cell);
+        int z = Navigation.CellZ(cell);
+
+        int across = 1 + SpanAlong(x, z, 1, 0) + SpanAlong(x, z, -1, 0);
+        int down = 1 + SpanAlong(x, z, 0, 1) + SpanAlong(x, z, 0, -1);
+
+        // Span the narrow way: a crossing should cross.
+        bool horizontal = across <= down;
+        int stepX = horizontal ? 1 : 0;
+        int stepZ = horizontal ? 0 : 1;
+        int cells = horizontal ? across : down;
+
+        if (cells > MaxBridgeSpan)
+        {
+            return false;
+        }
+
+        ref TeamState state = ref _teams[team];
+        state.Materials -= BridgeMaterials;
+        state.Energy -= BridgeEnergy;
+        state.Water -= BridgeWater;
+
+        for (int direction = -1; direction <= 1; direction += 2)
+        {
+            int cx = x;
+            int cz = z;
+
+            for (int step = 0; step <= MaxBridgeSpan; step++)
+            {
+                int index = Navigation.IndexOf(cx, cz);
+
+                if (index < 0 || !IsWater(TerrainTypes.TypeAt(index)))
+                {
+                    break;
+                }
+
+                TerrainTypes.SetType(index, TerrainType.ShallowWater);
+
+                cx += stepX * direction;
+                cz += stepZ * direction;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>How many water cells lie in a direction before dry land.</summary>
+    private int SpanAlong(int cellX, int cellZ, int stepX, int stepZ)
+    {
+        int count = 0;
+        int x = cellX + stepX;
+        int z = cellZ + stepZ;
+
+        for (int i = 0; i < MaxBridgeSpan; i++)
+        {
+            int index = Navigation.IndexOf(x, z);
+
+            if (index < 0 || !IsWater(TerrainTypes.TypeAt(index)))
+            {
+                break;
+            }
+
+            count++;
+            x += stepX;
+            z += stepZ;
+        }
+
+        return count;
+    }
+
+    private static bool IsWater(TerrainType type)
+        => type is TerrainType.ShallowWater or TerrainType.DeepWater;
 
     /// <summary>Cost and time of a prototype run, as a multiple of the unit's own.</summary>
     public const int PrototypeCostPermille = 2_000;

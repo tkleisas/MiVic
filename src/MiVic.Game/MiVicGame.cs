@@ -70,6 +70,10 @@ public sealed class MiVicGame : XnaGame
 
     private InstancedRenderer.Mesh? _terrainMesh;
     private InstancedRenderer.Mesh? _selectionMarkerMesh;
+    private InstancedRenderer.Mesh? _healthBackMesh;
+    private InstancedRenderer.Mesh? _healthFillMesh;
+    private SingleBatch? _healthBackBatch;
+    private SingleBatch? _healthFillBatch;
     private InstancedRenderer.Mesh? _axisMesh;
     private InstancedRenderer.Mesh? _particleMesh;
     private SingleBatch? _axisBatch;
@@ -99,6 +103,12 @@ public sealed class MiVicGame : XnaGame
 
     /// <summary>Off-map ability waiting for the player to click a target.</summary>
     private AbilityId _pendingAbility = AbilityId.None;
+
+    /// <summary>True while the next click places a bridge.</summary>
+    private bool _pendingBridge;
+
+    /// <summary>Health bars submitted on the last frame, for the self-test report.</summary>
+    private int _healthBarsDrawn;
 
     /// <summary>Terrain revision the current ground mesh was built from.</summary>
     private int _terrainRevision;
@@ -260,6 +270,13 @@ public sealed class MiVicGame : XnaGame
 
         // Particles are billboards: a unit quad the CPU orients per particle.
         _particleMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
+
+        // Health bars reuse the particle quad: a bar is two camera-facing quads, one
+        // behind the other, and there is no reason to build a mesh for that.
+        _healthBackMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
+        _healthBackBatch = new SingleBatch(_healthBackMesh, _simulation.World.Capacity);
+        _healthFillMesh = _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
+        _healthFillBatch = new SingleBatch(_healthFillMesh, _simulation.World.Capacity);
         _particles = new ParticleSystem();
         _smokeTimers = new float[_simulation.World.Capacity];
         _wasBuilding = new bool[_simulation.World.Capacity];
@@ -497,6 +514,7 @@ public sealed class MiVicGame : XnaGame
                 clickCheck,
                 moveOrderCheck,
                 combatCheck,
+                _healthBarsDrawn,
                 aiCheck,
                 replayCheck,
                 missionCheck,
@@ -579,6 +597,7 @@ public sealed class MiVicGame : XnaGame
         CollectUnitInstances();
         CollectSelectionMarkers();
         CollectOrderMarkers();
+        CollectHealthBars();
 
         if (_options.IsModelGallery)
         {
@@ -604,6 +623,24 @@ public sealed class MiVicGame : XnaGame
         {
             _renderer.Draw(_markerBatch.Mesh, _markerBatch.Instances, _markerBatch.Count);
             _drawCalls++;
+            _instancesSubmitted += _markerBatch.Count;
+        }
+
+        // Health bars go over the markers but under the fog: a bar for a unit the
+        // player cannot see would give away that something is there.
+        if (_healthBackBatch is { Count: > 0 })
+        {
+            _renderer.Draw(_healthBackBatch.Mesh, _healthBackBatch.Instances, _healthBackBatch.Count);
+            _drawCalls++;
+            _instancesSubmitted += _healthBackBatch.Count;
+        }
+
+        if (_healthFillBatch is { Count: > 0 })
+        {
+            _renderer.Draw(_healthFillBatch.Mesh, _healthFillBatch.Instances, _healthFillBatch.Count);
+            _drawCalls++;
+            _instancesSubmitted += _healthFillBatch.Count;
+            _healthBarsDrawn = _healthFillBatch.Count;
         }
 
         if (_orderBatch is { Count: > 0 })
@@ -754,6 +791,116 @@ public sealed class MiVicGame : XnaGame
             _markerBatch.Count++;
         }
     }
+
+    /// <summary>
+    /// Builds a health bar over everything that needs one.
+    /// <para>
+    /// Shown for anything damaged and for anything selected, and hidden at full
+    /// health otherwise: a bar over every unit is noise, and a bar over a unit the
+    /// player just selected is exactly when the number matters. Two quads per bar —
+    /// a dark backing and a coloured fill that shrinks from the right, because a
+    /// length reads at a glance where a number would not.
+    /// </para>
+    /// </summary>
+    private void CollectHealthBars()
+    {
+        if (_healthBackBatch is null || _healthFillBatch is null || _simulation is null || _camera is null)
+        {
+            return;
+        }
+
+        _healthBackBatch.Count = 0;
+        _healthFillBatch.Count = 0;
+
+        SimWorld world = _simulation.World;
+
+        if (_options.IsModelGallery)
+        {
+            return;
+        }
+
+        // The bars face the camera, so they are built from the same view vectors the
+        // particle system uses for its billboards.
+        Matrix view = _camera.GetView();
+        Vector3 right = new(view.M11, view.M21, view.M31);
+        Vector3 up = new(view.M12, view.M22, view.M32);
+        Vector3 forward = new(view.M13, view.M23, view.M33);
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot) || _healthBackBatch.Count >= _healthBackBatch.Instances.Length)
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+            UnitDefinition definition = UnitCatalog.Get(entity.Kind);
+
+            if (definition.Health <= 0)
+            {
+                continue;
+            }
+
+            bool selected = _selection.Contains(new EntityId(slot, entity.Generation));
+            float fraction = Math.Clamp((float)entity.Health / definition.Health, 0f, 1f);
+
+            // Nothing to say about a healthy unit nobody asked about.
+            if (fraction >= 1f && !selected)
+            {
+                continue;
+            }
+
+            if (entity.TeamId != PlayerTeam &&
+                (world.IsHiddenFrom(PlayerTeam, slot) ||
+                 !world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(entity.Position))))
+            {
+                continue;
+            }
+
+            Vector3 position = _simulation.GetRenderPosition(slot, interpolate: true) +
+                new Vector3(0f, HealthBarHeight(entity.Kind), 0f);
+
+            const float Width = 2.8f;
+            const float Height = 0.36f;
+
+            _healthBackBatch.Instances[_healthBackBatch.Count++] = new InstanceData(
+                Billboard(right, up, forward, position, Width, Height),
+                new Vector4(0.05f, 0.06f, 0.07f, 0.80f));
+
+            // Anchored to the left edge, so the bar empties from the right, which is
+            // how every player already reads one.
+            Vector3 offset = position - (right * ((Width * (1f - fraction)) * 0.5f));
+
+            _healthFillBatch.Instances[_healthFillBatch.Count++] = new InstanceData(
+                Billboard(right, up, forward, offset, Width * fraction, Height * 0.68f),
+                HealthColor(fraction));
+        }
+    }
+
+    /// <summary>A camera-facing quad of a given size at a position.</summary>
+    private static Matrix Billboard(
+        Vector3 right,
+        Vector3 up,
+        Vector3 forward,
+        Vector3 position,
+        float width,
+        float height)
+        => new(
+            right.X * width, right.Y * width, right.Z * width, 0f,
+            up.X * height, up.Y * height, up.Z * height, 0f,
+            forward.X, forward.Y, forward.Z, 0f,
+            position.X, position.Y, position.Z, 1f);
+
+    /// <summary>How high above a unit its bar floats, so it clears the model.</summary>
+    private static float HealthBarHeight(UnitKind kind) => UnitCatalog.Get(kind).IsBuilding ? 14f : 5f;
+
+    /// <summary>Green when healthy, amber when hurt, red when nearly gone.</summary>
+    private static Vector4 HealthColor(float fraction) => fraction switch
+    {
+        > 0.6f => new Vector4(0.35f, 0.85f, 0.35f, 0.95f),
+        > 0.3f => new Vector4(0.92f, 0.78f, 0.25f, 0.95f),
+        _ => new Vector4(0.90f, 0.28f, 0.22f, 0.95f),
+    };
 
     /// <summary>Draws a fading ring at each recent move destination.</summary>
     private void CollectOrderMarkers()
@@ -1174,7 +1321,18 @@ public sealed class MiVicGame : XnaGame
 
             // A pending ability turns the next click into a target, not a
             // selection. Escape cancels it; see the keyboard handler.
-            if (_pendingAbility != AbilityId.None)
+            if (_pendingBridge)
+            {
+                if (Vector2.Distance(_dragStart, end) < 6f)
+                {
+                    IssueBridgeAtCursor(end);
+                }
+                else
+                {
+                    _pendingBridge = false;
+                }
+            }
+            else if (_pendingAbility != AbilityId.None)
             {
                 if (Vector2.Distance(_dragStart, end) < 6f)
                 {
@@ -1380,6 +1538,25 @@ public sealed class MiVicGame : XnaGame
         }
 
         IssueMoveOrder(cursor);
+    }
+
+    /// <summary>
+    /// Spans the water under the cursor. The simulation decides whether the site is
+    /// any good — not water, too wide, no factory, no resources — and refuses without
+    /// charging, so a misplaced click costs nothing but the click.
+    /// </summary>
+    private void IssueBridgeAtCursor(Vector2 cursor)
+    {
+        _pendingBridge = false;
+
+        if (IsPlayback || _simulation is null || !TryScreenToGround(cursor, out Vector3 ground))
+        {
+            return;
+        }
+
+        WorldPos target = WorldPos.FromMetres((int)ground.X, 0, (int)ground.Z);
+
+        _simulation.World.Enqueue(SimCommand.Bridge(target, _simulation.World.Tick + 1, PlayerTeam));
     }
 
     /// <summary>
@@ -1787,6 +1964,11 @@ public sealed class MiVicGame : XnaGame
 
             case HudCommandKind.UseAbility:
                 _pendingAbility = command.Ability;
+                break;
+
+            case HudCommandKind.BuildBridge:
+                _pendingAbility = AbilityId.None;
+                _pendingBridge = true;
                 break;
 
             case HudCommandKind.Licence:
@@ -2694,6 +2876,8 @@ public sealed class MiVicGame : XnaGame
 
         _terrainMesh?.Dispose();
         _selectionMarkerMesh?.Dispose();
+        _healthBackMesh?.Dispose();
+        _healthFillMesh?.Dispose();
         _axisMesh?.Dispose();
         _fog?.Dispose();
 

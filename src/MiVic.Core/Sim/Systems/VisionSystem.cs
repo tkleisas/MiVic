@@ -1,6 +1,8 @@
 using MiVic.Core.Numerics;
 using MiVic.Core.Pathfinding;
 
+using MiVic.Core.Terrain;
+
 namespace MiVic.Core.Sim;
 
 /// <summary>
@@ -25,6 +27,13 @@ public static class VisionSystem
 {
     /// <summary>Ticks between visibility updates for a given entity.</summary>
     public const int UpdateInterval = 10;
+
+    /// <summary>
+    /// Sight radius in snow, in permille. Snow blinds as well as slows: a unit in it
+    /// sees roughly two thirds as far, so an advance through snow is made nearly
+    /// blind and scouting matters more.
+    /// </summary>
+    public const int SnowSightPermille = 650;
 
     /// <summary>Sight radius for a role, in millimetres.</summary>
     public static int SightRadiusMm(UnitKind kind) => kind switch
@@ -81,6 +90,17 @@ public static class VisionSystem
             int sight = visionPermille > 0
                 ? (SightRadiusMm(entity.Kind) * visionPermille) / 1_000
                 : SightRadiusMm(entity.Kind);
+
+            // Snow shortens how far a unit can see. It also hides: the ground that
+            // slows a column is the ground that conceals it, which is what makes
+            // fighting in snow a different problem from fighting in mud.
+            int cell = world.Navigation.IndexOfWorld(entity.Position);
+
+            if (entity.AltitudeMm == 0 && cell >= 0 &&
+                world.TerrainTypes.TypeAt(cell) == TerrainType.Snow)
+            {
+                sight = (sight * SnowSightPermille) / 1_000;
+            }
 
             Stamp(world, entity.TeamId, entity.Position, sight);
         }

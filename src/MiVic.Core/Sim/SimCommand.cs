@@ -37,6 +37,9 @@ public enum SimCommandKind : byte
 
     /// <summary>Call in an off-map support ability at a ground position.</summary>
     UseAbility = 9,
+
+    /// <summary>Build a crossing over the water at a ground position.</summary>
+    BuildBridge = 10,
 }
 
 /// <summary>
@@ -122,6 +125,10 @@ public readonly record struct SimCommand(
             default,
             TechId.None,
             ability);
+
+    /// <summary>Spans the water at <paramref name="target"/> so ground units can cross.</summary>
+    public static SimCommand Bridge(WorldPos target, long executeTick, int issuerTeam)
+        => new(SimCommandKind.BuildBridge, EntityId.None, target, executeTick, issuerTeam);
 }
 
 /// <summary>

@@ -31,7 +31,7 @@ Design rationale and the alternate-history tech tree are in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 323 determinism, terrain and maths tests
+dotnet test tests/MiVic.Core.Tests          # 328 determinism, terrain and maths tests
 
 pwsh ./tools/fetch-assets.ps1               # download the 3D models (one time)
 
@@ -150,7 +150,7 @@ system, and procedurally generated faction music.
 | Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
 | Models imported | 34 generated, plus the fetched set |
 | Pick round-trip | 168/168 |
-| Tests | 340 passing (323 core, 17 audio) |
+| Tests | 345 passing (328 core, 17 audio) |
 
 ### Performance
 
@@ -322,7 +322,30 @@ defender, and the light hull kept moving where the heavies sank.
   bogs down.
 
 Still to come: the mud **churn** counter (wet ground driven over becomes deep mud),
-mines and lava, snow shortening sight ranges, and bridges as buildable structures.
+
+
+### Health and damage at a glance
+
+Anything damaged, and anything selected, gets a **health bar** floating over it: a
+dark backing with a coloured fill that empties from the right — green, amber, red.
+Bars are camera-facing quads drawn between the units and the fog, so a bar never
+gives away a unit the player cannot see. A healthy unit nobody asked about gets no
+bar at all, because a bar over every unit is noise.
+
+`--selftest` reports how many bars were drawn, which is the check that damage
+reached the interface and not only the simulation.
+
+### Bridges and snow
+
+A **Γέφυρα** button appears in the support panel once a faction has a factory.
+Clicking it arms a placement and the next click on water spans it: the simulation
+picks the narrow axis so a crossing actually crosses, converts the water along it
+to a ford, and charges for the work. A site that is not water, too wide, or
+unaffordable is refused **without charging** — a misplaced click costs nothing but
+the click.
+
+**Snow shortens sight** to 65 % for units standing in it. Snow blinds as well as
+slows, so an advance through it is made nearly blind and scouting matters more.
 
 ### Off-map support
 

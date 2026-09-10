@@ -27,8 +27,12 @@ public enum HudCommandKind
 
     /// <summary>Run a prototype so factories may build the design.</summary>
     ApproveDesign = 4,
+
     /// <summary>Call in an off-map ability; the client then asks for a target.</summary>
     UseAbility = 5,
+
+    /// <summary>Place a bridge; the client then asks for a target.</summary>
+    BuildBridge = 6,
 }
 
 /// <summary>A request raised by a HUD button, applied by the client as a command.</summary>
@@ -763,7 +767,11 @@ public sealed class GameHud
             options.Add((ability, enabled, reason));
         }
 
-        if (options.Count == 0)
+        // Engineering works sit beside support: both are things a player does to the
+        // map rather than to a unit, and both need a target.
+        bool bridgeAvailable = world.HasStructure(Player, UnitKind.Factory);
+
+        if (options.Count == 0 && !bridgeAvailable)
         {
             return null;
         }
@@ -803,6 +811,38 @@ public sealed class GameHud
             if (ImGui.IsItemHovered())
             {
                 ImGui.SetTooltip(definition.GreekDescription);
+            }
+        }
+
+        if (bridgeAvailable)
+        {
+            if (options.Count > 0)
+            {
+                ImGui.Separator();
+            }
+
+            bool affordable = team.Materials >= SimWorld.BridgeMaterials &&
+                team.Energy >= SimWorld.BridgeEnergy &&
+                team.Water >= SimWorld.BridgeWater;
+
+            ImGui.BeginDisabled(!affordable);
+
+            if (ImGui.Button($"{"Γέφυρα",-24} {SimWorld.BridgeMaterials,4}Π {SimWorld.BridgeEnergy,3}Ε {SimWorld.BridgeWater,3}Ν"))
+            {
+                command = new HudCommand(HudCommandKind.BuildBridge);
+            }
+
+            ImGui.EndDisabled();
+
+            if (!affordable)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(MutedColor, "λείπουν πόροι");
+            }
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Διασχίζει το νερό στο σημείο που θα δείξετε με κλικ.");
             }
         }
 
