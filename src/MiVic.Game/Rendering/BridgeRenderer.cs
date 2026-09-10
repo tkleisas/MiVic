@@ -1,6 +1,7 @@
 using MiVic.Core.Numerics;
 using MiVic.Core.Pathfinding;
 using MiVic.Core.Sim;
+using MiVic.Core.Terrain;
 using MiVic.Game.Data;
 using MiVic.Game.Rendering.Gltf;
 using Microsoft.Xna.Framework;
@@ -19,37 +20,62 @@ namespace MiVic.Game.Rendering;
 /// costs one more instance rather than one more model.
 /// </para>
 /// <para>
+/// <b>Rails are placed per side, from the map.</b> A block carries none; the rail is its own
+/// mesh, and one is drawn along a side of a block when nothing can be driven off there —
+/// which is asked of the terrain layer, not guessed from the bridge. So the long sides of a
+/// span get rails because the water beside them is impassable, the ends do not because they
+/// meet the bank, the shared block of a crossroads has none because deck continues all four
+/// ways, and the dead side of a T gets one. Baking rails into the block could not express any
+/// of that: it could only ever put them along the block's own axis, which is a rail across the
+/// way through at a junction and a bare edge over open water at the end of a broken span.
+/// </para>
+/// <para>
 /// The block is laid on the <em>water line</em>, not on the ground: the piers in the model stop
 /// at its own base and what they continue into is the lake, which is opaque and drawn first. A
 /// crossing is therefore placed by the surface the player sees rather than by the bed metres
 /// under it, which is the same rule the click projection follows.
 /// </para>
 /// <para>
-/// The kerbs are painted in the owner's colour, which is what the kit's paint mask is for: the
-/// per-instance tint is the faction's colour, the deck's planks carry a mask of zero and keep
+/// The rails are painted in the owner's colour, which is what the kit's paint mask is for: the
+/// per-instance tint is the faction's colour, the deck's boards carry a mask of zero and keep
 /// their timber, and the rail along each side says whose crossing this is without a flag.
 /// </para>
 /// </summary>
 public sealed class BridgeRenderer : IDisposable
 {
-    /// <summary>The generated block models: the span, and the crossroads block.</summary>
+    /// <summary>The generated pieces: the deck block, and one panel of its rail.</summary>
     private static readonly string BlockFile = "bridge_block.glb";
-    private static readonly string JunctionFile = "bridge_junction.glb";
+    private static readonly string RailFile = "bridge_rail.glb";
 
     private static readonly string ModelFolder = Path.Combine("Content", "Models", "Generated");
+
+    /// <summary>
+    /// A quarter turn for each side of a block, in the order (−Z, +Z, −X, +X). The rail is
+    /// modelled on one edge of the block's own frame, so the side it lands on is that turn and
+    /// nothing else — no per-side geometry, and no constant from the art duplicated here.
+    /// </summary>
+    private static readonly Matrix[] SideTurns =
+    [
+        Matrix.Identity,
+        Matrix.CreateRotationY(MathHelper.Pi),
+        Matrix.CreateRotationY(MathHelper.PiOver2),
+        Matrix.CreateRotationY(-MathHelper.PiOver2),
+    ];
+
+    private static readonly (int DX, int DZ)[] Sides = [(0, -1), (0, 1), (-1, 0), (1, 0)];
 
     private readonly InstancedRenderer _renderer;
     private readonly List<string> _missing = [];
 
     private InstancedRenderer.Mesh? _block;
-    private InstancedRenderer.Mesh? _junction;
+    private InstancedRenderer.Mesh? _rail;
 
-    // Two arrays rather than one, because an instanced draw call takes a contiguous run: the
-    // straight blocks and the junction blocks are different meshes and cannot share an array.
-    private InstanceData[] _straight = [];
-    private InstanceData[] _crossroads = [];
-    private int _straightCount;
-    private int _crossroadsCount;
+    // Two arrays rather than one, because an instanced draw call takes a contiguous run and the
+    // deck and its rails are different meshes.
+    private InstanceData[] _blocks = [];
+    private InstanceData[] _rails = [];
+    private int _blockCount;
+    private int _railCount;
 
     public BridgeRenderer(InstancedRenderer renderer, string baseDirectory)
     {
@@ -58,22 +84,30 @@ public sealed class BridgeRenderer : IDisposable
 
         _renderer = renderer;
 
-        // No rescaling and no orientation fixup: the block is modelled in metres at the size of
-        // one navigation cell, long along its own X, and the placement below turns it.
-        ModelImportOptions options = new(
+        // No rescaling and no orientation fixup: both pieces are modelled in metres at the size of
+        // one navigation cell, long along their own X, and the placement turns them.
+        //
+        // The rail is imported without the usual centring, because it is modelled *inside the
+        // block's frame* — standing on the deck's edge — and is placed by a turn about the block's
+        // centre. Centring it on its own bounds moved it to the middle of the deck, which drew a
+        // rail down the length of every bridge; the position of a piece authored in another
+        // piece's frame is the art's decision, not something to normalise away.
+        ModelImportOptions blockOptions = new(
             TargetSizeMetres: 0f,
             AlignLongestHorizontalAxis: false);
 
-        _block = Load(baseDirectory, BlockFile, options);
-        _junction = Load(baseDirectory, JunctionFile, options);
+        ModelImportOptions railOptions = blockOptions with { CentreOnOwnBounds = false };
+
+        _block = Load(baseDirectory, BlockFile, blockOptions);
+        _rail = Load(baseDirectory, RailFile, railOptions);
     }
 
-    /// <summary>How many block models loaded: two when the art is complete, none when it is absent.</summary>
-    public int ShapeCount => (_block is null ? 0 : 1) + (_junction is null ? 0 : 1);
+    /// <summary>How many models loaded: two when the art is complete, none when it is absent.</summary>
+    public int ShapeCount => (_block is null ? 0 : 1) + (_rail is null ? 0 : 1);
 
     /// <summary>What was loaded and what was not, for the fixtures and the report.</summary>
-    public string Summary => _block is not null && _junction is not null
-        ? $"{BlockFile} and {JunctionFile} loaded"
+    public string Summary => _block is not null && _rail is not null
+        ? $"{BlockFile} and {RailFile} loaded"
         : _missing.Count == 0
             ? "no bridge blocks loaded"
             : $"bridge blocks missing: {string.Join(", ", _missing)}";
@@ -101,19 +135,19 @@ public sealed class BridgeRenderer : IDisposable
     }
 
     /// <summary>
-    /// Collects one instance per deck block on the map. Returns how many instances were written.
+    /// Collects the deck and the rails. Returns how many instances were written.
     /// <para>
     /// Walked by cell rather than by crossing, because a block belongs to the cell: that is what
-    /// makes a destroyed block a hole in the deck and a crossing of two spans one junction block
-    /// rather than two decks drawn through each other.
+    /// makes a destroyed block a hole in the deck, and what lets the rails be decided by what is
+    /// beside the cell rather than by which crossing laid it.
     /// </para>
     /// </summary>
     public int Collect(SimWorld world)
     {
         ArgumentNullException.ThrowIfNull(world);
 
-        _straightCount = 0;
-        _crossroadsCount = 0;
+        _blockCount = 0;
+        _railCount = 0;
 
         if (_block is null)
         {
@@ -122,12 +156,13 @@ public sealed class BridgeRenderer : IDisposable
 
         Bridgeworks bridgeworks = world.Bridgeworks;
         NavGrid navigation = world.Navigation;
-        float water = world.TerrainTypes.WaterLevelMm / (float)WorldPos.MmPerMetre;
+        TerrainLayer terrain = world.TerrainTypes;
+        float water = terrain.WaterLevelMm / (float)WorldPos.MmPerMetre;
 
-        if (_straight.Length < bridgeworks.CellCount)
+        if (_blocks.Length < bridgeworks.CellCount)
         {
-            _straight = new InstanceData[bridgeworks.CellCount];
-            _crossroads = new InstanceData[bridgeworks.CellCount];
+            _blocks = new InstanceData[bridgeworks.CellCount];
+            _rails = new InstanceData[bridgeworks.CellCount * Sides.Length];
         }
 
         for (int index = 0; index < bridgeworks.CellCount; index++)
@@ -137,49 +172,104 @@ public sealed class BridgeRenderer : IDisposable
                 continue;
             }
 
-            // The model is long along its own X, which is the axis a span along X runs; a span
-            // along Z is the same block turned a quarter turn.
-            Matrix turn = block.Axis == BridgeAxis.AlongZ
-                ? Matrix.CreateRotationY(MathHelper.PiOver2)
-                : Matrix.Identity;
+            // The block is long along its own X, which is the axis a span along X runs; a span
+            // along Z is the same block turned a quarter turn. The turns are counted rather than
+            // stored as a matrix because the *rail* needs the same rotation applied to a
+            // direction, and two encodings of one turn are two things to keep in step.
+            int quarters = block.Axis == BridgeAxis.AlongZ ? 1 : 0;
+            Matrix turn = quarters == 0
+                ? Matrix.Identity
+                : Matrix.CreateRotationY(MathHelper.PiOver2);
 
-            float x = (navigation.OriginMm + (navigation.CellX(index) * navigation.CellSizeMm) + (navigation.CellSizeMm / 2))
-                / (float)WorldPos.MmPerMetre;
-            float z = (navigation.OriginMm + (navigation.CellZ(index) * navigation.CellSizeMm) + (navigation.CellSizeMm / 2))
-                / (float)WorldPos.MmPerMetre;
+            int cellX = navigation.CellX(index);
+            int cellZ = navigation.CellZ(index);
+            var centre = new Vector3(
+                (navigation.OriginMm + (cellX * navigation.CellSizeMm) + (navigation.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre,
+                water,
+                (navigation.OriginMm + (cellZ * navigation.CellSizeMm) + (navigation.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre);
 
-            var instance = new InstanceData(
-                turn * Matrix.CreateTranslation(x, water, z),
-                OwnerColour(block.Team));
+            Vector4 colour = OwnerColour(block.Team);
 
-            if (block.Axis == BridgeAxis.Junction && _junction is not null)
+            _blocks[_blockCount++] = new InstanceData(turn * Matrix.CreateTranslation(centre), colour);
+
+            if (_rail is null)
             {
-                _crossroads[_crossroadsCount++] = instance;
+                continue;
             }
-            else
+
+            for (int side = 0; side < Sides.Length; side++)
             {
-                _straight[_straightCount++] = instance;
+                (int dx, int dz) = Sides[side];
+
+                // The rail's side is a side of the *block*, so the neighbour it must be judged
+                // against is the one across that side once the block has been turned — the same
+                // quarter turn the instance above takes. Judging it in world directions instead
+                // put every rail of a north-south span on the wrong side of it, which is a rail
+                // across the way through at a junction and a bare edge over open water: exactly
+                // the fault the per-side rails were written to remove, one turn out.
+                for (int quarter = 0; quarter < quarters; quarter++)
+                {
+                    (dx, dz) = (dz, -dx);
+                }
+
+                if (!NeedsRail(bridgeworks, terrain, navigation, cellX + dx, cellZ + dz))
+                {
+                    continue;
+                }
+
+                _rails[_railCount++] = new InstanceData(
+                    turn * SideTurns[side] * Matrix.CreateTranslation(centre),
+                    colour);
             }
         }
 
-        return _straightCount + _crossroadsCount;
+        return _blockCount + _railCount;
     }
 
-    /// <summary>Draws what <see cref="Collect"/> gathered, one instanced call per block model.</summary>
+    /// <summary>
+    /// True when a rail belongs along the edge between a deck cell and the cell beside it: there
+    /// is no deck to continue onto, and nothing can be driven off there either.
+    /// <para>
+    /// The question is put to the terrain layer rather than to the bridge, and that is the whole
+    /// point: a ford the generator carved is passable ground with no deck on it, so a rail there
+    /// would wall off a way the pathfinder is willing to take. The rail follows the simulation's
+    /// own answer about whether a vehicle may leave the deck, which is the only answer that
+    /// cannot disagree with what a unit actually does.
+    /// </para>
+    /// </summary>
+    private static bool NeedsRail(
+        Bridgeworks bridgeworks,
+        TerrainLayer terrain,
+        NavGrid navigation,
+        int cellX,
+        int cellZ)
+    {
+        int neighbour = navigation.IndexOf(cellX, cellZ);
+
+        // Off the map: nothing to drive onto, so the rail closes the edge.
+        if (neighbour < 0)
+        {
+            return true;
+        }
+
+        return !bridgeworks.HasBlock(neighbour) && !terrain.IsPassable(neighbour, MovementClass.Tracked);
+    }
+
+    /// <summary>Draws what <see cref="Collect"/> gathered, one instanced call per model.</summary>
     /// <returns>The draw calls issued.</returns>
     public int Draw()
     {
         int calls = 0;
 
-        if (_straightCount > 0 && _block is not null)
+        if (_blockCount > 0 && _block is not null)
         {
-            _renderer.Draw(_block, _straight, _straightCount);
+            _renderer.Draw(_block, _blocks, _blockCount);
             calls++;
         }
 
-        if (_crossroadsCount > 0 && _junction is not null)
+        if (_railCount > 0 && _rail is not null)
         {
-            _renderer.Draw(_junction, _crossroads, _crossroadsCount);
+            _renderer.Draw(_rail, _rails, _railCount);
             calls++;
         }
 
@@ -205,10 +295,10 @@ public sealed class BridgeRenderer : IDisposable
     public void Dispose()
     {
         _block?.Dispose();
-        _junction?.Dispose();
+        _rail?.Dispose();
         _block = null;
-        _junction = null;
-        _straight = [];
-        _crossroads = [];
+        _rail = null;
+        _blocks = [];
+        _rails = [];
     }
 }

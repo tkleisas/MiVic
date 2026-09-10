@@ -25,12 +25,26 @@ namespace MiVic.Game.Rendering.Gltf;
 /// models are authored facing -Z, so this is what puts them nose-first without
 /// hand-tuning every asset.
 /// </param>
+/// <param name="CentreOnOwnBounds">
+/// Whether the model is centred across and grounded on its own bounding box.
+/// <para>
+/// True for anything that is placed by the game — a tank, a building, a tree: the
+/// modeller should not have to care where the origin ended up. False for a piece
+/// that is modelled <em>inside another piece's frame</em>, where its position is a
+/// decision rather than an accident. A bridge rail is authored on the deck's edge
+/// and is placed by a turn about the block's centre, so centring it on its own
+/// bounds would slide it into the middle of the deck — which is exactly what it did,
+/// and the first frame that showed a rail painted down the middle of the bridge is
+/// what found it.
+/// </para>
+/// </param>
 public readonly record struct ModelImportOptions(
     float TargetSizeMetres,
     float YawOffsetDegrees = 0f,
     bool FlipNormals = false,
     string? MeshNameContains = null,
-    bool AlignLongestHorizontalAxis = true);
+    bool AlignLongestHorizontalAxis = true,
+    bool CentreOnOwnBounds = true);
 
 /// <summary>
 /// One named part of a model, with the transform that places it.
@@ -206,7 +220,9 @@ public static class GltfLoader
         float longest = MathF.Max(size.X, MathF.Max(size.Y, size.Z));
         float scale = longest > 1e-6f && options.TargetSizeMetres > 0f ? options.TargetSizeMetres / longest : 1f;
 
-        Vector3 centre = new((min.X + max.X) * 0.5f, min.Y, (min.Z + max.Z) * 0.5f);
+        Vector3 centre = options.CentreOnOwnBounds
+            ? new Vector3((min.X + max.X) * 0.5f, min.Y, (min.Z + max.Z) * 0.5f)
+            : Vector3.Zero;
 
         // Row-vector convention: a vertex is travelled through orientation, then
         // scale, then the centring translation.
@@ -707,7 +723,9 @@ public static class GltfLoader
         float longest = MathF.Max(size.X, MathF.Max(size.Y, size.Z));
         float scale = longest > 1e-6f && options.TargetSizeMetres > 0f ? options.TargetSizeMetres / longest : 1f;
 
-        Vector3 centre = new((min.X + max.X) * 0.5f, min.Y, (min.Z + max.Z) * 0.5f);
+        Vector3 centre = options.CentreOnOwnBounds
+            ? new Vector3((min.X + max.X) * 0.5f, min.Y, (min.Z + max.Z) * 0.5f)
+            : Vector3.Zero;
 
         // A mesh that is entirely black is a broken export rather than a
         // deliberate choice, so it is lifted; anything else is left exactly as

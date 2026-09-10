@@ -193,7 +193,7 @@ def _rake_geo(geo, angle, pivot=(0.0, 0.0, 0.0)):
     return verts, geo[1]
 
 
-def _rail(side):
+def _rail(side=1.0):
     """One side of the truss: a top chord, posts under it, and a raked member between each pair.
 
     Full length, so a chain of blocks is one unbroken rail — the posts land at the block's
@@ -242,7 +242,7 @@ def _rail(side):
 
 
 def _rails():
-    """Both rails of a block."""
+    """Both rails of a block, in the frame the block itself is built in."""
     return _rail(-1.0) + _rail(1.0)
 
 
@@ -299,34 +299,42 @@ def _build(name, parts):
 
 
 def build_block():
-    """The crossing: a board deck on stringers, a truss rail each side, a pier under the edges.
+    """The crossing itself: a board deck on stringers, with a pier under its edges.
 
-    A second pass over the first block, and every change came from looking at it rather
-    than from thinking about it. The rail was a painted slab and read as a stripe; the
-    boards were gapped and a low sun turned the gaps into five bright lines the length of
-    the bridge; and the pier was amidships where no camera can see it.
+    No rails, and that is the structural pass rather than an omission. Rails used to be part
+    of the block, so every block carried two and a deck could only ever have them along its
+    own axis: where two crossings met, the shared block had an unbroken rail across the way
+    through, and where a span ended against open water it had none at all. The rail is now
+    its own piece, placed by the client on whichever sides of a block lead nowhere, so what
+    a player sees is a consequence of the map — rails along the water, none where the deck
+    meets land or another span, and one closing the dead side of a T.
+
+    The other changes were all made by looking at it: the rail was a painted slab and read
+    as a stripe, the boards were gapped and a low sun turned the gaps into five bright lines
+    the length of the bridge, and the pier was amidships where no camera can see it.
     """
     return _build("bridge_block", [
         ("planks", _planked_deck(), PLANK_MATERIAL),
         ("stringers", _stringers(), STRINGER_MATERIAL),
-        ("rails", _rails(), RAIL_MATERIAL),
         ("pier", _pier(), STEEL_MATERIAL),
     ])
 
 
-def build_junction():
-    """Where two crossings meet: the same deck, no rails across it, a post at each corner."""
-    return _build("bridge_junction", [
-        ("planks", _planked_deck(), PLANK_MATERIAL),
-        ("stringers", _stringers(), STRINGER_MATERIAL),
-        ("posts", _bollards(), RAIL_MATERIAL),
-        ("pier", _pier(), STEEL_MATERIAL),
+def build_rail():
+    """One panel of the truss rail, on the deck's edge, in the block's own frame.
+
+    Built on the +Y edge of the frame the block is built in, so the client reaches any of a
+    block's four sides by turning it a quarter turn at a time: one mesh, four sides, and no
+    rail variant for a T-junction, a crossroads, or the end of a span.
+    """
+    return _build("bridge_rail", [
+        ("rail", _rail(1.0), RAIL_MATERIAL),
     ])
 
 
 SHAPES = (
     ("bridge_block", build_block),
-    ("bridge_junction", build_junction),
+    ("bridge_rail", build_rail),
 )
 
 

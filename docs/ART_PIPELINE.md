@@ -57,13 +57,21 @@ in parallel:
 | `build_figures.py` | soldiers: line infantry, commissar, robot infantry, mercenary, stealth reconnaissance |
 | `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau |
 | `build_props.py` | woodland: six tree species, drawn instanced |
-| `build_bridge.py` | the two bridge blocks: a crossing block, and the crossroads block for a cell where two spans meet |
+| `build_bridge.py` | the bridge block, and one panel of its rail |
 
-The last two are not roles: a tree and a bridge block have no faction and no slot in
-`ModelCatalog`, so they are loaded by the renderer that draws them (`ForestRenderer`,
-`BridgeRenderer`) rather than resolved through the catalogue. A bridge is one block repeated, so
-the whole of a crossing — two cells or twenty-four — is the same 288-triangle mesh placed once per
-cell of the span, and a hole blown in a crossing is a block that is simply not drawn.
+The last two are not roles: a tree and a bridge have no faction and no slot in `ModelCatalog`, so
+they are loaded by the renderer that draws them (`ForestRenderer`, `BridgeRenderer`) rather than
+resolved through the catalogue.
+
+A bridge is **one block repeated**: the whole of a crossing — two cells or twenty-four — is the
+same 120-triangle block placed once per cell of the span, and a hole blown in a crossing is a block
+that is simply not drawn. Its **rails are separate**, and the client places one along each side of
+a block that leads nowhere, asking the terrain layer whether a vehicle could drive off there. That
+is why a span has rails along the water and none where it meets the bank, a crossroads has none
+across the way through, and the dead side of a T is closed: the rule is the simulation's own
+answer about passability, so a rail can never wall off a way a unit is willing to take. Baking the
+rails into the block could express none of it — the rail is authored on the deck's edge inside the
+block's own frame, and is imported with `CentreOnOwnBounds: false` for exactly that reason.
 
 The silhouettes come out measurably distinct, which is the point of §2.1:
 
