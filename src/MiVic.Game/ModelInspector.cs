@@ -79,9 +79,53 @@ public static class ModelInspector
             }
         }
 
+        PrintParts(baseDirectory);
+
         Console.WriteLine();
         Console.WriteLine($"failures={failures} missing={missing}");
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Lists the named parts of each model, which is what animation needs.
+    /// <para>
+    /// A model whose parts are baked into one mesh has no parts to list, and a
+    /// part-driven animation would silently do nothing to it. This is the check
+    /// that catches that: the names here are exactly the ones the renderer can
+    /// address, and <c>turret</c>, <c>barrel</c>, <c>wheel_l01</c> and <c>radar</c>
+    /// are the contract.
+    /// </para>
+    /// </summary>
+    private static void PrintParts(string baseDirectory)
+    {
+        Console.WriteLine();
+        Console.WriteLine("named parts (animation contract)");
+        Console.WriteLine("---------------------------------------------------------------------------------------");
+
+        foreach ((Core.Sim.Faction faction, Core.Sim.UnitKind kind, string relative, ModelImportOptions options) in ModelCatalog.Enumerate())
+        {
+            string path = Path.Combine(baseDirectory, relative);
+
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            try
+            {
+                ModelData model = GltfLoader.LoadModel(path, options);
+                string names = string.Join(", ", model.Parts.Select(part => part.Name));
+
+                Console.WriteLine(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{faction}/{kind,-24} {model.Parts.Count,3} parts  {names}"));
+            }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine($"{faction}/{kind,-24} parts FAILED: {exception.Message}");
+            }
+        }
     }
 
     /// <summary>

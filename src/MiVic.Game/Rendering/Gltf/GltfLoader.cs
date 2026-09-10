@@ -33,6 +33,26 @@ public readonly record struct ModelImportOptions(
     bool AlignLongestHorizontalAxis = true);
 
 /// <summary>
+/// One named part of a model, with the transform that places it in model space.
+/// </summary>
+/// <param name="Name">The glTF node name, which is the part contract: <c>turret</c>, <c>wheel_l01</c>.</param>
+/// <param name="Mesh">Geometry in the space the part's transform expects.</param>
+/// <param name="LocalTransform">Where the part sits, relative to the model.</param>
+public readonly record struct ModelPart(string Name, MeshData Mesh, Matrix LocalTransform);
+
+/// <summary>
+/// A model as its parts, plus the single transform that normalises the whole thing
+/// for the world: alignment, scale, centring and grounding.
+/// </summary>
+/// <param name="Parts">The named parts, in scene order.</param>
+/// <param name="ModelTransform">Applied after each part's own transform.</param>
+/// <param name="SizeMetres">Extent of the whole model after scaling, in metres.</param>
+public readonly record struct ModelData(
+    IReadOnlyList<ModelPart> Parts,
+    Matrix ModelTransform,
+    Vector3 SizeMetres);
+
+/// <summary>
 /// Loads static geometry out of a glTF 2.0 binary (<c>.glb</c>) or JSON
 /// (<c>.gltf</c> + <c>.bin</c>) file into the engine's own mesh format.
 /// <para>
@@ -71,7 +91,7 @@ public static class GltfLoader
 
         var positions = new List<Vector3>(4096);
         var normals = new List<Vector3>(4096);
-        var shades = new List<float>(4096);
+        var colors = new List<Vector3>(4096);
         var indices = new List<ushort>(8192);
 
         int[]? sceneNodes = root.Scenes is { Length: > 0 }
@@ -88,14 +108,14 @@ public static class GltfLoader
             // No scene graph: treat every node as a root.
             for (int i = 0; i < (root.Nodes?.Length ?? 0); i++)
             {
-                AppendNode(root, buffers, i, rootTransform, options, positions, normals, shades, indices);
+                AppendNode(root, buffers, i, rootTransform, options, positions, normals, colors, indices);
             }
         }
         else
         {
             foreach (int node in sceneNodes)
             {
-                AppendNode(root, buffers, node, rootTransform, options, positions, normals, shades, indices);
+                AppendNode(root, buffers, node, rootTransform, options, positions, normals, colors, indices);
             }
         }
 
@@ -104,7 +124,222 @@ public static class GltfLoader
             throw new InvalidDataException($"'{path}' contains no renderable triangle geometry.");
         }
 
-        return BuildMesh(positions, normals, shades, indices, options);
+        return BuildMesh(positions, normals, colors, indices, options);
+    }
+
+    /// <summary>
+    /// Loads a model keeping its parts separate.
+    /// <para>
+    /// The parts are what make animation possible: a model exported with a named
+    /// <c>turret</c> or <c>wheel_l01</c> node keeps that node's own mesh and
+    /// transform, so the renderer can move one part without rebuilding the model.
+    /// <see cref="Load"/> merges them instead, which is all a static mesh needs.
+    /// </para>
+    /// <para>
+    /// Part geometry stays in model space and the normalisation — alignment, scale,
+    /// centring, grounding — is returned as a single <see cref="ModelData.ModelTransform"/>
+    /// to be applied outside the parts. That is deliberate: baking it into the
+    /// vertices would move a turret's pivot away from the turret, and a part cannot
+    /// rotate about a pivot it no longer has.
+    /// </para>
+    /// </summary>
+    public static ModelData LoadModel(string path, ModelImportOptions options)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        (GltfRoot root, byte[]? binaryChunk) = Parse(path);
+        byte[][] buffers = ResolveBuffers(path, root, binaryChunk);
+
+        var parts = new List<PartBuilder>();
+
+        int[]? sceneNodes = root.Scenes is { Length: > 0 }
+            ? root.Scenes[Math.Clamp(root.Scene, 0, root.Scenes.Length - 1)].Nodes
+            : null;
+
+        if (sceneNodes is null)
+        {
+            for (int i = 0; i < (root.Nodes?.Length ?? 0); i++)
+            {
+                AppendPart(root, buffers, i, Matrix.Identity, options, parts);
+            }
+        }
+        else
+        {
+            foreach (int node in sceneNodes)
+            {
+                AppendPart(root, buffers, node, Matrix.Identity, options, parts);
+            }
+        }
+
+        if (parts.Count == 0)
+        {
+            throw new InvalidDataException($"'{path}' contains no renderable triangle geometry.");
+        }
+
+        // Orientation first, then the explicit correction, exactly as the merged
+        // path does it — an explicit yaw must always win.
+        Matrix orientation = Matrix.Identity;
+
+        if (options.AlignLongestHorizontalAxis)
+        {
+            Vector3 raw = Bounds(parts, out _, out _);
+
+            if (raw.Z > raw.X)
+            {
+                orientation = Matrix.CreateRotationY(-MathHelper.PiOver2);
+            }
+        }
+
+        if (options.YawOffsetDegrees != 0f)
+        {
+            orientation *= Matrix.CreateRotationY(MathHelper.ToRadians(options.YawOffsetDegrees));
+        }
+
+        Vector3 size = Bounds(parts, out Vector3 min, out Vector3 max, orientation);
+        float longest = MathF.Max(size.X, MathF.Max(size.Y, size.Z));
+        float scale = longest > 1e-6f && options.TargetSizeMetres > 0f ? options.TargetSizeMetres / longest : 1f;
+
+        Vector3 centre = new((min.X + max.X) * 0.5f, min.Y, (min.Z + max.Z) * 0.5f);
+
+        // Row-vector convention: a vertex is travelled through orientation, then
+        // scale, then the centring translation.
+        Matrix modelTransform = orientation
+            * Matrix.CreateScale(scale)
+            * Matrix.CreateTranslation(-centre * scale);
+
+        float maxChannel = 0f;
+
+        foreach (PartBuilder builder in parts)
+        {
+            foreach (Vector3 color in builder.Colors)
+            {
+                maxChannel = MathF.Max(maxChannel, MathF.Max(color.X, MathF.Max(color.Y, color.Z)));
+            }
+        }
+
+        float colorScale = maxChannel > 0.001f ? 1f / maxChannel : 1f;
+
+        ModelPart[] built = new ModelPart[parts.Count];
+
+        for (int i = 0; i < parts.Count; i++)
+        {
+            PartBuilder builder = parts[i];
+            VertexPositionNormal[] vertices = new VertexPositionNormal[builder.Positions.Count];
+
+            for (int v = 0; v < vertices.Length; v++)
+            {
+                Vector3 color = builder.Colors[v] * colorScale;
+
+                vertices[v] = new VertexPositionNormal(
+                    builder.Positions[v],
+                    builder.Normals[v],
+                    new Color(Channel(color.X), Channel(color.Y), Channel(color.Z)));
+            }
+
+            built[i] = new ModelPart(
+                builder.Name,
+                new MeshData(vertices, [.. builder.Indices]),
+                builder.LocalTransform);
+        }
+
+        return new ModelData(built, modelTransform, size * scale);
+    }
+
+    /// <summary>Accumulates one named part's geometry while the scene graph is walked.</summary>
+    private sealed class PartBuilder(string name, Matrix localTransform)
+    {
+        public string Name { get; } = name;
+
+        public Matrix LocalTransform { get; } = localTransform;
+
+        public List<Vector3> Positions { get; } = new(512);
+
+        public List<Vector3> Normals { get; } = new(512);
+
+        public List<Vector3> Colors { get; } = new(512);
+
+        public List<ushort> Indices { get; } = new(1024);
+    }
+
+    private static void AppendPart(
+        GltfRoot root,
+        byte[][] buffers,
+        int nodeIndex,
+        Matrix parentTransform,
+        ModelImportOptions options,
+        List<PartBuilder> parts)
+    {
+        GltfNode[] nodes = root.Nodes ?? [];
+
+        if ((uint)nodeIndex >= (uint)nodes.Length)
+        {
+            return;
+        }
+
+        GltfNode node = nodes[nodeIndex];
+        Matrix transform = NodeTransform(node) * parentTransform;
+
+        if (node.Mesh is int meshIndex && root.Meshes is not null && (uint)meshIndex < (uint)root.Meshes.Length)
+        {
+            string name = node.Name
+                ?? root.Meshes[meshIndex].Name
+                ?? $"part{parts.Count}";
+
+            var builder = new PartBuilder(name, transform);
+
+            // Identity here: the node's own transform becomes the part's local
+            // transform, so the geometry stays in the space the pivot lives in.
+            AppendMesh(
+                root,
+                buffers,
+                root.Meshes[meshIndex],
+                Matrix.Identity,
+                options,
+                builder.Positions,
+                builder.Normals,
+                builder.Colors,
+                builder.Indices);
+
+            if (builder.Positions.Count > 0)
+            {
+                parts.Add(builder);
+            }
+        }
+
+        if (node.Children is null)
+        {
+            return;
+        }
+
+        foreach (int child in node.Children)
+        {
+            AppendPart(root, buffers, child, transform, options, parts);
+        }
+    }
+
+    /// <summary>
+    /// Combined extent of every part, optionally after the model's orientation is
+    /// applied. The size is returned so the caller can decide the alignment from it.
+    /// </summary>
+    private static Vector3 Bounds(List<PartBuilder> parts, out Vector3 min, out Vector3 max)
+        => Bounds(parts, out min, out max, Matrix.Identity);
+
+    private static Vector3 Bounds(List<PartBuilder> parts, out Vector3 min, out Vector3 max, Matrix orientation)
+    {
+        min = new Vector3(float.MaxValue);
+        max = new Vector3(float.MinValue);
+
+        foreach (PartBuilder builder in parts)
+        {
+            foreach (Vector3 local in builder.Positions)
+            {
+                Vector3 position = Vector3.Transform(local, builder.LocalTransform * orientation);
+                min = Vector3.Min(min, position);
+                max = Vector3.Max(max, position);
+            }
+        }
+
+        return max - min;
     }
 
     private static (GltfRoot Root, byte[]? Binary) Parse(string path)
@@ -202,7 +437,7 @@ public static class GltfLoader
         ModelImportOptions options,
         List<Vector3> positions,
         List<Vector3> normals,
-        List<float> shades,
+        List<Vector3> colors,
         List<ushort> indices)
     {
         GltfNode[] nodes = root.Nodes ?? [];
@@ -216,7 +451,7 @@ public static class GltfLoader
 
         if (node.Mesh is int meshIndex && root.Meshes is not null && (uint)meshIndex < (uint)root.Meshes.Length)
         {
-            AppendMesh(root, buffers, root.Meshes[meshIndex], transform, options, positions, normals, shades, indices);
+            AppendMesh(root, buffers, root.Meshes[meshIndex], transform, options, positions, normals, colors, indices);
         }
 
         if (node.Children is null)
@@ -226,7 +461,7 @@ public static class GltfLoader
 
         foreach (int child in node.Children)
         {
-            AppendNode(root, buffers, child, transform, options, positions, normals, shades, indices);
+            AppendNode(root, buffers, child, transform, options, positions, normals, colors, indices);
         }
     }
 
@@ -257,7 +492,7 @@ public static class GltfLoader
         ModelImportOptions options,
         List<Vector3> positions,
         List<Vector3> normals,
-        List<float> shades,
+        List<Vector3> colors,
         List<ushort> indices)
     {
         if (mesh.Primitives is null)
@@ -323,14 +558,28 @@ public static class GltfLoader
                     normals.Add(Vector3.Up);
                 }
 
-                float vertexShade = 1f;
+                // Colour is kept as RGB rather than collapsed to one shade. A
+                // generated model's own palette is the point of generating it, and
+                // the faction tint is applied on top at draw time — discarding the
+                // model's colours here would throw half the art away.
+                Vector3 vertexColor = Vector3.One;
+
                 if (rawColors is not null)
                 {
-                    vertexShade = Luminance(rawColors, v * colorComponents, colorComponents);
-                    vertexShade = vertexShade <= 0.001f ? 1f : vertexShade;
+                    vertexColor = colorComponents >= 3
+                        ? new Vector3(
+                            rawColors[v * colorComponents],
+                            rawColors[(v * colorComponents) + 1],
+                            rawColors[(v * colorComponents) + 2])
+                        : new Vector3(Luminance(rawColors, v, 1));
+
+                    if (vertexColor.X <= 0.001f && vertexColor.Y <= 0.001f && vertexColor.Z <= 0.001f)
+                    {
+                        vertexColor = Vector3.One;
+                    }
                 }
 
-                shades.Add(materialShade * vertexShade);
+                colors.Add(vertexColor * materialShade);
             }
 
             if (primitive.Indices is int indexAccessor)
@@ -354,7 +603,7 @@ public static class GltfLoader
     private static MeshData BuildMesh(
         List<Vector3> positions,
         List<Vector3> normals,
-        List<float> shades,
+        List<Vector3> colors,
         List<ushort> indices,
         ModelImportOptions options)
     {
@@ -404,29 +653,36 @@ public static class GltfLoader
 
         Vector3 centre = new((min.X + max.X) * 0.5f, min.Y, (min.Z + max.Z) * 0.5f);
 
-        // Normalise the shade range so a model's darkest material still reads as
-        // that material rather than as black.
-        float maxShade = 0f;
-        foreach (float shade in shades)
+        // Normalise the palette so a model's darkest material still reads as that
+        // material rather than as black.
+        float maxChannel = 0f;
+
+        foreach (Vector3 color in colors)
         {
-            maxShade = MathF.Max(maxShade, shade);
+            maxChannel = MathF.Max(maxChannel, MathF.Max(color.X, MathF.Max(color.Y, color.Z)));
         }
 
-        float shadeScale = maxShade > 0.001f ? 1f / maxShade : 1f;
+        float colorScale = maxChannel > 0.001f ? 1f / maxChannel : 1f;
 
         VertexPositionNormal[] vertices = new VertexPositionNormal[positions.Count];
 
         for (int i = 0; i < positions.Count; i++)
         {
             Vector3 position = (positions[i] - centre) * scale;
-            float shade = Math.Clamp(shades[i] * shadeScale, 0.45f, 1f);
-            byte channel = (byte)Math.Clamp((int)MathF.Round(shade * 255f), 0, 255);
+            Vector3 color = colors[i] * colorScale;
 
-            vertices[i] = new VertexPositionNormal(position, normals[i], new Color(channel, channel, channel));
+            vertices[i] = new VertexPositionNormal(
+                position,
+                normals[i],
+                new Color(Channel(color.X), Channel(color.Y), Channel(color.Z)));
         }
 
         return new MeshData(vertices, [.. indices]);
     }
+
+    /// <summary>Clamps a linear channel into the range the shader can show.</summary>
+    private static byte Channel(float value)
+        => (byte)Math.Clamp((int)MathF.Round(Math.Clamp(value, 0.35f, 1f) * 255f), 0, 255);
 
     private static Vector3 Size(List<Vector3> positions)
     {
