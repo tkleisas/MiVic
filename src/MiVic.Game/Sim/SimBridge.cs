@@ -86,6 +86,45 @@ public sealed class SimBridge
     {
     }
 
+    /// <summary>
+    /// Creates the model fixture: an empty world with exactly one entity in it.
+    /// <para>
+    /// One model and nothing else, so what is on screen is the model and only the
+    /// model — no neighbouring units to confuse the silhouette, no fog, no battle.
+    /// </para>
+    /// </summary>
+    public SimBridge(ulong seed, Faction faction, UnitKind kind)
+        : this(seed, ScenarioKind.Skirmish, mission: null, replay: null)
+    {
+        // Clear the skirmish layout, then place the one model at the origin.
+        int capacity = World.Capacity;
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (World.IsAliveSlot(slot))
+            {
+                World.Despawn(new EntityId(slot, World.GetRefBySlot(slot).Generation));
+            }
+        }
+
+        UnitDefinition definition = UnitCatalog.Get(kind);
+
+        // The centre of the map, not cell zero: the fixture camera looks at the world
+        // origin, and cell zero is a corner of the map roughly three hundred metres
+        // away. Placing the model there put it off camera entirely.
+        int centreCell = World.Navigation.IndexOf(World.Navigation.Size / 2, World.Navigation.Size / 2);
+
+        WorldPos position = World.Navigation.CentreOf(World.Navigation.NearestWalkable(centreCell));
+
+        World.Spawn(
+            faction,
+            0,
+            kind,
+            position,
+            Fix32.FromInt(definition.SpeedMmPerTick),
+            definition.Health);
+    }
+
     /// <summary>Creates a campaign mission from its definition.</summary>
     public SimBridge(MissionDefinition mission)
         : this(

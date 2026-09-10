@@ -40,7 +40,29 @@ public sealed record LaunchOptions
     public string? ModelGalleryPath { get; init; }
 
     /// <summary>True when the run is a model gallery.</summary>
+    /// <summary>True when the model gallery is being shown instead of a match.</summary>
     public bool IsModelGallery => ModelGalleryPath is not null;
+
+    /// <summary>
+    /// Model fixture. One model at a time, on a locked camera, so a model can be
+    /// judged on its own instead of guessed at from a screenshot of a battle.
+    /// </summary>
+    public bool Viewer { get; init; }
+
+    /// <summary>Which model the viewer opens on, as <c>Faction/Kind</c> or a bare kind name.</summary>
+    public string? ViewerModel { get; init; }
+
+    /// <summary>Fixed camera yaw for the viewer, in degrees, for reproducible shots.</summary>
+    public float? ViewerAngle { get; init; }
+
+    /// <summary>Angle of the viewer camera above the horizon, in degrees.</summary>
+    public float ViewerPitch { get; init; } = 62f;
+
+    /// <summary>Distance the viewer camera sits from the model, in metres.</summary>
+    public float ViewerDistance { get; init; } = 14f;
+
+    /// <summary>When set, the viewer renders one frame to this file and exits.</summary>
+    public string? ViewerShotPath { get; init; }
 
     /// <summary>Removes every non-player structure at startup, to show the victory banner.</summary>
     public bool VictoryDemo { get; init; }
@@ -174,6 +196,50 @@ public sealed record LaunchOptions
                         ModelGalleryPath = path,
                         ScreenshotPath = path,
                         ScreenshotFrame = 60,
+                        ShowHelp = false,
+                    };
+
+                    break;
+                }
+
+                case "--viewer":
+                    options = options with { Viewer = true, ShowHelp = false };
+                    break;
+
+                case "--viewer-model":
+                    options = options with { Viewer = true, ViewerModel = NextValue(args, ref i, arg), ShowHelp = false };
+                    break;
+
+                case "--viewer-angle":
+                    options = options with
+                    {
+                        Viewer = true,
+                        ViewerAngle = float.Parse(NextValue(args, ref i, arg), System.Globalization.CultureInfo.InvariantCulture),
+                        ShowHelp = false,
+                    };
+                    break;
+
+                case "--viewer-pitch":
+                    options = options with
+                    {
+                        Viewer = true,
+                        ViewerPitch = float.Parse(NextValue(args, ref i, arg), System.Globalization.CultureInfo.InvariantCulture),
+                        ShowHelp = false,
+                    };
+                    break;
+
+                case "--viewer-shot":
+                {
+                    // The headless twin of the fixture: one model, one angle, one file,
+                    // so a model can be checked without a person at the keyboard.
+                    string path = NextValue(args, ref i, arg);
+
+                    options = options with
+                    {
+                        Viewer = true,
+                        ViewerShotPath = path,
+                        ScreenshotPath = path,
+                        ScreenshotFrame = 30,
                         ShowHelp = false,
                     };
 

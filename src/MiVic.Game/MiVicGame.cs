@@ -15,6 +15,8 @@ using MiVic.Game.Rendering;
 using MiVic.Game.Rendering.Particles;
 using MiVic.Game.Sim;
 using MiVic.Game.Ui;
+using NVec2 = System.Numerics.Vector2;
+using NVec4 = System.Numerics.Vector4;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -110,6 +112,110 @@ public sealed class MiVicGame : XnaGame
     /// <summary>Health bars submitted on the last frame, for the self-test report.</summary>
     private int _healthBarsDrawn;
 
+    /// <summary>Every role the fixture can show, in catalogue order.</summary>
+    private static readonly (Faction Faction, UnitKind Kind)[] ViewerModels = BuildViewerList();
+
+    private int _viewerIndex;
+    private static readonly NVec4 ViewerMuted = new(0.62f, 0.66f, 0.70f, 1f);
+    private static readonly NVec4 ViewerWarning = new(0.95f, 0.45f, 0.30f, 1f);
+
+    private float _viewerYaw;
+
+    /// <summary>Camera elevation in the fixture, in degrees, held every frame.</summary>
+    private float _viewerPitch = 62f;
+    private bool _viewerOrbit;
+
+    private static (Faction, UnitKind)[] BuildViewerList()
+    {
+        var models = new List<(Faction, UnitKind)>();
+
+        foreach (FactionProfile profile in FactionProfile.All)
+        {
+            foreach (UnitDefinition definition in UnitCatalog.All)
+            {
+                // Only what the faction can actually field: a Κινέζοι tank shown in
+                // Σοβιετικοί colours would be a review of nothing.
+                if (definition.OnlyFor == Faction.None || definition.OnlyFor == profile.Faction)
+                {
+                    models.Add((profile.Faction, definition.Kind));
+                }
+            }
+        }
+
+        return [.. models];
+    }
+
+    private Faction ViewerFaction => ViewerModels[_viewerIndex].Faction;
+
+    private UnitKind ViewerKind => ViewerModels[_viewerIndex].Kind;
+
+    /// <summary>
+    /// Swaps the single model the fixture is showing. The world is not rebuilt: one
+    /// entity leaves and another arrives, so switching is instant.
+    /// </summary>
+    private void ShowViewerModel(int index)
+    {
+        if (_simulation is null)
+        {
+            return;
+        }
+
+        int count = ViewerModels.Length;
+        _viewerIndex = ((index % count) + count) % count;
+
+        SimWorld world = _simulation.World;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (world.IsAliveSlot(slot))
+            {
+                world.Despawn(new EntityId(slot, world.GetRefBySlot(slot).Generation));
+            }
+        }
+
+        UnitDefinition definition = UnitCatalog.Get(ViewerKind);
+
+        int centreCell = world.Navigation.IndexOf(world.Navigation.Size / 2, world.Navigation.Size / 2);
+
+        world.Spawn(
+            ViewerFaction,
+            0,
+            ViewerKind,
+            world.Navigation.CentreOf(world.Navigation.NearestWalkable(centreCell)),
+            Fix32.FromInt(definition.SpeedMmPerTick),
+            definition.Health);
+    }
+
+    /// <summary>
+    /// Where the fixture's model actually is, in render metres. The camera is aimed
+    /// at this rather than at the world origin, so the model is in frame wherever it
+    /// ended up standing.
+    /// </summary>
+    private bool TryViewerTarget(out Vector3 position)
+    {
+        position = Vector3.Zero;
+
+        if (_simulation is null)
+        {
+            return false;
+        }
+
+        SimWorld world = _simulation.World;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            position = _simulation.GetRenderPosition(slot, interpolate: false);
+            return true;
+        }
+
+        return false;
+    }
+
     /// <summary>Terrain revision the current ground mesh was built from.</summary>
     private int _terrainRevision;
 
@@ -198,7 +304,35 @@ public sealed class MiVicGame : XnaGame
         };
 
         // A screenshot wants the whole battlefield in frame.
-        if (_options.IsModelGallery)
+        if (_options.Viewer)
+        {
+            // The fixture locks the camera on one model. Nothing else in a match may
+            // move it, so a given view is reproducible and two models can be compared
+            // from exactly the same angle.
+            _camera.ZoomTo(_options.ViewerDistance);
+            _viewerPitch = _options.ViewerPitch;
+            _camera.TiltTo(-MathHelper.ToRadians(_viewerPitch));
+            _camera.Yaw = _options.ViewerAngle is { } angle ? MathHelper.ToRadians(angle) : 0.62f;
+            _camera.FocusOn(Vector3.Zero);
+            _viewerYaw = _camera.Yaw;
+            // Open on whatever was asked for, so a headless shot and a person at the
+            // keyboard see the same model.
+            if (_options.ViewerModel is { Length: > 0 } wanted)
+            {
+                for (int i = 0; i < ViewerModels.Length; i++)
+                {
+                    string name = $"{ViewerModels[i].Faction}/{ViewerModels[i].Kind}";
+
+                    if (string.Equals(name, wanted, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(ViewerModels[i].Kind.ToString(), wanted, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _viewerIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        else if (_options.IsModelGallery)
         {
             _camera.ZoomTo(300f);
             _camera.TiltTo(-1.42f);
@@ -238,7 +372,9 @@ public sealed class MiVicGame : XnaGame
             ? new SimBridge(ReplayFile.Load(watchPath))
             : _options.MissionId is { } missionId
                 ? new SimBridge(MissionCatalog.Require(missionId))
-                : new SimBridge(_options.Seed, _options.IsModelGallery);
+                : _options.Viewer
+                    ? new SimBridge(_options.Seed, ViewerFaction, ViewerKind)
+                    : new SimBridge(_options.Seed, _options.IsModelGallery);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
@@ -415,9 +551,21 @@ public sealed class MiVicGame : XnaGame
         if (!uiWantsMouse && _simulation!.World.Outcome == GameOutcome.Ongoing)
         {
             _totalSeconds = gameTime.TotalGameTime.TotalSeconds;
-            HandleSelectionInput(keyboard, mouse, _totalSeconds);
+
+            if (_options.Viewer)
+            {
+                HandleViewerInput(keyboard, mouse, _previousMouse);
+            }
+            else
+            {
+                HandleSelectionInput(keyboard, mouse, _totalSeconds);
+            }
         }
 
+        // The camera runs even in the fixture, because its position is recomputed
+        // from distance, pitch and target on update. Its own pitch easing and WASD
+        // handling are then overwritten below: a reviewer must not be able to fly the
+        // camera away from the model, and a fixed angle is the point of the fixture.
         if (!uiWantsMouse && !uiWantsKeyboard)
         {
             int scroll = mouse.ScrollWheelValue - _previousScrollWheel;
@@ -430,6 +578,11 @@ public sealed class MiVicGame : XnaGame
                 scroll);
         }
 
+        if (_options.Viewer)
+        {
+            ApplyViewerCamera();
+        }
+
         _selection.PruneDead(_simulation.World);
         UpdateOrderMarkers((float)gameTime.ElapsedGameTime.TotalSeconds);
 
@@ -439,7 +592,16 @@ public sealed class MiVicGame : XnaGame
 
         _imgui.Update(gameTime);
 
-        HudCommand? command = _hud.Draw(BuildSnapshot());
+        // Every ImGui call has to follow the frame's NewFrame, which Update issues.
+        // Drawing the fixture panel before it trips ImGui's own assertion — and that
+        // assertion opens a modal dialog, so the game appears to hang rather than to
+        // fail.
+        if (_options.Viewer)
+        {
+            DrawViewerPanel();
+        }
+
+        HudCommand? command = _options.Viewer ? null : _hud.Draw(BuildSnapshot());
 
         if (command is HudCommand requested && !IsPlayback)
         {
@@ -1357,6 +1519,162 @@ public sealed class MiVicGame : XnaGame
         {
             IssueOrderAtCursor(new Vector2(mouse.X, mouse.Y));
         }
+    }
+
+    /// <summary>
+    /// Fixture input: step through the catalogue, orbit, zoom. The camera is not
+    /// otherwise driveable here, so a given model and angle are reproducible.
+    /// </summary>
+    private void HandleViewerInput(KeyboardState keyboard, MouseState mouse, MouseState previousMouse)
+    {
+        if (Pressed(keyboard, Keys.Right) || Pressed(keyboard, Keys.D))
+        {
+            ShowViewerModel(_viewerIndex + 1);
+        }
+
+        if (Pressed(keyboard, Keys.Left) || Pressed(keyboard, Keys.A))
+        {
+            ShowViewerModel(_viewerIndex - 1);
+        }
+
+        // Faction jumps: 1, 2, 3 for the three powers in profile order.
+        for (int i = 0; i < FactionProfile.All.Length; i++)
+        {
+            if (!Pressed(keyboard, Keys.D1 + i))
+            {
+                continue;
+            }
+
+            Faction wanted = FactionProfile.All[i].Faction;
+
+            for (int m = 0; m < ViewerModels.Length; m++)
+            {
+                if (ViewerModels[m].Faction == wanted && ViewerModels[m].Kind == ViewerKind)
+                {
+                    ShowViewerModel(m);
+                    break;
+                }
+            }
+        }
+
+        if (Pressed(keyboard, Keys.Space))
+        {
+            _viewerOrbit = !_viewerOrbit;
+        }
+
+        if (keyboard.IsKeyDown(Keys.Q))
+        {
+            _viewerYaw += 0.6f * (float)_totalSeconds;
+        }
+
+        if (keyboard.IsKeyDown(Keys.E))
+        {
+            _viewerYaw -= 0.6f * (float)_totalSeconds;
+        }
+
+        if (_viewerOrbit)
+        {
+            _viewerYaw += 0.02f;
+        }
+    }
+
+    /// <summary>
+    /// Pins the fixture's camera, after the RTS camera has recomputed its position.
+    /// Doing it here rather than before means the camera's own pitch easing cannot
+    /// quietly override the angle the reviewer asked for.
+    /// </summary>
+    private void ApplyViewerCamera()
+    {
+        if (_camera is null)
+        {
+            return;
+        }
+
+        _camera.Yaw = _viewerYaw;
+        _camera.TiltTo(-MathHelper.ToRadians(_viewerPitch));
+
+        if (TryViewerTarget(out Vector3 target))
+        {
+            _camera.FocusOn(target);
+        }
+    }
+
+    /// <summary>
+    /// The fixture's readout: what is on screen, where it came from, and what may be
+    /// animated on it. The part list is the animation contract, so a model with no
+    /// drivable parts is a model nothing can move — which is worth seeing before
+    /// noticing it in a battle.
+    /// </summary>
+    private void DrawViewerPanel()
+    {
+        if (_simulation is null || _catalog is null)
+        {
+            return;
+        }
+
+        ImGui.SetNextWindowPos(new NVec2(12f, 12f), ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new NVec2(440f, 0f), ImGuiCond.Always);
+
+        if (!ImGui.Begin("Μοντέλο##viewer", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse))
+        {
+            ImGui.End();
+            return;
+        }
+
+        FactionProfile profile = FactionProfile.For(ViewerFaction);
+        string label = FactionPalette.UnitLabel(ViewerKind);
+
+        ImGui.TextColored(
+            new NVec4(
+                FactionPalette.Primary(ViewerFaction).R / 255f,
+                FactionPalette.Primary(ViewerFaction).G / 255f,
+                FactionPalette.Primary(ViewerFaction).B / 255f,
+                1f),
+            $"{profile.GreekName} — {label}");
+
+        ImGui.TextColored(ViewerMuted, $"{_viewerIndex + 1} / {ViewerModels.Length}    {ViewerFaction}/{ViewerKind}");
+        ImGui.Separator();
+
+        ModelCatalog.ModelParts model = _catalog.GetParts(ViewerFaction, ViewerKind);
+
+        ImGui.Text($"Μέρη: {model.Parts.Length}");
+
+        if (model.WheelRadiusMetres > 0f)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(ViewerMuted, $"  τροχός ⌀{model.WheelRadiusMetres * 2f:0.00} m");
+        }
+
+        var animated = new List<string>();
+
+        foreach (ModelCatalog.PartMesh part in model.Parts)
+        {
+            string name = part.Name;
+
+            if (name.StartsWith("wheel_", StringComparison.Ordinal) ||
+                name is "turret" or "radar" ||
+                name.StartsWith("Leg", StringComparison.Ordinal) ||
+                name.StartsWith("Foot", StringComparison.Ordinal) ||
+                name.EndsWith("Legs", StringComparison.OrdinalIgnoreCase) ||
+                name.EndsWith("Feet", StringComparison.OrdinalIgnoreCase) ||
+                name is "Body" or "Head")
+            {
+                animated.Add(name);
+            }
+        }
+
+        ImGui.TextColored(
+            animated.Count > 0 ? ViewerMuted : ViewerWarning,
+            animated.Count > 0
+                ? $"Κινούνται: {string.Join(", ", animated)}"
+                : "Κανένα μέρος δεν κινείται σε αυτό το μοντέλο.");
+
+        ImGui.Separator();
+        ImGui.TextColored(ViewerMuted, "← →  προηγούμενο / επόμενο    1 2 3  παράταξη");
+        ImGui.TextColored(ViewerMuted, "Space  περιστροφή    Q / E  χειροκίνητα    Τροχός  ζουμ");
+        ImGui.TextColored(ViewerMuted, $"Απόσταση {(_camera?.Distance ?? 0f):0} m    γωνία {MathHelper.ToDegrees(_viewerYaw):0}°");
+
+        ImGui.End();
     }
 
     /// <summary>Ctrl + digit stores the selection; a bare digit recalls it.</summary>
