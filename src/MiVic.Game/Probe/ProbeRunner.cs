@@ -6,6 +6,7 @@ using MiVic.Core.Pathfinding;
 using MiVic.Core.Sim;
 using MiVic.Core.Terrain;using MiVic.Game.Data;
 using MiVic.Game.Sim;
+using MiVic.Map;
 using Microsoft.Xna.Framework;
 
 namespace MiVic.Game.Probe;
@@ -64,6 +65,16 @@ public sealed class ProbeRunner
     private readonly Dictionary<(int Slot, int Part), ProbePose> _poses = [];
     private readonly ProbeCommand[] _commands;
     private readonly string _outputPath;
+
+    /// <summary>
+    /// Where every unit has been, sampled off the ticks the script runs.
+    /// <para>
+    /// A trail is a fact about a stretch of time and not about the state of the world, so the
+    /// simulation neither keeps it nor should: it is sampled by the tool that draws it, and the
+    /// sampling happens in <c>tick</c> because that is where the world moves.
+    /// </para>
+    /// </summary>
+    private readonly MapTrails _trails = new();
 
     /// <summary>
     /// Shots between teams, as ordered pairs: index <c>(shooter * TeamCount) + target</c>. The
@@ -132,6 +143,10 @@ public sealed class ProbeRunner
         Emit($"seed     : {host.Simulation.World.Seed}");
         Emit($"scenario : {host.Simulation.Scenario}");
         Emit($"commands : {_commands.Length}");
+
+        // One sample before the first command, so a map drawn at tick zero has a trail per unit
+        // rather than a blank: a picture of the opening position is a picture somebody asks for.
+        _trails.Advance(host.Simulation.World);
 
         if (script.Error is { } error)
         {
@@ -366,6 +381,9 @@ public sealed class ProbeRunner
             case "objectives":
                 Objectives(command);
                 break;
+            case "map":
+                DrawMap(command);
+                break;
             case "expect":
                 Expect(command);
                 break;
@@ -375,7 +393,7 @@ public sealed class ProbeRunner
                     "surfaces, attributes, units, unit, count, routes, parts, model, visible, events, teams, bridge, " +
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
-                    "triggers, messages, objectives, expect, validate");
+                    "triggers, messages, objectives, map, expect, validate");
         }
     }
 
@@ -395,6 +413,12 @@ public sealed class ProbeRunner
         {
             _host.AdvanceTick();
             HarvestEvents(world.Tick);
+
+            // The trail is the one thing a picture needs that the world does not keep, so it is
+            // sampled here — on the tick, after it has been run, so a sample describes the world
+            // at the end of a tick rather than between two. It reads and writes nothing in the
+            // simulation, which is why a map can be drawn without the world noticing.
+            _trails.Advance(world);
             WatchRoutes(world);
         }
 
@@ -3770,6 +3794,191 @@ public sealed class ProbeRunner
             Emit($"query:       numbers    {DescribeObjective(definition)}");
         }
     }
+
+    /// <summary>
+    /// <b>The match as a flat picture.</b> Writes an SVG and the same scene as a PNG beside it.
+    /// <para>
+    /// The picture is drawn from simulation data rather than by the renderer — positions, headings
+    /// in brads, the surface grid, the routes the pathfinder returned, the mission's own geometry
+    /// — so it needs no graphics device and works on a machine with no GPU. That is not a
+    /// convenience: a diagnostic that had to be photographed through a camera could only show what
+    /// the camera was pointed at, and the bugs this exists for are the ones that are invisible from
+    /// inside a tank.
+    /// </para>
+    /// <para>
+    /// <b>The trajectories are the layer that matters.</b> Each unit is drawn twice over: the
+    /// polyline the pathfinder actually returned from its cursor onwards, and the ground it has
+    /// covered, sampled every half second as the script ticked. A unit with a path and no trail is
+    /// a unit that is not moving, and the census prints that number next to the picture so the two
+    /// can be checked against each other. It is deliberately a recorded check rather than a line of
+    /// prose: a run whose map shows a frozen column has found the starvation bug, and an exit
+    /// status of zero would be the tool hiding it.
+    /// </para>
+    /// </summary>
+    private void DrawMap(ProbeCommand command)
+    {
+        string path = command.Argument(0, "a file path", "map <file.svg> [layers] [scale=<px/m>] [team=<n>] [events=<ticks>]");
+
+        MapLayers layers = MapLayers.All;
+        bool layersGiven = false;
+        double scale = 2.0;
+        int? coverageTeam = null;
+        bool everyTeam = false;
+        long window = 100;
+
+        for (int i = 1; i < command.ArgumentCount; i++)
+        {
+            string argument = command.Arguments[i];
+
+            if (argument.Contains('=', StringComparison.Ordinal))
+            {
+                string[] parts = argument.Split('=', 2);
+                string value = parts[1];
+
+                switch (parts[0].ToLowerInvariant())
+                {
+                    case "scale":
+                        scale = Option(value, "a number of pixels per metre", "map <file.svg> scale=<px/m>");
+                        break;
+
+                    case "team":
+                        if (value.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            everyTeam = true;
+                            break;
+                        }
+
+                        coverageTeam = (int)Option(value, "a team number or 'all'", "map <file.svg> team=<n|all>");
+                        break;
+
+                    case "events":
+                        window = (long)Option(value, "a number of ticks", "map <file.svg> events=<ticks>");
+                        break;
+
+                    default:
+                        throw new ProbeException(
+                            $"'{parts[0]}' is not a map option — scale, team, events, or a layer list " +
+                            $"({string.Join(", ", MapLayerText.Names)})");
+                }
+
+                continue;
+            }
+
+            if (layersGiven)
+            {
+                throw new ProbeException(
+                    $"'{argument}' is a second layer list — map <file.svg> [layers] takes one, " +
+                    "and the layers go in it comma-separated");
+            }
+
+            try
+            {
+                layers = MapLayerText.Parse(argument);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new ProbeException(exception.Message);
+            }
+
+            layersGiven = true;
+        }
+
+        SimWorld world = _host.Simulation.World;
+
+        // Whose eyes are drawn, when the script did not say. Coverage is a question about a side —
+        // "what can this side see, and does its radar reach its guns" — and three sides' rims on
+        // one map is a texture rather than a reading, so the default is the side the client is
+        // commanding. `team=all` asks for every side at once, which is the question a fixture
+        // demonstrating three powers side by side is actually asking.
+        if (!everyTeam)
+        {
+            coverageTeam ??= _host.ViewerTeam;
+        }
+
+        MapPictureResult picture = MapPicture.Write(
+            world,
+            _trails,
+            ProbeMapColours.Palette,
+            new MapRequest
+            {
+                Layers = layers,
+                PixelsPerMetre = scale,
+                CoverageTeam = coverageTeam,
+                EventWindowTicks = window,
+                Scenario = _host.Simulation.Scenario.ToString(),
+            },
+            EventMarks(),
+            Path.GetFullPath(path));
+
+        Emit(string.Create(
+            CultureInfo.InvariantCulture,
+            $"ok: map {picture.SvgPath} + {picture.PngPath} — {picture.Census.Width}x{picture.Census.Height} px, " +
+            $"{ProbeFormat.Bytes(picture.SvgBytes)} svg, {ProbeFormat.Bytes(picture.PngBytes)} png, " +
+            $"layers {MapLayerText.Describe(layers)}, {scale:0.#} px/m"));
+
+        foreach (string line in picture.Census.Lines())
+        {
+            Emit($"query: {line}");
+        }
+
+        RecordCheck(
+            "every unit holding a route is moving along it",
+            picture.Census.Frozen == 0,
+            picture.Census.Frozen == 0
+                ? $"{picture.Census.WithRoute} units hold a route and every one of them has ground behind it"
+                : $"{picture.Census.Frozen} of {picture.Census.WithRoute} have moved less than " +
+                  $"{MapTrails.FrozenThresholdMm / 1_000} m in the last {MapTrails.DefaultFrozenSamples} samples " +
+                  "— drawn in the picture as the ringed marks; a route with no trail is a unit that is not moving");
+    }
+
+    /// <summary>
+    /// The recent simulation events, as marks the map can place. Empty for a match that has not
+    /// fired a shot, which is the normal state of a fixture and needs no second code path.
+    /// </summary>
+    private List<MapEventMark> EventMarks()
+    {
+        var marks = new List<MapEventMark>(_events.Count);
+
+        foreach (ProbeEvent history in _events)
+        {
+            WorldPos? target = null;
+
+            if (history.Type == SimEventType.ShotFired && history.HasDirection)
+            {
+                // The target's ground point, rebuilt from the direction and range the event was
+                // read with rather than looked up now: a unit that has moved since it was shot at
+                // would otherwise be drawn being shot at where it stands, which is a different
+                // claim about the battle than the one the simulation made.
+                target = new WorldPos(
+                    history.PositionMm.X + (int)(history.Direction.X * history.RangeMetres * WorldPos.MmPerMetre),
+                    history.PositionMm.Y,
+                    history.PositionMm.Z + (int)(history.Direction.Z * history.RangeMetres * WorldPos.MmPerMetre));
+            }
+
+            marks.Add(new MapEventMark(
+                history.Type switch
+                {
+                    SimEventType.ShotFired => MapEventKind.Shot,
+                    SimEventType.UnitHit => MapEventKind.Hit,
+                    _ => MapEventKind.Death,
+                },
+                history.Tick,
+                history.Faction,
+                history.TeamId,
+                history.Kind,
+                history.PositionMm,
+                target,
+                history.Damage));
+        }
+
+        return marks;
+    }
+
+    /// <summary>One number from a <c>name=value</c> option, refused rather than defaulted when it is not one.</summary>
+    private static double Option(string text, string expected, string usage)
+        => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+            ? value
+            : throw new ProbeException($"'{text}' is not {expected} — usage: {usage}");
 
     /// <summary>An objective's own parameters, so a status can be checked against what it was asking.</summary>
     private static string DescribeObjective(ObjectiveDefinition definition)

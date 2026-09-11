@@ -729,6 +729,37 @@ in deep water, two hundred units frozen on ordinary grass, and a radar whose cov
 guns it was bought for. It is the instrument for the class of bug that keeps turning up here — spatial,
 and invisible both in a text census and in a 3D photograph.
 
+**Built, as `map <file.svg> [layers]`.** The writer is its own project, `src/MiVic.Map`, and it
+references `MiVic.Core` and nothing else: it reads a `SimWorld` and paints a list of shapes, so it
+runs from a probe, from inside a test, and on a machine with no GPU. One command writes two files —
+the SVG, which is exact and diffable, and the same scene as a PNG through a second encoder beside
+it, because half the readers of a diagnostic tool cannot open an SVG. Colour comes in through a
+`MapPalette` the client fills from `FactionPalette` and `TerrainMeshBuilder`, so the map and the
+renderer cannot disagree about what a Σοβιετικοί tank looks like. Every layer in the list above is
+drawn; the script layer has no mission in a skirmish and is simply empty there.
+
+The trajectories are the part that earned its place, and they cost more than the drawing did. A
+trail needs sampled positions, so the tool samples them itself off the ticks the script runs — one
+sample every half second, sixty-four per unit — and the *marks* are what makes pace legible: the
+distance between two of them is the ground covered in half a second, so a column crossing mud draws
+as marks spreading out, and where trails converge a front line draws itself.
+
+**Two wrong answers came out of the layer before it was right, and both were a missing query.** An
+absolute threshold — "moved less than two metres in four seconds" — called twelve Chinese
+infantrymen frozen at tick 600: men crossing mud at 27 mm a tick, which is every millimetre their
+ground allows them. The number that was missing is what the *ground* allows, and it already exists
+as `MovementSystem.StepMmPerTick`; measuring the shortfall against it cleared them. That left six
+that had been stalled and had just been handed a route, and were therefore walking; the second
+missing number is whether the unit is still still, which is a second, shorter window. `map` prints
+the reading and the slots behind it, and records a check: a run whose picture shows a unit holding a
+route and standing still exits non-zero rather than printing it and claiming success. On the
+standard skirmish at tick 600 it finds none, which is the honest answer and the one that says the
+starvation bug is behind us.
+
+The checkpoint half of this section is still open, and the map turned out not to need it: the trail
+is sampled by the tool as the world steps forward, so a picture of the last half minute costs the
+ticks it takes to run them and no state at all.
+
 ## Also outstanding, from the art and rendering work
 
 Not on the list above, but open:

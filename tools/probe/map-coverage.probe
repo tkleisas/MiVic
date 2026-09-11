@@ -1,0 +1,55 @@
+# Q: does a radar's coverage reach the guns it was bought for — and what does the picture look
+#    like when the grid sheds the set?
+#
+#   MiVic.Game.exe --probe tools/probe/map-coverage.probe --probe-out artifacts/probe/map-coverage.txt --detection-demo
+#
+# The fixture is the one tools/probe/detection.probe reads as numbers: up the map's centre column,
+# a Καταδρομέας walking north, a Σταθμός Ραντάρ at z = -120 and the Πυροβολείο it serves at
+# z = -70, and a Δυτικοί tank held at 190 m from the gun. The same scene, read as a picture.
+#
+# The three claims, in the shape of the map:
+#   1. the radar draws a 260 m rim and the gun draws a 170 m one, and the gun is *inside* the
+#      radar's — which is what "the radar reaches the guns" looks like without a number being
+#      compared;
+#   2. the tank at 190 m sits between the two rims: inside the radar's, outside the gun's own eyes,
+#      and therefore engaged only because the radar is looking;
+#   3. one more factory is more load than the grid has, the radar is what is shed, and the 260 m rim
+#      is simply not on the second picture.
+
+# --- the ring while the radar is lit -----------------------------------------------------------
+# One pixel a metre, which is the whole battlefield in six hundred: the two rims and the tank
+# between them are all inside one picture, and the pair of them — this one and the dark one below
+# — is the reading. The tank is 190 m from the gun, so it is inside the 260 m rim and outside the
+# 170 m one; the gun is inside both, which is what "the radar reaches the guns" means.
+tick 1
+range 503
+range 504
+map artifacts/probe/map-radar-rings.svg terrain,coverage,units,paths,frame scale=1
+
+# ...and again larger, for the detail: the two rims and the four marks they are about.
+map artifacts/probe/map-radar-lit.svg terrain,coverage,units,paths,frame scale=3
+
+# --- and after the grid has had to choose ------------------------------------------------------
+# One more Πυροβολείου factory's worth of load than the grid can carry: the set goes dark, the
+# gun's reach falls back to its own eyes, and the 260 m rim that the tank was standing inside is
+# simply not on the second picture. Same layers, same scale, same seed — the only difference
+# between the two is the radar.
+tick 490
+structure Factory 200 -140 0 build
+tick 300
+power 0
+range 504
+map artifacts/probe/map-radar-rings-dark.svg terrain,coverage,units,paths,frame scale=1
+map artifacts/probe/map-radar-dark.svg terrain,coverage,units,paths,frame scale=3
+
+# --- the whole map, every side's eyes as well as the column's ----------------------------------
+# `team=all` because the question here is across the fixture rather than about one side: three
+# powers' rims on one drawing, which is the reading the fixture was built for.
+tick 1
+map artifacts/probe/map-radar-all.svg terrain,coverage,units,frame,stuck team=all scale=2
+
+# --- the numbers the rims were drawn from ------------------------------------------------------
+expect "a gun emplacement's own eyes" 170.0 170.0 0
+expect "its gun" 200.0 200.0 0
+expect "a radar station's coverage" 260.0 260.0 0
+expect "and it detects a hidden enemy at half of it" 130.0 130.0 0

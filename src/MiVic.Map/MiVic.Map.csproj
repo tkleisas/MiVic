@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The map writer. Deliberately its own project and deliberately not a client
+    project: it reads simulation state and writes a picture, and it must do both
+    on a machine with no graphics device — from the probe, from inside a test,
+    and from anything else that can hold a SimWorld.
+
+    It references MiVic.Core and nothing else. Colour comes in through
+    MapPalette, so the client supplies its own faction and surface tables and
+    this project never grows a second copy of them.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>MiVic.Map</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MiVic.Core\MiVic.Core.csproj" />
+  </ItemGroup>
+
+</Project>

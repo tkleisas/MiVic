@@ -51,5 +51,12 @@
   <ItemGroup>
     <ProjectReference Include="..\MiVic.Core\MiVic.Core.csproj" />
     <ProjectReference Include="..\MiVic.Audio\MiVic.Audio.csproj" />
+    <!--
+      The map writer: a picture of a match, drawn from simulation data with no
+      graphics device involved. Referenced from the client because the probe is
+      where a picture is asked for, not because the client draws with it — the
+      renderer has never seen a line of it.
+    -->
+    <ProjectReference Include="..\MiVic.Map\MiVic.Map.csproj" />
   </ItemGroup>
 </Project>

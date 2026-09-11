@@ -1,0 +1,56 @@
+# Q: what is the match doing — as a picture rather than as a census of five hundred slots?
+#
+#   MiVic.Game.exe --probe tools/probe/map.probe --probe-out artifacts/probe/map.txt
+#
+# The standard skirmish: three factions playing a real match. The AI gives its units move orders,
+# they route, they walk, they shoot each other, and nothing here is staged. That is the point of
+# the reading — every number below is asked of a match nobody arranged.
+#
+# `map` writes two files from one command: the SVG, which is the exact and diffable form, and the
+# PNG beside it, which is the form a reader who is not a browser can open. Both are the same scene
+# through two encoders, so they cannot disagree about where a unit is.
+#
+# The trajectory layer is the pair to read: the polyline each unit's pathfinder actually returned,
+# and the ground each unit has covered, sampled every half second. A unit with a drawn path and no
+# trail is a unit that is not moving, and the census under each picture says how many of those
+# there are, by slot. That line is where the picture and the text have to agree, and the run fails
+# if they do not.
+
+# --- a whole match, early enough that the columns are still forming up ----------------------
+tick 200
+routes
+map artifacts/probe/map-t200.svg scale=2
+
+# --- and later, when the same columns have had time to sort themselves out -------------------
+tick 400
+map artifacts/probe/map-t600.svg scale=2
+
+# --- the same moment, close enough to read a single unit --------------------------------------
+# Four pixels a metre is a 2 600-pixel canvas. The region worth looking at is cropped out of it
+# afterwards with tools/crop.ps1: at this scale one navigation cell is 37 pixels across, a sampled
+# position is a mark with a measurable gap to the next, and a heading arrow is legible.
+map artifacts/probe/map-close.svg scale=4
+
+# --- and the two halves of the trajectory layer, apart ---------------------------------------
+# Drawn separately because the pair is the reading. With only routes on, a unit that is not moving
+# is a line pointing at where it wants to be with nothing behind it; with only trails on, the same
+# unit is a mark with no line. Both files are of the same tick as the picture above, and the census
+# under both is the same census — a layer turned off is a thing not drawn, not a thing not there.
+map artifacts/probe/map-paths.svg units,paths,stuck,frame scale=3
+map artifacts/probe/map-trails.svg units,trails,stuck,frame scale=3
+
+# --- the ground the whole thing is judged on --------------------------------------------------
+# Terrain alone: the surface lattice the pathfinder routes on, every cell of it, in the colour the
+# client bakes into its mesh and shaded by its own height so relief reads. A surface with no cells
+# is simply not there, which is how a band no cell can reach looks on a map rather than in a
+# screenshot — `surfaces` below is the same fact counted.
+map artifacts/probe/map-ground.svg terrain,frame scale=2
+surfaces
+
+# --- the numbers the pictures were drawn from ------------------------------------------------
+# Read as the values they were: these are the sensor figures the coverage layer draws its rims
+# from, and the picture is generated from exactly them.
+expect "a tank's own eyes" 130.0 130.0 0
+expect "a gun emplacement sees 170 m and shoots 200" 170.0 170.0 0
+expect "a radar station covers 260 m" 260.0 260.0 0
+expect "and finds a hidden enemy at half of it" 130.0 130.0 0

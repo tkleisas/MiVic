@@ -314,6 +314,82 @@ measurement records its own check instead, with the same two prefixes and the sa
 `teams` fails the run when some weapon has aimed at, fired at or damaged an ally, because a
 transcript that reads a violation and exits 0 is a transcript that hides it.
 
+### Drawing
+
+| Command | Effect |
+|---|---|
+| `map <file.svg> [layers] [scale=] [team=] [events=]` | **draw the match as a flat picture**: an SVG at the path given and the same scene as a PNG beside it, plus a census of what was drawn. `layers` is a comma-separated list of `terrain, coverage, script, trails, paths, units, stuck, events, frame`, or `all`/`none`; `scale` is pixels per metre (2 by default, which is a whole 600 m battlefield in about 1 200 pixels); `team` restricts the coverage layer to one team's sensors, or `all` for every team's; `events` is how far back the event marks reach, in ticks (100 by default, five seconds). |
+
+One command writes **two files**, and that is the whole of the format decision. The SVG is the
+primary form: text, diffable, exact, and written by a plain string builder — two runs of one
+world produce two files that `diff` clean. The PNG is the same scene through a second encoder
+(signature, header, one image-data chunk, end: a PNG is a header, rows of bytes with a filter
+byte in front of each, and a zlib stream, and .NET has had `ZLibStream` since .NET 6), because
+half the readers of this tool cannot open an SVG and a diagnostic whose output nobody can look
+at has failed at the one thing it was built for. Both are painted from one list of shapes in
+one order, so they cannot disagree about where a unit is.
+
+The picture is **produced from simulation data rather than by the renderer**: positions,
+headings in brads, the route the pathfinder returned, the surface grid, the mission's own
+geometry. There is no graphics device anywhere in it, which is why it works from a probe, from
+inside a test, and on a machine with no GPU — and why the writer is its own project
+(`src/MiVic.Map`) rather than a corner of the client.
+
+**Trajectories are the layer that matters**, and there are two of them per unit. The **intended
+route** is the polyline the pathfinder actually returned, from its cursor onwards: solid, in the
+owner's colour, drawn to the last waypoint it holds. The **trail** is the ground actually
+covered, sampled every half second as the script ticked, drawn as a thin line with one mark per
+sample. The marks are the reading: they are half a second apart, so the distance between two of
+them is the ground covered in half a second, and a column crossing mud shows as the marks
+spreading out — the *rasputitsa* without a cost figure being looked up. Where trails converge, a
+front line draws itself.
+
+**A unit with a drawn path and no trail is a unit that is not moving**, and the census under
+every `map` line is where that becomes a number:
+
+```
+query: map: tick 600, seed 20250101, Skirmish, 1681x1273 px
+query: map:   drawn      4225 surface cells, 495 entities (18 structures), 29097 sampled positions
+query: map:   routes     275 with a route, 0 stalled with a goal and no route, 199 idle with no target, 56 fighting
+query: map:   trails     477 with a trail, 275 moving over the last 8 samples, 0 frozen, 0 too new to say
+query: map:   reading    275 holding a route, every one of them moving
+query: map:   pace       the slowest mover is slot 304 at 235‰ of its ground's allowance
+```
+
+The numbers are counted from the world and not from the shapes, so a picture with the trails
+turned off reports the same match as one with them on — which is what makes two drawings of one
+tick comparable. `map` also **records a check**, like `teams` does: a run whose picture shows a
+unit holding a route and standing still has found a stall, and exits non-zero rather than
+printing it and claiming success. The frozen slots are named in the transcript, so a reader can
+put `unit <slot>` to them without hunting the picture for a ring the size of a pinhead.
+
+"Not moving" is measured against the ground, not against a threshold in metres: a unit is frozen
+when it has covered less than two metres in four seconds **and** less than a quarter of what
+`MovementSystem.StepMmPerTick` says its surface allows it — and it is not frozen if it moved in
+the last second, because a unit that has just been handed a route is a unit that is moving. Both
+of those conditions were put there by looking at a picture of a real match: the first after
+twelve Chinese infantrymen crossing mud at 27 mm a tick were called stalled, and the second
+after six more that had just started walking were.
+
+The other layers, in the order they are painted:
+
+| Layer | What it draws |
+|---|---|
+| `terrain` | the surface lattice in its own colours — the same table the client bakes into its mesh — shaded by cell height so relief reads. Water and lava are not shaded: a lake is flat |
+| `coverage` | the rim of every sensor's disc, from `VisionSystem.SensorRadiusMm` — the same function the fog pass stamps. A lit radar draws a 260 m rim and a heavier one; **a dark radar draws nothing**, and neither does a building site, because the fog pass stamps neither |
+| `script` | objective circles coloured by where they stand, and a mark at the place each fired trigger acted on |
+| `trails` | the sampled ground, above |
+| `paths` | the returned routes, above |
+| `units` | dots with a heading arrow from the simulation's brads, structures as squares, in the owning power's colour over a dark outline |
+| `stuck` | the state of each unit as a ring: a hollow centre for idle with no target, a thin ring for fighting, a **magenta ring** for frozen, and a yellow square plus a cross where a stalled unit's goal is |
+| `events` | shots as lines to what they were aimed at, hits as crosses, deaths as ringed crosses, all fading over the window |
+| `frame` | the border, a scale bar, the map's own axes (+X right, +Z down), and a legend carrying the census |
+
+`map` composes with everything else, and the point of it being a *command* rather than a
+one-shot tool is that it can be used mid-script: tick to a moment, draw the map, tick on, draw
+again. A trail needs samples, so the tool steps the world itself — `tick` is what fills the
+trail window, and a script that never ticks gets a map of tick zero with one sample per unit.
+
 ## Output format
 
 One record per line, prefixed so a transcript can be grepped and so a reader can tell an
@@ -1727,4 +1803,102 @@ The fixture is a demonstration and not the mission: the agents' own war is the A
 makes them attempt the extraction. What it demonstrates is the whole of what the layer needed — a side
 that holds objectives rather than ground, declared as one, validating and playing, and refused when it
 is not.
+
+## Worked example: what is the match doing, as a picture?
+
+```
+MiVic.Game.exe --probe tools/probe/map.probe --probe-out artifacts/probe/map.txt
+```
+
+Three factions, the standard skirmish, nobody arranging anything: the AI gives its units orders,
+they route, they walk, they shoot each other. Fourteen commands, six pictures, and no check failed.
+
+```
+ok: map ...\map-t600.svg + ...\map-t600.png — 1681x1273 px, 1493 kB svg, 327 kB png,
+      layers terrain, coverage, script, trails, paths, units, stuck, events, frame, 2 px/m
+query: map: tick 600, seed 20250101, Skirmish, 1681x1273 px
+query: map:   drawn      4225 surface cells, 495 entities (18 structures), 29097 sampled positions
+query: map:   routes     275 with a route, 0 stalled with a goal and no route, 199 idle with no target, 56 fighting
+query: map:   trails     477 with a trail, 275 moving over the last 8 samples, 0 frozen, 0 too new to say
+query: map:   reading    275 holding a route, every one of them moving
+query: map:   pace       the slowest mover is slot 304 at 235‰ of its ground's allowance
+check: PASS 'every unit holding a route is moving along it' — 275 units hold a route and every one of them has ground behind it
+```
+
+What the picture shows, at tick 600, read as a picture:
+
+- **three bases, and only two of them are doing anything.** A dense red block in the north-west
+  is the Σοβιετικοί base: dozens of marks with tight spiral trails inside it and not one route
+  leaving. The yellow Κινέζοι base in the centre is an assault in progress — 275 routes, most of
+  them one fan of straight lines converging on three or four points in the south-west, with two
+  routes that bow out and back around the volcano in the middle. The Δυτικοί in the south-west
+  are a column advancing east as a *line*, which is what a drawn route makes obvious and a
+  census of positions does not: forty-odd parallel lines of the same length, evenly spaced;
+- **the fight is a diagram.** The white crosses — hits, fading over five seconds — are all in one
+  place, where the yellow fan meets the blue column, and nowhere else on the map. That is the
+  battle line, drawn by the trajectories rather than by the units: *where trails converge a front
+  line draws itself*, and here the marks that follow them say where the two of them met;
+- **pace is legible.** The trail marks are half a second apart, so a column in mud is a column of
+  marks far apart. `the slowest mover is slot 304 at 235‰ of its ground's allowance` is the
+  number behind the widest gap on the map — a Κινέζοι infantryman in forest, on ground that costs
+  him 140‰ of the baseline, at a quarter of the speed he would make on grass;
+- **nothing is stalled, and that is the answer rather than the absence of one.** `0 frozen, 0 too
+  new to say` against 275 routes: every unit with somewhere to go is going there. The layer was
+  built for the starvation bug, and this match does not have it — which is worth being able to
+  ask in one frame instead of a census of five hundred slots.
+
+Two files of that run exist to answer the question the layer exists for, and they are drawn from
+the same tick with different layers: `map-paths.svg` has the intended routes and no trails, and
+`map-trails.svg` has the ground covered and no routes. The pair is the diagnostic. A unit drawn
+in the first and absent from the second is a unit that is not moving — and the census under both
+files is the *same* census, because it is counted from the world rather than from the shapes.
+
+## Worked example: does the radar's coverage reach the guns — as a picture?
+
+```
+MiVic.Game.exe --detection-demo --probe tools/probe/map-coverage.probe --probe-out artifacts/probe/map-coverage.txt
+```
+
+The same fixture `tools/probe/detection.probe` reads as numbers, read as a picture instead. At
+one pixel a metre the 260 m rim and the 170 m one are inside a single six-hundred-pixel drawing,
+and the reading is a distance you can see rather than a pair of figures you compare:
+
+```
+query: range 503 GunEmplacement (Πυροβολείου) (x 0.0, z -70.0) m
+query:   eyes       170.0 m — as far as its own sensors reach
+query:   reach      200.0 m — the furthest it can engage anything at
+query: range 504 RadarStation (Σταθμός Ραντάρ) (x 0.0, z -120.0) m
+query:   coverage   260.0 m
+ok: map ...\map-radar-rings.svg + ...\map-radar-rings.png — 991x663 px, 1 px/m
+```
+
+and, read back out of that SVG, every rim it drew:
+
+```
+centre world (   0.0,  -70.0) m  radius 170 m   the gun's own eyes
+centre world (   0.0, -120.0) m  radius 260 m   the radar
+centre world ( 240.0,  180.0) m  radius 120 m   the base, 240 m off the column
+centre world ( 240.0,  120.0) m  radius 130 m   ...
+```
+
+The tank is held at 190 m from the gun, so it stands inside the 260 m rim and outside the 170 m
+one: engaged only because the radar is looking, which is the whole of what a Σταθμός Ραντάρ is
+bought for. Then the script builds one more factory than the grid can carry, and the second
+picture is the same map with the radar's rim gone:
+
+```
+query: power team 0
+query:   radars     0 lit, 1 dark, 3 Ε short of running them all
+query:   brown-out  λείπει ισχύς 3 Ε
+query: range 504
+query:   coverage   none — the grid cannot run it
+ok: map ...\map-radar-rings-dark.svg ... — 7 coverage discs
+```
+
+Seven rims before and seven after, because the **census counts what was drawn**: the factory that
+took the last of the grid adds a 130 m rim of its own, and the radar's 260 m one is simply not
+there. A layer that drew a dark radar's coverage would show a set that the simulation has taken
+off the air as still watching — which is the one combination that would make a brown-out
+incoherent, and the reason the fog pass skips a radar that is not lit.
+
 

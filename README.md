@@ -175,8 +175,10 @@ nothing is selected the panel shows a short hint instead of disappearing.
 | `src/MiVic.Core` | Deterministic simulation. **No graphics dependencies, no floating point.** |
 | `src/MiVic.Audio` | Procedural chip music: scales, sequencing and synthesis. |
 | `src/MiVic.Game` | MonoGame client: rendering, camera, ImGui UI, model import, particles. |
+| `src/MiVic.Map` | Draws a match as a flat SVG/PNG picture from simulation state. **No graphics device**, so it runs from the probe, from a test, and on a machine with no GPU. |
 | `tests/MiVic.Core.Tests` | Determinism, fixed-point maths, RNG, pathfinding, campaign and replay tests. |
 | `tests/MiVic.Audio.Tests` | Music generation, scales and WAV encoding. |
+| `tests/MiVic.Map.Tests` | The map writer: determinism of both formats, what each layer draws, and reading a PNG back. |
 
 ## Architecture rules
 
