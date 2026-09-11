@@ -572,6 +572,45 @@ capped role will quietly stop once the team hits the cap, which is correct but i
 generator on the neutral team is subject to no cap at all, which is how a zone ends up breeding. Say
 which of the two bounds a reader should expect to bite first, in the comment where the spawn happens.
 
+## 10. A terrain and mission editor
+
+**What a map should be: a seed plus a list of edits.** Not an authored height field, not a binary blob.
+Terrain is already a pure function of a seed — heights, surface layer, volcanoes, forests, fords,
+deposits, attributes, aspect, landform — and a designer who starts from generated ground and adjusts it
+gets coherent terrain for free. An authored height field would mean authoring every one of those passes
+by hand, including the ground-connectivity guarantee the pathfinder depends on, and it would be opaque,
+undiffable and unreadable in a repository.
+
+The edit list is data: raise and lower, paint a surface, place a structure or a unit, set a spawn, set
+the roster, write the objectives and the triggers. `TerrainLayer.SetType` already exists and is already
+used by bridges, weather control and the fixtures, so the mechanism to change ground is in place. What
+does not exist is a persisted map.
+
+**Why this is cheaper here than in most engines**, and it is the whole argument: missions are *already*
+data (a roster, objectives including denial and scripted, a trigger list), the placement and validity
+rules are *already* public and single-sourced (`TryPlanStructure`, `CanStandAt`, `IsBaseSite`), the probe
+already proves the game can be driven and interrogated from outside, and replays already prove a mission
+reproduces. **An editor is largely a UI over existing APIs rather than new engine work**, and every
+validator it wants already exists — including `TriggerSystem.Validate`, which refuses a script that can
+never fire.
+
+**The design question that has to be answered first: does an edit re-derive, or does it freeze?**
+Painting woodland onto a slope, or raising ground under an existing wood, means the derived passes are
+either re-run — deterministic and coherent, but the author's own placements may be invalidated — or left
+alone, which lets a map become internally inconsistent in ways the game's guarantees assume cannot
+happen. Re-running is the honest default, because the guarantees live in those passes; the editor's job
+is then to show the author what changed.
+
+**What an editor must not do: become a second implementation of the rules.** Placement, connectivity,
+base sites and script validity are all answered by the simulation, and an editor that answers them itself
+will eventually disagree with the game — which is precisely the failure the bridge preview, the capacity
+ledger and the path budget each had to be corrected for this month.
+
+**Missing pieces, in the order that one blocks the next:** a mission *file format* and loader (missions
+are still C# today), an edit list that survives load, re-derivation after a terrain edit, an authoring
+UI, and a test-play loop that renders the author's mission and reports the validators to them. The
+test-play half is nearly free already: `--mission <id>`, the probe, and the replay round trip cover it.
+
 ## Also outstanding, from the art and rendering work
 
 Not on the list above, but open:
