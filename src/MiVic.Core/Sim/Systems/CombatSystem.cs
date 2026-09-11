@@ -174,7 +174,29 @@ public static class CombatSystem
             {
                 // An ordered attack closes the distance; auto-acquired targets do
                 // not drag a unit across the map.
-                if (attacker.HasAttackOrder && world.Tick % 10 == 0)
+                //
+                // <b>A new goal is asked for only where the old one is no longer the target's.</b>
+                // This used to re-issue one every ten ticks for every ordered attacker that was
+                // out of reach, which threw away a route that was still good — PathLength and
+                // PathCursor back to nothing — and asked for another. A route search costs a
+                // search and the budget is MaxPathsPerTick of them for the whole map, so a
+                // hundred-unit assault on a hundred distant targets asked for far more routes
+                // than the world can plan: measured on the standard skirmish, demand from this
+                // loop alone was 6.8 searches a tick against a budget of four, six per cent of
+                // requests were ever served, and units at high slots never got a route at all.
+                // What they read as was `waiting for a route` — not failing, not arriving, just
+                // waiting — and they held that state for the rest of the match.
+                //
+                // The cell is the right question rather than the point: a target that has moved
+                // within its cell is still where the route in hand is going, and the goal itself
+                // is the target's position, so a route that ends in the cell the target stands in
+                // is a route worth keeping. And a target standing where this mover cannot go is
+                // not given a goal at all — see SimWorld.TryAttack, which asks the same question
+                // when the order is given, because a target can walk onto water after it.
+                if (attacker.HasAttackOrder && world.Tick % 10 == 0 &&
+                    world.CanStandAt(slot, target.Position) &&
+                    (!attacker.HasMoveGoal ||
+                     world.Navigation.IndexOfWorld(attacker.MoveGoal) != world.Navigation.IndexOfWorld(target.Position)))
                 {
                     attacker.MoveGoal = target.Position;
                     attacker.HasMoveGoal = true;

@@ -1,0 +1,52 @@
+# Q: is any unit left stalled — waiting for a route it is never going to get?
+#
+#   MiVic.Game.exe --probe tools/probe/stall.probe --probe-out artifacts/probe/stall.txt
+#
+# The default skirmish, unmodified, six hundred ticks of it, with the client's own wander orders
+# running: this is the match the bug was measured in. Nothing here places anything or orders
+# anything — the script only watches.
+#
+# What was wrong: an attack order sets a move goal at the target's position, and the route search
+# clips a goal the mover cannot enter to the nearest cell it can. The goal itself was left where it
+# was ordered, so the arrival test and the route answered about two different places — the unit
+# walked to the clipped cell, never arrived at the ordered one, asked for the route again the next
+# tick, was told by the route search that it was already in the goal cell and *succeeded*, which
+# cleared PathFailures, and did that forever. The reading is `path 0 cells at 0, waiting for a
+# route, 0 failures` with travel frozen and nothing anywhere reporting a fault, because nothing was
+# failing.
+#
+# `routes` is the command that counts it and the check it records, so a run of this script fails
+# while any unit is in that state. `unit` is the same reading for one unit at a time: slot 259 is a
+# unit this was measured on, and the second reading of it is four hundred ticks later, which is what
+# turns "it is waiting" into "it is still waiting".
+
+# --- six hundred ticks of the standard match ------------------------------------------------------
+tick 600
+
+# --- one unit, in full ---------------------------------------------------------------------------
+# Before: `move goal (x 40.3, z 147.1) m, 205.1 m to go, path 0 cells at 0, waiting for a route,
+# 0 failures` and an explicit attack order on a Δυτικοί Γραφείο Σχεδιασμού 205 m away. After: the
+# move order is gone because it was carried out — the same unit is standing in weapon range of the
+# building it was sent at.
+unit 259
+
+# --- the whole map ------------------------------------------------------------------------------
+# One line per unit waiting for a route *with a move goal*, which is the stalled state, plus the
+# longest any unit has waited since the script started and the check that guards it.
+routes
+
+# --- four hundred ticks later -------------------------------------------------------------------
+# The line that made this a bug rather than a slow start: a stalled unit is still stalled later, and
+# a queued one has been served.
+tick 400
+unit 259
+routes
+
+# --- the measurements ---------------------------------------------------------------------------
+# Deliberately no `expect` lines for the two counts: `expect` compares two literals and never reads
+# the world, so `expect "units stalled" 0 0` would pass on the day it was wrong. The count is a check
+# `routes` records for itself, and the run fails when it does not hold. The counting test in
+# MiVic.Core.Tests asks the same question of the same match on the same seed and tick
+# (UnreachableGoalTests.TheStandardSkirmishLeavesNoUnitWaitingForARoute), where the answer before the
+# fix was 200 — 116 of them over a hundred consecutive ticks, and 40 that never moved a millimetre in
+# six hundred.

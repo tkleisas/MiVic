@@ -1455,31 +1455,16 @@ public sealed class SimBridge
     }
 
     /// <summary>
-    /// Whether a mover may occupy a point, asked of the two things the route search asks:
-    /// the grid's own walkability, and the surface's cost for this mover's movement class.
+    /// Whether a mover may occupy a point, asked of the world rather than worked out again here.
     /// <para>
-    /// The same pair <c>NavGrid.Passable</c> and <c>MovementSystem</c> use, and deliberately
-    /// not a second opinion about water: the movement class comes from
-    /// <see cref="SimWorld.PathContextOf"/>, which is where the pathfinder reads it, so a
-    /// flying unit passes over the sea it really can cross and a tank is refused the lake it
-    /// really cannot.
+    /// The rule lives in <see cref="SimWorld.CanStandAt"/>, which asks the same two questions the
+    /// route search asks — the grid's own walkability, and the surface's answer for this mover's
+    /// movement class — and is the same call an attack order makes before it sends a unit anywhere.
+    /// A second copy here would be a second opinion about water, and the two would drift: this used
+    /// to be that copy.
     /// </para>
     /// </summary>
-    private bool CanStandOn(int slot, WorldPos position)
-    {
-        int cell = World.Navigation.IndexOfWorld(position);
-
-        if (cell < 0 || !World.Navigation.IsWalkable(cell))
-        {
-            return false;
-        }
-
-        ref Entity entity = ref World.GetRefBySlot(slot);
-
-        return World.TerrainTypes.IsPassable(
-            cell,
-            World.PathContextOf(entity.TeamId, entity.Faction, entity.Kind).Movement);
-    }
+    private bool CanStandOn(int slot, WorldPos position) => World.CanStandAt(slot, position);
 
     private static int ClampToMap(int millimetres)
     {

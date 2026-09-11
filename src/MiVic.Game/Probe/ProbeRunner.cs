@@ -108,6 +108,15 @@ public sealed class ProbeRunner
     private int _checksFailed;
     private bool _finished;
 
+    /// <summary>
+    /// Consecutive ticks each slot has spent waiting for a route while holding a move goal, and the
+    /// worst any of them has reached since the script started. See <see cref="WatchRoutes"/>.
+    /// </summary>
+    private int[] _waitingStreak = [];
+    private int _worstWaitingStreak;
+    private int _worstWaitingSlot = -1;
+    private long _worstWaitingTick;
+
     public ProbeRunner(IProbeHost host, ProbeScriptFile script, string outputPath)
     {
         ArgumentNullException.ThrowIfNull(host);
@@ -261,6 +270,9 @@ public sealed class ProbeRunner
             case "units":
                 Units(command);
                 break;
+            case "routes":
+                Routes(command);
+                break;
             case "unit":
                 UnitDetail(command);
                 break;
@@ -357,7 +369,7 @@ public sealed class ProbeRunner
             default:
                 throw new ProbeException(
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
-                    "surfaces, attributes, units, unit, count, parts, model, visible, events, teams, bridge, " +
+                    "surfaces, attributes, units, unit, count, routes, parts, model, visible, events, teams, bridge, " +
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
                     "triggers, messages, objectives, expect");
@@ -380,6 +392,7 @@ public sealed class ProbeRunner
         {
             _host.AdvanceTick();
             HarvestEvents(world.Tick);
+            WatchRoutes(world);
         }
 
         Emit($"ok: ran {ProbeFormat.Ticks(ticks)}, simulation now at tick {world.Tick}");
@@ -1361,7 +1374,159 @@ public sealed class ProbeRunner
                $"{ProbeFormat.Ground(world.Navigation.CentreOf(low))} to {ProbeFormat.Ground(world.Navigation.CentreOf(high))}";
     }
 
-    /// <summary>One line per live entity, which is the answer to "what is on the map at all".</summary>
+    /// <summary>How long a unit may wait for a route before the wait stops being a queue.</summary>
+    /// <remarks>
+    /// Path searches are budgeted at <see cref="SimConstants.MaxPathsPerTick"/> a tick, so a hundred
+    /// units ordered at once are served inside twenty-five ticks and a whole army inside a few
+    /// hundred. A unit still waiting after this many consecutive ticks is not queued behind anybody:
+    /// it is asking for something it is not going to get, which is the state this command exists to
+    /// catch. It was <b>116</b> units and counting on the standard skirmish before the clipped goal
+    /// and the route budget were fixed, and the worst wait after is <b>42</b> ticks in that skirmish
+    /// and <b>59</b> in the client's own match, which carries the wander orders as well.
+    /// </remarks>
+    private const int RouteQueueGraceTicks = 100;
+
+    /// <summary>
+    /// <b>The map's routing state, which is how "is anything left stalled" is asked.</b> A unit
+    /// waiting for a route is not by itself a fault — path searches are budgeted at four a tick and
+    /// a hundred units ordered at once queue for their routes — so this counts the units waiting
+    /// <em>with a live move goal</em>, says how long the worst of them has been doing it, and names
+    /// them one by one with the goal it is not reaching and what it is chasing.
+    /// <para>
+    /// The streak is kept by <see cref="WatchRoutes"/>, which <c>tick</c> runs after every simulated
+    /// tick, because a single reading cannot tell a queue from a loop: a unit that waits thirty ticks
+    /// out of every forty is stalled by any measure a player would use and by none that one tick can
+    /// see. This is the command that found `path 0 cells at 0, waiting for a route, 0 failures` on a
+    /// unit that had not moved a millimetre in two hundred ticks — and it records a check of its own,
+    /// so a transcript that reads a stall and exits 0 is a transcript that hides it.
+    /// </para>
+    /// </summary>
+    private void Routes(ProbeCommand command)
+    {
+        SimWorld world = _host.Simulation.World;
+
+        int alive = 0;
+        int withARoute = 0;
+        int waiting = 0;
+        int queued = 0;
+        int waitingWithAGoal = 0;
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            alive++;
+
+            if (entity.PathLength > 0)
+            {
+                withARoute++;
+            }
+
+            if (entity.NeedsPath)
+            {
+                queued++;
+            }
+
+            if (!entity.NeedsPath || entity.PathLength != 0)
+            {
+                continue;
+            }
+
+            waiting++;
+
+            if (!entity.HasMoveGoal)
+            {
+                continue;
+            }
+
+            waitingWithAGoal++;
+
+            Emit(
+                $"query:   slot {slot,4} {entity.Faction.ToString().ToLowerInvariant()} {entity.Kind,-16} team {entity.TeamId} " +
+                $"waiting {ProbeFormat.Ticks(_waitingStreak.Length > slot ? _waitingStreak[slot] : 0)} " +
+                $"for goal {ProbeFormat.Ground(entity.MoveGoal)}, " +
+                $"{ProbeFormat.Metres(entity.Position.HorizontalDistanceTo(entity.MoveGoal) / (float)WorldPos.MmPerMetre)} to go, " +
+                $"{entity.PathFailures} failures" +
+                (entity.TargetSlot >= 0
+                    ? $", attacking slot {entity.TargetSlot} ({DescribeTarget(world, entity.TargetSlot)})"
+                    : string.Empty) +
+                (entity.HasAttackOrder ? ", order explicit" : string.Empty));
+        }
+
+        Emit(
+            $"query: routes: {ProbeFormat.Count(alive, "entity", "entities")} alive, " +
+            $"{ProbeFormat.Count(withARoute, "unit")} holding a route, {ProbeFormat.Count(waiting, "unit")} waiting for one " +
+            $"({waitingWithAGoal} of them with a move goal), {queued} requests outstanding");
+        Emit(
+            "query:   worst      " +
+            (_worstWaitingSlot < 0
+                ? "no unit has waited for a route at all"
+                : $"slot {_worstWaitingSlot} waited {ProbeFormat.Ticks(_worstWaitingStreak)} with a live move goal, seen on tick {_worstWaitingTick}") +
+            $" — a route queue drains at {SimConstants.MaxPathsPerTick} searches a tick");
+
+        RecordCheck(
+            "no unit is left waiting for a route",
+            _worstWaitingStreak < RouteQueueGraceTicks,
+            _worstWaitingStreak < RouteQueueGraceTicks
+                ? $"the longest wait with a live move goal is {ProbeFormat.Ticks(_worstWaitingStreak)}"
+                : $"slot {_worstWaitingSlot} has waited {ProbeFormat.Ticks(_worstWaitingStreak)} for a route it is not getting, " +
+                  $"since tick {_worstWaitingTick}; a queue drains in tens of ticks and this is a loop");
+    }
+
+    /// <summary>The target of one entity, for a line that has to say what it is chasing.</summary>
+    private static string DescribeTarget(SimWorld world, int slot)
+        => !world.IsAliveSlot(slot)
+            ? "nothing alive"
+            : $"{world.GetRefBySlot(slot).Faction.ToString().ToLowerInvariant()}/{world.GetRefBySlot(slot).Kind}";
+
+    /// <summary>
+    /// Keeps the per-slot count of consecutive ticks spent waiting for a route with a live move goal.
+    /// Called for every tick a probe runs, because a stall is a fact about a stretch of ticks and not
+    /// about one of them.
+    /// </summary>
+    private void WatchRoutes(SimWorld world)
+    {
+        if (_waitingStreak.Length < world.Capacity)
+        {
+            _waitingStreak = new int[world.Capacity];
+        }
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                _waitingStreak[slot] = 0;
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.NeedsPath && entity.PathLength == 0 && entity.HasMoveGoal)
+            {
+                _waitingStreak[slot]++;
+
+                if (_waitingStreak[slot] > _worstWaitingStreak)
+                {
+                    _worstWaitingStreak = _waitingStreak[slot];
+                    _worstWaitingSlot = slot;
+                    _worstWaitingTick = world.Tick;
+                }
+            }
+            else
+            {
+                _waitingStreak[slot] = 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// One line per live entity, which is the answer to "what is on the map at all".
+    /// </summary>
     private void Units(ProbeCommand command)    {
         string? filter = command.Optional(0);
         string? limitText = command.Optional(1);
@@ -1933,10 +2098,16 @@ public sealed class ProbeRunner
 
             issued = SimCommand.Attack(new EntityId(slot, entity.Generation), new EntityId(victim, world.GetRefBySlot(victim).Generation), world.Tick + 1, entity.TeamId);
 
-            bool hostile = world.IsHostile(entity.TeamId, world.GetRefBySlot(victim).TeamId);
+            // The world's own verdict rather than a second opinion here: an order that will be
+            // refused is answered in the words the player is shown, so a transcript cannot report
+            // an order standing that the simulation throws away. Same call the click makes.
+            bool stands = world.CanAttack(
+                new EntityId(slot, entity.Generation),
+                new EntityId(victim, world.GetRefBySlot(victim).Generation),
+                out string refusal);
 
             Emit($"query: order {slot} attack {victim} — {ProbeLabels.KindName(world.GetRefBySlot(victim).Kind)}, " +
-                 (hostile ? "hostile, so the order stands" : "NOT HOSTILE, so the order is thrown away rather than obeyed"));
+                 (stands ? "hostile, so the order stands" : $"refused, so the order is thrown away rather than obeyed: {refusal}"));
         }
         else
         {

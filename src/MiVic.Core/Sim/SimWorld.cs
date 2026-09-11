@@ -623,6 +623,44 @@ public sealed class SimWorld
             : context;
     }
 
+    /// <summary>
+    /// Whether the entity in a slot could stand at a point: the grid allows the cell and the
+    /// surface allows this mover's movement class.
+    /// <para>
+    /// The two questions the route search asks before it will plan through a cell —
+    /// <see cref="NavGrid.IsWalkable"/> and <see cref="TerrainLayer.IsPassable"/> — asked about one
+    /// point instead of a route. It is here rather than in each caller because the answer decides
+    /// whether an order is a goal or a trap: a goal the mover cannot enter is clipped by
+    /// <see cref="RepathFrom"/> to the nearest cell it can, so a unit ordered onto it walks part of
+    /// the way and then has nowhere left to go, which is a state the world should refuse to enter
+    /// when it is cheap to know better.
+    /// </para>
+    /// <para>
+    /// Flying is not asked about the ground: an airborne mover may stand anywhere, and the answer
+    /// comes from the same <see cref="PathContextOf"/> the pathfinder reads rather than from a
+    /// second opinion about water.
+    /// </para>
+    /// </summary>
+    public bool CanStandAt(int slot, WorldPos position)
+    {
+        if (!IsAliveSlot(slot))
+        {
+            return false;
+        }
+
+        int cell = Navigation.IndexOfWorld(position);
+
+        if (cell < 0 || !Navigation.IsWalkable(cell))
+        {
+            return false;
+        }
+
+        ref Entity e = ref _entities[slot];
+        PathContext context = PathContextOf(e.TeamId, e.Faction, e.Kind);
+
+        return TerrainTypes.IsPassable(cell, context.Movement);
+    }
+
     /// <summary>Waypoints of an entity's current path, in walking order.</summary>
     public ReadOnlySpan<int> PathOf(int slot)
     {
@@ -633,8 +671,29 @@ public sealed class SimWorld
     /// <summary>
     /// Recomputes a path from the entity's current position to its move goal.
     /// Called when a long route is walked in legs.
+    /// <para>
+    /// <b>An ordered point the mover cannot enter is clipped to the nearest cell it can, and the
+    /// goal is rewritten to that cell.</b> The route has always been planned to the clipped cell —
+    /// that is what <see cref="NavGrid.NearestWalkable"/> is for — but the goal itself was left
+    /// where it was ordered, and the two disagreed from then on. The unit walked to the clipped
+    /// cell, and the arrival test in <see cref="MovementSystem"/> compared its position with the
+    /// point nobody could stand on, so it never arrived: the next tick asked for the same route,
+    /// the route search answered "you are already in the goal cell" and reported success, and
+    /// <see cref="Entity.PathFailures"/> was reset to zero by that success. `path 0 cells at 0,
+    /// waiting for a route, 0 failures` — travel frozen for the rest of the match, with nothing
+    /// anywhere reporting a fault, because nothing was failing. The unit was doing exactly what it
+    /// was told, forever.
+    /// </para>
+    /// <para>
+    /// Rewriting the goal is what makes the state honest rather than the loop merely bounded: the
+    /// route, the arrival test and the point the interface prints are then about one place, the
+    /// unit finishes the walk it started, and the move order ends in the state the world already
+    /// understands — <c>move none</c>, standing at the nearest ground it could reach — instead of
+    /// a goal it is not pursuing. Where the ordered point was reachable after all, nothing here
+    /// changes: the clipped cell is the ordered point's own cell.
+    /// </para>
     /// </summary>
-    /// <returns>True when at least one waypoint was found.</returns>
+    /// <returns>True when the route is in hand: a path, or the cell the unit is already standing on.</returns>
     public bool RepathFrom(int slot)
     {
         ref Entity e = ref _entities[slot];
@@ -648,13 +707,23 @@ public sealed class SimWorld
 
         int start = Navigation.IndexOfWorld(e.Position);
         PathContext context = PathContextOf(e.TeamId, e.Faction, e.Kind);
-        int goal = Navigation.NearestWalkable(Navigation.IndexOfWorld(e.MoveGoal), TerrainTypes, context);
+        int ordered = Navigation.IndexOfWorld(e.MoveGoal);
+        int goal = Navigation.NearestWalkable(ordered, TerrainTypes, context);
 
         if (goal < 0)
         {
             e.PathLength = 0;
             e.PathCursor = 0;
             return false;
+        }
+
+        if (goal != ordered)
+        {
+            // The height is kept from the ordered point rather than taken from the grid: a mover
+            // that flies was never clipped in the first place, and anything else is snapped to the
+            // surface by the movement step on the same tick.
+            WorldPos centre = Navigation.CentreOf(goal);
+            e.MoveGoal = new WorldPos(centre.X, e.MoveGoal.Y, centre.Z);
         }
 
         // Arriving inside the goal cell needs no path at all.
@@ -2754,6 +2823,70 @@ public sealed class SimWorld
     }
 
     /// <summary>
+    /// Whether an attack order from one entity against another would be accepted, and the words
+    /// for the refusal when it would not.
+    /// <para>
+    /// <b>An order a gun can never carry out is refused where it is given.</b> A tank gun cannot be
+    /// pointed at an aeroplane and nothing may fire on its own side, and both of those are already
+    /// <see cref="CombatSystem"/>'s rules — but the order used to be taken anyway and then quietly
+    /// ignored for the rest of the match, which left the unit holding an attack order and a move
+    /// goal on a target it could never engage, re-asking for the route every ten ticks and marching
+    /// at it while it did. An order that can never be satisfied is a free kill, and it reads as a
+    /// broken unit rather than as a rule.
+    /// </para>
+    /// <para>
+    /// <b>It is deliberately not the whole of the question the gun asks.</b> Reach and sight are
+    /// not decided here, because neither is settled: a target further off than the weapon reaches
+    /// is a target to march at, and one behind a hill now may be in the open in ten seconds. What
+    /// is asked is only what no later tick can change — is there a gun at all, is the target an
+    /// enemy, and can this weapon's kind of shell touch this kind of target — which is the same
+    /// pair of questions <see cref="CombatSystem"/> asks again before it fires.
+    /// </para>
+    /// </summary>
+    /// <param name="attacker">The entity the order would be given to.</param>
+    /// <param name="victim">What it would be told to attack.</param>
+    /// <param name="refusal">The reason, in the words the player is shown, when it would not be.</param>
+    public bool CanAttack(EntityId attacker, EntityId victim, out string refusal)
+    {
+        if (!TryResolve(attacker, out int slot) || !TryResolve(victim, out int victimSlot))
+        {
+            refusal = "δεν υπάρχει τέτοιος στόχος";
+            return false;
+        }
+
+        ref Entity gunner = ref _entities[slot];
+        UnitDefinition weapon = UnitCatalog.Get(gunner.Kind);
+
+        if (!weapon.IsArmed)
+        {
+            refusal = "άοπλη μονάδα";
+            return false;
+        }
+
+        ref Entity target = ref _entities[victimSlot];
+
+        // An order to attack an ally is refused, not obeyed and then ignored: the order would
+        // otherwise sit on the unit setting HasAttackOrder and a move goal towards its friend, and
+        // a unit marching at an ally is the mistake this rule exists to stop, whether a player or a
+        // script made it. Compare CombatSystem, which asks the same question, so an order can never
+        // be issued for a target the gun will refuse.
+        if (!IsHostile(gunner.TeamId, target.TeamId))
+        {
+            refusal = "είναι σύμμαχος";
+            return false;
+        }
+
+        if (!(UnitCatalog.Flies(target.Kind) ? weapon.CanHitAir : weapon.CanHitGround))
+        {
+            refusal = UnitCatalog.Flies(target.Kind) ? "δεν βάλλει κατά αέρος" : "δεν βάλλει κατά εδάφους";
+            return false;
+        }
+
+        refusal = string.Empty;
+        return true;
+    }
+
+    /// <summary>
     /// Locks a unit onto an enemy. If the target is out of range the unit is sent
     /// towards it, and the combat system keeps the approach updated as the enemy
     /// moves.
@@ -2766,27 +2899,32 @@ public sealed class SimWorld
     /// dies or leaves, automatic acquisition picks up whatever came next, which is the
     /// same behaviour the building had before anyone clicked on it.
     /// </para>
+    /// <para>
+    /// <b>A target out of range is marched at only where the unit could stand.</b> A goal on ground
+    /// this mover cannot enter is not a goal, it is a trap: the route search clips it to the nearest
+    /// cell the mover can enter, so a unit sent onto it closes part of the distance and then has
+    /// nowhere left to go. The order is kept and the unit stays where it is, which is a state a
+    /// player can read — a unit standing with a target locked is waiting for it to come into reach,
+    /// and one walking at a target it can never touch is not. <see cref="CombatSystem"/> asks the
+    /// same question again before every later approach, because a target that was on ground this
+    /// mover could cross can walk onto ground it cannot.
+    /// </para>
     /// </summary>
     private bool TryAttack(int slot, ref Entity attacker, EntityId victim)
     {
+        if (!CanAttack(new EntityId(slot, attacker.Generation), victim, out _))
+        {
+            return false;
+        }
+
         UnitDefinition weapon = UnitCatalog.Get(attacker.Kind);
 
-        if (!weapon.IsArmed || !TryResolve(victim, out int victimSlot))
+        if (!TryResolve(victim, out int victimSlot))
         {
             return false;
         }
 
         ref Entity target = ref _entities[victimSlot];
-
-        // An order to attack an ally is refused, not obeyed and then ignored: the order
-        // would otherwise sit on the unit setting HasAttackOrder and a move goal towards
-        // its friend, and a unit marching at an ally is the mistake this rule exists to
-        // stop, whether a player or a script made it. Compare CombatSystem, which asks the
-        // same question, so an order can never be issued for a target the gun will refuse.
-        if (!IsHostile(attacker.TeamId, target.TeamId))
-        {
-            return false;
-        }
 
         attacker.TargetSlot = victimSlot;
 
@@ -2801,7 +2939,7 @@ public sealed class SimWorld
         long dz = attacker.Position.Z - target.Position.Z;
         bool inRange = ((dx * dx) + (dz * dz)) <= ((long)weapon.AttackRangeMm * weapon.AttackRangeMm);
 
-        if (!inRange)
+        if (!inRange && CanStandAt(slot, target.Position))
         {
             attacker.MoveGoal = target.Position;
             attacker.HasMoveGoal = true;

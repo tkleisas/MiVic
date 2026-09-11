@@ -111,6 +111,7 @@ shot out/frame-later.png
 | `attributes <x> <z>` | what the ground is at a cell: surface, height against the water line, vegetation, moisture, aspect, landform, flags, cover and movement cost for each movement class |
 | `units [faction\|team] [limit]` | one line per live entity: slot, faction, kind, team, position, heading, health, target, whether it is a building |
 | `unit <slot>` | the same in detail: move goal and distance to go, path state, what it is attacking and from how far, cooldown, morale, distance travelled, construction, whether the client is drawing it — and **what it is made of and what the ground under it is doing to it**, which are the two numbers that decide how a fight and a march go |
+| `routes` | the map's routing state: how many units hold a route, how many are waiting for one and how many of those are holding a move goal, the longest any unit has waited with a live goal since the script started, and a line for each unit that is waiting now — **the command for "is anything left stalled"**, and it records a check that fails the run when a unit has waited longer than a route queue can explain |
 | `count <kind>` | how many of a role are alive, per faction |
 | `armour <kind> <x> <z> [damage]` | the composition rule for one role at one cell, per faction: the ground's cover, then the role's own armour times the owner's, and the damage a hit of that size is left with — the table the `events` stream is checked against |
 | `bridge <x> <z> [team] [build]` | whether a crossing at that cell would be accepted, the reason when it would not, the span it would cover, what it costs and how long the work takes — and with `build`, the order that starts it |
@@ -391,11 +392,84 @@ forever. Two things had to meet for that: something has to hand out a goal on gr
 can stand on, and a route that never arrives has to leave a unit waiting rather than drop the
 order. The first of those was the wander orders, which picked a destination without asking
 whether anything could stand there — they now ask the navigation grid and the surface the same
-question the pathfinder asks, and refuse the wish when the answer is no. The second is still
-true and is worth a look of its own: a 600-tick default skirmish with the wander fix in place
-still leaves 35 units in exactly this state, all of them holding a goal an *attack* order set at
-its target's position — a target on lava, or a building an attacker cannot occupy. That is what
-this query is for — a screenshot of a tank standing on mud says nothing at all.
+question the pathfinder asks, and refuse the wish when the answer is no.
+
+**The second was then measured, and it was not what this paragraph used to say.** It claimed a
+600-tick skirmish left 35 units in that state, all of them holding a goal an attack order had set
+at a target on lava or at a building nothing could occupy. The census says otherwise. Asking the
+question of every slot in the match — `unit <slot>` for 0..530, which is `routes` below said the
+slow way — at tick 600 gives **206** units, not 35, and the goal of nearly all of them is
+ordinary grass: the Δυτικοί Γραφείο Σχεδιασμού at (x 40.3, z 147.1) m below stands on ground
+anything can cross, and *nothing in this engine makes a building's own cell impassable* — there
+is no unit collision at all, so a building is no harder to reach than a field. What those units
+were waiting for was not an impossible goal but the route budget: the approach loop re-asked for
+a route every ten ticks for every ordered attacker that was out of reach, which threw away a
+route that was still good to ask for it, and the four searches a tick were spent from slot zero,
+so the highest slot ever served in six hundred ticks was 386. 96 % of requests were starved.
+Nothing was failing, so nothing said anything: they read as `waiting for a route`, which is what
+a unit that has just been given an order reads as too.
+
+Three fixes, all in `MiVic.Core`:
+
+- **an ordered point the mover cannot enter is clipped *and the goal rewritten to it*.** The route
+  was always planned to the nearest cell the mover can enter; the goal was not, so the arrival
+  test and the route answered about two different places and the order could never be completed.
+  This is the `0.0 m to go, waiting for a route` reading — the goal is the cell the unit is
+  standing on and the unit is still asking for a route to it;
+- **an attack order is only marched at where the unit could stand**, asked again every ten ticks
+  because a target can walk onto water after the order is given. The order is kept, the unit
+  stands where it is, and it fires when the target comes into reach;
+- **a route in hand is not thrown away.** The approach loop re-plans only when the target has left
+  the cell the route already leads to, and the budget's scan starts where the previous tick left
+  off, so a fixed budget is a queue rather than a race.
+
+Measured after: the same census, at the same tick, on the same seed, is **0**.
+`UnreachableGoalTests.TheStandardSkirmishLeavesNoUnitWaitingForARoute` asks the same question of
+the same match from the tests, and `routes` asks it inside a running client — see the next
+section. That is what this query is for: a screenshot of a tank standing on mud says nothing at
+all.
+
+## Worked example: is anything left stalled?
+
+`tools/probe/stall.probe`, run against the default skirmish and trimmed to the two answers:
+
+```
+cmd: tick 600
+cmd: unit 259
+query: unit 259 chinese/Tank …
+query:   move       goal (x 220.3, z 135.9) m, 186.8 m to go, path 2 cells at 0, 0 failures
+query:   travel     78.9 m covered at 8.0 m per second (0.4 m per tick)
+cmd: routes
+query: routes: 495 entities alive, 275 units holding a route, 0 units waiting for one (0 of them with a move goal), 0 requests outstanding
+query:   worst      slot 494 waited 59 ticks (3.0 s) with a live move goal, seen on tick 554 — a route queue drains at 4 searches a tick
+check: PASS 'no unit is left waiting for a route' — the longest wait with a live move goal is 59 ticks (3.0 s)
+```
+
+The same unit at the same tick, against the build before the fix — the reading the bug was found
+in, and the one this file used to quote as a goal on deep water:
+
+```
+cmd: unit 259
+query:   move       goal (x 40.3, z 147.1) m, 205.1 m to go, path 0 cells at 0, waiting for a route, 0 failures
+query:   attack     slot 343 (western/DesignBureau at 205.1 m), cooldown 2 ticks of 24, order explicit, 35 damage out to 110.0 m
+query:   travel     58.2 m covered at 8.0 m per second (0.4 m per tick)
+```
+
+Two hundred and five metres to go, no route, no failures, an explicit attack order on a building,
+and fifty-eight metres covered in six hundred ticks. Four hundred ticks later the same unit reads
+`92.8 m to go, path 3 cells at 1` — so it is not frozen, it is *starved*, which is exactly why
+nothing reported a fault: a unit waiting its turn and a unit waiting forever are the same line
+until somebody counts the ticks. After the fix the same unit at the same tick is walking a route
+of its own (186.8 m to go, 78.9 m covered, 238.5 m covered by tick 1000 and 46.6 m from its
+goal). Its goal is a *different* goal, because the match is a different match: two hundred units
+that were standing still are fighting in this one.
+
+`routes` is the whole-map half of the same question, and the reason it can answer it is that a
+single reading cannot: a route queue drains at four searches a tick, so a unit waiting nine ticks
+is a unit the world is serving and a unit waiting nine hundred is a unit it has forgotten. The
+streak is kept per slot on every tick a script runs, the census prints who is waiting now with
+the goal they are not reaching, and the check it records is what fails the run. The two runs above
+are `artifacts/probe/stall-before.txt` and `artifacts/probe/stall.txt`.
 
 ## Worked example: why did clicking on the water do nothing?
 

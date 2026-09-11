@@ -355,7 +355,23 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by armour and by mud costing a speed. Every structure and every machine on
+    /// Last changed by a goal the mover cannot reach being dropped rather than walked at forever, and
+    /// by the route budget becoming a queue. This field used to leave units reading `waiting for a
+    /// route` in the hundreds — at tick six hundred, two hundred of them, forty of which had held a
+    /// move goal for more than half the match without moving a millimetre — because the approach loop
+    /// re-asked for a route every ten ticks for every ordered attacker that was out of reach, threw
+    /// away the route it already had to do it, and the four searches a tick were spent from slot zero
+    /// so the units spawned last never got one at all. Sixty tanks and three headquarters is most of
+    /// two armies, so the whole battle now runs on a different clock: units that stood still are
+    /// driving, arriving, and shooting. The clipped goal is inside this number for the same reason —
+    /// an ordered point a mover cannot enter is no longer pursued to the end of the match, so an
+    /// attack order on a target that walks onto water ends at the water's own edge. The third part,
+    /// an order the gun can never carry out being refused where it is given, turns out to move
+    /// nothing here: the AI has never ordered a tank at an aeroplane, so that half is pinned by
+    /// <c>UnreachableGoalTests</c> instead.
+    /// </para>
+    /// <para>
+    /// Before that it was armour and by mud costing a speed. Every structure and every machine on
     /// this field now reduces each hit by a percentage — Σοβιετικοί buildings most, Δυτικοί
     /// vehicles most, in opposite directions — so the same shots that used to kill a tank leave it
     /// alive, and the eighteen tanks a side spend longer in contact and fire more often before
@@ -433,7 +449,7 @@ public sealed class DeterminismTests
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(2083852613423856686UL, HashScenario(20250101));
+        => Assert.Equal(2975277282099602117UL, HashScenario(20250101));
 
     /// <summary>
     /// A fixed defensive scene with the whole sensor chain in it: a Σοβιετικοί line of two gun
@@ -457,6 +473,13 @@ public sealed class DeterminismTests
     /// this scenario was built to avoid is still avoided — everything stands on the one line across
     /// the map with no lava and no snow — so the movement change is not in this number, which is
     /// worth knowing rather than assuming.
+    /// </para>
+    /// <para>
+    /// <b>It did not move when the unreachable goal was fixed, which is worth recording rather than
+    /// assuming.</b> This scene is one tank and one stalker, both ordered onto ground they can stand
+    /// on, both arriving inside the first hundred ticks, and no target in it ever stands where the
+    /// other cannot go — so neither the clipped goal nor the route budget had anything here to decide
+    /// differently, and the number is the one the sensor chain left.
     /// </para>
     /// <para>
     /// Before that it was the arrival of exactly that: a detection radius per role, radar coverage

@@ -146,6 +146,16 @@ bar on five systems:
 - **Long routes are walked in legs.** The per-entity path buffer holds 96
   waypoints; when it runs out the unit re-searches from where it stands rather
   than following a truncated route into a wall.
+- **A goal the mover cannot enter is clipped, and the goal itself is rewritten to
+  the clipped cell.** The route search has always planned to the nearest cell a
+  mover can enter, and for years the goal was left where it was ordered — so the
+  arrival test and the route answered about two different places. A unit sent to a
+  point inside a lake walked to the shore, never arrived, asked for the route
+  again, and was told by the route search that it was already in the goal cell,
+  which is *success*, so the failure counter was cleared and the loop never ended.
+  `path 0 cells at 0, waiting for a route, 0 failures` for the rest of the match.
+  Rewriting the goal is what makes the state honest rather than merely bounded: the
+  order ends at the nearest ground the unit can reach, as `move none`.
 - **Movement is horizontal.** Steering in 3D is a trap: a waypoint's height comes
   from the terrain lattice while a unit's height is the bilinearly sampled
   surface, so on a slope the difference reaches hundreds of millimetres. Including
@@ -312,6 +322,7 @@ found four separate problems, none of which were where they appeared to be:
 | Symptom | Cause | Fix |
 |---|---|---|
 | 474 ms hitches | ~86 units ordered on the same tick, each running a full A\* search | path searches are **budgeted** at 4/tick; units wait for a route instead of stalling the frame |
+| units standing still in the hundreds | the budget above was a race rather than a queue: the approach loop re-asked for a route every ten ticks for every ordered attacker that was out of reach — 6.8 searches a tick against a budget of four — and the four were spent from slot zero every tick, so slot 386 was the highest ever served in six hundred ticks and forty units never moved a millimetre | a route in hand is **kept** until the target leaves the cell it leads to, and the scan **starts where the previous tick left off**: 96 % of requests starved → 0 units waiting at tick 600, worst wait 42 ticks |
 | 25 ms per tick | combat re-acquired targets for every idle unit **every tick** — my retry throttle ran after the acquisition instead of before it | acquisition is throttled, and it queries the spatial index instead of every entity |
 | 13 ms per tick | the navigation grid used the terrain's full resolution | navigation samples every second height-map cell: a quarter of the search space |
 | visible zigzag | A\* paths follow cell centres | routes are **smoothed** to their turning points with a line-of-sight check |

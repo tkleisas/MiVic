@@ -146,12 +146,18 @@ public static class MovementSystem
         // No waypoints left. Arriving inside the destination cell counts as
         // arrival: the route is planned between cells, so requiring the exact
         // ordered point would make units stop just short and then give up.
+        //
+        // The goal this is asked about is the one the route was planned to. An ordered point the
+        // unit cannot enter was clipped by SimWorld.RepathFrom to the nearest cell it can, and the
+        // goal rewritten to that cell with it, so this test and the route search are always asking
+        // about the same place — see the note there for what the two disagreeing cost.
         bool inGoalCell = world.Navigation.IndexOfWorld(e.Position) == world.Navigation.IndexOfWorld(e.MoveGoal);
 
         if (inGoalCell || e.Position.HorizontalDistanceTo(e.MoveGoal) <= SimConstants.ArrivalRadiusMm)
         {
             // Settle exactly on the ordered point so repeated orders to the same
-            // place leave the unit in the same spot.
+            // place leave the unit in the same spot. For a clipped goal that point is the
+            // centre of the cell the unit can reach, which is the same guarantee one cell over.
             e.Position = e.MoveGoal;
             ClearRoute(ref e);
             waypoint = default;

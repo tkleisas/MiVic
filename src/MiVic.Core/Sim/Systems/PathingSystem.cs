@@ -28,8 +28,29 @@ public static class PathingSystem
         int capacity = world.Capacity;
         int budget = SimConstants.MaxPathsPerTick;
 
-        for (int slot = 0; slot < capacity && budget > 0; slot++)
+        // <b>The scan starts where the previous tick's left off, not at slot zero.</b> A fixed
+        // budget spent in ascending slot order is a budget the lowest slots can spend on their own,
+        // and a queue that is scanned from the front every tick is not a queue: whoever is asking
+        // last never asks at all. Measured on the standard skirmish while the approach loop was
+        // re-asking for a route every ten ticks, slots above 386 were not served once in six
+        // hundred ticks — forty units held a move goal for the whole match and never moved a
+        // millimetre, which is what `waiting for a route` looks like from the inside. Rotating the
+        // start makes the budget round-robin: a unit waits its turn, and the wait is bounded by how
+        // many units are asking rather than by where they were spawned.
+        //
+        // The offset is the tick, so it is state the replay already carries and two machines still
+        // agree about who was routed when.
+        int start = (int)(world.Tick % capacity);
+
+        for (int step = 0; step < capacity && budget > 0; step++)
         {
+            int slot = start + step;
+
+            if (slot >= capacity)
+            {
+                slot -= capacity;
+            }
+
             if (!world.IsAliveSlot(slot))
             {
                 continue;
