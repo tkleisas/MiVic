@@ -29,7 +29,10 @@ public sealed class SimWorld
     private readonly PowerSystem.RadarNetwork _radars;
     private readonly List<SimCommand> _commandQueue = new();
     private readonly List<SimCommandRecord> _recordedCommands = [];
+    private readonly List<MissionMessage> _missionMessages = [];
     private ObjectiveState[] _objectives = [];
+    private TriggerState[] _triggers = [];
+    private uint[] _missionFlags = [];
     private MissionDefinition? _mission;
     private bool _recording;
     private bool _insideStep;
@@ -157,6 +160,108 @@ public sealed class SimWorld
     internal Span<ObjectiveState> ObjectiveStatesSpan => _objectives;
 
     /// <summary>
+    /// What each of the mission's triggers remembers, in definition order — and empty for a
+    /// mission that declares none, which is every mission that does not use the trigger layer.
+    /// <para>
+    /// It is simulation state and it is hashed: see <see cref="TriggerState"/> for why a
+    /// trigger's memory goes in the hash while a derived count does not. Nothing outside the
+    /// mission systems may write it.
+    /// </para>
+    /// </summary>
+    public ReadOnlySpan<TriggerState> TriggerStates => _triggers;
+
+    /// <summary>Mutable trigger states, for <see cref="TriggerSystem"/>.</summary>
+    internal Span<TriggerState> TriggerStatesSpan => _triggers;
+
+    /// <summary>
+    /// The mission's flags, one word per flag it declares — empty for a mission that declares
+    /// none or has no mission at all.
+    /// <para>
+    /// A flag is the mission's own memory of something that happened: a trigger raises one so
+    /// that a later trigger can wait on it. That makes it state like any other, so it is hashed
+    /// alongside the fired ticks; a mission that uses no flags allocates no words and mixes
+    /// none, which is what keeps a match that does not use this layer hashing exactly what it
+    /// hashed before.
+    /// </para>
+    /// </summary>
+    public ReadOnlySpan<uint> MissionFlags => _missionFlags;
+
+    /// <summary>
+    /// The mission's scripted messages, oldest first, capped at
+    /// <see cref="MaxMissionMessages"/>.
+    /// <para>
+    /// A presentation ledger rather than simulation state, and deliberately not hashed: it is
+    /// read only by the interface and the probe, it changes nothing about what happens next, and
+    /// it is derived anyway from the fired state that <em>is</em> hashed — two peers cannot
+    /// disagree about what a mission has said without disagreeing about a trigger first. It is
+    /// capped so that a mission which talks a great deal cannot grow the world.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<MissionMessage> MissionMessages => _missionMessages;
+
+    /// <summary>Lines a mission may have shown the player before the oldest is dropped.</summary>
+    public const int MaxMissionMessages = 16;
+
+    /// <summary>True when the mission has raised this flag.</summary>
+    public bool IsMissionFlagSet(int flag)
+        => (uint)flag < (uint)_missionFlags.Length && _missionFlags[flag] != 0;
+
+    /// <summary>Raises a mission flag. Called by <see cref="TriggerSystem"/>.</summary>
+    internal void SetMissionFlag(int flag)
+    {
+        if ((uint)flag < (uint)_missionFlags.Length)
+        {
+            _missionFlags[flag] = 1;
+        }
+    }
+
+    /// <summary>
+    /// Brings an objective to complete on the mission's behalf, which is the whole of what a
+    /// <see cref="TriggerActionKind.CompleteObjective"/> action does.
+    /// </summary>
+    /// <returns>False when there is no such objective, or when it is no longer pending.</returns>
+    internal bool CompleteObjective(int index)
+    {
+        if ((uint)index >= (uint)_objectives.Length)
+        {
+            return false;
+        }
+
+        ref ObjectiveState state = ref _objectives[index];
+
+        // An objective that has already failed stays failed. A trigger is a scripted event, not
+        // an undo button: the deadline that ran out or the army that was wiped out is a fact the
+        // mission told the player about, and a later message saying the opposite would be a lie
+        // the panel cannot resolve.
+        if (state.IsComplete || state.IsFailed)
+        {
+            return false;
+        }
+
+        state.Status = ObjectiveStatus.Complete;
+        state.LastEvaluatedTick = (int)Tick;
+        return true;
+    }
+
+    /// <summary>
+    /// Records a line the mission showed the player. Called by <see cref="TriggerSystem"/>.
+    /// </summary>
+    internal void RaiseMissionMessage(string greekText)
+    {
+        if (string.IsNullOrEmpty(greekText))
+        {
+            return;
+        }
+
+        if (_missionMessages.Count >= MaxMissionMessages)
+        {
+            _missionMessages.RemoveAt(0);
+        }
+
+        _missionMessages.Add(new MissionMessage(Tick, greekText));
+    }
+
+    /// <summary>
     /// Attaches a mission and resets its objective state. Called once, when the
     /// world is built, before the first tick.
     /// </summary>
@@ -171,6 +276,12 @@ public sealed class SimWorld
 
         _mission = mission;
         _objectives = new ObjectiveState[mission.Objectives.Count];
+
+        // One state per trigger, and one word per flag the mission declares. Both are sized by
+        // the mission, so a mission that declares none allocates nothing, hashes nothing, and is
+        // therefore bit-identical to the same world built before the layer existed.
+        _triggers = new TriggerState[mission.Triggers.Count];
+        _missionFlags = new uint[mission.DeclaredFlagCount];
     }
 
     /// <summary>Sets the final outcome. Called by <see cref="VictorySystem"/>.</summary>
@@ -693,6 +804,13 @@ public sealed class SimWorld
             // when there is no mission attached.
             if (_mission is not null)
             {
+                // The script runs before the objectives, and both after everything that moves,
+                // fights or builds. A trigger may complete an objective, and the objective check
+                // that follows has to see that on the same tick rather than a tenth of a second
+                // later; and a trigger that spawns or orders something does so into a world that
+                // has finished its tick, so what it creates is first seen by the systems on the
+                // next one, in the order every other spawn is seen in.
+                TriggerSystem.Tick(this);
                 MissionSystem.Tick(this);
             }
             else
@@ -1058,6 +1176,119 @@ public sealed class SimWorld
         }
 
         return total;
+    }
+
+    /// <summary>
+    /// Live structures of a team, optionally of one role: what is <em>standing</em>, as opposed
+    /// to what has been built. Queued or half-raised work is deliberately included — a site with
+    /// a building on it is a structure the enemy has to knock down — and nothing in a production
+    /// queue is, which is the difference between this and <see cref="CountOf"/>.
+    /// <para>
+    /// A derived count rather than a remembered one, and that matters for the hash: this is a
+    /// pure function of the entities the hash already walks, so it is not hashed itself. The
+    /// ledger <see cref="TeamState.StructuresLost"/> beside it is the opposite kind of number —
+    /// it remembers something the world cannot recompute — and it <em>is</em> hashed.
+    /// </para>
+    /// </summary>
+    public int CountStructures(int team, UnitKind role = UnitKind.None)
+    {
+        int total = 0;
+
+        for (int slot = 0; slot < _entities.Length; slot++)
+        {
+            if (!_entities[slot].Alive || _entities[slot].TeamId != team)
+            {
+                continue;
+            }
+
+            if (role != UnitKind.None && _entities[slot].Kind != role)
+            {
+                continue;
+            }
+
+            if (UnitCatalog.Get(_entities[slot].Kind).IsBuilding)
+            {
+                total++;
+            }
+        }
+
+        return total;
+    }
+
+    /// <summary>
+    /// Units of a team inside a circle, buildings excluded: what "the army is here" means, and
+    /// the one implementation of it — <see cref="MissionSystem"/> asks it for a held area and for
+    /// a denied one, and the trigger layer asks it for an ambush.
+    /// </summary>
+    public int CountUnitsInArea(int team, int centreX, int centreZ, int radiusMm)
+    {
+        int count = 0;
+        long radius = radiusMm;
+        long radiusSquared = radius * radius;
+
+        for (int slot = 0; slot < _entities.Length; slot++)
+        {
+            if (!_entities[slot].Alive || _entities[slot].TeamId != team)
+            {
+                continue;
+            }
+
+            if (UnitCatalog.Get(_entities[slot].Kind).IsBuilding)
+            {
+                continue;
+            }
+
+            long dx = _entities[slot].Position.X - centreX;
+            long dz = _entities[slot].Position.Z - centreZ;
+
+            if ((dx * dx) + (dz * dz) <= radiusSquared)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Writes the live units of a team inside a circle into <paramref name="destination"/> as
+    /// slots, in ascending order, and returns how many were written. The group half of
+    /// <see cref="TriggerActionKind.OrderGroup"/>: the count above answers "is anybody there",
+    /// and an order needs to know <em>who</em>.
+    /// </summary>
+    internal int UnitsInAreaInto(int team, int centreX, int centreZ, int radiusMm, Span<int> destination)
+    {
+        int written = 0;
+        long radius = radiusMm;
+        long radiusSquared = radius * radius;
+
+        for (int slot = 0; slot < _entities.Length; slot++)
+        {
+            if (written >= destination.Length)
+            {
+                break;
+            }
+
+            if (!_entities[slot].Alive || _entities[slot].TeamId != team)
+            {
+                continue;
+            }
+
+            if (UnitCatalog.Get(_entities[slot].Kind).IsBuilding)
+            {
+                continue;
+            }
+
+            long dx = _entities[slot].Position.X - centreX;
+            long dz = _entities[slot].Position.Z - centreZ;
+
+            if ((dx * dx) + (dz * dz) <= radiusSquared)
+            {
+                destination[written++] = slot;
+            }
+        }
+
+        return written;
     }
 
     /// <summary>

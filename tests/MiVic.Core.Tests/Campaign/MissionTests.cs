@@ -16,8 +16,14 @@ public sealed class MissionTests
 
     private static SimWorld Mission(string id)
     {
-        var world = new SimWorld(MissionCatalog.Require(id).Seed, Capacity);
-        Scenario.BuildMission(world, MissionCatalog.Require(id));
+        MissionDefinition mission = MissionCatalog.Require(id);
+
+        // Through Scenario.NewWorld, because a mission declares its own match: the demonstration
+        // mission is fought by two sides, so a world built for the standard three-team skirmish
+        // refuses to lay it out — which is the check that stops a mission's layout and its sides
+        // from being chosen separately.
+        var world = Scenario.NewWorld(ScenarioKind.Mission, mission.Seed, Capacity, mission);
+        Scenario.BuildMission(world, mission);
         return world;
     }
 
@@ -42,9 +48,12 @@ public sealed class MissionTests
     }
 
     [Fact]
-    public void CatalogHasThreePlayableMissions()
+    public void CatalogHasPlayableMissions()
     {
-        Assert.Equal(3, MissionCatalog.All.Length);
+        // Four, where this said three before the trigger layer existed: the fourth is
+        // 'm4_pass', the mission that uses the layer — a mission cannot be shipped without being
+        // in the catalog, and the catalog is what --mission <id> looks a mission up in.
+        Assert.Equal(4, MissionCatalog.All.Length);
 
         foreach (MissionDefinition mission in MissionCatalog.All)
         {
@@ -53,11 +62,22 @@ public sealed class MissionTests
             Assert.NotEmpty(mission.Objectives);
             Assert.Contains(mission.Objectives, objective => objective.IsPrimary);
             Assert.NotNull(MissionCatalog.Find(mission.Id));
+        }
 
-            // Every mission the campaign ships is fought by the standard three-faction match: the
-            // ally is a side the mission declares rather than a column of the scenario builder, and
-            // these three declare the same sides the campaign has always been fought on.
-            Assert.Equal(MatchRoster.StandardSkirmish, mission.Roster);
+        // The three missions the campaign has always had are fought by the standard
+        // three-faction match: the ally is a side the mission declares rather than a column of
+        // the scenario builder, and these three declare the same sides they always have.
+        //
+        // The demonstration mission is the exception, and deliberately so. It is a script, and the
+        // campaign's Κινέζοι ally is played by the computer: an ally fighting its own war three
+        // hundred metres away would decide when this mission's triggers fire, which is a mission
+        // whose second act depends on somebody else's battle. So it declares the two sides it is
+        // about — Σοβιετικοί against Δυτικοί — and the layer is demonstrated on a map with no
+        // third party on it.
+        foreach (MissionDefinition mission in MissionCatalog.All)
+        {
+            MatchRoster expected = mission.HasTriggers ? MatchRoster.Duel : MatchRoster.StandardSkirmish;
+            Assert.Equal(expected, mission.Roster);
         }
     }
 
@@ -351,9 +371,14 @@ public sealed class MissionTests
     [Fact]
     public void MissionInitialHashesAreStable()
     {
-        // Golden hashes of the three missions' starting worlds: this is what
+        // Golden hashes of the missions' starting worlds: this is what
         // catches a change to the mission layouts that a replay would otherwise
         // reproduce faithfully but wrongly.
+        //
+        // The first three are unchanged by the trigger layer, and that is the point of the fourth
+        // entry being *appended* rather than the three being regenerated: a mission that declares
+        // no triggers hashes nothing new, so the layer cannot disturb a mission that does not use
+        // it. The fourth hash is a new mission's, not a moved one's.
         //
         // Last changed by the production queues becoming state: a mission's starting buildings have
         // empty queues and their hashes moved anyway, which is exactly why the queue field is mixed
@@ -375,6 +400,7 @@ public sealed class MissionTests
             3325266512074465616UL,
             12294173242831419616UL,
             741485423866759929UL,
+            4315071333504370662UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)

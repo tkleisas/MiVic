@@ -224,8 +224,13 @@ public static class VisionSystem
     /// divisions — index to x and z — and with half a million cells per update
     /// that alone cost over a hundred milliseconds.
     /// </para>
+    /// <para>
+    /// Internal rather than private because a mission's reveals are stamped through it: a
+    /// scripted reveal is a disc of ground a team is watching, and it has to be the same disc,
+    /// written the same way, as the one a unit's own eyes write.
+    /// </para>
     /// </summary>
-    private static void Stamp(SimWorld world, int team, WorldPos centre, int radiusMm, bool stealth)
+    internal static void Stamp(SimWorld world, int team, WorldPos centre, int radiusMm, bool stealth)
     {
         NavGrid nav = world.Navigation;
         VisibilityGrid grid = world.Visibility;

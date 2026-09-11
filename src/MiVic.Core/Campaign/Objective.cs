@@ -20,6 +20,47 @@ public enum ObjectiveKind : byte
 
     /// <summary>Reach a technology tier.</summary>
     ReachTechTier = 5,
+
+    /// <summary>
+    /// <b>Denial: the target team must not get <see cref="ObjectiveDefinition.TargetCount"/> units
+    /// into the circle before the deadline.</b>
+    /// <para>
+    /// Every other kind here is something a player <em>does</em> — destroy, hold, accumulate,
+    /// reach — and none of them can say "the enemy must not". That is the shape a campaign keeps
+    /// needing: one side wins by getting something out and the other wins by preventing it, and
+    /// there was no way to write the second half of that sentence.
+    /// </para>
+    /// <para>
+    /// It is the mirror of <see cref="HoldArea"/>, and deliberately not its twin. Holding is
+    /// something you keep doing, so the hold clock can be lost and started again; denial is a
+    /// fact about what did or did not happen, so it fails the moment the enemy achieves it and
+    /// cannot be recovered — the units that got through got through. What completes it is the
+    /// deadline passing with the area still clear, which is why a denial with no
+    /// <see cref="ObjectiveDefinition.DeadlineTick"/> can never be won: there is no moment at
+    /// which "they never arrived" becomes true.
+    /// </para>
+    /// <para>
+    /// It is asked of <see cref="ObjectiveDefinition.TargetTeam"/> — the team that must be
+    /// denied — and judged for <see cref="ObjectiveDefinition.Team"/>, so a mission can hand the
+    /// denial to either side.
+    /// </para>
+    /// </summary>
+    DenyArea = 6,
+
+    /// <summary>
+    /// <b>An objective the mission itself decides.</b> Nothing in the world satisfies it: it is
+    /// brought to complete by <see cref="TriggerActionKind.CompleteObjective"/>, which is how a
+    /// campaign hangs an objective on an event rather than on a predicate — "silence the guns on
+    /// the ridge" is a thing the mission knows happened and the objective table does not.
+    /// <para>
+    /// It is the one kind that can be authored and never happen, which is a bug this project has
+    /// been bitten by three times over, so every shipped mission's scripted objectives are
+    /// checked against the triggers that complete them —
+    /// <c>EveryScriptedObjectiveIsCompletedByATrigger</c>. A deadline on one behaves as a
+    /// deadline does anywhere else: past it, a scripted objective fails.
+    /// </para>
+    /// </summary>
+    Scripted = 7,
 }
 
 /// <summary>Where an objective stands.</summary>

@@ -357,15 +357,101 @@ specific instance, stat overrides on one unit rather than on a role, and a rule 
 when it dies. The first two are small. The third is free — "if this unit dies, fail" is a trigger,
 which is exactly the argument for building the trigger layer before building heroes.
 
-### The test case: Operation Paperclip
+### Built: the layer, and the slice of vocabulary it shipped with
+
+**The trigger layer exists.** A mission carries a list of triggers — `MissionDefinition.Triggers` —
+each one a condition and the actions it carries out, and `TriggerSystem` evaluates them **every tick,
+in list order**, from `SimWorld.Step`, after everything that moves, fights or builds and before the
+objectives. The list order *is* the order of the events: a trigger may raise a flag and its successor
+may read it on the same tick, which is how a sequence of things that happen together is written as a
+list of things that happen in order. Every trigger fires **at most once**.
+
+**The vocabulary that shipped**, and what it cost:
+
+- **conditions**: time elapsed · a count of a team's units inside an area · a structure of a team
+  destroyed (read off the loss ledger `DestroyStructures` already uses, so a rebuilt position does not
+  un-do it) · a count of a team's structures standing below a number, optionally of one role · a flag
+  an earlier trigger raised;
+- **actions**: spawn units or structures at a place · reveal ground for a team · grant or remove
+  materials, energy and water (one action with signed amounts: the arithmetic and the floor at zero
+  are the same either way) · complete an objective · show the player a message · order a group of
+  units to move to a place or to attack the nearest enemy to one · raise a flag.
+
+**Deliberately not built yet**, and each one is a reason rather than an omission: changing an alliance
+(§7 — alliances are not dynamic yet), heroes and named units (they need the three things above, and
+they now have the third), the monster generators (§9), and ending a mission from a trigger (the last
+two sections are a story whose ending is already the objectives' job).
+
+**The fired state is hashed, and the rest of the layer is derived.** A trigger that fired once must
+never fire again, so what each trigger remembers — *that* it fired, and *when* — is state, and it goes
+in `StateHash` beside the objective progress and the production queues. What it does **not** need is a
+field of its own: a reveal is stamped fresh every tick from the fired tick that is hashed, through the
+same disc a unit's own eyes are stamped through, and a count like `StructuresBelow` is recomputed from
+entities the hash already walks. The distinction is the one the whole file turns on — **what a system
+remembers is hashed, and what it can recompute is not**, because hashing a derived number puts one
+fact in the hash twice and makes the hash the thing that is wrong the day the two disagree. Both loops
+are mixed with no header, exactly as the objectives are, so **a match that uses no triggers mixes not
+one byte more than it did** — which is why the golden hashes of the skirmish and of the three campaign
+missions did not move, and why 'm4_pass' below appended a new entry instead of regenerating three.
+
+**One mission uses it, and it is the demonstration.** `m4_pass` — «Η Ενέδρα στο Πέρασμα» — is the
+campaign's fourth mission: the Δυτικοί are reconnoitring a pass, two guns are already on the rock
+above it, a warning comes twenty seconds in, the column walking into the pass springs the ambush (the
+armour on the flank, the message, the flag), the flag is read on the same tick and the ambush is sent
+in, and the guns falling is what authorises the counter-attack. It is fought by two sides and no ally,
+deliberately: a demonstration mission is a script, and a script with a second army in it — the
+campaign's Κινέζοι ally, played by the computer — is a mission whose second act depends on somebody
+else's battle. `tools/probe/triggers.probe` is the transcript of it, and each trigger is watched
+firing with the world changing under it.
+
+**The failure this layer was most likely to ship is the one it now tests for.** A trigger that is
+authored and can never fire is the same bug as the volcano line above every cell and the mud mechanic
+that was inert, so `TriggerSystem.Validate` refuses a script that waits on a flag nothing raises, an
+objective nothing completes, a denial with no clock to be decided by, a condition about a team the
+match does not declare — and the probe records that check, while
+`EveryTriggerInTheShippedMissionFiresWhenItShould` counts the six triggers of the shipped mission and
+asserts the tick each one fired on.
+
+### The objective the vocabulary was missing: denial
+
+All four kinds of objective were things you *do to the enemy* — destroy, hold, accumulate, reach — and
+none of them is **denial**: "the enemy must not achieve X". That is the shape a mission about getting
+something out, and stopping it, is made of, and it was the half of the Operation Paperclip test case
+that could not be written.
+
+`ObjectiveKind.DenyArea` is the mirror of `HoldArea` and deliberately not its twin: holding is
+something you keep doing, so the hold clock can be lost and started again, while denial is a fact about
+what did or did not happen. It fails the **moment** the denied team has its units inside the circle —
+the ones that got through got through — and it is completed by the deadline arriving with the area
+still clear, which is why a denial with no deadline is refused by the script validation as an
+objective nothing could ever satisfy. `m4_pass` hangs on it: the player wins by keeping four Δυτικοί
+units out of the road behind the line until the clock runs out, and the objective's progress is the
+high-water mark of the intrusion, so a player watching the panel sees "3/4 of them are through" and
+knows the mission is one unit from lost.
+
+`ObjectiveKind.Scripted` is its companion and the answer to "a conditional objective": an objective
+that **no predicate in the world can satisfy** and that only a `CompleteObjective` trigger action
+completes — the mission knows the ambush is broken, and the objective table does not. It is the one
+kind that can be authored and never happen, which is why every shipped mission's scripted objectives
+are checked against the triggers that complete them.
+
+**The test case: Operation Paperclip**
 
 A good mission to design the layer against, because it needs most of the vocabulary at once. Δυτικοί
 agents must move scientists out of a remnant outpost to an aircraft and fly them away; the Σοβιετικοί
 must stop it. It exercises a **non-player force** that is neither of the two player factions, a
 **moving objective** rather than a place, an **extraction** as a win condition, a **timer** that
 escalates, and an **asymmetric pair of objectives**: the West wins by getting the scientists out, the
-Soviets win by preventing it. That last one is a kind of objective the game does not have — all four
-existing kinds are things you do to the enemy, and none of them is *denial*.
+Soviets win by preventing it.
+
+**Two thirds of that is now built.** The layer exists and has the vocabulary this needs — the
+extraction is a `DenyArea` over the aircraft's loading point (see below), the escalation is a time
+trigger, and the asymmetric pair is one objective asked of each side. What is still missing is the
+*non-player force*: the scientists are neither of the two player factions and are not an army, which
+is the monster-generator work in §9 (a team in the match that belongs to nobody) rather than mission
+scripting. A **moving objective** — an objective that follows a unit rather than sitting at a place —
+is the other piece, and it needs a way to name an entity in mission data, which is what heroes need
+too.
 
 ### Not every map has three factions
 

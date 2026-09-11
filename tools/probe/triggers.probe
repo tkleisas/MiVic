@@ -1,0 +1,96 @@
+# Triggers — the mission scripting layer, watched firing one at a time.
+#
+# Run against the demonstration mission:
+#
+#   $exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
+#   $p = Start-Process -FilePath $exe -Wait -PassThru -NoNewWindow -WorkingDirectory . -ArgumentList `
+#       '--mission', 'm4_pass', '--probe', 'tools/probe/triggers.probe', `
+#       '--probe-out', 'artifacts/probe/triggers.txt'
+#
+# A mission's script is the one thing in a mission that cannot be read off the world it produced:
+# after the fact a spawned force looks like a force and a revealed ridge looks like ground somebody
+# walked over. So `triggers` prints the script itself — every trigger, what it waits for, what it
+# does, whether it has fired and on which tick — and the rest of the script watches the world change
+# under it: the guns appearing on the rock, the fog coming off the pass, the armour arriving on the
+# flank, the objective completing, and the denial being decided by the clock.
+#
+# The player's team is driven here because nothing else drives it: the computer does not play team 0,
+# so the column is marched with the same `order` command a click issues. Everything after the march
+# is the simulation's own: the guns shoot the column because they can see it, the column shoots back
+# because it has been shot at, and the two triggers that wait on the guns falling are the mission's.
+
+triggers
+objectives
+
+# --- the ground the mission is written around, before anything happens.
+attributes -75 10
+attributes -75 60
+attributes -150 0
+attributes -270 -270
+focus -75 10
+zoom 260
+pitch -0.9
+shot artifacts/probe/triggers-1-before.png
+
+# --- 1. preparation: the ambush is placed on the first tick.
+tick 5
+triggers
+structures 2
+
+# --- 2. warning: twenty seconds of quiet, and then the scouts report.
+exposure 0 -75 10
+exposure 0 -75 60
+tick 395
+triggers
+messages
+exposure 0 -75 10
+exposure 0 -75 60
+shot artifacts/probe/triggers-2-revealed.png
+
+# --- 3. the column walks into the pass. Eight units is a column; three would be a patrol, and three
+#        is the number the mission's condition waits for.
+count GunEmplacement
+count Tank
+units soviet 12
+order 4 move -75 10
+order 5 move -70 14
+order 6 move -80 6
+order 7 move -75 16
+order 8 move -78 8
+order 9 move -72 4
+order 10 move -76 12
+order 11 move -74 2
+tick 200
+units soviet 8
+
+# --- 4. ambush, and the flag it raises, on the tick the column arrives.
+tick 250
+triggers
+messages
+count Tank
+units western 10
+exposure 0 -75 60
+hud on
+settle 10
+shot artifacts/probe/triggers-3-ambush.png
+hud off
+
+# --- 5. the fight: the guns on the rock are what the next two triggers wait for.
+tick 450
+triggers
+messages
+structures 2
+units soviet 8
+
+# --- 6. the clock: the denial is decided at its deadline, and the mission with it.
+tick 2500
+triggers
+messages
+objectives
+exposure 0 -270 -270
+teams
+zoom 300
+focus -180 -140
+pitch -0.8
+settle 20
+shot artifacts/probe/triggers-4-after.png

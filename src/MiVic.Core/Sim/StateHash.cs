@@ -105,6 +105,45 @@ public static class StateHash
             Mix(ref hash, objective.HoldProgress);
         }
 
+        // What each of the mission's triggers remembers: whether it has fired, and the tick it
+        // fired on. A trigger fires once, so this is the definition of memory — and a peer that
+        // forgot it would spring an ambush the other had already sprung, which is a divergence no
+        // later number in this file could show. The two loops below are therefore the same rule
+        // the production queues and the crossings above are hashed by, applied to the mission.
+        //
+        // The distinction the mission layer draws is the one this whole file turns on: the fired
+        // ticks and the flags *remember* something that cannot be worked out again from the world,
+        // so they are hashed; a count like CountStructures, or the capacity ledger, or how much
+        // ground a team has explored, is *recomputed* from state that is already here, so it is
+        // not — hashing a derived number would put one fact in the hash twice, and the day the two
+        // disagreed the hash would be the thing that was wrong. A reveal is the clearest case of
+        // the second kind: the ground it lights is stamped fresh every tick from a fired tick that
+        // is hashed just below, so the fog needs no field of its own.
+        //
+        // No count is mixed over either loop, exactly as none is mixed over the objectives above:
+        // both arrays are sized by the mission's own compiled definition, so a world with no
+        // triggers — a skirmish, or one of the three campaign missions that do not use this layer
+        // — mixes not one byte more than it did before the layer existed. That is what keeps the
+        // script from disturbing a match that does not use it, and it is why the golden hashes of
+        // the missions that do not are untouched by it.
+        ReadOnlySpan<TriggerState> triggers = world.TriggerStates;
+
+        for (int i = 0; i < triggers.Length; i++)
+        {
+            Mix(ref hash, triggers[i].FiredTick);
+        }
+
+        // The mission's flags, one word each for the flags it declares. A flag is what a stopwatch
+        // is to a clock: the mission's own memory of something the world cannot recompute — that
+        // an earlier trigger happened — and a condition that waits on one is asking about the
+        // past rather than about the state of the map.
+        ReadOnlySpan<uint> flags = world.MissionFlags;
+
+        for (int i = 0; i < flags.Length; i++)
+        {
+            Mix(ref hash, (int)flags[i]);
+        }
+
         // Crossings are state, and more than the terrain they leave behind: a span is what the
         // client draws a deck from and what decides when the next cell of the ford appears, so
         // two peers that disagreed about one would paint different maps and walk them

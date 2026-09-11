@@ -128,7 +128,7 @@ public static class MissionSystem
 
             case ObjectiveKind.HoldArea:
             {
-                int held = CountUnitsInArea(world, definition);
+                int held = CountUnitsInArea(world, definition.Team, definition);
                 state.Progress = held;
 
                 if (held >= definition.TargetCount)
@@ -147,6 +147,45 @@ public static class MissionSystem
                     state.HoldProgress = 0;
                 }
 
+                return false;
+            }
+
+            case ObjectiveKind.DenyArea:
+            {
+                // The mirrored half of the objective vocabulary: not "get your units in" but
+                // "the enemy must not get theirs in". It counts the team being denied, and it
+                // fails the instant they succeed rather than after a hold clock, because the
+                // thing being denied is an arrival — the units that got through got through,
+                // and no amount of clearing the ground afterwards undoes it.
+                int intruders = CountUnitsInArea(world, definition.TargetTeam, definition);
+
+                // Progress is the high-water mark of the intrusion, which is the number a
+                // player watching the panel wants: "2/4 of them are through" is a warning,
+                // and it must not fall back to zero when they leave.
+                if (intruders > state.Progress)
+                {
+                    state.Progress = intruders;
+                }
+
+                if (intruders >= definition.TargetCount)
+                {
+                    state.Status = ObjectiveStatus.Failed;
+                    return false;
+                }
+
+                // Denial is decided by the clock: the deadline arriving with the area still
+                // clear is the fact that the enemy never made it. A denial with no deadline
+                // therefore has nothing that could ever satisfy it, and the validation test
+                // refuses to ship one.
+                return definition.DeadlineTick > 0 && world.Tick >= definition.DeadlineTick;
+            }
+
+            case ObjectiveKind.Scripted:
+            {
+                // Judged by the mission and not by the world: only a trigger action brings this
+                // to complete. Returning false here is not a stub — it is the whole of the
+                // rule, and the deadline below still applies to it, so a scripted objective
+                // that the mission never gets round to can still run out of time.
                 return false;
             }
 
@@ -192,38 +231,18 @@ public static class MissionSystem
         }
     }
 
-    /// <summary>Number of a team's units inside the objective's circle.</summary>
-    private static int CountUnitsInArea(SimWorld world, ObjectiveDefinition definition)
-    {
-        int count = 0;
-        long radius = definition.RadiusMm;
-        long radiusSquared = radius * radius;
-
-        for (int slot = 0; slot < world.Capacity; slot++)
-        {
-            if (!world.IsAliveSlot(slot))
-            {
-                continue;
-            }
-
-            ref Entity entity = ref world.GetRefBySlot(slot);
-
-            if (entity.TeamId != definition.Team || UnitCatalog.Get(entity.Kind).IsBuilding)
-            {
-                continue;
-            }
-
-            long dx = entity.Position.X - definition.CentreX;
-            long dz = entity.Position.Z - definition.CentreZ;
-
-            if ((dx * dx) + (dz * dz) <= radiusSquared)
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
+    /// <summary>
+    /// Number of a team's units inside the objective's circle.
+    /// <para>
+    /// The team is a parameter rather than the objective's own <see cref="ObjectiveDefinition.Team"/>,
+    /// because the two area objectives ask it of two different sides: holding counts your own
+    /// units, denial counts the enemy's. The count itself is
+    /// <see cref="SimWorld.CountUnitsInArea"/> — the same walk the trigger layer asks, so that
+    /// "how many of the enemy are standing on the objective" has one answer in the engine.
+    /// </para>
+    /// </summary>
+    private static int CountUnitsInArea(SimWorld world, int team, ObjectiveDefinition definition)
+        => world.CountUnitsInArea(team, definition.CentreX, definition.CentreZ, definition.RadiusMm);
 
     /// <summary>True when a team still owns a command centre.</summary>
     public static bool HasCommandCentre(SimWorld world, int team)

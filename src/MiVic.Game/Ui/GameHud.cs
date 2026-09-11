@@ -426,7 +426,60 @@ public sealed class GameHud
             ImGui.TextColored(color, $"Χρόνος που απομένει: {seconds / 60}:{seconds % 60:00}");
         }
 
+        DrawMissionMessages(snapshot);
+
         ImGui.End();
+    }
+
+    /// <summary>
+    /// What the mission has said to the player, and how long ago.
+    /// <para>
+    /// This is the whole of what a <see cref="TriggerActionKind.Message"/> action does: a mission
+    /// that reveals ground or springs an ambush and does not say so has changed the map under the
+    /// player's hands and told them nothing, and a campaign's voice is most of what makes its
+    /// script read as a story rather than as a set of rules. The lines age out rather than
+    /// staying for the whole mission — a panel that accumulated every message would be a wall of
+    /// text beside the objectives — and the ledger itself is unbounded in time, so the panel asks
+    /// how old each one is instead of trusting what is in it.
+    /// </para>
+    /// </summary>
+    private void DrawMissionMessages(in HudSnapshot snapshot)
+    {
+        SimWorld world = snapshot.Simulation.World;
+        IReadOnlyList<MissionMessage> messages = world.MissionMessages;
+
+        if (messages.Count == 0 || world.Tick < messages[0].Tick)
+        {
+            return;
+        }
+
+        const int FreshTicks = 20 * 20;
+
+        bool wrote = false;
+
+        for (int i = messages.Count - 1; i >= 0; i--)
+        {
+            MissionMessage message = messages[i];
+
+            if (world.Tick - message.Tick > FreshTicks)
+            {
+                break;
+            }
+
+            if (!wrote)
+            {
+                ImGui.Separator();
+                wrote = true;
+            }
+
+            int seconds = (int)((world.Tick - message.Tick) / SimConstants.TickRate);
+
+            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + 340f);
+            ImGui.TextColored(
+                seconds < 10 ? new NVec4(1f, 0.92f, 0.65f, 1f) : MutedColor,
+                seconds < 10 ? message.GreekText : $"{message.GreekText}  ({seconds}δ)");
+            ImGui.PopTextWrapPos();
+        }
     }
 
     /// <summary>Progress readout for an objective, or an empty string when it needs none.</summary>
@@ -439,6 +492,11 @@ public sealed class GameHud
                 $"{state.HoldProgress / SimConstants.TickRate}/{definition.HoldTicks / SimConstants.TickRate} δευτ.",
             ObjectiveKind.AccumulateMaterials => $"{state.Progress}/{definition.MaterialsTarget} πόροι",
             ObjectiveKind.ReachTechTier => $"επίπεδο {state.Progress}/{definition.TierTarget}",
+
+            // The high-water mark of the intrusion, not the count standing there now: "2/4 of
+            // them are through" is the warning, and a denial that reported four one tick and
+            // zero the next would read as a mission that had changed its mind.
+            ObjectiveKind.DenyArea => $"{state.Progress}/{definition.TargetCount} εχθρικές μονάδες μέσα",
             _ => string.Empty,
         };
 

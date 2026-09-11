@@ -126,6 +126,25 @@ shot out/frame-later.png
 | `detect <team> <slot>` | whether one team can see one entity, and by which channel: hidden, the cell's sight, the cell's detection, and whether the target has revealed itself by firing |
 | `exposure <team> <x> <z>` | what one team knows about a point on the ground: whether a powered radar covers it, whether the cell is visible, and whether it is detected — the query to walk a boundary across one reading at a time |
 
+### The mission's script
+
+A mission can now say *when* something happens — see `docs/ROADMAP.md` §8 and
+`Campaign/TriggerSystem` — and a script is the one thing in a mission that cannot be read off the
+world it produced: after the fact, a spawned force looks like a force and a revealed ridge looks
+like ground somebody walked over. These three commands answer it.
+
+| Command | Answer |
+|---|---|
+| `triggers` | the mission's whole script: every trigger in the order the simulation evaluates it, what it waits for, what it does, whether it has fired and **on which tick** — then the flags it has raised, and a check of the mission's own integrity, which fails the run when a trigger waits on something that can never happen |
+| `messages` | what the mission has shown the player, oldest first, with the tick and how long ago |
+| `objectives` | every objective the mission is judged by: kind, status, primary or bonus, the progress behind it, and the numbers it is asking — the same state the state hash folds in |
+
+`triggers` answers "did the second act of this mission happen at all", which is the failure a mission
+is most likely to ship: a trigger that exists and never fires. A transcript can read for forty lines
+without noticing one, so the command records a check of its own — *the mission's script can fire* —
+and prints the tick each trigger fired on, because a trigger that fired forty seconds late is a
+mission whose pacing is somewhere other than where its author put it.
+
 ### What the player would see
 
 A question about a click cannot be answered from the world: the world only knows that nothing
@@ -1238,3 +1257,102 @@ cell the script prints at the end is the lava one of them was standing on — 6 
 its way to the enemy, which is a fact about the map and the order of the tick rather than about the
 ceiling. It is written down here rather than tuned away because a probe that hides a failing check is
 worse than one that reports a false one.
+
+## Worked example: does a mission's script actually happen?
+
+A mission used to be a seed, a layout, a time limit and a list of objectives — enough for "destroy
+this" and nothing else, because it could not say *when* anything happened (see `docs/ROADMAP.md` §8).
+It can now, and the question that immediately follows is the one this project keeps having to ask:
+**does the scripted event ever actually occur?** A trigger that is authored and never fires is a
+feature that exists and does nothing, which is the shape of the volcano line above every cell, the
+sand band below the mud line and the mud mechanic that was inert.
+
+`tools/probe/triggers.probe`, run against the demonstration mission — a pass the Δυτικοί are
+reconnoitring, an ambush waiting on the rock above it, and a road out of the valley the enemy must
+not reach — and trimmed to the answers (`…` marks lines cut out of the middle):
+
+```
+cmd: triggers
+query: triggers: 6 triggers in 'm4_pass', 0 fired, at tick 0
+query:   #0 preparation      waiting
+query:       when       tick 1 is reached (0.1 s in)
+query:       then       spawn 2 of GunEmplacement (Πυροβολείο) for team 2 at (x -75.0, z 60.0) m
+cmd: tick 5
+cmd: triggers
+query:   #0 preparation      FIRED on tick 1 (0.1 s in)
+cmd: structures 2
+query:   slot   64 GunEmplacement (Πυροβολείο) at (x -82.0, z 60.0) m, cell 23,38 — whole, 1400 hit points
+query:   slot   65 GunEmplacement (Πυροβολείο) at (x -75.0, z 60.0) m, cell 24,38 — whole, 1400 hit points
+cmd: exposure 0 -75 10
+query:   sight      the cell is not visible to team 0
+cmd: tick 395
+cmd: triggers
+query:   #1 warning          FIRED on tick 400 (20.0 s in)
+cmd: messages
+query:   #0 tick 400 (0.0 s ago) — Οι πρόσκοποι αναφέρουν κίνηση βόρεια του περάσματος. Ο αυχένας είναι ύποπτα ήσυχος.
+cmd: exposure 0 -75 10
+query:   sight      the cell is visible to team 0
+cmd: exposure 0 -75 60
+query:   sight      the cell is not visible to team 0
+…
+cmd: tick 250
+cmd: triggers
+query: triggers: 6 triggers in 'm4_pass', 4 fired, at tick 850
+query:   #2 ambush           FIRED on tick 845 (42.3 s in)
+query:   #3 counterattack    FIRED on tick 845 (42.3 s in)
+query:   flags      flag 0 SET
+cmd: units western 10
+query:   slot   35 western Tank             team 2 at (x -143.0, z 0.0) m heading 0.0° health 264/320 target - building no
+cmd: exposure 0 -75 60
+query:   sight      the cell is visible to team 0
+cmd: tick 450
+cmd: triggers
+query: triggers: 6 triggers in 'm4_pass', 6 fired, at tick 1300
+query:   #4 first-gun        FIRED on tick 1090 (54.5 s in)
+query:   #5 ambush-broken    FIRED on tick 1255 (62.8 s in)
+cmd: structures 2
+query: structures: 6 structures for team 2, tick 1300
+query:   slot   30 CommandCentre (Κέντρο Διοίκησης) at (x 30.0, z 200.0) m, cell 35,53 — whole, 5000 hit points
+query:   slot   50 AntiAirEmplacement (Αντιαεροπορικό Πυροβολείο) at (x 107.8, z 70.3) m, cell 43,39 — whole, 1200 hit points
+cmd: objectives
+query: objectives: 2 objectives in 'm4_pass', outcome ongoing, at tick 1300
+query:   #0 DenyArea             pending  primary progress 0, hold 0
+query:       numbers    team 0, team 2 must not get 4 units into (x -270.0, z -270.0) m within 45.0 m, by tick 3600 (180.0 s in)
+query:   #1 Scripted             complete primary progress 0, hold 0
+cmd: tick 2500
+cmd: objectives
+query: objectives: 2 objectives in 'm4_pass', outcome victory, at tick 3800
+query:   #0 DenyArea             complete primary progress 0, hold 0
+query:   #1 Scripted             complete primary progress 0, hold 0
+check: PASS 'the mission's script can fire' — every trigger waits on something that can happen, and every scripted objective is completed by one
+probe: 60 commands, 60 ok, 0 errors, 0 checks failed
+```
+
+Six facts, and each one is a different half of the layer:
+
+- **the script is printed before it runs**, with what each trigger waits for and what it does, so a
+  reader can check the mission against its own writing rather than against its consequences;
+- **every trigger fires, in order, and the ticks say when**: preparation on the first tick, the
+  warning on 400, the ambush and the counter-attack on the *same tick* 845, the first gun on 1090,
+  the ambush broken on 1255. The two on 845 are the flag doing its work — the list's order is the
+  order of the events, so a trigger can raise a flag its successor reads on the tick it fired;
+- **each firing has a visible consequence, and the transcript shows it rather than asserting it**:
+  two guns standing on the rock at tick 5 that were not there at tick 0, a pass that is not visible
+  to team 0 and then is, a Western tank on the flank at `(x -143.0, z 0.0) m` that the spawn put
+  there, an objective that reads `pending` and then `complete`;
+- **the reveal is a disc and the number is the design**: at tick 400 the pass is watched and the
+  rock fifty metres above it is *not*, because the warning's disc is forty-five metres across — so
+  the guns stay in the fog until the ambush springs and its own, larger disc takes the whole
+  crossing out of it;
+- **the denial is decided by the clock and not by a predicate**: the objective the campaign could
+  not express before — *the enemy must not* — reads `progress 0` throughout, because they never got
+  four units to the road, and completes at its deadline. With four of them on the road it fails the
+  instant they arrive, which is the same objective deciding the other way;
+- **the fight is the simulation's, not the script's.** Nothing orders the guns to fire or the column
+  to answer: the script marches eight units to the pass and the rest is the combat system, the
+  ground, and the range of a gun on a rock. The two triggers that wait on the guns falling are the
+  mission's, and they fire because the guns really did fall.
+
+The one thing that *is* the script's is the march itself, through the same `order` command a click
+issues, because the computer does not play team 0 — a probe cannot make a player, so it plays one.
+

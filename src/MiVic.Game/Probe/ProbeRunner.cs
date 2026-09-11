@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using MiVic.Core.Campaign;
 using MiVic.Core.Numerics;
 using MiVic.Core.Pathfinding;
 using MiVic.Core.Sim;
@@ -341,6 +342,15 @@ public sealed class ProbeRunner
             case "ability":
                 Ability(command);
                 break;
+            case "triggers":
+                Triggers(command);
+                break;
+            case "messages":
+                Messages(command);
+                break;
+            case "objectives":
+                Objectives(command);
+                break;
             case "expect":
                 Expect(command);
                 break;
@@ -349,7 +359,8 @@ public sealed class ProbeRunner
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
                     "surfaces, attributes, units, unit, count, parts, model, visible, events, teams, bridge, " +
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
-                    "range, power, capacity, queue, detect, exposure, armour, order, ability, expect");
+                    "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
+                    "triggers, messages, objectives, expect");
         }
     }
 
@@ -3286,6 +3297,288 @@ public sealed class ProbeRunner
         int cell = world.Navigation.IndexOfWorld(position);
         return cell >= 0 && world.TerrainTypes.TypeAt(cell) == TerrainType.Lava;
     }
+
+    // ---------------------------------------------------------------- the mission's script
+
+    /// <summary>
+    /// <b>The mission's triggers, in the order the simulation evaluates them, with what each one
+    /// waits for, what it does, and whether it has fired — and on which tick.</b>
+    /// <para>
+    /// A script is the one thing in a mission that cannot be read off the world it produced: after
+    /// the fact, a spawned force looks like a force and a revealed ridge looks like ground somebody
+    /// walked over. So the question "did the ambush happen, and when" has to be asked of the layer
+    /// that decided it, and this is that question. The tick matters as much as the yes: a trigger
+    /// that fired forty seconds late is a mission whose second act is in the wrong place, and only
+    /// the tick can say so.
+    /// </para>
+    /// <para>
+    /// It also records the mission's own integrity check — <see cref="TriggerSystem.Validate"/>
+    /// — as a check rather than as a line of prose, so that a mission whose triggers <em>cannot</em>
+    /// fire fails the run. That is the failure this project keeps meeting from the other side:
+    /// a feature that exists and never happens, which a transcript can read for forty lines
+    /// without noticing.
+    /// </para>
+    /// </summary>
+    private void Triggers(ProbeCommand command)
+    {
+        SimWorld world = _host.Simulation.World;
+        MissionDefinition? mission = world.Mission;
+
+        if (mission is null)
+        {
+            Emit("query: triggers: this match has no mission attached — start one with --mission <id>");
+            return;
+        }
+
+        ReadOnlySpan<TriggerState> states = world.TriggerStates;
+        int fired = 0;
+
+        for (int i = 0; i < states.Length; i++)
+        {
+            if (states[i].HasFired)
+            {
+                fired++;
+            }
+        }
+
+        Emit(
+            $"query: triggers: {ProbeFormat.Count(mission.Triggers.Count, "trigger")} in '{mission.Id}', " +
+            $"{fired} fired, at tick {world.Tick}");
+
+        for (int i = 0; i < mission.Triggers.Count; i++)
+        {
+            TriggerDefinition trigger = mission.Triggers[i];
+            TriggerState state = i < states.Length ? states[i] : default;
+
+            string status = state.HasFired
+                ? $"FIRED on tick {state.FiredTick} ({ProbeFormat.Seconds(state.FiredTick / (double)SimConstants.TickRate)} in)"
+                : "waiting";
+
+            Emit($"query:   #{i} {trigger.Id,-16} {status}");
+            Emit($"query:       when       {DescribeCondition(trigger.Condition)}");
+
+            for (int a = 0; a < trigger.Actions.Count; a++)
+            {
+                Emit($"query:       then       {DescribeAction(trigger.Actions[a])}");
+            }
+
+            if (trigger.Note.Length > 0)
+            {
+                Emit($"query:       why        {trigger.Note}");
+            }
+        }
+
+        ReadOnlySpan<uint> flags = world.MissionFlags;
+
+        if (flags.Length > 0)
+        {
+            var raised = new List<string>();
+
+            for (int i = 0; i < flags.Length; i++)
+            {
+                raised.Add(flags[i] != 0 ? $"flag {i} SET" : $"flag {i} clear");
+            }
+
+            Emit($"query:   flags      {string.Join(", ", raised)}");
+        }
+
+        IReadOnlyList<string> problems = TriggerSystem.Validate(mission);
+
+        RecordCheck(
+            "the mission's script can fire",
+            problems.Count == 0,
+            problems.Count == 0
+                ? "every trigger waits on something that can happen, and every scripted objective is completed by one"
+                : string.Join("; ", problems));
+    }
+
+    /// <summary>
+    /// What the mission has said to the player, oldest first, with the tick and how long ago.
+    /// The interface shows the fresh ones; this shows the ledger, which is what makes "the
+    /// message action works" a fact about a running match rather than a reading of the code.
+    /// </summary>
+    private void Messages(ProbeCommand command)
+    {
+        SimWorld world = _host.Simulation.World;
+        IReadOnlyList<MissionMessage> messages = world.MissionMessages;
+
+        Emit(
+            $"query: messages: {ProbeFormat.Count(messages.Count, "line")} shown by the mission, " +
+            $"at tick {world.Tick}");
+
+        for (int i = 0; i < messages.Count; i++)
+        {
+            MissionMessage message = messages[i];
+            double ago = (world.Tick - message.Tick) / (double)SimConstants.TickRate;
+
+            Emit($"query:   #{i} tick {message.Tick} ({ProbeFormat.Seconds(ago)} ago) — {message.GreekText}");
+        }
+
+        if (messages.Count == 0)
+        {
+            Emit("query:   the mission has said nothing yet");
+        }
+    }
+
+    /// <summary>
+    /// The objectives the mission is judged by: kind, status, and the numbers behind it — the
+    /// same state <see cref="StateHash"/> folds in, so a transcript of it and a replay agree by
+    /// construction.
+    /// </summary>
+    private void Objectives(ProbeCommand command)
+    {
+        SimWorld world = _host.Simulation.World;
+        MissionDefinition? mission = world.Mission;
+
+        if (mission is null)
+        {
+            Emit("query: objectives: this match has no mission attached — start one with --mission <id>");
+            return;
+        }
+
+        ReadOnlySpan<ObjectiveState> states = world.Objectives;
+
+        Emit(
+            $"query: objectives: {ProbeFormat.Count(mission.Objectives.Count, "objective")} in '{mission.Id}', " +
+            $"outcome {world.Outcome.ToString().ToLowerInvariant()}, at tick {world.Tick}");
+
+        for (int i = 0; i < mission.Objectives.Count && i < states.Length; i++)
+        {
+            ObjectiveDefinition definition = mission.Objectives[i];
+            ObjectiveState state = states[i];
+
+            Emit(
+                $"query:   #{i} {definition.Kind,-20} {state.Status.ToString().ToLowerInvariant(),-8} " +
+                $"{(definition.IsPrimary ? "primary" : "bonus")}{(definition.Constraint ? ", constraint" : string.Empty)} " +
+                $"progress {state.Progress}, hold {state.HoldProgress}");
+
+            Emit($"query:       asks       {definition.GreekDescription}");
+            Emit($"query:       numbers    {DescribeObjective(definition)}");
+        }
+    }
+
+    /// <summary>An objective's own parameters, so a status can be checked against what it was asking.</summary>
+    private static string DescribeObjective(ObjectiveDefinition definition)
+    {
+        var parts = new List<string>
+        {
+            $"team {definition.Team}",
+        };
+
+        switch (definition.Kind)
+        {
+            case ObjectiveKind.DestroyStructures:
+                parts.Add($"team {definition.TargetTeam} loses {definition.TargetCount}");
+                break;
+
+            case ObjectiveKind.HoldArea:
+                parts.Add($"{definition.TargetCount} of team {definition.Team} in {Circle(definition.CentreX, definition.CentreZ, definition.RadiusMm)} for {ProbeFormat.Ticks(definition.HoldTicks)}");
+                break;
+
+            case ObjectiveKind.DenyArea:
+                parts.Add($"team {definition.TargetTeam} must not get {definition.TargetCount} units into {Circle(definition.CentreX, definition.CentreZ, definition.RadiusMm)}");
+                break;
+
+            case ObjectiveKind.AccumulateMaterials:
+                parts.Add($"{definition.MaterialsTarget} materials");
+                break;
+
+            case ObjectiveKind.ReachTechTier:
+                parts.Add($"tier {definition.TierTarget}");
+                break;
+        }
+
+        if (definition.DeadlineTick > 0)
+        {
+            parts.Add($"by tick {definition.DeadlineTick} ({ProbeFormat.Seconds(definition.DeadlineTick / (double)SimConstants.TickRate)} in)");
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>A trigger condition as a sentence, so the transcript reads as the mission's script.</summary>
+    private static string DescribeCondition(TriggerCondition condition) => condition.Kind switch
+    {
+        TriggerConditionKind.TimeElapsed =>
+            $"tick {condition.Tick} is reached ({ProbeFormat.Seconds(condition.Tick / (double)SimConstants.TickRate)} in)",
+
+        TriggerConditionKind.UnitInArea =>
+            $"{ProbeFormat.Count(condition.Count, "unit")} of team {condition.Team} inside {Circle(condition.CentreX, condition.CentreZ, condition.RadiusMm)}",
+
+        TriggerConditionKind.StructureDestroyed =>
+            $"team {condition.Team} has lost {ProbeFormat.Count(condition.Count, "structure")}",
+
+        TriggerConditionKind.StructuresBelow =>
+            $"fewer than {condition.Count} {DescribeRole(condition.Role)} of team {condition.Team} stand",
+
+        TriggerConditionKind.FlagSet => $"flag {condition.Flag} is set",
+
+        _ => condition.Kind.ToString(),
+    };
+
+    /// <summary>A trigger action as a sentence, with the numbers a reader would need to check it.</summary>
+    private static string DescribeAction(TriggerAction action) => action.Kind switch
+    {
+        TriggerActionKind.Message => $"tell the player \"{action.GreekText}\"",
+
+        TriggerActionKind.SetFlag => $"raise flag {action.Flag}",
+
+        TriggerActionKind.Spawn =>
+            $"spawn {action.Count} of {DescribeRole(action.Role)} for team {action.Team} at {Point(action.CentreX, action.CentreZ)}",
+
+        TriggerActionKind.Reveal =>
+            $"reveal {ProbeFormat.Metres(action.RadiusMm / (float)WorldPos.MmPerMetre)} around {Point(action.CentreX, action.CentreZ)} " +
+            $"for team {action.Team}{(action.Ticks > 0 ? $" for {ProbeFormat.Ticks(action.Ticks)}" : " for the rest of the mission")}",
+
+        TriggerActionKind.AdjustResources =>
+            $"team {action.Team}: {Amounts(action)}",
+
+        TriggerActionKind.OrderGroup =>
+            $"the units of team {action.Team} inside {ProbeFormat.Metres(action.RadiusMm / (float)WorldPos.MmPerMetre)} of " +
+            $"{Point(action.CentreX, action.CentreZ)} are ordered to " +
+            (action.Order == GroupOrder.Attack
+                ? $"attack the nearest enemy to {Point(action.TargetX, action.TargetZ)}"
+                : $"move to {Point(action.TargetX, action.TargetZ)}"),
+
+        TriggerActionKind.CompleteObjective => $"complete objective {action.Objective}",
+
+        _ => action.Kind.ToString(),
+    };
+
+    private static string Amounts(in TriggerAction action)
+    {
+        var parts = new List<string>();
+
+        if (action.Materials != 0)
+        {
+            parts.Add($"{action.Materials:+#;-#;0} Π");
+        }
+
+        if (action.Energy != 0)
+        {
+            parts.Add($"{action.Energy:+#;-#;0} Ε");
+        }
+
+        if (action.Water != 0)
+        {
+            parts.Add($"{action.Water:+#;-#;0} Ν");
+        }
+
+        return parts.Count == 0 ? "nothing" : string.Join(", ", parts);
+    }
+
+    /// <summary>A role, named and labelled the way the build panel labels it.</summary>
+    private static string DescribeRole(UnitKind role)
+        => role == UnitKind.None ? "structure" : ProbeLabels.KindName(role);
+
+    /// <summary>A circle on the ground, as a centre and a radius.</summary>
+    private static string Circle(int x, int z, int radiusMm)
+        => $"{Point(x, z)} within {ProbeFormat.Metres(radiusMm / (float)WorldPos.MmPerMetre)}";
+
+    private static string Point(int x, int z)
+        => string.Create(
+            CultureInfo.InvariantCulture,
+            $"(x {x / (float)WorldPos.MmPerMetre:0.0}, z {z / (float)WorldPos.MmPerMetre:0.0}) m");
 
     // ---------------------------------------------------------------- checks
 
