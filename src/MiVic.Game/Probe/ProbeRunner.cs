@@ -2082,6 +2082,15 @@ public sealed class ProbeRunner
     /// a crossing cannot be inspected until it is built, a structure cannot be inspected until it
     /// is raised, and a distance cannot be inspected until something is told to cover it.
     /// </para>
+    /// <para>
+    /// <b>Both verbs are given through the call the player's own click makes</b> —
+    /// <see cref="SimWorld.OrderMove"/> for the march and <see cref="SimWorld.OrderAttack"/> for the
+    /// lock — rather than by spelling the command out here. That is the shape <c>bridge</c> and
+    /// <c>structure</c> established for the question they ask, applied to the order itself: an order
+    /// built at the point it is given is a second way to give one, and a script and a player who are
+    /// two ways to give an order are two games the moment either way learns something the other does
+    /// not.
+    /// </para>
     /// </summary>
     private void Order(ProbeCommand command)
     {
@@ -2097,7 +2106,6 @@ public sealed class ProbeRunner
         }
 
         ref Entity entity = ref world.GetRefBySlot(slot);
-        SimCommand issued;
 
         if (what == "move")
         {
@@ -2110,7 +2118,7 @@ public sealed class ProbeRunner
                 throw new ProbeException($"({x}, {z}) m is off the map — {Usage}, and the map is +-300 m");
             }
 
-            issued = SimCommand.Move(new EntityId(slot, entity.Generation), goal, world.Tick + 1, entity.TeamId);
+            world.OrderMove(new EntityId(slot, entity.Generation), goal, entity.TeamId);
 
             Emit($"query: order {slot} move to (x {x:0.#}, z {z:0.#}) m — {DescribeCell(world, world.TerrainTypes.IndexOfWorld(goal.X, goal.Z))}");
         }
@@ -2123,7 +2131,10 @@ public sealed class ProbeRunner
                 throw new ProbeException($"slot {victim} holds nothing alive to attack — {Usage}");
             }
 
-            issued = SimCommand.Attack(new EntityId(slot, entity.Generation), new EntityId(victim, world.GetRefBySlot(victim).Generation), world.Tick + 1, entity.TeamId);
+            world.OrderAttack(
+                new EntityId(slot, entity.Generation),
+                new EntityId(victim, world.GetRefBySlot(victim).Generation),
+                entity.TeamId);
 
             // The world's own verdict rather than a second opinion here: an order that will be
             // refused is answered in the words the player is shown, so a transcript cannot report
@@ -2140,8 +2151,6 @@ public sealed class ProbeRunner
         {
             throw new ProbeException($"'{what}' is not an order a probe can give — usage: {Usage}");
         }
-
-        world.Enqueue(issued);
 
         Emit(
             $"ok: {ProbeLabels.KindName(entity.Kind)} at slot {slot} ordered to {what}, executing on tick {world.Tick + 1} — " +
@@ -3658,7 +3667,7 @@ public sealed class ProbeRunner
             problems.Count == 0
                 ? "every trigger waits on something that can happen, every scripted objective is completed by one, " +
                   "no objective asks for more time than the mission has, and nothing in the mission — condition, " +
-                  "objective or side — is already decided by the world it opens in"
+                  "objective, side or base — is already decided by the world it opens in"
                 : string.Join("; ", problems));
     }
 
@@ -3725,8 +3734,9 @@ public sealed class ProbeRunner
             problems.Count == 0,
             problems.Count == 0
                 ? "every trigger waits on something that can happen, no objective is already decided by the world " +
-                  "the mission opens in or asks for more time than the mission has, and no side stands in " +
-                  "nothing unless the match says it does not judge it"
+                  "the mission opens in or asks for more time than the mission has, no side stands in nothing " +
+                  "unless the match says it does not judge it, and every base stands on ground the layout found " +
+                  "room for"
                 : string.Join("; ", problems));
     }
 

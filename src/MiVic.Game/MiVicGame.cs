@@ -1929,7 +1929,7 @@ public sealed partial class MiVicGame : XnaGame
             // a harvester's beacon, and neither of them is plugged into a base: stopping the
             // rotors of an aircraft because a power plant elsewhere on the map was bombed
             // would be a bug a player would report as one.
-            float sweep = IsRadarDark(in entity, world, slot) ? 0f : world.Tick * 0.02f;
+            float sweep = IsRadarDark(world, slot) ? 0f : world.Tick * 0.02f;
             return Matrix.CreateRotationY(sweep) * part.LocalTransform;
         }
         else if (IsLimb(name))
@@ -1951,17 +1951,23 @@ public sealed partial class MiVicGame : XnaGame
     /// the energy stockpile — is how a picture comes to disagree with the game it is drawing.
     /// </para>
     /// <para>
-    /// It is deliberately only the radar station. A <c>radar*</c> part is also a factory's
-    /// extractor fan, a power plant's cooling fan and a drone's four rotors, and none of those
-    /// is a sensor: stopping a hall's ventilation because the grid is short would say
-    /// "production has stopped", which is a rule this game does not have and a later brown-out
-    /// step at that.
+    /// <b>It asks the sensor query rather than composing the same three clauses itself.</b>
+    /// "A radar station that is finished and that the grid has shed watches nothing" is
+    /// <see cref="VisionSystem.SensorRefusal.RadarDark"/>, which is the reason the fog pass skips
+    /// it — and a renderer that spelled that out again would be the fourth copy of a rule with
+    /// one owner, right up until the fog grew a clause this did not.
+    /// </para>
+    /// <para>
+    /// It is deliberately only the radar station, and that is now the query's own answer rather
+    /// than a clause here. A <c>radar*</c> part is also a factory's extractor fan, a power plant's
+    /// cooling fan and a drone's four rotors, and none of those is a sensor: stopping a hall's
+    /// ventilation because the grid is short would say "production has stopped", which is a rule
+    /// this game does not have and a later brown-out step at that.
     /// </para>
     /// </summary>
-    private static bool IsRadarDark(in Entity entity, SimWorld world, int slot)
-        => entity.Kind == UnitKind.RadarStation &&
-           entity.ConstructionTicksRemaining <= 0 &&
-           !world.IsRadarLit(slot);
+    private static bool IsRadarDark(SimWorld world, int slot)
+        => VisionSystem.SensorOf(world, slot, out SensorRefusal refusal) == 0 &&
+           refusal == SensorRefusal.RadarDark;
 
     /// <summary>Parts that belong to a walking rig, matched by the contract name.</summary>
     private static bool IsLimb(string name)
@@ -3103,7 +3109,8 @@ public sealed partial class MiVicGame : XnaGame
     /// </para>
     /// <para>
     /// The number comes from the simulation — <see cref="CombatSystem.EngagementRadiusMm"/> and
-    /// <see cref="VisionSystem.RadarCoverageMm"/> — so the ring and the gun cannot disagree.
+    /// <see cref="VisionSystem.SensorOf"/>, the question the fog pass asks before it stamps — so
+    /// the ring, the gun and the ground a team can actually see are one answer rather than three.
     /// A dark radar draws nothing at all, because its coverage is zero and a ring would be a
     /// promise the guns cannot keep; the notice in the HUD says why it went.
     /// </para>
@@ -3129,7 +3136,7 @@ public sealed partial class MiVicGame : XnaGame
         ref Entity entity = ref world.GetRefBySlot(slot);
 
         int radiusMm = entity.Kind == UnitKind.RadarStation
-            ? (world.IsRadarLit(slot) ? VisionSystem.RadarCoverageMm : 0)
+            ? VisionSystem.SensorOf(world, slot, out _)
             : CombatSystem.EngagementRadiusMm(world, slot);
 
         if (radiusMm <= 0)
@@ -3453,19 +3460,24 @@ public sealed partial class MiVicGame : XnaGame
 
     /// <summary>
     /// Orders every selected unit to engage one enemy.
+    /// <para>
+    /// Through <see cref="SimWorld.OrderAttack"/>, which is the same call the probe's
+    /// <c>order attack</c> makes, so a lock the player clicked and a lock a script asked for are one
+    /// command rather than two spellings of one. What this method owns is the selection — which units
+    /// are being told, and that only an armed one is worth telling — and nothing about the order.
+    /// </para>
     /// </summary>
     private void IssueAttackOrders(int targetSlot)
     {
         SimWorld world = _simulation!.World;
         ref Entity target = ref world.GetRefBySlot(targetSlot);
         var victim = new EntityId(targetSlot, target.Generation);
-        long executeTick = world.Tick + 1;
 
         foreach (EntityId id in _selection.Selected)
         {
             if (world.TryGet(id, out Entity attacker) && UnitCatalog.Get(attacker.Kind).IsArmed)
             {
-                world.Enqueue(SimCommand.Attack(id, victim, executeTick, attacker.TeamId));
+                world.OrderAttack(id, victim, attacker.TeamId);
             }
         }
     }
@@ -3628,7 +3640,15 @@ public sealed partial class MiVicGame : XnaGame
         }
     }
 
-    /// <summary>Orders every selected unit to the ground point under the cursor.</summary>
+    /// <summary>
+    /// Orders every selected unit to the ground point under the cursor.
+    /// <para>
+    /// Through <see cref="SimWorld.OrderMove"/>, which is the same call the probe's
+    /// <c>order move</c> makes — what this method owns is the cursor and the selection: where on the
+    /// screen the player pointed, which units are being told, and the loose grid that keeps a group
+    /// from piling onto one point. The order itself is the one call.
+    /// </para>
+    /// </summary>
     private void IssueMoveOrder(Vector2 cursor)
     {
         if (_selection.IsEmpty || _camera is null)

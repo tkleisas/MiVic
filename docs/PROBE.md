@@ -146,7 +146,7 @@ like ground somebody walked over. These four commands answer it.
 
 | Command | Answer |
 |---|---|
-| `triggers` | the mission's whole script: every trigger in the order the simulation evaluates it, what it waits for, what it does, whether it has fired and **on which tick** — then the flags it has raised, and a check of the mission's own integrity, which fails the run when a trigger waits on something that can never happen **or when anything in the mission — condition, objective or side — is already decided by the world it opens in** |
+| `triggers` | the mission's whole script: every trigger in the order the simulation evaluates it, what it waits for, what it does, whether it has fired and **on which tick** — then the flags it has raised, and a check of the mission's own integrity, which fails the run when a trigger waits on something that can never happen **or when anything in the mission — condition, objective, side or base — is already decided by the world it opens in** |
 | `messages` | what the mission has shown the player, oldest first, with the tick and how long ago |
 | `objectives` | every objective the mission is judged by: kind, status, primary or bonus, the progress behind it, and the numbers it is asking — the same state the state hash folds in |
 | `validate [mission-id]` | the mission's own integrity check on its own, with every complaint printed in the validator's words: with no id, the mission the running match is playing; with one, that mission of the campaign or one of the demonstration missions this client carries beside its launch flags — **is this a mission that can be won** |
@@ -217,6 +217,18 @@ it, which is `VictorySystem.Decide`'s own answer about that very world. Without 
 accident; with it, it is the design. See `tools/probe/paperclip.probe` below, which reads both the
 mission and the mission its author first wrote.
 
+**The fourth question is not about anything the mission says, and its answer had been sitting in the
+setup unread.** The scenario's base-site search reports, per team, where the base was asked to stand,
+where it stands, and whether it found room for it at all — and `PatchFound` false is that search
+saying *"there was no room here, I fell back to the nearest single solid cell"*, which is a
+headquarters on ground nothing can be built from or reached over. That is the same class as the
+roadmap's *headquarters standing in deep water*, found by a probe and fixed by hand, and it is a
+failure a seed can hand any mission whose base coordinate lands on a lake: nothing in the finished
+world shows it, because a fallback base does stand on solid ground — on a rock. So `validate` asks the
+layout's own report and refuses a mission whose base had to fall back, naming the side, the ground it
+asked for, the ground it got and how much of that yard a base can use. No mission the campaign ships
+trips it.
+
 ### What the player would see
 
 A question about a click cannot be answered from the world: the world only knows that nothing
@@ -258,6 +270,14 @@ exist for the same reason the other three do — a distance cannot be inspected 
 it, and a surface cannot be inspected at the place that matters until somebody chooses the place —
 and they are why `--mud-demo` can be a demonstration of the weather ability rather than a fixture
 with mud already in it.
+
+**And an order is given through the call the click makes, not one spelled out beside it.** `order move`
+enqueues through `SimWorld.OrderMove` and `order attack` through `SimWorld.OrderAttack` — the two
+calls `IssueMoveOrder` and `IssueAttackOrders` make — so a script cannot march a unit somewhere a
+player cannot send one. An order written out at the point it is given is a second way to give an
+order, and two ways to give one are two games the moment either of them learns something the other
+does not. What the command adds on top is the reading: which cell the goal fell on, whether the two
+sides are hostile, and a refusal in the words the player is shown rather than a silence.
 
 | Command | What it does |
 |---|---|
@@ -1560,7 +1580,7 @@ cmd: objectives
 query: objectives: 2 objectives in 'm4_pass', outcome victory, at tick 3800
 query:   #0 DenyArea             complete primary progress 0, hold 0
 query:   #1 Scripted             complete primary progress 0, hold 0
-check: PASS 'the mission's script fires when it means to' — every trigger waits on something that can happen, every scripted objective is completed by one, no objective asks for more time than the mission has, and nothing in the mission — condition, objective or side — is already decided by the world it opens in
+check: PASS 'the mission's script fires when it means to' — every trigger waits on something that can happen, every scripted objective is completed by one, no objective asks for more time than the mission has, and nothing in the mission — condition, objective, side or base — is already decided by the world it opens in
 probe: 60 commands, 60 ok, 0 errors, 0 checks failed
 ```
 
@@ -1852,6 +1872,74 @@ the same tick with different layers: `map-paths.svg` has the intended routes and
 `map-trails.svg` has the ground covered and no routes. The pair is the diagnostic. A unit drawn
 in the first and absent from the second is a unit that is not moving — and the census under both
 files is the *same* census, because it is counted from the world rather than from the shapes.
+
+## Worked example: what does a unit a script ordered look like on the map?
+
+```
+MiVic.Game.exe --emplacement-demo --probe tools/probe/map-trajectory.probe --probe-out artifacts/probe/map-trajectory.txt
+```
+
+**The reading that layer exists for is "a unit with a route and no trail is a unit that is not
+moving", and it was the one reading a script could not produce.** Until `order move` existed a probe
+could not make a unit walk: the only way to give an order was a right-click, and a right-click needs
+a selection, a camera and a mouse. So that reading had to be pinned in a unit test, and the picture —
+which is the instrument — could only ever show a match somebody else was playing.
+
+This script gives the order and photographs the three states of one march. The fixture is the one
+`tools/probe/emplacement.probe` reads as numbers: an empty clearing with three parked Western
+vehicles on it that nothing orders, so the one line on the map is the only line on the map.
+
+```
+cmd: order 508 move 40 -130
+query: order 508 move to (x 40, z -130) m — cell 36,18 of 65, index 1206, Grass (Γρασίδι)
+ok: Tank (Άρμα) at slot 508 ordered to move, executing on tick 1 — `tick 1` issues it and `unit 508` reads what came of it
+...
+query: map: tick 1, seed 20250101, Skirmish, 1681x1273 px
+query: map:   routes     1 with a route, 0 stalled with a goal and no route, 2 idle with no target, 0 fighting
+query: map:   trails     3 with a trail, 0 moving over the last 8 samples, 0 frozen, 1 too new to say
+...
+query: map: tick 400, seed 20250101, Skirmish, 1681x1273 px
+query: map:   trails     3 with a trail, 1 moving over the last 8 samples, 0 frozen, 0 too new to say
+query: map:   pace       the slowest mover is slot 508 at 541‰ of its ground's allowance
+...
+query: map: tick 800, seed 20250101, Skirmish, 1681x1273 px
+query: map:   routes     0 with a route, 0 stalled with a goal and no route, 3 idle with no target, 0 fighting
+```
+
+- **the first picture is a route with nothing behind it, and the census says which kind of nothing.**
+  `0 frozen, 1 too new to say` against `1 with a route`: the tank was ordered a tick ago and its
+  sampling window is not full, so the layer refuses to answer either way rather than calling a unit
+  that has just been told to go a unit that is not going. That distinction is the whole of
+  `MapTrails.IsFrozen`'s second window, and this is the frame that shows it;
+- **one tick is not enough for a unit that has already been standing still.** Draw the same picture
+  after the tank has stood in the clearing for four seconds and the census reads `1 of 1 holding a
+  route and not moving along it`, the mark is ringed as frozen, and the `map` command's own check
+  fails the run — correctly, because at that instant the tank has a route and has not moved in four
+  seconds. The wide window is full of stationary samples and the unit was ordered 50 ms ago, which
+  the one-second window cannot see past. It is why this script orders before it ticks, and worth
+  knowing before a script that orders a unit is read as having found a stall;
+- **the second picture is the reading.** At tick 400 the tank is a dot with 58.2 m of route drawn
+  ahead of it and 88.4 m of sampled ground behind it, and the census reads the pair back as `1
+  holding a route, every one of them moving`. Ahead and behind are the two halves of one layer, and
+  they are drawn from two different things: the route is what the pathfinder returned, from the
+  path's cursor onwards, and the trail is where the unit has actually been;
+- **the marks in the trail are half a second apart, so their spacing is the pace** — the second
+  thing this layer reads and the one a plain line loses. This march changes ground under itself:
+  at tick 200 the tank is in deep mud, taking 104 mm a tick at 261‰ of what the hull does on clear
+  ground, and by tick 400 it is on sand taking all 400 of them. Ten ticks to a sample makes that a
+  mark every two pixels on the mud and one every eight on the sand — a dotted line and a dashed one
+  — and neither number has to be looked up to see which half of the march was slow;
+- **the third picture is the march over.** `0 with a route, 3 idle with no target`: the goal was
+  reached, the route went with it, and the trail is the only thing left of the walk. A unit drawn
+  with a trail and no route is a unit that has arrived, which is the third state of the same pair
+  the first two pictures are made of;
+- **and nothing else on the map moved.** The `units` at the end of the script has the two vehicles
+  nobody ordered standing at the coordinates they started 800 ticks earlier, which is what makes a
+  picture of one line a picture of one line rather than of a fixture's own traffic.
+
+The order itself goes through `SimWorld.OrderMove`, the call the client's right-click makes — the
+script cannot see the mouse, but it can give the order the mouse gives, which is the property that
+lets a script's march be evidence about the game rather than about the tool.
 
 ## Worked example: does the radar's coverage reach the guns — as a picture?
 

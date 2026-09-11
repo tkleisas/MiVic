@@ -419,9 +419,26 @@ public sealed class SimWorld
         _commandQueue.Add(command);
     }
 
-    /// <summary>Queues a move order for the next tick.</summary>
+    /// <summary>
+    /// Queues a move order for the next tick.
+    /// <para>
+    /// <b>The one call a move order is given through, whichever hand gave it.</b> The player's
+    /// right-click ends here and so does the probe's <c>order move</c>, which is the point: an order
+    /// spelled out at each call site is two orders, and the day one of them learns something the
+    /// other does not — a validation, a different tick — a script and a player are playing different
+    /// games while the transcript says they are not.
+    /// </para>
+    /// </summary>
     public void OrderMove(EntityId target, WorldPos destination, int issuerTeam)
         => Enqueue(SimCommand.Move(target, destination, Tick + 1, issuerTeam));
+
+    /// <summary>
+    /// Queues an attack order for the next tick, and is to <see cref="OrderMove"/> what attacking is
+    /// to moving: the same one call for the same one reason, so the click that locks a gun onto a
+    /// target and a script that does are issuing the same command on the same tick.
+    /// </summary>
+    public void OrderAttack(EntityId attacker, EntityId victim, int issuerTeam)
+        => Enqueue(SimCommand.Attack(attacker, victim, Tick + 1, issuerTeam));
 
     /// <summary>True when <paramref name="slot"/> holds a live entity.</summary>
     public bool IsAliveSlot(int slot) => (uint)slot < (uint)_entities.Length && _entities[slot].Alive;

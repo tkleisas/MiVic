@@ -1,0 +1,81 @@
+# Q: what does a unit a script ordered look like on the map — and what does the trajectory layer
+#    show now that the probe can give an order?
+#
+#   MiVic.Game.exe --emplacement-demo --probe tools/probe/map-trajectory.probe --probe-out artifacts/probe/map-trajectory.txt
+#
+# The fixture is the one tools/probe/emplacement.probe reads as numbers: an empty clearing with
+# three Western vehicles parked on it and a Σοβιετικοί command centre behind them, none of them
+# moving and none of them ordered by anything. The `units` at the end of this script is what says
+# so — the two vehicles nobody ordered are standing exactly where they started 800 ticks earlier —
+# and it is why a picture of one line on this map is a picture of one line.
+#
+# The reading, in three pictures of the same tank:
+#
+#   1. the order has landed and the tank has not walked yet (tick 1): a route is drawn and there is
+#      nothing behind the unit. The census counts it as neither frozen nor moving — its sampling
+#      window is not full yet — which is the honest answer for a unit that has just been told to go;
+#   2. four hundred ticks later: the same route ahead of it and the ground it has covered behind
+#      it, as a line of marks half a second apart. Those marks are the second reading, and the one
+#      a plain line would lose: their spacing is the pace, and this march changes ground under
+#      itself. At tick 200 the tank is in deep mud, taking 104 mm a tick at 261 permille of what
+#      the hull does on clear ground; by tick 400 it is on sand, taking all 400 of them. A hundred
+#      and four millimetres a sample is a mark every two pixels and four hundred is one every
+#      eight, which is the difference between a dotted line and a dashed one;
+#   3. the end of the march: the goal reached, the route gone with it, and the trail the only thing
+#      left of the walk.
+#
+# A route drawn ahead of a unit and a trail behind it is the picture this whole layer exists for,
+# and until `order move` existed it could not be taken from a script at all: the only way to make a
+# unit walk was a right-click, and a right-click needs a selection, a camera and a mouse. The order
+# below goes through the call that right-click makes — `SimWorld.OrderMove`, see `order` in
+# docs/PROBE.md — so the transcript and the picture describe a match rather than a staged world.
+
+# --- the order, given through the call the player's own right-click makes -----------------------
+# Slot 508 is the far tank of the fixture, at (x 173, z -192) m: 150 m east of the clearing's
+# centre, on mud, facing the middle of the map. (40, -130) m is open ground 146 m away across the
+# clearing, far enough from the command centre behind it that arriving is not the start of a
+# gunfight — the layer being read here is the trajectory, and a target line across the picture is
+# another layer's business.
+order 508 move 40 -130
+
+# --- the route, and nothing behind it yet -------------------------------------------------------
+tick 1
+unit 508
+routes
+map artifacts/probe/map-order-t1.svg terrain,units,paths,trails,stuck,frame scale=2
+
+# --- the same route, with eighty-eight metres of ground behind it -------------------------------
+tick 399
+unit 508
+routes
+map artifacts/probe/map-order-t400.svg terrain,units,paths,trails,stuck,frame scale=2
+
+# --- and the two halves of that layer, apart, at the same tick ----------------------------------
+# With only routes on, the tank is a line pointing south-west with nothing behind it; with only
+# trails on, it is a dashed line of where it has been with nothing in front of it. Both files are
+# of the tick above and carry that tick's census, because a layer turned off is a thing not drawn
+# rather than a thing not there.
+map artifacts/probe/map-order-paths.svg terrain,units,paths,stuck,frame scale=3
+map artifacts/probe/map-order-trails.svg terrain,units,trails,stuck,frame scale=3
+
+# --- the end of the march -----------------------------------------------------------------------
+# The goal reached and the route gone with it: the layer is a path *and* where the unit has been,
+# and a picture holding one of the two says which of them the unit is doing.
+tick 400
+unit 508
+units
+routes
+map artifacts/probe/map-order-arrived.svg terrain,units,paths,trails,stuck,frame scale=2
+
+# --- the numbers the pictures were drawn from ---------------------------------------------------
+expect "the far tank of the emplacement fixture stands at x 173 m" 173.0 173.0 0.1
+expect "and z -192 m, on the mud east of the clearing" -192.0 -192.0 0.1
+expect "the ground it was sent to, and the length of the walk" 145.8 145.8 0.1
+expect "covered by tick 400, at 8.0 m a second on sand" 88.4 88.4 0.1
+expect "with 58.2 m of route still ahead of it" 58.2 58.2 0.1
+expect "the first 200 ticks of it, still in the mud at tick 200" 42.9 42.9 0.1
+expect "at 261 per mille of what the hull does at full speed" 261 261 0
+expect "which is a sample every 104 mm, and 400 mm a sample on the sand" 104 104 0
+expect "units holding a route at tick 400" 1 1 0
+expect "of them, units with a route and no ground behind them" 0 0 0
+expect "and units still holding a route once the walk is over" 0 0 0

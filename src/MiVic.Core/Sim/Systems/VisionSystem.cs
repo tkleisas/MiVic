@@ -6,6 +6,43 @@ using MiVic.Core.Terrain;
 namespace MiVic.Core.Sim;
 
 /// <summary>
+/// Why an entity stamps no sensor disc, when it stamps none — the answer
+/// <see cref="VisionSystem.SensorOf"/> gives instead of a radius.
+/// <para>
+/// Three of these are the stamp loop's own <c>continue</c>s, written down as a value rather than as
+/// a silence, and the fourth is the normal case: an entity that is watching, which needs no reason.
+/// A caller that has to know <em>why</em> nothing is drawn — a half-raised building is a thing that
+/// will watch, a shed radar is a thing that would be watching if the grid could run it — asks here
+/// rather than working it out from two of the simulation's other predicates.
+/// </para>
+/// </summary>
+public enum SensorRefusal : byte
+{
+    /// <summary>It senses: the query answered with a radius.</summary>
+    None = 0,
+
+    /// <summary>The slot holds nothing alive.</summary>
+    NoEntity = 1,
+
+    /// <summary>It is not on a team the simulation has, so there is nobody for it to watch for.</summary>
+    NoTeam = 2,
+
+    /// <summary>
+    /// A structure still being raised. A building site is not watching anything yet, which is the
+    /// same rule that keeps a half-raised emplacement from firing: the dish goes on the roof when
+    /// the roof goes on.
+    /// </summary>
+    UnderConstruction = 3,
+
+    /// <summary>
+    /// A radar station the grid has shed. The set is not running, which is the same fact as the
+    /// guns losing their reach — and it has to be said here as well as in the power ledger, or a
+    /// base that had lost its generation would keep the radar picture it can no longer pay for.
+    /// </summary>
+    RadarDark = 4,
+}
+
+/// <summary>
 /// Recomputes what each team can see and what it can detect.
 /// <para>
 /// Vision is stamped from every entity into the navigation grid: a circle of the
@@ -32,6 +69,13 @@ namespace MiVic.Core.Sim;
 /// disc like anything else, and its coverage is the disc. Adding a second answer to
 /// "can team 0 see this cell" — a scan beside the grid, or a detection field beside
 /// the fog — is how the two answers come to disagree.
+/// </para>
+/// <para>
+/// <b>That includes the entities that sense nothing, which is why <see cref="SensorOf"/> is the
+/// same function the stamp loop runs.</b> A rule about who watches is a rule about who does not,
+/// and a caller drawing what a side can see has to reverse the exemptions to draw it correctly:
+/// the map's coverage layer did exactly that, by hand, until the query existed. A second copy of
+/// "a building site is not watching yet" is right until the day the first one changes.
 /// </para>
 /// </summary>
 public static class VisionSystem
@@ -153,6 +197,66 @@ public static class VisionSystem
         return radius;
     }
 
+    /// <summary>
+    /// <b>Whether one entity is watching, how far, and — when it is not — why not.</b>
+    /// <para>
+    /// The stamp loop below skips four entities, and none of those skips could be asked about: a
+    /// slot with nothing in it, something that is not on a team the simulation has, a structure
+    /// still being raised, and a radar station the grid has shed. A caller that wanted to know what
+    /// a side's fog is made of had to write those exclusions out again — the map's coverage layer
+    /// did, in its own words, to draw a rim per disc — and a rule kept in two places is right only
+    /// until one of them changes. This is that rule, in the place that owns it, and
+    /// <see cref="Tick"/> runs through it rather than beside it.
+    /// </para>
+    /// <para>
+    /// The radius is <see cref="SensorRadiusMm"/>'s, so the rim a caller draws and the disc the fog
+    /// stamps are one number rather than two that agree today. Zero means no disc at all, which is
+    /// how the stamp loop reads it as well.
+    /// </para>
+    /// </summary>
+    /// <param name="world">The world the entity stands in.</param>
+    /// <param name="slot">The entity's slot.</param>
+    /// <param name="refusal">
+    /// Why it senses nothing, or <see cref="SensorRefusal.None"/> when it does — <see cref="SensorRefusal"/>
+    /// for what each case means.
+    /// </param>
+    /// <returns>The radius it watches to, in millimetres, or zero when it watches nothing.</returns>
+    public static int SensorOf(SimWorld world, int slot, out SensorRefusal refusal)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        if (!world.IsAliveSlot(slot))
+        {
+            refusal = SensorRefusal.NoEntity;
+            return 0;
+        }
+
+        ref Entity entity = ref world.GetRefBySlot(slot);
+
+        // A team the simulation does not have has no fog to write into: the grid is indexed by team,
+        // so an entity that is on none of them would be stamping a disc nobody could read.
+        if ((uint)entity.TeamId >= SimConstants.TeamCount)
+        {
+            refusal = SensorRefusal.NoTeam;
+            return 0;
+        }
+
+        if (entity.ConstructionTicksRemaining > 0)
+        {
+            refusal = SensorRefusal.UnderConstruction;
+            return 0;
+        }
+
+        if (entity.Kind == UnitKind.RadarStation && !world.IsRadarLit(slot))
+        {
+            refusal = SensorRefusal.RadarDark;
+            return 0;
+        }
+
+        refusal = SensorRefusal.None;
+        return SensorRadiusMm(world, in entity);
+    }
+
     /// <summary>Stamps this tick's share of the entities.</summary>
     public static void Tick(SimWorld world)
     {
@@ -176,27 +280,14 @@ public static class VisionSystem
 
             ref Entity entity = ref world.GetRefBySlot(slot);
 
-            if ((uint)entity.TeamId >= SimConstants.TeamCount)
-            {
-                continue;
-            }
+            // Whether this entity is watching at all, and how far, is one question and it is asked
+            // in one place: a building site is not watching anything yet — the dish goes on the roof
+            // when the roof goes on — and neither is a radar station the grid has shed, which is the
+            // same fact as the guns losing their reach. It is the question the map's coverage layer
+            // asks as well, so the disc a team gets and the rim a picture draws cannot be two rules.
+            int sensor = SensorOf(world, slot, out _);
 
-            if (entity.ConstructionTicksRemaining > 0)
-            {
-                // A building site is not watching anything yet, which is the same rule that
-                // keeps a half-raised emplacement from firing: the dish goes on the roof when
-                // the roof goes on.
-                continue;
-            }
-
-            int sensor = SensorRadiusMm(world, in entity);
-
-            // A radar station with no power is not watching anything either. It is the same
-            // fact as the guns losing their reach — the set is not running — and it has to be
-            // written here rather than left out, or a base that had lost its generation would
-            // keep the radar picture it can no longer pay for while its guns went blind, which
-            // is the one combination that would make the whole brown-out incoherent.
-            if (entity.Kind == UnitKind.RadarStation && !world.IsRadarLit(slot))
+            if (sensor <= 0)
             {
                 continue;
             }

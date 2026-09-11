@@ -1,3 +1,4 @@
+using System.Globalization;
 using MiVic.Core.Numerics;
 using MiVic.Core.Sim;
 
@@ -433,6 +434,15 @@ public static class TriggerSystem
     /// asked in <see cref="CheckObjectiveClock"/>: an objective that nothing could ever complete, and
     /// one that asks for more time than the mission has.
     /// </para>
+    /// <para>
+    /// <b>The fourth is not a rule but a report nobody had read.</b> The base-site search tells its
+    /// caller whether it found room for each base, and what it does when it does not —
+    /// <see cref="BaseSitePlacement.PatchFound"/> — and the layout's answer was dropped on the floor
+    /// by the one thing that builds a mission before anyone plays it. See
+    /// <see cref="CheckTheOpeningGround"/>: a side that opens on ground nothing can be built from or
+    /// reached over is the same class of failure as a trigger that can never fire, arriving through
+    /// the one part of a mission that is a coordinate rather than a sentence.
+    /// </para>
     /// </summary>
     public static IReadOnlyList<string> Validate(MissionDefinition mission)
     {
@@ -573,16 +583,20 @@ public static class TriggerSystem
         }
 
         // The half that needs a world, asked last: what the map the mission opens on has already
-        // decided, asked of three layers rather than of one — every condition, every objective, and
-        // the rule that decides a match with no objectives at all. One world is built for all three.
-        // It is built for every mission rather than only for one with a script or an objective: a
-        // match always declares a side, and "does this side stand in anything" is a question about
-        // the layout, so the third layer always has something to ask.
-        SimWorld opening = OpeningWorld(mission);
+        // decided, asked of four layers rather than of three — every condition, every objective,
+        // the rule that decides a match with no objectives at all, and the ground each side's base
+        // was asked to stand on. One world is built for all four, and the layout that built it is
+        // kept: where a base ended up, and whether the search found any room for it, is a fact the
+        // scenario reported at spawn and nobody has ever read. It is built for every mission rather
+        // than only for one with a script or an objective: a match always declares a side, and
+        // "does this side stand in anything" and "does it stand on anything" are questions about
+        // the layout, so the last two layers always have something to ask.
+        SimWorld opening = OpeningWorld(mission, out ScenarioSetup setup);
 
         CheckTheOpeningWorld(mission, opening, problems);
         CheckTheOpeningObjectives(mission, opening, problems);
         CheckTheOpeningSides(mission, opening, problems);
+        CheckTheOpeningGround(mission, setup, problems);
 
         return problems;
     }
@@ -1015,6 +1029,87 @@ public static class TriggerSystem
         }
     }
 
+    /// <summary>
+    /// <b>The fourth layer that reads a world, and the first that asks about the ground rather than
+    /// about anything the mission says.</b>
+    /// <para>
+    /// The three above it were built because a trigger, an objective and a victory rule could each
+    /// be decided by the world a mission opens in. This one is not a rule at all: it is a report
+    /// the layout has been making since base sites were searched for, and nobody has ever read it.
+    /// <see cref="Scenario.BuildMission"/> fills in a <see cref="BaseSitePlacement"/> per team —
+    /// where the base was asked to stand, where it stands, and whether the search found room for it
+    /// — and <see cref="OpeningWorld"/> threw it away. <c>PatchFound</c> false is the search saying
+    /// "there was no room here, I fell back to the nearest single solid cell", which is a
+    /// headquarters on ground nothing can be built from or reached over: the same class of bug the
+    /// roadmap calls a <em>headquarters standing in deep water</em>, found by a probe and fixed by
+    /// hand, and one a seed can re-introduce on any mission whose base coordinate happens to land
+    /// on a lake.
+    /// </para>
+    /// <para>
+    /// <b>A refusal rather than a report, like the objectives and unlike the triggers.</b> There is
+    /// no reading of a mission in which a base with no yard is the design: the whole opening is
+    /// played from that base, and a side that cannot raise a factory from where it starts is a
+    /// mission that cannot be played as written. So the sentence names the side, the ground it
+    /// asked for, the ground it got and what the difference costs, and the remedy is the author's
+    /// own — move the mission's base coordinate onto ground the generator leaves room on, which is
+    /// the one thing a validator can say without inventing a new base site for them.
+    /// </para>
+    /// </summary>
+    private static void CheckTheOpeningGround(
+        MissionDefinition mission,
+        in ScenarioSetup setup,
+        List<string> problems)
+    {
+        foreach (BaseSitePlacement site in setup.BaseSites)
+        {
+            if (site.PatchFound)
+            {
+                continue;
+            }
+
+            int team = TeamPlaying(mission.Roster, site.Faction);
+
+            problems.Add(
+                $"team {team} ({FactionProfile.For(site.Faction).GreekName}) opens with its base on ground " +
+                $"the layout had to fall back for — the mission asks for its base at {Ground(site.Requested)}, " +
+                $"nothing within {SimWorld.BaseSearchRadiusCells} cells of that has a yard a base can stand " +
+                $"on, and the headquarters therefore stands at {Ground(site.Placed)}, where " +
+                $"{site.SolidCells} of {SimWorld.BaseSitePatchCells} cells of that yard are solid — so the " +
+                "side opens on ground nothing can be built from or reached over, and the opening is played " +
+                "from there whatever the mission meant. Move the mission's own base coordinate onto ground " +
+                "the generator leaves room on.");
+        }
+    }
+
+    /// <summary>
+    /// The team a faction is playing in this match, or <see cref="MatchRoster.PlayerTeam"/> when no
+    /// team is — a base site names a faction because that is what laid it out, and a complaint has
+    /// to name the side an author can go and move.
+    /// </summary>
+    private static int TeamPlaying(MatchRoster roster, Faction faction)
+    {
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (roster.IsInPlay(team) && roster.FactionOf(team) == faction)
+            {
+                return team;
+            }
+        }
+
+        return MatchRoster.PlayerTeam;
+    }
+
+    /// <summary>
+    /// A place on the map in the words the probe and the mission's own coordinates use: metres to a
+    /// tenth, without a floating-point division, because a sentence about which cell a base stands
+    /// on that had been rounded would send its author to the wrong place on a map sixty cells wide.
+    /// </summary>
+    private static string Ground(WorldPos position)
+        => string.Create(
+            CultureInfo.InvariantCulture,
+            $"(x {position.X / WorldPos.MmPerMetre}.{Math.Abs(position.X % WorldPos.MmPerMetre) / 100}, " +
+            $"z {position.Z / WorldPos.MmPerMetre}.{Math.Abs(position.Z % WorldPos.MmPerMetre) / 100}) m");
+
     /// <summary>True when no earlier team in the match is on this team's side.</summary>
     private static bool IsFirstOfItsSide(MatchRoster roster, int team)
     {
@@ -1182,12 +1277,25 @@ public static class TriggerSystem
     /// memory on a path that runs when the probe is asked, which is the cheap half of the trade.
     /// </para>
     /// </summary>
-    public static SimWorld OpeningWorld(MissionDefinition mission)
+    public static SimWorld OpeningWorld(MissionDefinition mission) => OpeningWorld(mission, out _);
+
+    /// <summary>
+    /// The same world, and what the layout made of it: where each team's base was asked to stand,
+    /// where it stands, and whether the search found any room for it.
+    /// <para>
+    /// The setup is returned rather than dropped because one question about a world a mission opens
+    /// in is answered <em>by the layout</em> rather than by the world it left behind — a base that
+    /// fell back to the nearest single solid cell stands on solid ground either way, so nothing in
+    /// the finished world says it was a fallback. See
+    /// <see cref="CheckTheOpeningGround"/>, which is the caller.
+    /// </para>
+    /// </summary>
+    public static SimWorld OpeningWorld(MissionDefinition mission, out ScenarioSetup setup)
     {
         ArgumentNullException.ThrowIfNull(mission);
 
         SimWorld world = Scenario.NewWorld(ScenarioKind.Mission, mission.Seed, SimConstants.MaxEntities, mission);
-        Scenario.BuildMission(world, mission);
+        setup = Scenario.BuildMission(world, mission);
         return world;
     }
 

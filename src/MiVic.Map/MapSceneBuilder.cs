@@ -398,12 +398,23 @@ public static class MapSceneBuilder
     /// <summary>
     /// What can see what: the rim of every sensor's disc, in the colour of the power that owns it.
     /// <para>
-    /// The radius comes from <see cref="VisionSystem.SensorRadiusMm"/> — the same function the fog
-    /// pass stamps and the weapon comparison reads — rather than from the catalogue, because a
+    /// The radius comes from <see cref="VisionSystem.SensorOf"/> — the question the fog pass asks
+    /// itself before it stamps, answered once for both — rather than from the catalogue, because a
     /// second copy of "how far can this see" is a second answer waiting to disagree with the first.
     /// A radar station's own figure <em>is</em> the radar coverage, so a lit set draws a 260-metre
     /// rim and a heavier one, which is what makes "a radar whose coverage did not reach the guns it
     /// was bought for" a thing you can see rather than a thing you work out.
+    /// </para>
+    /// <para>
+    /// <b>And what does not see anything is that same question's answer rather than this layer's
+    /// own.</b> A building site is not watching anything yet — the dish goes on the roof when the
+    /// roof goes on — and a radar with no power is not watching anything either, which is the whole
+    /// of what a brown-out means. This layer used to reverse those two exemptions by hand, and by
+    /// hand is the failure: the two were right, and a third one — the entities the fog pass skips
+    /// because they are on no team the simulation has — was not written down here at all. A rim
+    /// drawn where the world has no coverage answers yes to a question the simulation answers no,
+    /// which is exactly what this layer exists to make visible, so the rule is asked of the system
+    /// that owns it and never restated.
     /// </para>
     /// <para>
     /// <b>A rim rather than a filled disc, and the fill was tried first.</b> Translucent discs are
@@ -437,32 +448,15 @@ public static class MapSceneBuilder
                 continue;
             }
 
-            // The two entities the fog pass does not stamp, and the layer draws no rim for the
-            // same two reasons it does not. A building site is not watching anything yet — the
-            // dish goes on the roof when the roof goes on — and a radar with no power is not
-            // watching anything either, which is the whole of what a brown-out means. Drawing
-            // either would put a rim on the map where the world has no coverage, and the reading
-            // this layer exists for is "does the radar reach the guns": a dark radar that still
-            // drew its 260 metres would answer yes to a question the simulation answers no.
-            if (!world.IsComplete(slot))
-            {
-                continue;
-            }
-
-            bool radar = entity.Kind == UnitKind.RadarStation;
-
-            if (radar && !world.IsRadarLit(slot))
-            {
-                continue;
-            }
-
-            MapRgb colour = palette.Unit(entity.Faction, entity.Kind);
-            int radiusMm = VisionSystem.SensorRadiusMm(world, entity);
+            int radiusMm = VisionSystem.SensorOf(world, slot, out _);
 
             if (radiusMm <= 0)
             {
                 continue;
             }
+
+            bool radar = entity.Kind == UnitKind.RadarStation;
+            MapRgb colour = palette.Unit(entity.Faction, entity.Kind);
 
             shapes.Add(new MapDisc(
                 projection.X(entity.Position.X),
