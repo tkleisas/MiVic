@@ -577,6 +577,21 @@ Greek needed four separate fixes, all now verified automatically by `--selftest`
 The UI font is [Noto Sans](https://fonts.google.com/noto) (SIL OFL), used both asa runtime TTF for ImGui and, compiled through the content pipeline, as
 `Content/Fonts/UiText.spritefont` for world-space labels.
 
+### Symbols
+
+A glyph range is only half of it. A symbol from a block the font has no glyph in is drawn as the
+same box a missing Greek letter is, and — unlike a missing Greek range — nothing about it looks
+wrong until somebody reads the panel: `√` on a completed objective and `▶` on the running
+production job were both drawn as boxes for months. Every non-ASCII symbol the interface draws is
+listed in `src/MiVic.Game/Ui/UiSymbols.cs` with the font path that draws it, and `--selftest`
+checks each one against the atlas *and* the compiled `SpriteFont`.
+
+The symbols Noto Sans cannot supply come from `Content/Fonts/NotoSansMath-UiSymbols.ttf`, a
+seven-kilobyte subset of [Noto Sans Math](https://fonts.google.com/noto/specimen/Noto+Sans+Math)
+(SIL OFL, as the rest of the fonts are) merged into the same atlas entries. It is built from the
+catalogue by `tools/build-ui-symbol-font.ps1`, so the two cannot disagree about which symbols it
+is there for.
+
 ## License
 
 MiVic's source code is released under the [MIT License](LICENSE).

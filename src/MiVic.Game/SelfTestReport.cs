@@ -43,6 +43,8 @@ public static class SelfTestReport
         IReadOnlyList<string> failedModels,
         FontCoverage fontCoverage,
         bool spriteFontHasGreek,
+        UiSymbolCoverage symbolCoverage,
+        bool symbolsOk,
         string windowTitleManaged,
         string? windowTitleSdl,
         int pickHits,
@@ -182,6 +184,23 @@ public static class SelfTestReport
         {
             Append(report, $"greek missing        : {fontCoverage.Missing}");
         }
+
+        // The Greek check above only covers the ranges a text font is asked for. The symbols
+        // the interface draws outside those ranges are listed in UiSymbols and checked against
+        // both font paths here, because a symbol with no glyph fails the same way a Greek letter
+        // without one does: silently, as a box, until somebody looks at a screenshot.
+        Append(report, $"ui symbols present   : {symbolsOk}");
+        Append(report, $"ui symbols in atlas  : {symbolCoverage.AtlasCovered}/{symbolCoverage.AtlasTotal}");
+
+        Append(report, $"ui symbols in sprite : {(symbolCoverage.SpriteTotal == 0
+            ? "none drawn in world space"
+            : $"{symbolCoverage.SpriteCovered}/{symbolCoverage.SpriteTotal}")}");
+
+        if (!symbolCoverage.IsComplete)
+        {
+            Append(report, $"ui symbols missing   : atlas [{symbolCoverage.AtlasMissing}], sprite [{symbolCoverage.SpriteMissing}]");
+        }
+
         Append(report, $"models imported      : {loadedModels.Count}");
 
         foreach (string model in loadedModels)
@@ -198,7 +217,7 @@ public static class SelfTestReport
 
         // Functional checks decide the result. The frame budget is printed above and does not:
         // only a frame time so bad the client is plainly broken can fail this.
-        bool passed = frameTimeSane && greekGlyphsOk && spriteFontHasGreek && windowTitleMatches &&
+        bool passed = frameTimeSane && greekGlyphsOk && spriteFontHasGreek && symbolsOk && windowTitleMatches &&
                       pickTotal > 0 && pickRate > 0.5 && Passed(hudCommandCheck) && Passed(clickCheck) &&
                       Passed(moveOrderCheck) && Passed(combatCheck) && Passed(aiCheck) && Passed(replayCheck) &&
                       victoryDemoOk && simulation.World.AliveCount > 0;

@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -53,6 +54,35 @@ public sealed class WorldLabelRenderer : IDisposable
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// The characters of <paramref name="sample"/> the compiled font has no glyph for,
+    /// concatenated in the order they appear.
+    /// <para>
+    /// The SpriteFont is the second font path in the client and the one that cannot be
+    /// repaired by merging: a MonoGame font is compiled from a single font file by the content
+    /// pipeline, so a symbol Noto Sans lacks cannot be added to it at all — <see cref="UiSymbols"/>
+    /// has to stop drawing that symbol in world space, or the glyph has to be found in a font
+    /// that can also carry the Greek. Which is why the path is checked rather than assumed.
+    /// </para>
+    /// </summary>
+    /// <param name="sample">Symbols to look for, normally <see cref="UiSymbols.SpriteFontSample"/>.</param>
+    public string MissingGlyphs(string sample)
+    {
+        ArgumentNullException.ThrowIfNull(sample);
+
+        StringBuilder missing = new();
+
+        foreach (char character in sample)
+        {
+            if (!HasGlyph(character))
+            {
+                missing.Append(character);
+            }
+        }
+
+        return missing.ToString();
     }
 
     /// <summary>Draws every visible label.</summary>

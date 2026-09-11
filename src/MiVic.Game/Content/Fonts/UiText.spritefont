@@ -38,16 +38,15 @@
         <Start>&#x2000;</Start>
         <End>&#x206F;</End>
       </CharacterRegion>
-      <!-- Arrows -->
-      <CharacterRegion>
-        <Start>&#x2190;</Start>
-        <End>&#x21FF;</End>
-      </CharacterRegion>
-      <!-- Mathematical Operators -->
-      <CharacterRegion>
-        <Start>&#x2200;</Start>
-        <End>&#x22FF;</End>
-      </CharacterRegion>
+      <!--
+        Arrows (2190-21FF) and Mathematical Operators (2200-22FF) were listed here and are
+        gone: Noto Sans has no glyph in either block, so neither region ever produced one.
+        A region that cannot fill reads like coverage, which is how the interface came to
+        draw √ and ▶ as boxes for months. A MonoGame SpriteFont is compiled from a single
+        file and cannot merge a second, so a symbol that has to appear in world space needs
+        a font carrying both it and the Greek. Every symbol the client draws is drawn by
+        ImGui, and the self-test checks it against both font paths.
+      -->
     </CharacterRegions>
   </Asset>
 </XnaContent>

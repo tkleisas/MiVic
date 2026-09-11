@@ -22,8 +22,22 @@ namespace MiVic.Game.Ui;
 public sealed unsafe class ImGuiController : IDisposable
 {
     /// <summary>
-    /// Glyph ranges loaded into the atlas. Latin is included alongside Greek
+    /// File name of the symbol font, which sits beside the text font. It is a subset of Noto
+    /// Sans Math carrying only the codepoints <see cref="UiSymbols"/> marks as coming from it.
+    /// </summary>
+    public const string SymbolFontFileName = "NotoSansMath-UiSymbols.ttf";
+
+    /// <summary>
+    /// Glyph ranges loaded from the text font, Noto Sans. Latin is included alongside Greek
     /// because numbers, units and debug text still use it.
+    /// <para>
+    /// Arrows, Mathematical Operators and Box Drawing used to be listed here, and they were
+    /// the reason <c>√</c> and <c>▶</c> never rendered: asking for a block a font cannot fill
+    /// adds no glyph, so the range reads as coverage while doing nothing at all. Noto Sans
+    /// carries no glyph in any of the three. The symbols the interface actually draws out of
+    /// them come from <see cref="SymbolFontFileName"/> instead, listed in
+    /// <see cref="UiSymbols"/>, and verified by the self-test.
+    /// </para>
     /// </summary>
     private static readonly ushort[] GlyphRanges =
     [
@@ -31,11 +45,15 @@ public sealed unsafe class ImGuiController : IDisposable
         0x0100, 0x017F, // Latin Extended-A
         0x0370, 0x03FF, // Greek and Coptic
         0x2000, 0x206F, // General Punctuation
-        0x2190, 0x21FF, // Arrows
-        0x2200, 0x22FF, // Mathematical Operators
-        0x2500, 0x257F, // Box Drawing
         0x0000,         // terminator
     ];
+
+    /// <summary>
+    /// The symbols requested from the merged symbol font, as ImGui ranges. Built from the
+    /// catalogue rather than written out again, so the font's contents and the atlas request
+    /// cannot come apart.
+    /// </summary>
+    private static readonly ushort[] SymbolGlyphRanges = BuildSymbolGlyphRanges();
 
     private readonly GraphicsDevice _device;
     private readonly GameWindow _window;
@@ -178,6 +196,50 @@ public sealed unsafe class ImGuiController : IDisposable
         return coverage.Covered == coverage.Total && coverage.Total > 0;
     }
 
+    /// <summary>
+    /// The characters of <paramref name="sample"/> that some font in the atlas cannot
+    /// rasterise, concatenated in the order they appear.
+    /// <para>
+    /// Every font in the atlas is asked, not just the first: the headline copy is a second
+    /// entry with its own glyph set, so a symbol it cannot draw is the same defect wearing a
+    /// hat, waiting for the one banner that uses it. The proof of a glyph is the same one
+    /// <see cref="MeasureCoverage"/> uses — a rasterised glyph has a non-zero advance, and
+    /// <c>FindGlyph</c> alone would report the fallback as coverage.
+    /// </para>
+    /// </summary>
+    /// <param name="sample">Symbols to look for, normally <see cref="UiSymbols.AtlasSample"/>.</param>
+    public string MissingGlyphs(string sample)
+    {
+        ArgumentNullException.ThrowIfNull(sample);
+
+        ImVector<ImFontPtr> fonts = ImGui.GetIO().Fonts.Fonts;
+
+        if (fonts.Size == 0)
+        {
+            return sample;
+        }
+
+        StringBuilder missing = new();
+
+        foreach (char character in sample)
+        {
+            bool covered = true;
+
+            for (int i = 0; i < fonts.Size && covered; i++)
+            {
+                ImFontGlyphPtr glyph = fonts[i].FindGlyphNoFallback(character);
+                covered = glyph.NativePtr is not null && glyph.AdvanceX > 0f;
+            }
+
+            if (!covered)
+            {
+                missing.Append(character);
+            }
+        }
+
+        return missing.ToString();
+    }
+
     /// <summary>Ends the previous frame and starts a new one.</summary>
     public void Update(GameTime gameTime)
     {
@@ -245,12 +307,31 @@ public sealed unsafe class ImGuiController : IDisposable
                 fontPath);
         }
 
+        // The symbols the text font has no glyph for come from a second, much smaller font
+        // merged into the same atlas entries. A missing file is fatal rather than a warning:
+        // drawing the symbols as boxes is exactly the defect this font exists to fix, and it
+        // is invisible in a build log.
+        string symbolFontPath = Path.Combine(Path.GetDirectoryName(fontPath)!, SymbolFontFileName);
+
+        if (!File.Exists(symbolFontPath))
+        {
+            throw new FileNotFoundException(
+                $"UI symbol font not found at '{symbolFontPath}'. Rebuild it with tools/build-ui-symbol-font.ps1.",
+                symbolFontPath);
+        }
+
         ImGuiIOPtr io = ImGui.GetIO();
 
         fixed (ushort* ranges = GlyphRanges)
+        fixed (ushort* symbolRanges = SymbolGlyphRanges)
         {
+            // ImGui merges a font into the one added before it, so the text font has to come
+            // first and the merge second, once per atlas entry: the headline copy needs the
+            // symbols too, or a banner that used one would draw a box the small text does not.
             io.Fonts.AddFontFromFileTTF(fontPath, fontSizePixels, default, (nint)ranges);
+            AddSymbolFont(io, symbolFontPath, fontSizePixels, (nint)symbolRanges);
             io.Fonts.AddFontFromFileTTF(fontPath, fontSizePixels * 2.6f, default, (nint)ranges);
+            AddSymbolFont(io, symbolFontPath, fontSizePixels * 2.6f, (nint)symbolRanges);
         }
 
         if (!io.Fonts.Build())
@@ -276,19 +357,66 @@ public sealed unsafe class ImGuiController : IDisposable
         // The handle is opaque to ImGui; the renderer binds the texture directly.
         io.Fonts.TexID = 1;
 
-        // Count the glyphs we actually care about, which doubles as a coverage
-        // check: a missing Greek range shows up here as a suspiciously low count.
+        // Count the glyphs the text font really has, which doubles as a coverage check: a
+        // missing Greek range shows up here as a suspiciously low count.
+        //
+        // FindGlyphNoFallback rather than FindGlyph, which returns the fallback glyph for
+        // every codepoint outside the font's coverage. Counted that way this reported 992 —
+        // the size of the range asked for, not the coverage of the font — and no font, however
+        // empty, could ever have made it low.
         ImFontPtr font = io.Fonts.Fonts[0];
         int glyphs = 0;
         for (int codepoint = 0x20; codepoint <= 0x03FF; codepoint++)
         {
-            if (font.FindGlyph((ushort)codepoint).NativePtr is not null)
+            ImFontGlyphPtr glyph = font.FindGlyphNoFallback((ushort)codepoint);
+
+            if (glyph.NativePtr is not null && glyph.AdvanceX > 0f)
             {
                 glyphs++;
             }
         }
 
         GlyphCount = glyphs;
+    }
+
+    /// <summary>
+    /// Adds the symbol font to the atlas in merge mode, which puts its glyphs into the font
+    /// added just before it rather than creating an entry of its own.
+    /// </summary>
+    private static void AddSymbolFont(ImGuiIOPtr io, string path, float sizePixels, nint ranges)
+    {
+        ImFontConfigPtr config = new(ImGuiNative.ImFontConfig_ImFontConfig());
+
+        try
+        {
+            config.MergeMode = true;
+            io.Fonts.AddFontFromFileTTF(path, sizePixels, config, ranges);
+        }
+        finally
+        {
+            // ImGui copies what it needs out of the config while adding the font, so this
+            // allocation lives only for the call that reads it.
+            ImGuiNative.ImFontConfig_destroy(config.NativePtr);
+        }
+    }
+
+    /// <summary>
+    /// Turns <see cref="UiSymbols.SymbolFontSample"/> into ImGui's range format, which is
+    /// pairs of first and last codepoint and a zero to end. The catalogue is in codepoint
+    /// order, which is the order ImGui's builder walks them in.
+    /// </summary>
+    private static ushort[] BuildSymbolGlyphRanges()
+    {
+        string symbols = UiSymbols.SymbolFontSample;
+        ushort[] ranges = new ushort[(symbols.Length * 2) + 1];
+
+        for (int i = 0; i < symbols.Length; i++)
+        {
+            ranges[i * 2] = symbols[i];
+            ranges[(i * 2) + 1] = symbols[i];
+        }
+
+        return ranges;
     }
 
     /// <summary>

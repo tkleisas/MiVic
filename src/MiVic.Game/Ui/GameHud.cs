@@ -406,9 +406,14 @@ public sealed class GameHud
     }
 
     /// <summary>
-    /// The mission objectives panel. Status glyphs come from ranges the UI font
-    /// actually carries (• √ ×) — the dingbat tick and cross are not in the atlas
-    /// and would render as tofu.
+    /// The mission objectives panel.
+    /// <para>
+    /// The status marks are the ones <see cref="UiSymbols"/> lists and the self-test checks:
+    /// <c>•</c> open, <c>√</c> complete, <c>×</c> failed. The tick is a square root because no
+    /// font the client ships carries a tick, and it draws at all only because the symbol font
+    /// is merged into the atlas — which a comment here used to assert on the atlas's behalf
+    /// without the atlas being able to do it.
+    /// </para>
     /// </summary>
     private void DrawMissionPanel(in HudSnapshot snapshot)
     {
@@ -833,14 +838,16 @@ public sealed class GameHud
             // shape the bridge button has — and the words beside it are the simulation's own
             // verdict on the cell under the cursor, or its reason for having refused the row.
             //
-            // The armed marker is a bullet rather than a play triangle because the font atlas
-            // covers Latin, Greek, punctuation, arrows and box drawing but not the geometric
-            // shapes block, where a triangle lives: it would be drawn as the missing-glyph box.
+            // The armed marker is a play triangle, as it was meant to be. It spent a while as a
+            // bullet for one reason only: a triangle lives in the Geometric Shapes block, which
+            // the text font cannot fill, so it drew as the missing-glyph box. That block now
+            // arrives from the symbol font merged into the atlas, the reason is gone, and the
+            // workaround goes with it.
             bool placing = option.PlacesSite && snapshot.StructureArmed == option.Kind;
 
             ImGui.BeginDisabled(!option.Enabled);
 
-            if (ImGui.Button(placing ? $"• {option.Label}" : option.Label))
+            if (ImGui.Button(placing ? $"▶ {option.Label}" : option.Label))
             {
                 command = option.PlacesSite
                     ? new HudCommand(HudCommandKind.PlaceStructure, option.Kind)

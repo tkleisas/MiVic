@@ -368,7 +368,9 @@ public sealed partial class MiVicGame : XnaGame
     private int _instancesSubmitted;
     private bool _greekGlyphsOk;
     private bool _spriteFontHasGreek;
+    private bool _symbolsOk;
     private FontCoverage _fontCoverage;
+    private UiSymbolCoverage _symbolCoverage;
     private double _worstFrameMilliseconds;
     private int _peakParticles;
     private int _peakParticleInstances;
@@ -845,6 +847,15 @@ public sealed partial class MiVicGame : XnaGame
         _worldLabels = new WorldLabelRenderer(GraphicsDevice, _uiFont);
         _spriteFontHasGreek = _worldLabels.HasGreekGlyphs;
 
+        // Greek proves the text ranges are loaded; this proves every symbol the interface draws
+        // has a glyph on the path that draws it, which is a separate failure and the one nobody
+        // notices until they look at a screenshot. Checked here, where both fonts exist, rather
+        // than trusted to the comment that used to claim the atlas carried √.
+        _symbolCoverage = UiSymbols.Measure(
+            _imgui.MissingGlyphs(UiSymbols.AtlasSample),
+            _worldLabels.MissingGlyphs(UiSymbols.SpriteFontSample));
+        _symbolsOk = _symbolCoverage.IsComplete;
+
         _hud.ShowHelp = _options.ShowHelp;
 
         // The soundtrack is generated, not loaded, so it is skipped in the modes
@@ -1158,6 +1169,8 @@ public sealed partial class MiVicGame : XnaGame
                 _catalog.FailedModels,
                 _fontCoverage,
                 _spriteFontHasGreek,
+                _symbolCoverage,
+                _symbolsOk,
                 Window.Title,
                 WindowTitleProbe.ReadFromSdl(Window),
                 pickHits,

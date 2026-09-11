@@ -29,7 +29,10 @@
     <!--
       Fonts are loaded at runtime by ImGui rather than through the content
       pipeline, so they must sit next to the executable. Noto Sans is OFL
-      licensed and carries full Greek coverage.
+      licensed and carries full Greek coverage. NotoSansMath-UiSymbols.ttf is a
+      subset of Noto Sans Math, OFL too, holding only the symbols Noto Sans has
+      no glyph for; tools/build-ui-symbol-font.ps1 rebuilds it from the upstream
+      font and the list in Ui/UiSymbols.cs.
     -->
     <None Include="Content\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
     <!--
