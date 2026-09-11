@@ -429,6 +429,24 @@ spawned, which is the list-order dependency this layer was built with — declar
 `DependsOnOpeningWorld`. `m4_pass`'s `first-gun` is that declaration: in the world the mission opens
 in, no Western gun stands yet, and the two are put there by the trigger above it on the opening tick.
 
+**The objectives are asked the same question of the same world, and one of the two answers is
+fatal.** An objective is a win condition rather than a scene, so an objective the map has already
+decided is the mission: decided *against* the player it cannot be won — a `DenyArea` whose circle the
+denied team already stands in has failed on the check that first asks it, which is the worst thing
+this whole layer can ship, because its author finds out by losing — and decided *for* them it is
+handed over before the first tick, which is a hold the opening formation already meets, a stockpile or
+a tier the side starts with, a structure count of zero. The two are reported as the different
+complaints they are, and **neither has an acknowledgement**: unlike a trigger, an objective has no
+reading in which being already satisfied is the design, so both are refusals and the author moves the
+circle or changes the number. The question goes through `MissionSystem.Verdict`, which is the
+evaluation the tick loop runs, so a validator cannot disagree with the game about what an objective
+means. The same pass refuses an objective whose own evaluation reads a team the match does not
+declare, which is a case two-faction matches made expressible: a `DestroyStructures` against an
+absent faction can never be completed, and a denial of an absent faction can never be failed — it is
+completed by its own deadline with the player having done nothing at all. None of the four missions
+the campaign ships trips any of it, which is the point of the check and also the reason
+`tools/probe/objectives.probe` runs against a purpose-built mission carried by `--objective-demo`.
+
 ### The objective the vocabulary was missing: denial
 
 All four kinds of objective were things you *do to the enemy* — destroy, hold, accumulate, reach — and

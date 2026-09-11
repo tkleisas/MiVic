@@ -506,6 +506,17 @@ public sealed partial class MiVicGame : XnaGame
                 0f,
                 mission.PlayerBase.Z / (float)WorldPos.MmPerMetre));
         }
+        else if (_options.ObjectiveDemo)
+        {
+            // The demonstration's own mission is framed the way a mission is, from the player's
+            // base: the objective being looked at is a denial over the enemy's camp, and a camera
+            // on the player's end of the map is what makes the distance between the two the thing
+            // the frame says.
+            _camera.ZoomTo(620f);
+            _camera.TiltTo(-1.02f);
+            _camera.Yaw = 0.62f;
+            _camera.FocusOn(new Vector3(-180f, 0f, -180f));
+        }
         else if (_options.FireDemo)
         {
             // Looking along the line from behind and above, with the camera on the far
@@ -646,7 +657,9 @@ public sealed partial class MiVicGame : XnaGame
                                                     ? SimBridge.CreateArmourDemo(_options.Seed)
                                                     : _options.MudDemo
                                                         ? SimBridge.CreateMudDemo(_options.Seed)
-                                                        : new SimBridge(_options.Seed, _options.IsModelGallery ? ScenarioKind.ModelGallery : _options.Match);
+                                                        : _options.ObjectiveDemo
+                                                            ? SimBridge.CreateObjectiveDemo()
+                                                            : new SimBridge(_options.Seed, _options.IsModelGallery ? ScenarioKind.ModelGallery : _options.Match);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);

@@ -783,6 +783,135 @@ public sealed class SimBridge
     /// <summary>Half the width, in cells, of the block the mud demonstration is laid over.</summary>
     private const int BlockRadius = 8;
 
+    /// <summary>Radius of the two circles the objective demonstration is written around, in millimetres.</summary>
+    private const int DemoCircleRadiusMm = 150_000;
+
+    /// <summary>
+    /// <b>A mission that cannot be won, and a mission that wins itself: the two things the world a
+    /// mission opens in can already have decided about its objectives.</b>
+    /// <para>
+    /// It exists because nothing this repository ships trips the objective half of the mission
+    /// validator — which is the point of that check, and also the reason its refusals could never be
+    /// seen in a transcript. A check whose complaints no content in the repository can reach is a
+    /// check nobody can watch working, so this fixture supplies the content it was written against:
+    /// a mission built the way an author builds one, with three mistakes in it and one objective
+    /// deliberately sound, because a validator that says no to everything is as useless as one that
+    /// says nothing and the transcript has to show the difference.
+    /// </para>
+    /// <para>
+    /// The fiction is the pass again, because it is the fiction that invites these mistakes. The
+    /// denial is written on the enemy's own camp instead of on the road out of it, so it is failed
+    /// by the check that first asks it and the mission is lost before it is fought; the tier the
+    /// mission asks for is the tier the side already has; and the ground it asks the player to hold
+    /// is the ground the army is already standing on.
+    /// </para>
+    /// <para>
+    /// The seed is the mission's own rather than the client's, because the circles are written as
+    /// coordinates while the bases are found by a search: a demonstration of "the circle is on the
+    /// enemy's camp" is a demonstration of the layout that seed produces or it is nothing. What the
+    /// fixture prints is the count in each circle, which is that claim in one line.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateObjectiveDemo()
+    {
+        MissionDefinition mission = ObjectiveDemoMission;
+        var bridge = new SimBridge(mission);
+        SimWorld world = bridge.World;
+
+        ObjectiveDefinition denial = mission.Objectives[1];
+        ObjectiveDefinition hold = mission.Objectives[3];
+
+        int insideTheDenial = world.CountUnitsInArea(2, denial.CentreX, denial.CentreZ, denial.RadiusMm);
+        int insideTheHold = world.CountUnitsInArea(0, hold.CentreX, hold.CentreZ, hold.RadiusMm);
+
+        Console.WriteLine(
+            $"objective-demo: '{mission.Id}' built — {insideTheDenial} of the enemy inside the denial, " +
+            $"{insideTheHold} of the player's army inside the hold");
+
+        if (insideTheDenial < denial.TargetCount || insideTheHold < hold.TargetCount)
+        {
+            Console.WriteLine(
+                "objective-demo: the circles no longer hold what they were written around, so this " +
+                "fixture is demonstrating something else");
+        }
+
+        return bridge;
+    }
+
+    /// <summary>
+    /// The mission the objective demonstration plays: data rather than campaign content, and wrong
+    /// on purpose — <see cref="MissionCatalog.All"/> is the campaign, and a mission that cannot be
+    /// won belongs in a fixture rather than in it.
+    /// </summary>
+    private static MissionDefinition ObjectiveDemoMission => new(
+        Id: "objective_demo",
+        GreekTitle: "Επίδειξη: το πέρασμα, με τα λάθη του συγγραφέα",
+        GreekBriefing:
+            "Οι Δυτικοί ανιχνεύουν το πέρασμα και εμείς κρατάμε το ύψωμα. " +
+            "Η αποστολή είναι γραμμένη για την επίδειξη του ελέγχου των στόχων: " +
+            "δύο από τους στόχους της κρίνονται από τον χάρτη πριν παιχτεί, " +
+            "και ο ένας την κάνει αδύνατη.",
+        Seed: 20250104UL,
+        PlayerBase: new WorldPos(-180_000, 0, -180_000),
+        AllyBase: default,
+        EnemyBase: new WorldPos(30_000, 0, 200_000),
+        PlayerUnits: 12,
+        AllyUnits: 0,
+        EnemyUnits: 12,
+        Objectives:
+        [
+            // The sound objective, and the control the transcript needs: two Western positions
+            // destroyed is a mission, and the world the mission opens in has destroyed none.
+            new ObjectiveDefinition(
+                ObjectiveKind.DestroyStructures,
+                "Καταστρέψτε δύο δυτικές θέσεις.",
+                TargetTeam: 2,
+                TargetCount: 2,
+                DeadlineTick: 7_200),
+
+            // The mistake that makes the mission unwinnable: the circle is the enemy's own camp.
+            // An author who wrote these coordinates meant "the ground they must not cross" and
+            // wrote down the ground they start on — and the denial fails on the first check.
+            new ObjectiveDefinition(
+                ObjectiveKind.DenyArea,
+                "Οι Δυτικοί δεν πρέπει να φτάσουν στο σημείο διαφυγής με 4 μονάδες.",
+                Team: 0,
+                TargetTeam: 2,
+                TargetCount: 4,
+                CentreX: 30_000,
+                CentreZ: 200_000,
+                RadiusMm: DemoCircleRadiusMm,
+                DeadlineTick: 3_600),
+
+            // Every team is created at tier one, so an era the mission asks for is an era it hands
+            // over — and a target of one reads exactly like a target the author thought was ahead.
+            new ObjectiveDefinition(
+                ObjectiveKind.ReachTechTier,
+                "Προαιρετικά: φτάστε σε τεχνολογικό επίπεδο 1.",
+                Team: 0,
+                TierTarget: 1,
+                IsPrimary: false,
+                DeadlineTick: 12_000),
+
+            // The hold, written around the army's own camp: six units are standing in the circle
+            // before the first tick, so the hold clock starts with nothing done.
+            new ObjectiveDefinition(
+                ObjectiveKind.HoldArea,
+                "Κρατήστε έξι μονάδες στο ύψωμα για τριάντα δευτερόλεπτα.",
+                Team: 0,
+                TargetCount: 6,
+                HoldTicks: 600,
+                CentreX: -180_000,
+                CentreZ: -180_000,
+                RadiusMm: DemoCircleRadiusMm,
+                DeadlineTick: 9_000,
+                IsPrimary: false),
+        ],
+        TimeLimitTicks: 7_200)
+    {
+        Roster = MatchRoster.Duel,
+    };
+
     /// <summary>
     /// A square of ground <paramref name="radius"/> cells in every direction on which every cell is
     /// walkable, with room beside it for a structure two lanes clear of the lanes themselves.

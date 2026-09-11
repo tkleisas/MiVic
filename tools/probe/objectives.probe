@@ -1,0 +1,70 @@
+# Q: is a mission one that can be won — and what does the world it opens in decide about its
+#    objectives before the player has done anything?
+#
+#   $exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
+#   $p = Start-Process -FilePath $exe -Wait -PassThru -NoNewWindow -WorkingDirectory . -ArgumentList `
+#       '--objective-demo', '--probe', 'tools/probe/objectives.probe', `
+#       '--probe-out', 'artifacts/probe/objectives.txt'
+#
+# The mission validator asks every objective of the world the mission *opens* in — the scenario laid
+# out, the mission attached, not one tick run — through the mission system's own evaluation, so its
+# answer cannot disagree with the game's. Two of the answers are failures and they are not the same
+# failure: an objective the map has already decided *against* the player is an unwinnable mission,
+# and one it has decided *for* them is an objective handed over before the first tick.
+#
+# No mission the campaign ships trips either check, which is the point of the check and also the
+# reason its refusals could never be read anywhere. So this script runs against `--objective-demo`,
+# the launch flag that starts a purpose-built mission with three mistakes in it and one sound objective:
+#
+#   #0 DestroyStructures  sound — two Western positions destroyed is a mission, and the opening world
+#                            has destroyed none. Nothing is said about it.
+#   #1 DenyArea           the circle is the enemy's own camp, so four of them are inside it on the
+#                            check that first asks: the mission is lost before it is fought.
+#   #2 ReachTechTier      every side is created at tier one, and the mission asks for tier one.
+#   #3 HoldArea           six units, in a circle the six units the side opens with are standing in:
+#                            the hold clock starts on the first evaluation with nothing done.
+#
+# **This run is supposed to end with one check failed.** The failing check is not a fault in the
+# client: it is the validator refusing the purpose-built mission, with the reason printed above it,
+# and a run that passed here would mean the check had stopped working. The four missions the campaign
+# ships are then asked about by id, and all four hold — which is the other half of the same claim.
+#
+# What to read:
+#
+#   - `validate` with no id asks about the mission of the running match, which is the demo's. The
+#     three complaints name the objective, what the world answered with, and what it means.
+#   - `objectives` at tick 0 is the same three facts from the side of the world rather than of the
+#     validator: the denial is `pending` in a circle with the whole enemy camp in it.
+#   - `tick 20` is ten ticks past the first objective check. The denial is `failed` and the outcome
+#     is `defeat`, which is what "unwinnable" means for a player rather than for a validator.
+#   - the shot is that defeat as the player sees it, and it is worth reading twice: the panel says
+#     sixteen units and four structures on each side and `12/4` enemy units inside the denial, and
+#     the banner over it says the player's side was destroyed. The banner is quoting the victory
+#     rule about an outcome the objectives decided — the same defect `teams` had, in the copy a
+#     player actually reads. It is reported rather than fixed here.
+#   - the four `validate <id>` lines are the campaign, one mission at a time: each is asked the same
+#     question and each holds, including `m4_pass`, whose denial is on the road out of the valley
+#     rather than on the ground the enemy starts on.
+
+validate
+objectives
+
+# --- the mission, lost on the check that first asks the denial -------------------------------------------------
+tick 20
+objectives
+teams
+
+# --- what that looks like: the banner, over a battle in which nothing has happened yet -------------------------
+hud on
+focus -140 -120
+zoom 300
+pitch -0.85
+settle 20
+shot artifacts/probe/objectives-defeat.png
+hud off
+
+# --- the campaign, mission by mission: the content that exists has to pass the check that judges it -----------------
+validate m1_bridgehead
+validate m2_ridge
+validate m3_industry
+validate m4_pass

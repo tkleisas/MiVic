@@ -3,6 +3,28 @@ using MiVic.Core.Sim;
 namespace MiVic.Core.Campaign;
 
 /// <summary>
+/// What the world a mission <em>opens</em> in has already decided about one objective.
+/// <para>
+/// It is the answer to a question the mission validator asks of every objective before the first
+/// tick is run, and it exists because an objective is a win condition rather than a scene: one that
+/// the map has already decided is not a slow objective, it is a mission that is over. See
+/// <see cref="MissionSystem.Verdict"/> for the question and
+/// <see cref="TriggerSystem.Validate"/> for what is done about each answer.
+/// </para>
+/// </summary>
+public enum OpeningVerdict : byte
+{
+    /// <summary>The objective is the player's to do or to fail, which is what an objective is for.</summary>
+    Undecided = 0,
+
+    /// <summary>Already complete before the first tick: it completes with nothing done.</summary>
+    Satisfied = 1,
+
+    /// <summary>Already failed before the first tick: the mission is lost however it is played.</summary>
+    Failed = 2,
+}
+
+/// <summary>
 /// Evaluates a mission's objectives and decides the mission's outcome.
 /// <para>
 /// Every objective is a predicate over world state, checked on a fixed interval,
@@ -108,6 +130,54 @@ public static class MissionSystem
         {
             state.Status = ObjectiveStatus.Failed;
         }
+    }
+
+    /// <summary>
+    /// <b>What a world already says about one objective, asked without ticking it.</b>
+    /// <para>
+    /// Asked of the world a mission <em>opens</em> in — the scenario laid out and nothing run — the
+    /// answer is whether the objective has been decided before the player has done anything: an
+    /// objective already satisfied completes with nothing done, and one already failed is a mission
+    /// that cannot be won. Asked of a world that has been played, it is simply what that world says
+    /// now, because the question and the tick loop's question are the same question.
+    /// </para>
+    /// <para>
+    /// <b>It is the tick loop's own evaluation and not a second reading of an objective.</b> The
+    /// mission validator asks through here so that it cannot disagree with the game about what an
+    /// objective means — a validator that answered differently from the simulation would be worse
+    /// than no validator at all, since its complaint would be about a rule nobody plays by.
+    /// </para>
+    /// <para>
+    /// A hold is the one kind whose decision is not a status: the loop advances the hold clock on
+    /// every evaluation the opening formation already meets, so a clock that has moved at all is a
+    /// hold the world has already granted — it completes on time with nothing done. Nothing else
+    /// can move that field, which is why reading it here is the same evaluation rather than a
+    /// guess about one.
+    /// </para>
+    /// </summary>
+    public static OpeningVerdict Verdict(SimWorld world, ObjectiveDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(definition);
+
+        // A fresh state, so nothing the objective remembers from a mission already under way can
+        // colour the answer: what is being asked is what this world says about an objective nobody
+        // has looked at yet.
+        var state = default(ObjectiveState);
+
+        Evaluate(world, definition, ref state);
+
+        if (state.IsFailed)
+        {
+            return OpeningVerdict.Failed;
+        }
+
+        if (state.IsComplete || (definition.Kind == ObjectiveKind.HoldArea && state.HoldProgress > 0))
+        {
+            return OpeningVerdict.Satisfied;
+        }
+
+        return OpeningVerdict.Undecided;
     }
 
     /// <summary>

@@ -88,8 +88,16 @@ public enum ObjectiveStatus : byte
 /// </summary>
 /// <param name="Kind">What is being asked.</param>
 /// <param name="GreekDescription">Player-facing text.</param>
-/// <param name="Team">Team the objective judges.</param>
-/// <param name="TargetTeam">Team the objective is about, for enemy-facing goals.</param>
+/// <param name="Team">
+/// Team the objective judges. A team an objective <em>reasons about</em> has to be one the match
+/// declares — see <see cref="Sim.MatchRoster"/> — and <see cref="TriggerSystem.Validate"/> refuses
+/// one that is not, because an objective measuring a team that is not playing is measuring nothing.
+/// </param>
+/// <param name="TargetTeam">
+/// Team the objective is about, for the two kinds that measure the enemy —
+/// <see cref="ObjectiveKind.DestroyStructures"/> and <see cref="ObjectiveKind.DenyArea"/>. It is
+/// asked of the match the same way <paramref name="Team"/> is.
+/// </param>
 /// <param name="TargetCount">Units, structures or ticks required.</param>
 /// <param name="HoldTicks">Ticks the area must be held, for <see cref="ObjectiveKind.HoldArea"/>.</param>
 /// <param name="CentreX">Area centre X in millimetres.</param>

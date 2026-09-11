@@ -357,6 +357,9 @@ public sealed class ProbeRunner
             case "triggers":
                 Triggers(command);
                 break;
+            case "validate":
+                Validate(command);
+                break;
             case "messages":
                 Messages(command);
                 break;
@@ -372,7 +375,7 @@ public sealed class ProbeRunner
                     "surfaces, attributes, units, unit, count, routes, parts, model, visible, events, teams, bridge, " +
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
-                    "triggers, messages, objectives, expect");
+                    "triggers, messages, objectives, expect, validate");
         }
     }
 
@@ -3181,17 +3184,18 @@ public sealed class ProbeRunner
     /// The verdict, and which declared teams it was reached from: the outcome is simulation state,
     /// so this is the same answer a replay arrives at, and the sides still holding structures are
     /// the reading rather than a summary of it. A match that has ended says so here.
+    /// <para>
+    /// <b>A mission decides its own outcome, so it is named instead of the rule it replaces.</b>
+    /// When a mission is attached, <see cref="MissionSystem"/> is what settles the match and the
+    /// last-side-standing rule is not consulted at all — so the victory rule's sentence would be a
+    /// reason that did not decide this. It reads badly in both directions: a mission is lost by an
+    /// objective failing with every structure of both sides still standing, and it is won the same
+    /// way. The objectives that have been decided are printed with it, because "defeat" with no
+    /// reason is the line a reader cannot check.
+    /// </para>
     /// </summary>
     private static string DescribeOutcome(SimWorld world)
     {
-        string verdict = world.Outcome switch
-        {
-            GameOutcome.Victory => "victory — the player's side is the last one holding structures",
-            GameOutcome.Defeat => "defeat — the player's side holds no structures",
-            GameOutcome.Draw => "draw — no side holds any",
-            _ => "ongoing",
-        };
-
         MatchRoster roster = world.Roster;
         var standing = new List<string>();
 
@@ -3203,9 +3207,41 @@ public sealed class ProbeRunner
             }
         }
 
-        return standing.Count == 0
-            ? $"{verdict}; no declared team holds a structure"
-            : $"{verdict}; still holding structures: {string.Join(", ", standing)}";
+        string standingText = standing.Count == 0
+            ? "no declared team holds a structure"
+            : $"still holding structures: {string.Join(", ", standing)}";
+
+        string verdict = world.Mission is { } mission && world.Outcome != GameOutcome.Ongoing
+            ? $"{world.Outcome.ToString().ToLowerInvariant()} — decided by the objectives of " +
+              $"'{mission.Id}', not by the last side standing ({DescribeDecidedObjectives(world, mission)})"
+            : world.Outcome switch
+            {
+                GameOutcome.Victory => "victory — the player's side is the last one holding structures",
+                GameOutcome.Defeat => "defeat — the player's side holds no structures",
+                GameOutcome.Draw => "draw — no side holds any",
+                _ => "ongoing",
+            };
+
+        return $"{verdict}; {standingText}";
+    }
+
+    /// <summary>Which of a mission's objectives have been decided, and how: why the outcome is what it is.</summary>
+    private static string DescribeDecidedObjectives(SimWorld world, MissionDefinition mission)
+    {
+        ReadOnlySpan<ObjectiveState> states = world.Objectives;
+        var decided = new List<string>();
+
+        for (int i = 0; i < mission.Objectives.Count && i < states.Length; i++)
+        {
+            if (states[i].Status != ObjectiveStatus.Pending)
+            {
+                decided.Add($"#{i} {mission.Objectives[i].Kind} {states[i].Status.ToString().ToLowerInvariant()}");
+            }
+        }
+
+        return decided.Count == 0
+            ? "no objective has been decided"
+            : string.Join(", ", decided);
     }
 
     /// <summary>
@@ -3504,6 +3540,14 @@ public sealed class ProbeRunner
     /// true of it: a script that fires on the first tick by accident fails the run for the same
     /// reason and with the same sentence naming the trigger.
     /// </para>
+    /// <para>
+    /// <b>The same validator asks the objectives of that world, and that half is worse when it
+    /// answers.</b> An objective is a win condition, so one the map has already decided is the
+    /// mission rather than a scene in it — decided against the player it cannot be won, and decided
+    /// for them it is handed over before the first tick. The check covers both, and <c>validate</c>
+    /// asks the same question of a mission by id, which is what reads the campaign rather than the
+    /// match in progress.
+    /// </para>
     /// </summary>
     private void Triggers(ProbeCommand command)
     {
@@ -3584,7 +3628,65 @@ public sealed class ProbeRunner
             problems.Count == 0,
             problems.Count == 0
                 ? "every trigger waits on something that can happen, every scripted objective is completed by one, " +
-                  "and no condition is already true of the world the mission opens in"
+                  "and nothing in the mission — condition or objective — is already decided by the world it opens in"
+                : string.Join("; ", problems));
+    }
+
+    /// <summary>
+    /// <b>Is this mission one that can be won — asked of the mission rather than of the match
+    /// playing it.</b>
+    /// <para>
+    /// <c>triggers</c> records the same check for the mission a match is playing, which is the
+    /// question a mission in progress asks. This asks it of a mission by id as well, because the
+    /// missions most likely to be wrong are the ones nobody is playing yet: a mission is authored
+    /// once and played many times, and it is the author who needs to be told that an objective they
+    /// wrote is already decided by the map. Naming no id asks about the mission of the running
+    /// match, which is what a fixture carrying a purpose-built mission gives a script.
+    /// </para>
+    /// <para>
+    /// <b>Every complaint is printed before the verdict, in the validator's own words.</b> The
+    /// answer that matters here is not "no" but <em>why</em> — the objective, the count the world
+    /// answered with, and what that means for the mission — and a transcript that showed only the
+    /// check would be a transcript that hid the reason. The check is recorded, so a mission that
+    /// cannot be won fails the run rather than being a paragraph somebody reads past.
+    /// </para>
+    /// </summary>
+    private void Validate(ProbeCommand command)
+    {
+        const string usage = "validate [mission-id]";
+
+        string? id = command.Optional(0);
+
+        MissionDefinition? mission = id is null
+            ? _host.Simulation.World.Mission
+            : MissionCatalog.Find(id);
+
+        if (mission is null)
+        {
+            Emit(id is null
+                ? "query: validate: this match has no mission attached — start one with --mission <id>, or name one to check"
+                : $"query: validate: there is no mission '{id}' — usage: {usage}, and --mission-list prints the campaign");
+            return;
+        }
+
+        IReadOnlyList<string> problems = TriggerSystem.Validate(mission);
+
+        Emit(
+            $"query: validate: '{mission.Id}' — {ProbeFormat.Count(mission.Objectives.Count, "objective")}, " +
+            $"{ProbeFormat.Count(mission.Triggers.Count, "trigger")}, " +
+            $"{ProbeFormat.Count(mission.Roster.TeamsInPlay, "team")} in the match, " +
+            $"{ProbeFormat.Count(problems.Count, "problem")}");
+
+        for (int i = 0; i < problems.Count; i++)
+        {
+            Emit($"query:   problem    {problems[i]}");
+        }
+
+        RecordCheck(
+            $"'{mission.Id}' is a mission that can be won",
+            problems.Count == 0,
+            problems.Count == 0
+                ? "every trigger waits on something that can happen, and no objective is already decided by the world the mission opens in"
                 : string.Join("; ", problems));
     }
 

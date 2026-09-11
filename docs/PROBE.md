@@ -36,7 +36,12 @@ headquarters of one role thirty metres apart, one per power, each with the same 
 scene no match can contain, because a match is *between* powers and this is a demonstration *across*
 them — and `--mud-demo` stands a Σοβιετικοί, a Δυτικοί and a Κινέζοι tank at the near end of one
 lane each on ground that is grass until a script calls the weather down on it. See
-`tools/probe/armour.probe` and `tools/probe/mud.probe` below.
+`tools/probe/armour.probe` and `tools/probe/mud.probe` below. A sixth, `--objective-demo`, is not a
+fixture at all and is the one launch flag here that starts a *mission*: one whose objectives the
+world it opens in has already decided, wrong on purpose, because no mission the campaign ships is one
+and a validator whose refusals nothing can reach is a validator nobody can watch working. It is left
+a mission rather than a fixture deliberately — it has fog, a panel and a banner, and the banner is
+half of what it demonstrates. See `tools/probe/objectives.probe` below.
 
 **PowerShell does not wait for this executable.** The client is a `WinExe`, so `& $exe …`
 returns immediately and `$LASTEXITCODE` is empty. Use `Start-Process -Wait -PassThru` (as
@@ -132,13 +137,14 @@ shot out/frame-later.png
 A mission can now say *when* something happens — see `docs/ROADMAP.md` §8 and
 `Campaign/TriggerSystem` — and a script is the one thing in a mission that cannot be read off the
 world it produced: after the fact, a spawned force looks like a force and a revealed ridge looks
-like ground somebody walked over. These three commands answer it.
+like ground somebody walked over. These four commands answer it.
 
 | Command | Answer |
 |---|---|
-| `triggers` | the mission's whole script: every trigger in the order the simulation evaluates it, what it waits for, what it does, whether it has fired and **on which tick** — then the flags it has raised, and a check of the mission's own integrity, which fails the run when a trigger waits on something that can never happen **or is already true of the world the mission opens in** |
+| `triggers` | the mission's whole script: every trigger in the order the simulation evaluates it, what it waits for, what it does, whether it has fired and **on which tick** — then the flags it has raised, and a check of the mission's own integrity, which fails the run when a trigger waits on something that can never happen **or when anything in the mission — condition or objective — is already decided by the world it opens in** |
 | `messages` | what the mission has shown the player, oldest first, with the tick and how long ago |
 | `objectives` | every objective the mission is judged by: kind, status, primary or bonus, the progress behind it, and the numbers it is asking — the same state the state hash folds in |
+| `validate [mission-id]` | the mission's own integrity check on its own, with every complaint printed in the validator's words: with no id, the mission the running match is playing; with one, that mission of the campaign — **is this a mission that can be won** |
 
 `triggers` answers "did the second act of this mission happen at all", which is the failure a mission
 is most likely to ship: a trigger that exists and never fires. A transcript can read for forty lines
@@ -156,6 +162,25 @@ one tick run — and reports the ones already satisfied, naming the trigger and 
 answered with. A trigger that means it carries `DependsOnOpeningWorld`, which the transcript prints as
 an `opening` line under the trigger, because a dependency on the opening world is a thing a mission
 should be able to say rather than a thing a reader should have to infer.
+
+**The objectives are asked the same question of the same world, and they are not the same case.**
+A trigger that fires early is a scene in the wrong place. An objective is a win condition, so one the
+map has already decided *is* the mission: decided against the player it can never be won — a
+`DenyArea` whose circle the enemy already stands in has failed on the check that first asks it — and
+decided for them it is handed over before the first tick, which is a `HoldArea` the opening formation
+already meets, a stockpile or a tier the side starts with, a structure count of zero. The two are
+reported separately, because "a mission that cannot be won" and "an objective that completes with
+nothing done" are not the same complaint. **Neither is acknowledged**: unlike a trigger, an objective
+has no reading in which being already satisfied is the design, so both are refusals rather than
+reports, and the author moves the circle or changes the number.
+
+The question is asked through `MissionSystem.Verdict`, which is the evaluation the tick loop runs —
+not a second reading written for the validator, because a validator that disagreed with the game about
+what an objective means would be worse than no validator at all. `validate` prints every complaint and
+records the check, so a mission that cannot be won fails the probe's run rather than being a paragraph
+somebody reads past. No mission the campaign ships trips either half, which is the point of the check
+and also the reason its refusals need a fixture to be seen at all: see
+`tools/probe/objectives.probe` below.
 
 ### What the player would see
 
@@ -1397,19 +1422,20 @@ query:   #2 ambush           FIRED on tick 845 (42.3 s in)
 query:   #3 counterattack    FIRED on tick 845 (42.3 s in)
 query:   flags      flag 0 SET
 cmd: units western 10
-query:   slot   35 western Tank             team 2 at (x -143.0, z 0.0) m heading 0.0° health 264/320 target - building no
+query:   slot   35 western Tank             team 2 at (x -157.0, z 0.0) m heading 0.0° health 320/320 target - building no
+query:   slot   37 western Tank             team 2 at (x -143.0, z 0.0) m heading 0.0° health 292/320 target - building no
 cmd: exposure 0 -75 60
 query:   sight      the cell is visible to team 0
 cmd: tick 450
 cmd: triggers
 query: triggers: 6 triggers in 'm4_pass', 6 fired, at tick 1300
-query:   #4 first-gun        FIRED on tick 1090 (54.5 s in)
+query:   #4 first-gun        FIRED on tick 1137 (56.9 s in)
 query:       opening    the author declares this condition a fact about the world the mission opens in
-query:   #5 ambush-broken    FIRED on tick 1255 (62.8 s in)
+query:   #5 ambush-broken    FIRED on tick 1204 (60.2 s in)
 cmd: structures 2
 query: structures: 6 structures for team 2, tick 1300
 query:   slot   30 CommandCentre (Κέντρο Διοίκησης) at (x 30.0, z 200.0) m, cell 35,53 — whole, 5000 hit points
-query:   slot   50 AntiAirEmplacement (Αντιαεροπορικό Πυροβολείο) at (x 107.8, z 70.3) m, cell 43,39 — whole, 1200 hit points
+query:   slot   58 AntiAirEmplacement (Αντιαεροπορικό Πυροβολείο) at (x 107.8, z 70.3) m, cell 43,39 — whole, 1200 hit points
 cmd: objectives
 query: objectives: 2 objectives in 'm4_pass', outcome ongoing, at tick 1300
 query:   #0 DenyArea             pending  primary progress 0, hold 0
@@ -1420,7 +1446,7 @@ cmd: objectives
 query: objectives: 2 objectives in 'm4_pass', outcome victory, at tick 3800
 query:   #0 DenyArea             complete primary progress 0, hold 0
 query:   #1 Scripted             complete primary progress 0, hold 0
-check: PASS 'the mission's script fires when it means to' — every trigger waits on something that can happen, every scripted objective is completed by one, and no condition is already true of the world the mission opens in
+check: PASS 'the mission's script fires when it means to' — every trigger waits on something that can happen, every scripted objective is completed by one, and nothing in the mission — condition or objective — is already decided by the world it opens in
 probe: 60 commands, 60 ok, 0 errors, 0 checks failed
 ```
 
@@ -1429,12 +1455,12 @@ Six facts, and each one is a different half of the layer:
 - **the script is printed before it runs**, with what each trigger waits for and what it does, so a
   reader can check the mission against its own writing rather than against its consequences;
 - **every trigger fires, in order, and the ticks say when**: preparation on the first tick, the
-  warning on 400, the ambush and the counter-attack on the *same tick* 845, the first gun on 1090,
-  the ambush broken on 1255. The two on 845 are the flag doing its work — the list's order is the
+  warning on 400, the ambush and the counter-attack on the *same tick* 845, the first gun on **1137**,
+  the ambush broken on **1204**. The two on 845 are the flag doing its work — the list's order is the
   order of the events, so a trigger can raise a flag its successor reads on the tick it fired;
 - **each firing has a visible consequence, and the transcript shows it rather than asserting it**:
   two guns standing on the rock at tick 5 that were not there at tick 0, a pass that is not visible
-  to team 0 and then is, a Western tank on the flank at `(x -143.0, z 0.0) m` that the spawn put
+  to team 0 and then is, Western armour on the flank at `(x -157.0, z 0.0) m` that the spawn put
   there, an objective that reads `pending` and then `complete`;
 - **the reveal is a disc and the number is the design**: at tick 400 the pass is watched and the
   rock fifty metres above it is *not*, because the warning's disc is forty-five metres across — so
@@ -1451,4 +1477,121 @@ Six facts, and each one is a different half of the layer:
 
 The one thing that *is* the script's is the march itself, through the same `order` command a click
 issues, because the computer does not play team 0 — a probe cannot make a player, so it plays one.
+
+**The two ticks in bold above were stale, and this is what that cost.** The example used to record
+the first gun on 1090 and the ambush broken on 1255, and by the time anyone looked the mission fired
+them on 1137 and 1204 — thirty and fifty ticks of drift, put there by commits landed after the trigger
+layer rather than by it, and noticed and left. A worked example whose numbers no longer come out of the
+command it quotes is worse than no example: the next reader compares their own run against it, finds a
+difference, and has no way to tell whether they have found a bug in the game or a fossil in the doc.
+The run this section now quotes is `artifacts/probe/triggers.txt`, and the numbers in it are read from
+that file rather than remembered — including the two unit lines, whose slots had drifted as well.
+
+## Worked example: is this a mission that can be won?
+
+The failure a mission validator exists for is not the one a player notices. A trigger that never fires
+is a missing scene; an **objective the world has already decided** is the mission itself, and one of
+the two answers is fatal: a `DenyArea` whose circle the enemy is standing in has failed on the check
+that first asks it, so the mission is lost before it is fought and its author finds out by losing.
+The other answer is quieter — a hold the opening formation already meets, a stockpile or a tier the
+side starts with — and it hands the player an objective they have done nothing for.
+
+Both are facts about the map the scenario lays out, which is why the validator builds that world —
+the seed, the layout and the mission, not one tick run — and asks every objective of it through the
+mission system's own evaluation rather than a second reading of its own.
+
+**No mission the campaign ships trips either check, so the check needs content to be seen working.**
+That is what `--objective-demo` is: a purpose-built mission whose objectives are already decided,
+which is wrong on purpose and therefore lives beside the launch flags rather than in the campaign.
+`tools/probe/objectives.probe` runs against it and is trimmed here (`…` marks lines cut out of the
+middle):
+
+```
+cmd: validate
+query: validate: 'objective_demo' — 4 objectives, 0 triggers, 2 teams in the match, 3 problems
+query:   problem    objective 1 (DenyArea) has already failed in the world the mission opens in — team 2 already has 12 units inside the circle and 4 of them fail it — so it fails on the first check and the mission is unwinnable: nothing the player does can recover it.
+query:   problem    objective 2 (ReachTechTier) is already satisfied by the world the mission opens in — team 0 already has tech tier 1 and the objective asks for 1 — so it completes with nothing done, which is an authoring mistake rather than a design.
+query:   problem    objective 3 (HoldArea) is already satisfied by the world the mission opens in — team 0 already has 12 units inside the circle and the hold asks for 6 — so it completes with nothing done, which is an authoring mistake rather than a design.
+fail: FAIL ''objective_demo' is a mission that can be won' — objective 1 (DenyArea) has already failed…
+cmd: objectives
+query: objectives: 4 objectives in 'objective_demo', outcome ongoing, at tick 0
+query:   #0 DestroyStructures    pending  primary progress 0, hold 0
+query:   #1 DenyArea             pending  primary progress 0, hold 0
+query:       numbers    team 0, team 2 must not get 4 units into (x 30.0, z 200.0) m within 150.0 m, by tick 3600 (180.0 s in)
+…
+cmd: tick 20
+ok: ran 20 ticks (1.0 s), simulation now at tick 20
+cmd: objectives
+query: objectives: 4 objectives in 'objective_demo', outcome defeat, at tick 20
+query:   #0 DestroyStructures    pending  primary progress 0, hold 0
+query:   #1 DenyArea             failed   primary progress 12, hold 0
+query:   #2 ReachTechTier        complete bonus progress 1, hold 0
+query:   #3 HoldArea             pending  bonus progress 12, hold 10
+cmd: teams
+query:   team 0 soviet   16 alive, 4 structures
+query:   team 2 western  16 alive, 4 structures
+query:   outcome    defeat — decided by the objectives of 'objective_demo', not by the last side standing (#1 DenyArea failed, #2 ReachTechTier complete); still holding structures: team 0, team 2
+…
+cmd: hud on
+cmd: focus -140 -120
+cmd: zoom 300
+cmd: settle 20
+cmd: shot artifacts/probe/objectives-defeat.png
+ok: shot …\artifacts\probe\objectives-defeat.png — 1280x720, 542.0 kB, 3382 instances in 696 draw calls, tick 20
+cmd: hud off
+cmd: validate m1_bridgehead
+query: validate: 'm1_bridgehead' — 2 objectives, 0 triggers, 3 teams in the match, 0 problems
+check: PASS ''m1_bridgehead' is a mission that can be won' — every trigger waits on something that can happen, and no objective is already decided by the world the mission opens in
+cmd: validate m2_ridge
+check: PASS ''m2_ridge' is a mission that can be won' — …
+cmd: validate m3_industry
+check: PASS ''m3_industry' is a mission that can be won' — …
+cmd: validate m4_pass
+query: validate: 'm4_pass' — 2 objectives, 6 triggers, 2 teams in the match, 0 problems
+check: PASS ''m4_pass' is a mission that can be won' — …
+probe: 16 commands, 16 ok, 0 errors, 1 checks failed
+```
+
+**This run is supposed to end with one check failed**, and that is the instrument rather than a fault:
+the failing check is the validator refusing the purpose-built mission, with the reason printed above
+it. A run of this script that passed would mean the check had stopped working.
+
+What the transcript says, one line at a time:
+
+- **the complaints are the two severities, and they are worded differently on purpose.** `#1` is the
+  unwinnable one: *"it fails on the first check and the mission is unwinnable"*, with the count the
+  map answered and the number of them that fail it. `#2` and `#3` are the quiet one: *"it completes
+  with nothing done, which is an authoring mistake rather than a design"*. `#2` is the trap worth
+  reading twice — **every side is created at tier 1**, so an objective asking for tier 1 is already
+  met, and it reads exactly like a target the author thought was ahead;
+- **`#0` is said nothing about**, and it is the control: two Western positions destroyed is a mission,
+  and the world the mission opens in has destroyed none. A validator that said no to everything would
+  be as useless as one that said nothing;
+- **the numbers are the world's, not the mission's.** The denial says `team 2 must not get 4 units
+  into (x 30.0, z 200.0) m within 150.0 m`, and the circle is the enemy's own camp: the same
+  coordinates the Δυτικοί open on, which is why twelve of them are inside it before the first tick;
+- **`tick 20` is what "unwinnable" means to a player rather than to a validator.** Ten ticks past the
+  first objective check, `#1` reads `failed`, `#2` reads `complete` — it was satisfied from the
+  beginning — and the outcome is `defeat` with **sixteen units and four structures alive on each
+  side**: nothing was fought, nothing was lost, and the mission is over. This is also why `teams`
+  names the mission rather than the victory rule: the last-side-standing rule did not decide this and
+  its sentence would have been a reason that does not apply;
+- **the shot the script takes is that defeat as the player sees it**, and it is worth reading twice.
+  The panel in it says sixteen units and four structures on each side and `12/4 εχθρικές μονάδες
+  μέσα` against the denial; the banner across the middle says *Η πλευρά σας διαλύθηκε* — the victory
+  rule's own story, told about an outcome the objectives decided. That is the same defect `teams`
+  had, in the copy a player actually reads, and it is **reported rather than fixed here**: the words
+  a mission's defeat should use are the interface's decision to make, and this transcript is the
+  evidence for it. `artifacts/probe/objectives-defeat.png`;
+- **the four missions the campaign ships are asked the same question and all four hold.** That is the
+  half a validator lives or dies by: it is the first honest run of the check against content that
+  exists, and a check that fired on the campaign would be a check nobody keeps. `m4_pass` is the one
+  worth reading — its denial is on the road out of the valley, 570 m from where the Δυτικοί open, so
+  the same objective that is fatal in the demo mission is a mission in the shipped one.
+
+The other half of the same check — an objective about a team the match does not declare, which
+two-faction matches made expressible — is not in this transcript: it needs a mission authored for one
+roster and fought against another, and the proof of it is
+`ObjectiveValidationTests.AnObjectiveAboutATeamTheMatchDoesNotDeclareIsRefused`, which validates one
+mission twice, once under the skirmish it was written for and once under `MatchRoster.Rivals`.
 

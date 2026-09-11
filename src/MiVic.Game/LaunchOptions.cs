@@ -196,6 +196,22 @@ public sealed record LaunchOptions
     public bool MudDemo { get; init; }
 
     /// <summary>
+    /// Starts the demonstration mission: one whose objectives the world it opens in has already
+    /// decided, because no mission the campaign ships is one. One objective is failed before the
+    /// first tick, which makes the mission unwinnable, and two are satisfied before it, which makes
+    /// them free. Read with the probe's <c>validate</c>, <c>objectives</c> and <c>teams</c> queries.
+    /// <para>
+    /// <b>A mission rather than a fixture, and deliberately.</b> It is a game — fog, a panel, a
+    /// banner — and the banner is half of what it demonstrates: the mission is lost on the tenth
+    /// tick with both armies still standing, and a fixture would have suppressed the very thing the
+    /// demonstration is of. It is wrong on purpose, which is also why it is here rather than in
+    /// <c>MissionCatalog</c>: the campaign is the content that has to pass the validator, and this
+    /// is the content that proves the validator is still looking.
+    /// </para>
+    /// </summary>
+    public bool ObjectiveDemo { get; init; }
+
+    /// <summary>
     /// Names one surface for the ground fixture to frame instead of the most varied
     /// ground: "Mud", "Sand", "Rock" and so on. A treatment is judged from a frame that
     /// is mostly the surface it belongs to, which the varied frame is not.
@@ -242,6 +258,7 @@ public sealed record LaunchOptions
           --alliance-demo       Δύο σύμμαχοι σε εμβέλεια, με εχθρό πιο πέρα
           --armour-demo         Ίδιο όπλο σε τρία επιτελεία, ένα ανά παράταξη
           --mud-demo            Δύο σχολές στην ίδια λάσπη, με Έλεγχο Καιρού
+          --objective-demo      Αποστολή που ο χάρτης έχει ήδη κρίνει (έλεγχος στόχων)
           --flight-demo         Αεροσκάφη σε πτήση, για την κατεύθυνση της πλώρης
           --render-audio <dir>  Εξαγωγή θεμάτων μουσικής σε αρχεία WAV
           --render-sfx <dir>    Εξαγωγή ηχητικών εφέ σε αρχεία WAV
@@ -515,6 +532,13 @@ public sealed record LaunchOptions
                     // Ten seconds, by which time the Σοβιετικοί column has pulled well clear of the
                     // Δυτικοί one and neither has reached the end of the lane.
                     options = options with { MudDemo = true, ShowHelp = false, ScreenshotFrame = 220 };
+                    break;
+
+                case "--objective-demo":
+                    // A mission rather than a scene, and not a fixture: there is nothing to frame
+                    // for a screenshot, and the demonstration is a transcript of what the map had
+                    // already decided before the first tick — plus the banner it raises.
+                    options = options with { ObjectiveDemo = true, ShowHelp = false };
                     break;
 
                 case "--render-audio":

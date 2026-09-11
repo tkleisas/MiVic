@@ -391,26 +391,34 @@ public static class TriggerSystem
     }
 
     /// <summary>
-    /// <b>Everything wrong with a mission's script that can be seen without running it, as a list
-    /// of complaints; empty means the script is at least self-consistent.</b>
+    /// <b>Everything wrong with a mission that can be seen without running it, as a list of
+    /// complaints; empty means the mission is at least self-consistent.</b>
     /// <para>
-    /// It exists for one failure above all others: <em>a trigger that is authored and can never
-    /// fire</em>. This project has shipped a volcano line above every cell, a sand band below the
-    /// mud line and an entire mud mechanic that was inert, and a mission whose second act never
-    /// happens is that same bug wearing a script. What can be checked statically is checked here —
-    /// a flag nothing raises, an objective nothing completes, a denial with no clock to be decided
-    /// by, a completion pointing at an objective that does not exist, a condition counting on a
-    /// team that is not in the match.
+    /// It exists for one failure above all others: <em>something a mission is made of that is
+    /// authored and can never happen</em>. This project has shipped a volcano line above every
+    /// cell, a sand band below the mud line and an entire mud mechanic that was inert, and a
+    /// mission whose second act never happens is that same bug wearing a script. What can be
+    /// checked statically is checked here — of the script, a flag nothing raises, an objective
+    /// nothing completes, a denial with no clock to be decided by, a completion pointing at an
+    /// objective that does not exist, a condition counting on a team that is not in the match; and
+    /// of the objectives, a scripted objective no trigger completes and a denial with no deadline,
+    /// which are the two kinds that can never be satisfied by play.
     /// </para>
     /// <para>
-    /// <b>And the failure from the other end, which is the same bug facing the other way: a trigger
-    /// that fires before its author meant it to.</b> A condition that is already true of the world
-    /// the mission opens in fires on the first tick whatever the player does, which is a message
-    /// about the first gun falling arriving before the first shot — see
-    /// <see cref="CheckTheOpeningWorld"/>, which asks every condition of that world and reports the
-    /// ones that are already satisfied. A mission that means it says so with
-    /// <see cref="TriggerDefinition.DependsOnOpeningWorld"/>, which is what makes this a check with
+    /// <b>And the failure from the other end, which is the same bug facing the other way:
+    /// something that is decided before the player has touched it.</b> A condition that is already
+    /// true of the world the mission opens in fires on the first tick whatever the player does,
+    /// which is a message about the first gun falling arriving before the first shot — see
+    /// <see cref="CheckTheOpeningWorld"/>. A mission that means it says so with
+    /// <see cref="TriggerDefinition.DependsOnOpeningWorld"/>, which is what makes that a check with
     /// an opt-out rather than a refusal.
+    /// </para>
+    /// <para>
+    /// <b>The objectives are asked the same question of the same world, and they are not the same
+    /// case.</b> A trigger that fires early is a scene in the wrong place; an objective the world
+    /// has already decided is the mission itself — and if it is decided <em>against</em> the player
+    /// the mission cannot be won at all. See <see cref="CheckTheOpeningObjectives"/>, which reports
+    /// the two answers separately and acknowledges neither.
     /// </para>
     /// </summary>
     public static IReadOnlyList<string> Validate(MissionDefinition mission)
@@ -513,14 +521,6 @@ public static class TriggerSystem
             }
         }
 
-        // The second half of the script's integrity, and the only half that needs a world: a
-        // condition that is already true before anything has happened. A mission with no script
-        // has no script to ask it of, so it does not pay for the world.
-        if (mission.Triggers.Count > 0)
-        {
-            CheckTheOpeningWorld(mission, problems);
-        }
-
         // A scripted objective is completed by the mission and by nothing else, so a mission that
         // ships one and never completes it has shipped an objective that cannot be satisfied —
         // which loses the mission however well it is played.
@@ -544,10 +544,100 @@ public static class TriggerSystem
                     $"objective {i} denies an area and has no deadline: nothing could ever complete it, " +
                     "and the mission would be lost by the time limit however well it was fought.");
             }
+
+            // The mirror of the trigger layer's question about the match, and the case two-faction
+            // matches made expressible: an objective whose own evaluation reads a team that is not
+            // playing is an objective about nothing. Before a match could declare its cast, every
+            // mission was fought by the same three teams and this could not be written down wrong.
+            int reads = TheTeamItReads(objective);
+
+            if (reads >= 0 && !mission.Roster.IsInPlay(reads))
+            {
+                problems.Add($"objective {i} {NothingToMeasure(objective, reads)}");
+            }
+        }
+
+        // The half that needs a world, asked last: what the map the mission opens on has already
+        // decided. Both layers are asked of one world, built once — a condition that is already true
+        // fires on the first tick, and an objective that is already decided is worse than that. A
+        // mission with neither is a mission with nothing to ask, and does not pay for the world.
+        if (mission.Triggers.Count > 0 || mission.Objectives.Count > 0)
+        {
+            SimWorld opening = OpeningWorld(mission);
+
+            CheckTheOpeningWorld(mission, opening, problems);
+            CheckTheOpeningObjectives(mission, opening, problems);
         }
 
         return problems;
     }
+
+    /// <summary>
+    /// <b>The team an objective reasons about: the one whose units, structures or stockpile its own
+    /// evaluation reads.</b>
+    /// <para>
+    /// It is asked of the objective rather than of a field, because which team an objective is
+    /// <em>about</em> is a fact about the kind: the two kinds that measure the enemy —
+    /// <see cref="ObjectiveKind.DestroyStructures"/> counts the losses of
+    /// <see cref="ObjectiveDefinition.TargetTeam"/> and <see cref="ObjectiveKind.DenyArea"/> counts
+    /// that team's units in the circle — where every other kind measures
+    /// <see cref="ObjectiveDefinition.Team"/>. The team an objective is merely <em>judged</em> for
+    /// is not asked about: a <see cref="ObjectiveKind.Scripted"/> objective reads no team at all, so
+    /// a stray one in it is a field nothing consults rather than an objective that can never happen.
+    /// </para>
+    /// </summary>
+    /// <returns>The team slot, or -1 for an objective whose evaluation reads no team.</returns>
+    private static int TheTeamItReads(ObjectiveDefinition objective) => objective.Kind switch
+    {
+        ObjectiveKind.DestroyStructures => objective.TargetTeam,
+        ObjectiveKind.DenyArea => objective.TargetTeam,
+        ObjectiveKind.Scripted => -1,
+        _ => objective.Team,
+    };
+
+    /// <summary>
+    /// Why an objective that reads a team the match does not declare is not an objective, in the
+    /// words of what it asks that team for.
+    /// <para>
+    /// One sentence per kind rather than one for all of them, because the consequence is not the
+    /// same: a count that can never rise is an objective that can never be completed, and the very
+    /// same absence is a denial that can never be <em>failed</em> — it is completed by its own
+    /// deadline with the player having done nothing at all.
+    /// </para>
+    /// </summary>
+    private static string NothingToMeasure(ObjectiveDefinition objective, int team) => objective.Kind switch
+    {
+        ObjectiveKind.DestroyStructures =>
+            $"counts the structures lost by team {team}, which this mission's match does not declare: " +
+            "a team that is not playing loses nothing, so the objective can never be completed.",
+
+        ObjectiveKind.DenyArea =>
+            $"denies the area to team {team}, which this mission's match does not declare: " +
+            "a team that is not playing can never arrive, so the objective can never be failed — " +
+            "its deadline completes it with nothing done, and the roster decides the mission.",
+
+        ObjectiveKind.HoldArea =>
+            $"holds the area with team {team}, which this mission's match does not declare: " +
+            "a team that is not playing stands nowhere, so the objective can never be completed.",
+
+        ObjectiveKind.SurviveTicks =>
+            $"survives with team {team}, which this mission's match does not declare: " +
+            "a team that is not playing stands in nothing, so the objective fails on its first check.",
+
+        ObjectiveKind.ProtectCommandCentre =>
+            $"protects the command centre of team {team}, which this mission's match does not declare: " +
+            "a team that is not playing has no command centre, so the objective fails on its first check.",
+
+        ObjectiveKind.AccumulateMaterials =>
+            $"stockpiles for team {team}, which this mission's match does not declare: " +
+            "a team that is not playing earns nothing, so the objective can never be completed.",
+
+        ObjectiveKind.ReachTechTier =>
+            $"researches for team {team}, which this mission's match does not declare: " +
+            "a team that is not playing researches nothing, so the objective can never be completed.",
+
+        _ => $"asks team {team}, which this mission's match does not declare.",
+    };
 
     /// <summary>The condition half of <see cref="Validate"/>, one kind at a time.</summary>
     private static void CheckCondition(
@@ -639,7 +729,9 @@ public static class TriggerSystem
     /// true fires perfectly well, in the opening seconds, where its author is looking at
     /// something else — "the first gun has been silenced" arriving before the first shot. Nothing
     /// static can see it, because the answer is a fact about the map the scenario lays out, which
-    /// is why this is the one check in the validator that builds a world.
+    /// is why this is one of the two checks in the validator that need a world — and why the world
+    /// it is handed is the same one <see cref="CheckTheOpeningObjectives"/> asks, built once for
+    /// both.
     /// </para>
     /// <para>
     /// <b>Every condition but the clock is asked, and the sweep is deliberately not a list of the
@@ -666,10 +758,8 @@ public static class TriggerSystem
     /// the player does with it.
     /// </para>
     /// </summary>
-    private static void CheckTheOpeningWorld(MissionDefinition mission, List<string> problems)
+    private static void CheckTheOpeningWorld(MissionDefinition mission, SimWorld opening, List<string> problems)
     {
-        SimWorld opening = OpeningWorld(mission);
-
         for (int i = 0; i < mission.Triggers.Count; i++)
         {
             TriggerDefinition trigger = mission.Triggers[i];
@@ -691,6 +781,138 @@ public static class TriggerSystem
                 "DependsOnOpeningWorld = true.");
         }
     }
+
+    /// <summary>
+    /// <b>The same question asked of the objectives, and it is the worse of the two failures when
+    /// the answer is no.</b>
+    /// <para>
+    /// A trigger that fires early is a scene in the wrong place — a message about the first gun
+    /// falling arriving before the first shot. An objective is a win condition, so an objective the
+    /// world has already decided is the mission itself, and there is no playing around it. The two
+    /// answers are reported separately because they are not the same severity:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><b>Already failed</b> — a <see cref="ObjectiveKind.DenyArea"/> whose circle the denied
+    /// team already stands in is lost on the check that first asks it. The mission is unwinnable,
+    /// and the author finds out by losing, which is the worst thing that can be shipped in this
+    /// whole campaign layer.</item>
+    /// <item><b>Already satisfied</b> — a hold the opening formation already meets, a stockpile or
+    /// a tier the side starts with, a structure count of zero. The objective completes with
+    /// nothing done, which is an authoring mistake rather than a design: it is not a mission the
+    /// player cannot win, it is a mission the player wins for free.</item>
+    /// </list>
+    /// <para>
+    /// <b>Every kind is asked, and the sweep is not a list of the kinds known to be able to be
+    /// decided at tick zero</b>, for the reason the condition sweep gives: a list of the traps
+    /// somebody happened to notice goes stale the day a kind is added. The kinds that cannot be
+    /// decided <em>for</em> the player are asked rather than excused, and asking them is what says
+    /// they cannot: a scripted objective is decided by the mission and by nothing else, and a team
+    /// that is playing opens with its base standing, so no survival objective of its is already
+    /// met. What the sweep does find against those two is the other answer — a team the match does
+    /// not declare stands in nothing and owns no command centre, so its survival objective fails on
+    /// the check that first asks it.
+    /// </para>
+    /// <para>
+    /// <b>Neither answer is acknowledged, and that is different from the trigger layer on
+    /// purpose.</b> <see cref="TriggerDefinition.DependsOnOpeningWorld"/> exists because a script
+    /// legitimately branches on the world it opens in — "the force you start with is weak, and the
+    /// mission says so" is a scene. An objective has no such reading: "you already hold this" is
+    /// not a way to open a mission, it is an objective that has been handed over, and an
+    /// acknowledgement would be a way of shipping a mission that cannot be won. So both answers are
+    /// refusals, and the author's remedy is to move the circle or change the number.
+    /// </para>
+    /// <para>
+    /// The question is <see cref="MissionSystem.Verdict"/> and the sentence is
+    /// <see cref="AnsweredByTheOpeningWorld(SimWorld, ObjectiveDefinition)"/> — the game's own
+    /// evaluation, and the numbers the world actually answered with, so that a validator cannot
+    /// disagree with the match about what an objective means.
+    /// </para>
+    /// </summary>
+    private static void CheckTheOpeningObjectives(
+        MissionDefinition mission,
+        SimWorld opening,
+        List<string> problems)
+    {
+        for (int i = 0; i < mission.Objectives.Count; i++)
+        {
+            ObjectiveDefinition objective = mission.Objectives[i];
+
+            // A team slot the simulation does not have cannot be asked about: an objective's own
+            // evaluation indexes the team table, and the complaint has already been made above —
+            // the roster does not declare a team that does not exist. The sweep stops there rather
+            // than asking a world a question it would throw on.
+            if ((uint)TheTeamItReads(objective) >= (uint)SimConstants.TeamCount)
+            {
+                continue;
+            }
+
+            OpeningVerdict verdict = MissionSystem.Verdict(opening, objective);
+
+            if (verdict == OpeningVerdict.Failed)
+            {
+                problems.Add(
+                    $"objective {i} ({objective.Kind}) has already failed in the world the mission opens " +
+                    $"in — {AnsweredByTheOpeningWorld(opening, objective)} — so it fails on the first check " +
+                    "and the mission is unwinnable: nothing the player does can recover it.");
+            }
+            else if (verdict == OpeningVerdict.Satisfied)
+            {
+                problems.Add(
+                    $"objective {i} ({objective.Kind}) is already satisfied by the world the mission opens " +
+                    $"in — {AnsweredByTheOpeningWorld(opening, objective)} — so it completes with nothing " +
+                    "done, which is an authoring mistake rather than a design.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// What the opening world answers about an objective, in the words of what the objective asks.
+    /// <para>
+    /// The numbers are measured rather than repeated, the same way the condition half of this
+    /// sentence is: "already decided" is a fact about a map, and the line exists to show which fact
+    /// decided it — an author who asked for a hold of six against a formation that already stands
+    /// in the circle is looking at the difference between their wish and the layout. Whether the
+    /// objective is decided at all is <see cref="MissionSystem.Verdict"/>'s answer and not this
+    /// one's: this is the sentence, not the verdict.
+    /// </para>
+    /// </summary>
+    private static string AnsweredByTheOpeningWorld(SimWorld world, ObjectiveDefinition objective)
+        => objective.Kind switch
+        {
+            ObjectiveKind.DestroyStructures =>
+                $"team {objective.TargetTeam} has lost {world.TeamRef(objective.TargetTeam).StructuresLost} " +
+                $"structures and the objective asks for {objective.TargetCount}",
+
+            ObjectiveKind.HoldArea =>
+                $"team {objective.Team} already has " +
+                $"{world.CountUnitsInArea(objective.Team, objective.CentreX, objective.CentreZ, objective.RadiusMm)} " +
+                $"units inside the circle and the hold asks for {objective.TargetCount}",
+
+            // The denial's own numbers read downwards rather than upwards: what fails it is the
+            // denied team being *in* the circle, so the count is measured against the number of
+            // them that fail it rather than against a number that would satisfy it.
+            ObjectiveKind.DenyArea =>
+                $"team {objective.TargetTeam} already has " +
+                $"{world.CountUnitsInArea(objective.TargetTeam, objective.CentreX, objective.CentreZ, objective.RadiusMm)} " +
+                $"units inside the circle and {objective.TargetCount} of them fail it",
+
+            ObjectiveKind.SurviveTicks =>
+                $"team {objective.Team} stands in {world.CountStructures(objective.Team)} structures",
+
+            ObjectiveKind.ProtectCommandCentre =>
+                $"team {objective.Team} has " +
+                $"{world.CountStructures(objective.Team, UnitKind.CommandCentre)} command centres",
+
+            ObjectiveKind.AccumulateMaterials =>
+                $"team {objective.Team} starts with {world.TeamRef(objective.Team).Materials} materials " +
+                $"and the objective asks for {objective.MaterialsTarget}",
+
+            ObjectiveKind.ReachTechTier =>
+                $"team {objective.Team} already has tech tier {world.TeamRef(objective.Team).TechTier} " +
+                $"and the objective asks for {objective.TierTarget}",
+
+            _ => objective.Kind.ToString(),
+        };
 
     /// <summary>
     /// What the opening world answers, in the words of the condition it was asked.
@@ -732,12 +954,12 @@ public static class TriggerSystem
     /// <b>The world a mission opens in: the scenario laid out, the mission attached, and not one
     /// tick run.</b>
     /// <para>
-    /// It is rebuilt here rather than handed in, because the question it answers — "is this
-    /// condition already true" — is a property of the mission rather than of a match: the probe
-    /// asks it of a world that is already forty seconds old, and a condition cannot be "already
-    /// true" of a world that has been played. The layout is a pure function of the mission's seed
-    /// and its definition, both of which the mission carries with it, so this is the same world
-    /// the player is handed, rebuilt.
+    /// It is rebuilt here rather than handed in, because the question it answers — "has the world
+    /// already decided this condition, or this objective" — is a property of the mission rather
+    /// than of a match: the probe asks it of a world that is already forty seconds old, and neither
+    /// a condition nor an objective can be "already decided" by a world that has been played. The
+    /// layout is a pure function of the mission's seed and its definition, both of which the
+    /// mission carries with it, so this is the same world the player is handed, rebuilt.
     /// </para>
     /// <para>
     /// The capacity is the world's own maximum, which is far more than any mission's opening force
