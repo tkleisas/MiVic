@@ -234,6 +234,38 @@ worth checking when this is tuned. And a Soviet vehicle that is light *and* chea
 to lose something else, or the mobility is free; the obvious place is survivability, which is what
 the armour figure already says, so the temptation to soften it elsewhere should be resisted.
 
+**Built.** Armour is a permille on the damage a hit does, per faction and per role, and it composes
+with cover in one documented function that every damage path calls (`DamageRules`). The figures, in
+permille and as *what a hit keeps*:
+
+| | structures | vehicles | ground pressure | catalogue speed |
+|---|---|---|---|---|
+| Σοβιετικοί | **720** | 970 | 750 | same role figure as everyone |
+| Δυτικοί | 840 | **850** | 1 100 | same role figure as everyone |
+| Κινέζοι | 930 | 960 | 1 250 | same role figure as everyone |
+
+The role figures multiply those and run both ways, which is what makes "a fact about the role rather
+than about its owner" a claim the data can carry: a command centre is 850 because it is the biggest
+building in the game, a nuclear plant 800 because a reactor is a containment ring and the power
+plant it upgrades is a shed, a radar station 1 050 because the catalogue already called it
+deliberately fragile, and an aircraft 1 100 because an airframe is not armour. A man on foot carries
+neither figure: he is not plated, and his protection is the ground he stands on.
+
+**The rasputitsa needed no new numbers, but it did need one that was doing nothing.** Ground
+pressure was already per-faction and mud already cost a heavier mover more — except that nothing on
+the *movement* path read the cost, so it steered a route and never set a speed, and a Σοβιετικοί and
+a Δυτικοί column crossed the same bog at the same rate. Turning that cost into the per-tick step
+(`TerrainLayer.SpeedPermilleAt`, read by `MovementSystem`) is the whole change: in mud a Σοβιετικοί
+tank keeps 462 ‰ of its speed where a Δυτικοί one keeps 355 ‰, and on grass the two are identical —
+which is the design, because a faction that is faster everywhere has not bought mobility, it has
+bought a better tank. `tools/probe/mud.probe` lays the mud with the weather ability and measures it:
+38.7 m against 23.2 m in ten seconds, same lane length, same order, same catalogue speed.
+
+The opposite orderings are pinned as relations rather than as numbers in `ArmourTests`, and
+`tools/probe/armour.probe` shows the same 45-damage shell arriving as 27, 32 and 35 on three
+headquarters of one role. Both golden hashes moved; the mission and skirmish *starting* hashes did
+not, because armour is a property of a role and an owner rather than a field of state.
+
 ## 7. Alliances that move
 
 Alliances are currently fixed when the scenario is built. They should be **dynamic, and able to change

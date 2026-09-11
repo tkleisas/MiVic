@@ -31,7 +31,12 @@ has, and `--detection-demo`, which lays a defensive post, a radar and a base up 
 column with a tank held at 190 m and a Καταδρομέας walking down it — see
 `tools/probe/detection.probe` below for what that one is for. A third, `--alliance-demo`, puts two
 allied tanks inside each other's killing range with an enemy further out, because no match puts them
-there: see `tools/probe/alliance-demo.probe`.
+there: see `tools/probe/alliance-demo.probe`. Two more exist for armour: `--armour-demo` lays three
+headquarters of one role thirty metres apart, one per power, each with the same gun beside it — the
+scene no match can contain, because a match is *between* powers and this is a demonstration *across*
+them — and `--mud-demo` stands a Σοβιετικοί, a Δυτικοί and a Κινέζοι tank at the near end of one
+lane each on ground that is grass until a script calls the weather down on it. See
+`tools/probe/armour.probe` and `tools/probe/mud.probe` below.
 
 **PowerShell does not wait for this executable.** The client is a `WinExe`, so `& $exe …`
 returns immediately and `$LASTEXITCODE` is empty. Use `Start-Process -Wait -PassThru` (as
@@ -105,8 +110,9 @@ shot out/frame-later.png
 | `surfaces` | a census of every `TerrainType` on the map, **including the types no cell received** |
 | `attributes <x> <z>` | what the ground is at a cell: surface, height against the water line, vegetation, moisture, aspect, landform, flags, cover and movement cost for each movement class |
 | `units [faction\|team] [limit]` | one line per live entity: slot, faction, kind, team, position, heading, health, target, whether it is a building |
-| `unit <slot>` | the same in detail: move goal and distance to go, path state, what it is attacking and from how far, cooldown, morale, distance travelled, construction, and whether the client is drawing it |
+| `unit <slot>` | the same in detail: move goal and distance to go, path state, what it is attacking and from how far, cooldown, morale, distance travelled, construction, whether the client is drawing it — and **what it is made of and what the ground under it is doing to it**, which are the two numbers that decide how a fight and a march go |
 | `count <kind>` | how many of a role are alive, per faction |
+| `armour <kind> <x> <z> [damage]` | the composition rule for one role at one cell, per faction: the ground's cover, then the role's own armour times the owner's, and the damage a hit of that size is left with — the table the `events` stream is checked against |
 | `bridge <x> <z> [team] [build]` | whether a crossing at that cell would be accepted, the reason when it would not, the span it would cover, what it costs and how long the work takes — and with `build`, the order that starts it |
 | `bridges` | every crossing on the map: the cells it spans, how much of it the work has reached, how many of its blocks still stand, whether it has been cut, and the tick it will be whole on |
 | `structure <kind> <x> <z> [team] [build]` | whether a structure could be raised at that cell, the reason when it could not, the cell it would stand on, what it costs and how long it takes to rise — and with `build`, the order that raises it |
@@ -151,6 +157,21 @@ itself or asks `bridges` — or `structures` — how much is left.
 down cannot be inspected either, and there is no other way to ask what a hole in one looks
 like. It calls the same area damage a Κατιούσα salvo and an off-map strike call, so what a
 script breaks is what a battlefield breaks.
+
+`order` and `ability` are the fourth and fifth, and they are the two orders a player gives most: a
+move, an attack, and a call for off-map support. Both go through the simulation's own command queue,
+which is the same queue a click writes to and the same one a replay records, so a column a script
+marches across a bog is a column a player marched rather than one a fixture placed and nudged. They
+exist for the same reason the other three do — a distance cannot be inspected until something covers
+it, and a surface cannot be inspected at the place that matters until somebody chooses the place —
+and they are why `--mud-demo` can be a demonstration of the weather ability rather than a fixture
+with mud already in it.
+
+| Command | What it does |
+|---|---|
+| `order <slot> move <x> <z>` | issues a move order for one unit, executing on the next tick |
+| `order <slot> attack <slot>` | issues an attack order, and says whether the two are hostile — an order that is not is thrown away rather than obeyed |
+| `ability <name> <x> <z> [team]` | calls in an off-map ability at a point: what it costs, what it does, and the world's own verdict, in the words the player would be shown when it is refused |
 
 `block` exists because a junction cannot be found in the `bridges` list. Two crossings may share a
 cell — the simulation allows it, and thousands of pairs of sites on this map do — and the deck
@@ -923,6 +944,137 @@ A model has tens of parts and most of them never move, so `parts <slot>` prints 
 part and `parts <slot> <name>` narrows it to the ones a name contains. The counts at the end
 say how much was shown and how much there was.
 
+## Worked example: does the same weapon do less to a Σοβιετικοί building than to a Κινέζοι one?
+
+Armour is damage reduction per hit and not a bigger health pool, so the claim is not "the Soviet
+building survives longer" — it is "the same 45-damage shell arrives as a different number", and a
+health bar cannot show that on its own. It also cannot be shown inside a match: a match is between
+powers, and this is a statement *across* them, so `--armour-demo` lays three headquarters of one role
+thirty metres apart — Σοβιετικοί, Κινέζοι, Δυτικοί — with the same Σοβιετικοί Πυροβολείο
+thirty-five metres east of each, on ground levelled to one surface with no canopy and no landform.
+`tools/probe/armour.probe` against it, trimmed to the answers (`…` marks lines cut out):
+
+```
+cmd: attributes 4 -184
+query:   surface    Sand (Άμμος), churn 0/255
+query:   ground     vegetation 0/255, moisture 12/15, aspect south (2), landform plain (0), fuel 0, flags none
+query:   cover      foot 1000 ‰, tracked 1000 ‰, wheeled 1000 ‰, air 1000 ‰   (damage that lands: 1000 ‰ is no cover at all)
+cmd: tick 60
+cmd: events 6
+query:   #4 tick 52 shot      slot  504 soviet/GunEmplacement team 2 at (39.0, 20.6, -124.0) m firing at western/CommandCentre (slot 505, team 3), direction (-1.00, 0.03, 0.00) bearing 180.0°, 35.0 m away
+query:   #5 tick 52 hit       slot  505 western/CommandCentre team 3 at (4.0, 21.8, -124.0) m took 32 damage
+query:   #6 tick 52 shot      slot  506 soviet/GunEmplacement team 2 at (39.0, 16.1, -154.0) m firing at chinese/CommandCentre (slot 507, team 3), direction (-0.99, -0.14, 0.00) bearing 180.0°, 35.0 m away
+query:   #7 tick 52 hit       slot  507 chinese/CommandCentre team 3 at (4.0, 11.2, -154.0) m took 35 damage
+query:   #8 tick 52 shot      slot  508 soviet/GunEmplacement team 2 at (39.0, 9.8, -184.0) m firing at soviet/CommandCentre (slot 509, team 3), direction (-1.00, -0.07, 0.00) bearing 180.0°, 35.0 m away
+query:   #9 tick 52 hit       slot  509 soviet/CommandCentre team 3 at (4.0, 7.3, -184.0) m took 27 damage
+…
+cmd: unit 509
+query:   health     4838/5000 (96%)
+query:   armour     structure — role 850 ‰ × faction 720 ‰ = 612 ‰, so a 45-damage hit here lands as 27
+…
+cmd: armour CommandCentre 4 -184 45
+query:   rule       damage × cover ÷ 1000 × armour ÷ 1000, floored at 1 — DamageRules.Compose, the one place a hit becomes damage
+query:   cover      1000 ‰ for foot — what the ground lets through, and 1000 is ground that hides nobody
+query:   Σοβιετικοί   role 850 ‰ × faction 720 ‰ = 612 ‰ → 27 damage, 18 turned away
+query:   Κινέζοι      role 850 ‰ × faction 930 ‰ = 790 ‰ → 35 damage, 10 turned away
+query:   Δυτικοί      role 850 ‰ × faction 840 ‰ = 714 ‰ → 32 damage, 13 turned away
+…
+cmd: armour Tank 4 -154 95
+query:   cover      1000 ‰ for tracked — what the ground lets through, and 1000 is ground that hides nobody
+query:   Σοβιετικοί   role 1000 ‰ × faction 970 ‰ = 970 ‰ → 92 damage, 3 turned away
+query:   Κινέζοι      role 1000 ‰ × faction 960 ‰ = 960 ‰ → 91 damage, 4 turned away
+query:   Δυτικοί      role 1000 ‰ × faction 850 ‰ = 850 ‰ → 80 damage, 15 turned away
+```
+
+Four facts, and three of them are the same fact from different sides:
+
+- **the same gun, the same shell, the same building, three owners — 27, 32, 35.** All three
+  headquarters stand on cells whose own `attributes` line reads `cover foot 1000 ‰`, so the ground
+  lets every point of every hit through and the difference between the three numbers is the owner
+  and nothing else. The events stream and the rule agree exactly, which is what makes the second a
+  proof of the first rather than a restatement of it;
+- **`4838/5000` after six shells, against `4790/5000` for the Κινέζοι one** — 162 points of damage
+  against 210, aimed by the same guns in the same window. Armour is not more hit points: both
+  buildings have five thousand, and one of them has heard fewer of them;
+- **`Σοβιετικοί` 612 is a role figure times a faction figure**, 850 for being a command centre and
+  720 for being Soviet concrete. The two multiply because they answer different questions — a
+  reactor is not a shed, and a Σοβιετικοί shed is not a Κινέζοι one — and neither alone would say
+  what the transcript shows;
+- **the vehicle table runs the other way, on the same rule.** At a Κατιούσα's 95-damage shell a
+  Σοβιετικοί hull keeps 92 and a Δυτικοί one 80, with the Κινέζοι a point behind at 91: heavy where
+  it does not move, light where it does. What the light hull buys is *speed in mud*, and that is the
+  next transcript.
+
+## Worked example: is the rasputitsa a Σοβιετικοί advantage?
+
+Ground pressure has been a per-faction figure for a long time and mud has always been a surface with
+a movement cost; what was missing was that nothing on the *movement* path read that cost, so the
+pressure steered a route and did not set a speed. The fix is not a new number, so the demonstration
+has to be a measurement rather than a table: `--mud-demo` stands a Σοβιετικοί, a Δυτικοί and a
+Κινέζοι tank at the near end of one lane each on ground it has levelled to grass, and the mud is
+called down by the *script*, through the world's own ability path, after the script has shown the
+ground without it. `tools/probe/mud.probe` against it, trimmed to the answers:
+
+```
+cmd: units
+query:   slot  506 soviet DesignBureau     team 0 at (x 99.0, z -201.0) m heading 0.0° health 1500/1500 target - building yes
+query:   slot  507 chinese Tank             team 3 at (x -23.0, z -257.0) m heading 0.0° health 320/320 target - building no
+query:   slot  508 western Tank             team 3 at (x -51.0, z -257.0) m heading 0.0° health 320/320 target - building no
+query:   slot  509 soviet Tank             team 3 at (x -79.0, z -257.0) m heading 0.0° health 320/320 target - building no
+cmd: attributes -51 -237
+query:   surface    Grass (Γρασίδι), churn 0/255
+query:   going      foot 100 ‰, tracked 100 ‰, wheeled 100 ‰, air 100 ‰   (flat ground is 100 ‰)
+cmd: ability WeatherControl -51 -237 0
+query: ability Έλεγχος Καιρού at (x -51, z -237) m for team 0
+query:   costs      500 Π, ready again 1800 ticks (90.0 s) after it lands
+query:   arrives    0 damage inside 70.0 m, and 1200 ticks (60.0 s) of mud
+ok: Έλεγχος Καιρού called down at (x -51, z -237) m for team 0, executing on tick 1
+cmd: attributes -51 -237
+query:   surface    Mud (Λάσπη), churn 0/255
+query:   going      foot 200 ‰, tracked 250 ‰, wheeled 300 ‰, air 100 ‰   (flat ground is 100 ‰)
+cmd: order 509 move -79 -182
+ok: Tank (Άρμα) at slot 509 ordered to move, executing on tick 2 — `tick 1` issues it and `unit 509` reads what came of it
+cmd: order 508 move -51 -182
+ok: Tank (Άρμα) at slot 508 ordered to move, executing on tick 2 …
+cmd: order 507 move -23 -182
+ok: Tank (Άρμα) at slot 507 ordered to move, executing on tick 2 …
+cmd: tick 200
+cmd: unit 509
+query:   armour     vehicle — role 1000 ‰ × faction 970 ‰ = 970 ‰, so a 45-damage hit here lands as 43
+query:   ground     Mud (Λάσπη), tracked at 750 ‰ pressure — costs 216 ‰ of the baseline, so 184 of its 400 mm per tick (462 ‰ of its speed)
+query:   travel     38.7 m covered at 3.7 m per second (0.2 m per tick), against 8.0 m per second (0.4 m per tick) on clear ground
+cmd: unit 508
+query:   armour     vehicle — role 1000 ‰ × faction 850 ‰ = 850 ‰, so a 45-damage hit here lands as 37
+query:   ground     Mud (Λάσπη), tracked at 1100 ‰ pressure — costs 281 ‰ of the baseline, so 142 of its 400 mm per tick (355 ‰ of its speed)
+query:   travel     23.2 m covered at 2.8 m per second (0.1 m per tick), against 8.0 m per second (0.4 m per tick) on clear ground
+cmd: unit 507
+query:   armour     vehicle — role 1000 ‰ × faction 960 ‰ = 960 ‰, so a 45-damage hit here lands as 37
+query:   ground     Mud (Λάσπη), tracked at 1250 ‰ pressure — costs 460 ‰ of the baseline, so 86 of its 400 mm per tick (217 ‰ of its speed)
+query:   travel     20.3 m covered at 1.7 m per second (0.1 m per tick), against 8.0 m per second (0.4 m per tick) on clear ground
+```
+
+Four facts, and the first is why the fixture exists at all:
+
+- **the mud is the ability's doing.** The same cell reads `Grass (Γρασίδι)` with `going tracked
+  100 ‰`, then `Mud (Λάσπη)` with `going tracked 250 ‰`, and the only thing that happened in between
+  is the `ability` line. A demonstration with mud already in the fixture would be showing the
+  fixture;
+- **three identical tanks, one distance, three answers: 38.7 m, 23.2 m, 20.3 m in ten seconds.**
+  All three are the same role at the same 400 mm per tick, ordered the same distance in the same
+  straight line by the same script, so nothing about the order or the destination favours anybody;
+- **the ground line is the whole arithmetic and it is checkable.** `tracked at 750 ‰ pressure — costs
+  216 ‰ of the baseline, so 184 of its 400 mm per tick (462 ‰ of its speed)`: 250 for mud times 0.75
+  for a Σοβιετικοί hull is 187, the extra 29 is the churn the column has already laid under itself,
+  and the speed is the baseline over the cost. The Δυτικοί column pays 281 and the Κινέζοι 460, which
+  is the entire reason their columns are 15 and 18 m behind;
+- **`travel` now prints two speeds**, the one it is making and the one its catalogue figure says,
+  because a number that said `at 8.0 m per second` beside `38.7 m covered` over ten seconds would be
+  the sort of transcript a reader stops trusting.
+
+And the ledger is what makes it a test rather than a picture: the run fails if the Σοβιετικοί column
+stops out-distancing the Δυτικοί one, if the heaviest school stops being the slowest, or if the
+weather strike is refused.
+
 ## Determinism
 
 The same script against the same seed produces the same transcript and the same PNGs, byte
@@ -948,14 +1100,15 @@ script written for `--turret-demo` answers for the two tanks that fixture places
 - **No reactivity.** `expect` compares literals; it cannot compare two query results. A
   script that needs "is the turret's bearing the same as the shot's" writes the bearing into
   the script as an expected value.
-- **No general orders.** A probe cannot march a column anywhere or make a unit attack. It can
-  do exactly one thing the player can do — arm a placement and click — and only through the
-  functions the mouse itself goes through, which is why `arm`/`hover`/`click` are three
-  commands rather than one and why none of them writes a command of its own. Everything else
-  the fixtures and the AI put into the world.
+- **No reactive orders.** A probe can march a unit and call down an ability — `order` and
+  `ability` — but it cannot decide *from an answer* to do either, because there is no "if" in
+  the language. A script that needs that is two scripts, or a script with the numbers written
+  in as expected values. It also cannot place a unit, which is what the fixtures are for.
 - **No `MiVic.Core` knowledge of its own.** The probe is a client tool: it reads the
-  simulation and the renderer and changes neither. `bridge … build` is the one command that
-  enqueues anything, and it enqueues the command a click would.
+  simulation and the renderer and changes neither. Five commands enqueue anything —
+  `bridge … build`, `structure … build`, `blast`, `order` and `ability` — and every one of them
+  enqueues the command a click or a button would, which is why they go through the world's own
+  queue and validation rather than writing to the state directly.
 - **Not a game.** It skips the HUD, as the fixtures do, because a panel over the frame is a
   panel over the answer — unless a script asks for it with `hud on`.
 

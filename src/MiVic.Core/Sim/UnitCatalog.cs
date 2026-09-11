@@ -61,6 +61,15 @@ using MiVic.Core.Terrain;
 /// half of the same fact, and an anti-aircraft mount that fires at tanks is a bug rather than a
 /// bonus. A role that could hit neither would be unarmed, which is a different field.
 /// </param>
+/// <param name="RoleArmourPermille">
+/// What one hit on <em>this role</em> is multiplied by, in permille, before the owner's own figure
+/// gets to it. 1 000 is the roster's ordinary construction; below it is a role that is genuinely
+/// thicker than its neighbours, above it one that is genuinely thinner, and both are facts about
+/// what the thing is rather than about who built it — see <see cref="UnitCatalog.ArmourPermille"/>
+/// for how the two figures compose. It is a damage multiplier and not a hit-point bonus, for the
+/// reason <see cref="FactionProfile"/> gives: a bigger pool is a longer fight, a percentage is a
+/// different weapon.
+/// </param>
 public readonly record struct UnitDefinition(
     UnitKind Kind,
     int MaterialCost,
@@ -88,7 +97,8 @@ public readonly record struct UnitDefinition(
     int MaxAlive = 0,
     TechId RequiredTech = TechId.None,
     int FootprintRadiusCells = 0,
-    bool CanHitGround = true)
+    bool CanHitGround = true,
+    int RoleArmourPermille = 1_000)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -130,7 +140,11 @@ public static class UnitCatalog
         new(UnitKind.AntiAir, 120, 20, 100, 190, 350, 2, UnitKind.Factory, false, 25, 150_000, 16, true, 16,
             Movement: MovementClass.Tracked, GroundPressurePermille: 1_000),
         new(UnitKind.Aircraft, 260, 60, 200, 160, 1_500, 3, UnitKind.Factory, false, 30, 100_000, 20, true, 45,
-            Movement: MovementClass.Air, GroundPressurePermille: 0),
+            // An airframe is not armour. It is the one machine on the roster with a role figure
+            // above 1 000, and it is the reason an anti-aircraft gun is worth buying: whatever a
+            // faction's philosophy says about its hulls, an aeroplane is a thin aluminium tube
+            // around an engine and takes a tenth more than the same faction's tanks do.
+            Movement: MovementClass.Air, GroundPressurePermille: 0, RoleArmourPermille: 1_100),
 
         // Συλλέκτης: the role that makes a deposit worth anything. It has no weapon
         // and no place in a fight — its whole job is to sit on ore, which is why it
@@ -202,8 +216,19 @@ public static class UnitCatalog
         // of cells that contains every building in the game, and it is what they get; anything more
         // would be a parade square rather than the ground under a building. Only the nuclear plant
         // asks for more, and not because of its walls — see below.
+        //
+        // A role's own armour is the third figure, and it is set only where the role genuinely
+        // differs from its neighbours — the owner's philosophy multiplies it, so a table of
+        // "everything is 1 000" would be a table that said nothing. Three structures differ:
+        // a command centre at 850, because it is the largest building in the game at 20 to 22 m
+        // and the one whose loss ends a match; a nuclear plant at 800, because a reactor is a
+        // 22 m containment ring around something that must not be opened, and a power plant —
+        // the role it is an upgrade of — is 12 m of shed around a turbine; and a radar station
+        // at 1 050, which is a dish on a mast rather than a building, and which the catalogue
+        // already describes as deliberately fragile. Everything else is the roster's ordinary
+        // construction and says nothing extra.
         new(UnitKind.CommandCentre, 600, 0, 400, 5_000, 0, 1, UnitKind.CommandCentre, true, WaterCost: 180,
-            FootprintRadiusCells: 1),
+            FootprintRadiusCells: 1, RoleArmourPermille: 850),
         new(UnitKind.PowerPlant, 160, 0, 200, 1_200, 0, 1, UnitKind.CommandCentre, true, WaterCost: 90,
             FootprintRadiusCells: 1),
         new(UnitKind.Factory, 280, 0, 300, 2_000, 0, 1, UnitKind.CommandCentre, true, WaterCost: 120,
@@ -219,8 +244,12 @@ public static class UnitCatalog
         // ring, cooling pond and exclusion zone, and the ground that has to be clear around it is
         // 5 × 5 cells. That is why a nuclear plant and a power plant are not interchangeable sites
         // even though both are one building with one job.
+        //
+        // Being worth raiding and being cheap to raid are different claims, and 800 is the second
+        // one: it takes a fifth off every hit, so the plant is worth the raid *and* worth
+        // defending, which is a decision rather than a formality.
         new(UnitKind.NuclearPlant, 900, 0, 600, 4_000, 0, 4, UnitKind.CommandCentre, true, WaterCost: 320,
-            FootprintRadiusCells: 2),
+            FootprintRadiusCells: 2, RoleArmourPermille: 800),
 
         // Πυροβολείο: the first structure in the game with a gun on it, and deliberately the
         // weakest thing a defensive line can be made of. Forty-five damage every two and a half
@@ -275,14 +304,18 @@ public static class UnitCatalog
         // is also deliberately fragile (900 hit points, less than a power plant) and it is priced
         // above the emplacement it serves, because the thing worth raiding should be the thing
         // that costs the raider something to ignore — see PowerSystem, where the same building is
-        // the first load a base sheds when its generation is short.
+        // the first load a base sheds when its generation is short. That "deliberately fragile"
+        // is a fact about the role and not only a comment: RoleArmourPermille 1 050 says the dish
+        // and the mast take a twentieth *more* than ordinary construction, which is the one place
+        // in the roster where the role figure runs the other way for a structure. A radar that
+        // were as hard as the gun beside it would be a purchase with no decision in it.
         //
         // Era I, like the gun emplacement, and for the same reason: detection is the *first*
         // problem, not a reward for having solved the others. A player who has just built a gun
         // and cannot work out why it is not shooting at the tank 190 m away has a radar to build,
         // and can afford neither the wait nor the research.
         new(UnitKind.RadarStation, 240, 40, 220, 900, 0, 1, UnitKind.CommandCentre, true, WaterCost: 70,
-            FootprintRadiusCells: 1),
+            FootprintRadiusCells: 1, RoleArmourPermille: 1_050),
     ];
 
     /// <summary>Every defined role.</summary>
@@ -344,6 +377,16 @@ public static class UnitCatalog
     /// Effective ground pressure for a faction's version of a role: the role's
     /// baseline scaled by the faction's design philosophy. This is what makes a
     /// light, wide-tracked hull cheap to move through mud and a heavy one expensive.
+    /// <para>
+    /// <b>It is already the whole of the rasputitsa, and it was already per-faction.</b> The role
+    /// figure is a fact about the hull and the faction figure is a fact about the school that
+    /// designed it — Σοβιετικοί 750, Δυτικοί 1 100, Κινέζοι 1 250 — and
+    /// <see cref="TerrainLayer.CostPermille"/> multiplies the soft surfaces by the product. What
+    /// was missing was never a number: it was that nothing on the <em>movement</em> path read the
+    /// cost, so ground pressure steered a route and did not set a speed. See
+    /// <see cref="TerrainLayer.SpeedPermilleAt"/> and <see cref="MovementSystem"/>, which is where
+    /// the figure finally costs a heavy column something.
+    /// </para>
     /// </summary>
     public static int GroundPressure(Faction faction, UnitKind kind)
     {
@@ -354,8 +397,92 @@ public static class UnitCatalog
             return 0;
         }
 
+        // A faction that has no profile — a slot nothing owns, standing on the map as scenery or
+        // as a measurement subject — still has a hull, and presses on the ground as its own role
+        // says with no school's philosophy behind it. Total rather than throwing, because this is
+        // asked once per moving entity per tick: an unowned unit must not stop a movement tick to
+        // report that nobody owns it.
+        if (faction == Faction.None)
+        {
+            return definition.GroundPressurePermille;
+        }
+
         int factionPressure = FactionProfile.For(faction).GroundPressurePermille;
         return (definition.GroundPressurePermille * (factionPressure > 0 ? factionPressure : 1_000)) / 1_000;
+    }
+
+    /// <summary>
+    /// What one hit on this role does to it, in permille, before the ground it stands on is
+    /// considered at all: the role's own figure times its owner's. Both are damage multipliers,
+    /// so the product is one too — a Soviet command centre is 850 × 720 = 612, sixteen per cent
+    /// off for the building and another twenty-eight for the faction that poured it.
+    /// <para>
+    /// <b>Two figures, multiplied, and the reason there are two is that they answer different
+    /// questions.</b> A role figure says what <em>this kind of thing</em> is — a reactor is not a
+    /// shed — and would be the same whoever built it; a faction figure says what <em>this school
+    /// of engineering</em> does, and would be the same for a power plant and a headquarters. A
+    /// single table would have had to write out every faction-and-role pair, which is a table
+    /// nobody can check and a balance change nobody can reason about.
+    /// </para>
+    /// <para>
+    /// What it is <em>not</em> is hit points. <see cref="TeamState.ArmorPermille"/> multiplies a
+    /// unit's pool at the moment it is built, which is a longer fight; this reduces each hit,
+    /// which is a fight against small arms that stops working while the artillery keeps working.
+    /// The floor of one damage means no combination of the two can make anything immune.
+    /// </para>
+    /// </summary>
+    public static int ArmourPermille(Faction faction, UnitKind kind)
+    {
+        UnitDefinition definition = Get(kind);
+
+        int factionArmour = faction switch
+        {
+            Faction.Soviet => FactionProfile.Soviet.ArmourPermilleFor(ArmourClassOf(kind)),
+            Faction.Chinese => FactionProfile.Chinese.ArmourPermilleFor(ArmourClassOf(kind)),
+            Faction.Western => FactionProfile.Western.ArmourPermilleFor(ArmourClassOf(kind)),
+
+            // Nobody owns it, so no school's figure applies: the role's own construction is the
+            // whole answer. Same reasoning as the ground-pressure fallback above.
+            _ => 1_000,
+        };
+
+        return (definition.RoleArmourPermille * factionArmour) / 1_000;
+    }
+
+    /// <summary>
+    /// Which of a faction's two armour figures a role carries, which is a question about what the
+    /// thing is made of rather than about who is standing in it.
+    /// <para>
+    /// <b>A structure is reinforced and a machine is plated; a man on foot is neither.</b> The
+    /// line between the last two is the movement class, and it is not a new rule invented for
+    /// armour: it is the same field that already decides what a wood is worth to the thing
+    /// standing in it — <see cref="TerrainLayer.CoverPermille"/> lets a foot unit get down among
+    /// the stems and gives a tracked one almost nothing, because a tank sits on top of the
+    /// undergrowth. A Ρομποτικό Πεζικό walks on legs and hides in a wood like the infantryman
+    /// beside it, so it is classified with him here too, and that consistency is worth more than
+    /// a rule that would have to be stated twice.
+    /// </para>
+    /// <para>
+    /// Air is a machine. An aeroplane is a thin shell and the role figure says so loudly
+    /// (<see cref="UnitDefinition.RoleArmourPermille"/> 1 100), but it is still the owner's
+    /// airframe rather than the owner's infantry, so the faction's vehicle figure applies to it.
+    /// </para>
+    /// </summary>
+    public static ArmourClass ArmourClassOf(UnitKind kind)
+    {
+        if (!TryGet(kind, out UnitDefinition definition))
+        {
+            return ArmourClass.None;
+        }
+
+        if (definition.IsBuilding)
+        {
+            return ArmourClass.Structure;
+        }
+
+        return definition.Movement is MovementClass.Tracked or MovementClass.Wheeled or MovementClass.Air
+            ? ArmourClass.Vehicle
+            : ArmourClass.None;
     }
 
     /// <summary>True when a role is airborne: it flies over terrain and only anti-air can hit it.</summary>

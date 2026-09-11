@@ -566,6 +566,24 @@ public sealed partial class MiVicGame : XnaGame
             _camera.TiltTo(_options.ScreenshotPitch ?? -0.78f);
             _camera.Yaw = _options.ScreenshotYaw ?? 1.5708f;
         }
+        else if (_options.ArmourDemo)
+        {
+            // Across the three gun-and-headquarters pairs, from above and high enough out to hold
+            // all six in one frame: the claim is a difference between three health bars, and a
+            // frame showing one pair would show three numbers and no comparison.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 300f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.85f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 0.35f;
+        }
+        else if (_options.MudDemo)
+        {
+            // Down the lanes, from above and to one side, past the far end of them: the claim is
+            // how far three columns got in the same number of seconds, and that is a length along
+            // the ground rather than a thing standing on it.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 260f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.88f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 0.25f;
+        }
         else if (_options.ScreenshotPath is not null)
         {
             _camera.ZoomTo(_options.ScreenshotZoom ?? 430f);
@@ -594,7 +612,11 @@ public sealed partial class MiVicGame : XnaGame
                                             ? SimBridge.CreateDetectionDemo(_options.Seed)
                                             : _options.AllianceDemo
                                                 ? SimBridge.CreateAllianceDemo(_options.Seed)
-                                                : new SimBridge(_options.Seed, _options.IsModelGallery ? ScenarioKind.ModelGallery : _options.Match);
+                                                : _options.ArmourDemo
+                                                    ? SimBridge.CreateArmourDemo(_options.Seed)
+                                                    : _options.MudDemo
+                                                        ? SimBridge.CreateMudDemo(_options.Seed)
+                                                        : new SimBridge(_options.Seed, _options.IsModelGallery ? ScenarioKind.ModelGallery : _options.Match);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
@@ -715,7 +737,22 @@ public sealed partial class MiVicGame : XnaGame
 
         if (_options.EmplacementDemo)
         {
-            FocusOnClearing();
+            FocusOnClearing(new Vector3(75f, 0f, 0f));
+        }
+
+        if (_options.ArmourDemo)
+        {
+            // Centred on the six of them: the claim is a difference between three buildings, and a
+            // frame that cut one of the pairs off would show three numbers and no comparison.
+            FocusOnClearing(Vector3.Zero);
+        }
+
+        if (_options.MudDemo)
+        {
+            // The three columns only — the design bureau beside them unlocks the weather strike and
+            // has nothing to do with the distance being measured — and framed forty metres up the
+            // lanes, because the claim is a length along the ground rather than a thing on it.
+            FocusOnClearing(new Vector3(0f, 0f, 40f), team: 3);
         }
 
         if (_options.GroundDemo)
@@ -4473,15 +4510,18 @@ public sealed partial class MiVicGame : XnaGame
     }
 
     /// <summary>
-    /// Points the camera at the middle of the clearing the emplacement fixture chose.
+    /// Points the camera at the middle of what a fixture laid out, less whatever offset the claim
+    /// being photographed needs.
     /// <para>
-    /// The enemies are out to the +X side of that clearing and the emplacement is ordered
-    /// into the middle of it, so the frame that shows the whole engagement is centred
-    /// between the two rather than on either — a gun, a tank a hundred and fifty metres
-    /// away and the shot crossing between them.
+    /// The emplacement fixture's enemies are out to the +X side of its clearing and the emplacement
+    /// is ordered into the middle of it, so its frame is centred between the two rather than on
+    /// either — a gun, a tank a hundred and fifty metres away and the shot crossing between them.
+    /// The other fixtures that use this pass their own offset and, where a structure belongs to the
+    /// scene but not to the claim — a design bureau that exists only to unlock an ability — a team,
+    /// so that one building cannot drag the frame off the thing being looked at.
     /// </para>
     /// </summary>
-    private void FocusOnClearing()
+    private void FocusOnClearing(Vector3 backOff, int? team = null)
     {
         if (_simulation is null || _camera is null)
         {
@@ -4494,7 +4534,7 @@ public sealed partial class MiVicGame : XnaGame
 
         for (int slot = 0; slot < world.Capacity; slot++)
         {
-            if (world.IsAliveSlot(slot))
+            if (world.IsAliveSlot(slot) && (team is null || world.GetRefBySlot(slot).TeamId == team))
             {
                 sum += _simulation.GetRenderPosition(slot, interpolate: false);
                 count++;
@@ -4503,15 +4543,13 @@ public sealed partial class MiVicGame : XnaGame
 
         if (count == 0)
         {
-            Console.WriteLine("emplacement-demo: nothing on the map to frame");
+            Console.WriteLine("fixture: nothing on the map to frame");
             return;
         }
 
-        // The middle of the enemy line, halfway back towards where the emplacement goes.
-        Vector3 enemies = sum / count;
-        Vector3 centre = enemies - new Vector3(75f, 0f, 0f);
+        Vector3 centre = (sum / count) + backOff;
 
-        Console.WriteLine($"emplacement-demo: framing {count} enemies around {enemies.X:0}, {enemies.Z:0}");
+        Console.WriteLine($"fixture: framing {count} entities around {centre.X:0}, {centre.Z:0}");
 
         _fixtureAim = centre + new Vector3(0f, 1.5f, 0f);
         _camera.LookAt(_fixtureAim.Value);

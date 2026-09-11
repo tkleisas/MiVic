@@ -589,6 +589,19 @@ public sealed class GameHud
         float health = definition.Health > 0 ? Math.Clamp((float)unit.Health / definition.Health, 0f, 1f) : 0f;
         ImGui.ProgressBar(health, new NVec2(-1f, 12f), $"Υγεία {unit.Health}/{definition.Health}");
 
+        // What the thing is made of, as the player would say it: the share of every hit its armour
+        // turns away. It is read from the same query the gun uses, so a panel that says 28 % and a
+        // shot that keeps 72 % cannot disagree — and the number is worth showing because the two
+        // factions' armour runs in opposite directions, which is a fact about the roster that
+        // nothing else on this panel would tell a player.
+        int armour = UnitCatalog.ArmourPermille(unit.Faction, unit.Kind);
+
+        if (armour != 1_000)
+        {
+            int turned = 1_000 - armour;
+            ImGui.TextUnformatted($"Θωράκιση {(turned / 10)}% ({armour}‰)");
+        }
+
         float morale = unit.Morale.ToFloat();
         ImGui.ProgressBar(morale, new NVec2(-1f, 12f), $"Ηθικό {morale:P0}");
 

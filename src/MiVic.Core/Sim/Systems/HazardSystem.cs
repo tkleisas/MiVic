@@ -49,6 +49,15 @@ public static class HazardSystem
             UnitDefinition definition = UnitCatalog.Get(entity.Kind);
             int damage = definition.IsBuilding ? Math.Max(1, LavaDamagePerTick / StructureDamageDivisor) : LavaDamagePerTick;
 
+            // This is the one damage path that does not go through DamageRules, and deliberately:
+            // that rule composes *a hit* — a round crossing the ground before it meets the plate —
+            // and nothing here is a hit. A unit standing in lava is in it, not behind anything, so
+            // neither the canopy over its head nor the armour on its hull is between it and the
+            // burn; a wood that sheltered a man from a rifle would not shelter him from the ground
+            // melting under his boots. The divisor above is the structure clause and is about what
+            // a building is made of, which is the same kind of fact and belongs here rather than
+            // there.
+            //
             // Nothing is asked about friend or foe here, and that is the point: lava has no
             // owner, so it is the one damage path that cannot point a weapon at anybody. It
             // burns whoever is standing in it — the caster's own units included — which is the

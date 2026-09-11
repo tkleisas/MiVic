@@ -1,0 +1,76 @@
+# Q: does the same weapon do measurably less to a Σοβιετικοί building than to a Κινέζοι one?
+#
+#   MiVic.Game.exe --armour-demo --probe tools/probe/armour.probe --probe-out artifacts/probe/armour.txt
+#
+# Three Κέντρα Διοίκησης thirty metres apart — Σοβιετικοί, Κινέζοι, Δυτικοί — each with the same
+# Σοβιετικοί Πυροβολείο thirty-five metres east of it. Same role, same hit points, same gun, same
+# 45-damage shell, same reload; a different owner, and nothing else. The three headquarters stand on
+# levelled sand with no canopy and no landform, so the ground they are judged on is the same ground,
+# and their own `attributes` lines below are how that is checked rather than assumed.
+#
+# Armour is damage reduction per hit and not a bigger health pool, so what has to be read is the
+# damage in the `events` stream — the same 45-damage shell arriving as three different numbers —
+# and not how long each building survives. The `armour` query at the end prints the rule those three
+# numbers come out of, per faction, and the two agreeing is the proof: a table that says 27/32/35
+# above a stream that shows 27/32/35.
+#
+# This is the half of the design that makes a Σοβιετικοί base something you bring artillery to.
+# The other half — the same factions' *vehicles*, which run the opposite way, and the mud that pays
+# for them — is tools/probe/mud.probe.
+
+# --- the line-up -----------------------------------------------------------------------------------
+# Six entities and nothing else: the three headquarters on slot 509 (Σοβιετικοί), 507 (Κινέζοι) and
+# 505 (Δυτικοί), and the three guns that will shoot them on slot 508, 506 and 504.
+units
+
+# --- the ground, which must be the same under all three -------------------------------------------
+# Sand, no vegetation, plain landform, cover 1000 ‰ for every movement class: the ground lets every
+# point of every hit through, so nothing below is the terrain's doing.
+attributes 4 -184
+attributes 4 -154
+attributes 4 -124
+
+# --- the first shell on each -----------------------------------------------------------------------
+# Every gun starts with its reload at zero, so one exchange has landed on all three by tick 55. Six
+# events, three pairs: the same shot line and then the hit it produced.
+tick 60
+events 6
+
+# --- five minutes of the same gun ------------------------------------------------------------------
+# Six shells apiece. The health lines that follow are cumulative and would be equal if armour were
+# not doing anything: three thousand and seventy-two points of damage aimed at each, arriving as
+# considerably different amounts.
+tick 240
+events 30
+unit 509
+unit 507
+unit 505
+
+# --- the rule the three numbers come out of --------------------------------------------------------
+# DamageRules.Compose, read for this role at this cell: the ground first, then the role's own
+# construction times the owner's philosophy, floored at one. The three composed figures are the
+# three damages in the stream above.
+armour CommandCentre 4 -184 45
+
+# --- the ledger of measurements --------------------------------------------------------------------
+# Read off the events stream and the armour query above, and re-read — not merely re-run — the day
+# the armour figures move: these are the numbers this feature exists to produce, and a change to
+# them is a balance decision rather than a regression.
+#
+# Before this change all three of these were 44 or 45, differing only by the cover of the cell each
+# building happens to stand on. Now the difference is the owner, and it is a quarter of the shell.
+expect "the same shell on a Σοβιετικοί headquarters" 27 27
+expect "the same shell on a Κινέζοι headquarters" 35 35
+expect "the same shell on a Δυτικοί headquarters" 32 32
+
+# --- the composition rule itself, which all three call ---------------------------------------------
+expect "Σοβιετικοί command centre: role × faction" 612 612
+expect "Δυτικοί command centre: role × faction" 714 714
+expect "Κινέζοι command centre: role × faction" 790 790
+
+# --- and the other half of the design, which is not in this fixture ---------------------------------
+# A Δυτικοί *vehicle* is the best-armoured thing on the map and a Σοβιετικοί one is the worst: the
+# opposite ordering, on the same rule. Read here as arithmetic with a Κατιούσα's 95-damage shell,
+# and in the field in mud.probe. The two light schools come out a point apart at this shell size,
+# which is what "on a par with the Κινέζοι" looks like when it is a number rather than a phrase.
+armour Tank 4 -154 95

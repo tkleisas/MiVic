@@ -1,4 +1,6 @@
 using MiVic.Core.Numerics;
+using MiVic.Core.Pathfinding;
+using MiVic.Core.Terrain;
 
 namespace MiVic.Core.Sim;
 
@@ -35,8 +37,13 @@ public static class MovementSystem
 
             if (e.HasMoveGoal && TryGetWaypoint(world, slot, ref e, out WorldPos waypoint))
             {
-                int step = Math.Max(1, e.SpeedMmPerTick.ToIntRound());
-                StepToward(world, ref e, waypoint);
+                // How far this mover gets this tick, which is its own speed scaled by the ground
+                // under it. The same step drives both the movement and the arrival test below, so
+                // a unit crawling through a bog cannot tick a waypoint off the list faster than
+                // it is actually covering the distance to it.
+                int step = StepMmPerTick(world, ref e);
+
+                StepToward(world, ref e, waypoint, step);
 
                 // Reaching a waypoint advances the route.
                 if (e.Position.HorizontalDistanceTo(waypoint) <= step)
@@ -47,6 +54,74 @@ public static class MovementSystem
 
             SnapToTerrain(world, ref e);
         }
+    }
+
+    /// <summary>
+    /// How far a slot's unit will move in one tick, after the ground under it.
+    /// <para>
+    /// Public because it is a question worth asking from outside the tick loop: "why is this column
+    /// slow" has an answer — the surface, the pressure and the two of them together — and the probe
+    /// and the interface should be able to read the same number the wheels will use rather than
+    /// working it out from a second copy of the arithmetic. A slot holding nothing answers zero.
+    /// </para>
+    /// </summary>
+    public static int StepMmPerTick(SimWorld world, int slot)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        return world.IsAliveSlot(slot) ? StepMmPerTick(world, ref world.GetRefBySlot(slot)) : 0;
+    }
+
+    /// <summary>
+    /// How far an entity moves in one tick: its own speed, scaled by what the ground under it does
+    /// to a mover of its weight.
+    /// <para>
+    /// <b>This is where ground pressure finally costs something.</b> The figure has always been
+    /// per-role and per-faction and <see cref="TerrainLayer.CostPermille"/> has always multiplied
+    /// the soft surfaces by it — but the cost was only ever spent by the pathfinder, so a Δυτικοί
+    /// and a Σοβιετικοί column both crossed the same bog at their catalogue speeds and the
+    /// Σοβιετικοί advantage in the mud season existed only as a cheaper route. Reading the same
+    /// cost here turns it into a speed, and the rasputitsa becomes something a player watches
+    /// happen: in mud a Σοβιετικοί tank (750 pressure) keeps about half its speed while a Δυτικοί
+    /// one (1 100) keeps about a third, and on grass the two are identical.
+    /// </para>
+    /// <para>
+    /// The context comes from <see cref="SimWorld.PathContextOf"/>, which is the mobility context
+    /// the pathfinder plans with — including the team's own research, so «Βαθιά Μάχη» lowers
+    /// effective pressure on the wheels exactly as it already does on the route. Nothing is
+    /// recomputed here that the world is not already willing to answer.
+    /// </para>
+    /// </summary>
+    private static int StepMmPerTick(SimWorld world, ref Entity e)
+    {
+        // A mover with no speed of its own has none to scale, and the answer is zero rather than
+        // the one millimetre a floor would give it: a stationary unit ordered somewhere stands
+        // where it is, which is what SpeedMmPerTick of zero has always meant.
+        int own = e.SpeedMmPerTick.ToIntRound();
+
+        if (own <= 0)
+        {
+            return 0;
+        }
+
+        UnitDefinition definition = UnitCatalog.Get(e.Kind);
+
+        if (definition.IsBuilding || definition.Movement == MovementClass.Air)
+        {
+            return own;
+        }
+
+        int cell = world.Navigation.IndexOfWorld(e.Position);
+
+        if (cell < 0)
+        {
+            return own;
+        }
+
+        PathContext context = world.PathContextOf(e.TeamId, e.Faction, e.Kind);
+        int ground = world.TerrainTypes.SpeedPermilleAt(cell, context.Movement, context.GroundPressurePermille);
+
+        return ground >= 1_000 ? own : Math.Max(1, (own * ground) / 1_000);
     }
 
     /// <summary>
@@ -100,7 +175,7 @@ public static class MovementSystem
     }
 
     /// <summary>
-    /// Steps towards a waypoint in the horizontal plane only.
+    /// Steps towards a waypoint in the horizontal plane only, by <paramref name="step"/> millimetres.
     /// <para>
     /// Steering in three dimensions is a trap: a waypoint's height comes from the
     /// terrain lattice while a unit's height is the bilinearly sampled surface, so
@@ -110,8 +185,14 @@ public static class MovementSystem
     /// short of its waypoint forever. Height is the terrain's job, not the
     /// steering's.
     /// </para>
+    /// <para>
+    /// The step is handed in rather than read from the entity, because it is no longer the
+    /// entity's own figure: it is that figure after the ground. Callers get it from
+    /// <see cref="StepMmPerTick"/>, so the arrival test in <see cref="Tick"/> and the movement
+    /// here are the same number by construction instead of by both remembering to scale it.
+    /// </para>
     /// </summary>
-    private static void StepToward(SimWorld world, ref Entity e, WorldPos target)
+    private static void StepToward(SimWorld world, ref Entity e, WorldPos target, int step)
     {
         long dx = (long)target.X - e.Position.X;
         long dz = (long)target.Z - e.Position.Z;
@@ -120,8 +201,6 @@ public static class MovementSystem
         {
             return;
         }
-
-        int step = e.SpeedMmPerTick.ToIntRound();
 
         if (step <= 0)
         {

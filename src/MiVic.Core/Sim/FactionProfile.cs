@@ -93,6 +93,25 @@ public enum UnitKind : byte
 }
 
 /// <summary>
+/// The two kinds of thing a faction's engineering philosophy armours, and the third that it does
+/// not. Which class a role falls into is answered by <see cref="UnitCatalog.ArmourClassOf"/>.
+/// </summary>
+public enum ArmourClass : byte
+{
+    /// <summary>
+    /// Nothing of its own: a man on foot. He is not plated, and his protection is the ground he
+    /// stands on — which is why cover and armour are two multipliers rather than one.
+    /// </summary>
+    None = 0,
+
+    /// <summary>A building. Reinforced where it stands, because it cannot choose not to be there.</summary>
+    Structure = 1,
+
+    /// <summary>A machine: a hull, a track, a wheel or a wing. Plated, and light where the school says so.</summary>
+    Vehicle = 2,
+}
+
+/// <summary>
 /// The asymmetric balance of a faction, expressed as data rather than special
 /// cases, so that the numbers live in one auditable place.
 /// </summary>
@@ -128,6 +147,36 @@ public enum UnitKind : byte
 /// </param>
 /// <param name="PropagandaBonusRaw">Morale, in Q16.16 raw units, while propaganda is funded.</param>
 /// <param name="PropagandaPenaltyRaw">Morale lost while it is not.</param>
+/// <param name="StructureArmourPermille">
+/// What one hit on this faction's <em>buildings</em> is multiplied by, in permille: 1 000 is
+/// nothing at all, 720 is a shot that keeps 72 % of itself, and nothing here can reach zero.
+/// </param>
+/// <param name="VehicleArmourPermille">
+/// The same figure for this faction's <em>machines</em> — anything with a hull, a track, a wheel
+/// or a wing, and not a man on foot. See <see cref="UnitCatalog.ArmourClassOf"/>.
+/// </param>
+/// <remarks>
+/// <b>The two armour figures run in opposite directions, and that is the design.</b> Σοβιετικοί
+/// buildings are the most reinforced of the three and their machines the least; the Δυτικοί are
+/// the other way about — a middleweight building and the heaviest vehicle on the map — and the
+/// Κινέζοι build the lightest structures and a hull on a par with the Soviet one. It is one
+/// sentence a player can hold: <em>heavy where it does not move, light where it does</em>. A
+/// faction that pours its industry into poured concrete and deep reveals has no tonnage left for
+/// its tanks, and a faction whose doctrine is a fast armoured thrust spends it the other way.
+/// <para>
+/// A figure below 1 000 is armour and above it is a role or an owner that is easier to hurt than
+/// the baseline — see <see cref="UnitCatalog"/> for the per-role figures that multiply these.
+/// The two do not compose as "armour plus armour": they are two permille multipliers on one
+/// damage path, and the order they apply in is settled in one place, <see cref="DamageRules"/>.
+/// </para>
+/// <para>
+/// This is not <see cref="TeamState.ArmorPermille"/>, which despite the name is a multiplier on
+/// a unit's hit <em>points</em> at the moment it is built — a bigger pool, bought with research.
+/// Armour here is damage <em>reduction</em> per hit, which is a different texture: it is what
+/// makes a reinforced building something you bring the right weapon for rather than something
+/// that merely takes longer to kill.
+/// </para>
+/// </remarks>
 public readonly record struct FactionProfile(
     Faction Faction,
     string GreekName,
@@ -141,7 +190,9 @@ public readonly record struct FactionProfile(
     int IncomePermille = 1_000,
     int PropagandaDivisor = 0,
     int PropagandaBonusRaw = 0,
-    int PropagandaPenaltyRaw = 0)
+    int PropagandaPenaltyRaw = 0,
+    int StructureArmourPermille = 1_000,
+    int VehicleArmourPermille = 1_000)
 {
     /// <summary>
     /// The three playable powers, ordered so that iteration is deterministic.
@@ -158,7 +209,14 @@ public readonly record struct FactionProfile(
         CostPermille: 900,
         ResearchSpeedPermille: 1250,
         GroundPressurePermille: 750,
-        IncomePermille: 1_000);
+        IncomePermille: 1_000,
+        // The most reinforced buildings in the game and the thinnest hulls. A Soviet base is
+        // poured concrete with deep reveals, and a Soviet tank is the same doctrine read the
+        // other way: light, wide-tracked, and built to keep moving. Thirty per cent off every
+        // hit on a structure is a large number on purpose — it has to be visible in a
+        // transcript, and the compensation is on the vehicle figure beside it.
+        StructureArmourPermille: 720,
+        VehicleArmourPermille: 970);
 
     public static readonly FactionProfile Chinese = new(
         Faction.Chinese,
@@ -170,7 +228,14 @@ public readonly record struct FactionProfile(
         CostPermille: 700,
         ResearchSpeedPermille: 700,
         GroundPressurePermille: 1250,
-        IncomePermille: 900);
+        IncomePermille: 900,
+        // The lightest buildings of the three — mass production does not pay for thickness, and
+        // a factory that comes off a line in a third of the time is a factory built to a price.
+        // Their hulls sit a hair above the Soviet ones, which is the "on a par with the Κινέζοι"
+        // half of the design: the two light-tank schools arrive at the same place from opposite
+        // directions, one by doctrine and one by economy.
+        StructureArmourPermille: 930,
+        VehicleArmourPermille: 960);
 
     public static readonly FactionProfile Western = new(
         Faction.Western,
@@ -185,7 +250,16 @@ public readonly record struct FactionProfile(
         IncomePermille: 2_500,
         PropagandaDivisor: 8,
         PropagandaBonusRaw: 6_554,   // +0.10 while the propaganda budget is paid
-        PropagandaPenaltyRaw: 13_107); // -0.20 when it is not
+        PropagandaPenaltyRaw: 13_107, // -0.20 when it is not
+        // In between on buildings and heaviest on the ground: sixteen per cent off a hit on a
+        // structure and fifteen off a hit on a machine. The machine figure is the one that
+        // matters, because it is what the Soviet light armoured thrust has to answer — and the
+        // answer it is given in return is the rasputitsa, where 1 100 ground pressure against
+        // the Soviet 750 costs a Δυτικοί column a third of its speed in mud. Heavy armour is
+        // only a weakness if the mud can reach it, which is what <see cref="AbilityId.WeatherControl"/>
+        // is for.
+        StructureArmourPermille: 840,
+        VehicleArmourPermille: 850);
 
     /// <summary>All playable factions in stable order.</summary>
     public static readonly FactionProfile[] All = [Soviet, Chinese, Western];
@@ -197,5 +271,22 @@ public readonly record struct FactionProfile(
         Faction.Chinese => Chinese,
         Faction.Western => Western,
         _ => throw new ArgumentOutOfRangeException(nameof(faction), faction, "No profile for this faction."),
+    };
+
+    /// <summary>
+    /// This faction's figure for one class of thing, or 1 000 for a class it does not armour.
+    /// <para>
+    /// It exists so that the two figures are selected in one place rather than by a switch at
+    /// every call site: a weapon, a blast and an off-map strike all need the same number, and
+    /// three copies of "structures use this one, machines use that one" is three chances for the
+    /// opposite ordering — which is the whole design — to be written down the wrong way round in
+    /// one of them.
+    /// </para>
+    /// </summary>
+    public int ArmourPermilleFor(ArmourClass armourClass) => armourClass switch
+    {
+        ArmourClass.Structure => StructureArmourPermille,
+        ArmourClass.Vehicle => VehicleArmourPermille,
+        _ => 1_000,
     };
 }

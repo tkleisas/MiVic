@@ -355,7 +355,19 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by allied forces ceasing to damage each other. Teams 0 and 1 are allied in
+    /// Last changed by armour and by mud costing a speed. Every structure and every machine on
+    /// this field now reduces each hit by a percentage — Σοβιετικοί buildings most, Δυτικοί
+    /// vehicles most, in opposite directions — so the same shots that used to kill a tank leave it
+    /// alive, and the eighteen tanks a side spend longer in contact and fire more often before
+    /// they die. Ground pressure, which was already per-faction and already priced mud for the
+    /// pathfinder, now scales the per-tick step as well, so any unit that crosses a soft surface
+    /// here takes longer to do it and the whole battle runs on a different clock. Splash damage is
+    /// in this number too, for a reason of its own: a salvo used to scale every victim in its
+    /// radius by the cover of the one thing it was aimed at, and it now asks the question of each
+    /// victim, so artillery does different damage to a formation than it did.
+    /// </para>
+    /// <para>
+    /// Before that it was allied forces ceasing to damage each other. Teams 0 and 1 are allied in
     /// this scenario and in every match the game ships, and every weapon, blast, attack order and
     /// off-map strike asked whether a target was on the <em>same team</em> rather than on the same
     /// side — so the two allies shot each other whenever their formations met, and the crossing
@@ -421,7 +433,7 @@ public sealed class DeterminismTests
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(15926114484445000828UL, HashScenario(20250101));
+        => Assert.Equal(2083852613423856686UL, HashScenario(20250101));
 
     /// <summary>
     /// A fixed defensive scene with the whole sensor chain in it: a Σοβιετικοί line of two gun
@@ -436,16 +448,27 @@ public sealed class DeterminismTests
     /// depends on what the factory took off the grid first.
     /// </para>
     /// <para>
-    /// Last changed by the arrival of exactly that: a detection radius per role, radar coverage
+    /// Last changed by armour and by mud costing a speed, which is the second time this number has
+    /// moved and for the first time from something other than the sensor chain. The gun here is a
+    /// Πυροβολείο firing at a Δυτικοί tank, so the 45-damage shell now arrives composed: the cover
+    /// of the lane it lands on, then the tank's 850 for being a Δυτικοί machine and its 1 000 for
+    /// being an ordinary one. The tank therefore lives longer, keeps its 190 m of reach for longer,
+    /// and the ticks on which the radar is doing the work are not the ticks they were. The mud lane
+    /// this scenario was built to avoid is still avoided — everything stands on the one line across
+    /// the map with no lava and no snow — so the movement change is not in this number, which is
+    /// worth knowing rather than assuming.
+    /// </para>
+    /// <para>
+    /// Before that it was the arrival of exactly that: a detection radius per role, radar coverage
     /// stamped into the fog, stealth detected at a fraction of it, and a power ledger that sheds
-    /// radars before anything else. This is its first value.
+    /// radars before anything else. That was its first value.
     /// </para>
     /// </summary>
     [Fact]
     public void GoldenSensorScenarioHash_IsStable()
     {
         Assert.Equal(HashSensorScenario(20250101), HashSensorScenario(20250101));
-        Assert.Equal(15054154362551790067UL, HashSensorScenario(20250101));
+        Assert.Equal(3928059992715472755UL, HashSensorScenario(20250101));
     }
 
     /// <summary>

@@ -1,0 +1,66 @@
+# Q: is the rasputitsa a Σοβιετικοί advantage, and is the mud the weather ability's doing?
+#
+#   MiVic.Game.exe --mud-demo --probe tools/probe/mud.probe --probe-out artifacts/probe/mud.txt
+#
+# Three tanks — Σοβιετικοί at slot 509, Δυτικοί at 508, Κινέζοι at 507 — at the near end of one lane
+# each, twenty-eight metres apart, on ground this fixture has levelled to grass. All three are the
+# same role with the same 400 mm-per-tick speed, so on this ground they are the same tank three
+# times; what separates them is the school that designed the hull, and the ground is about to stop
+# being grass.
+#
+# The mud is not a premise. The fixture clears the lane and gives team 0 the era, the design bureau
+# and the materials that Έλεγχος Καιρού is behind; the `ability` line below is the Σοβιετικοί ability
+# being called down through the world's own path, and the `attributes` pair either side of it is the
+# ground changing because of it. If the strike were refused the lanes would still be grass and both
+# columns would cover the same distance — which is what makes the difference below the weather's
+# doing rather than the fixture's.
+#
+# Ground pressure has been a per-faction figure for a long time and mud has always been a surface
+# with a movement cost; what was missing was that nothing on the *movement* path read that cost, so
+# the pressure steered a route and did not set a speed. This is the same number, finally spent.
+
+# --- the line-up, and the ground before the strike --------------------------------------------------
+units
+attributes -51 -257
+attributes -51 -237
+
+# --- the Σοβιετικοί call down the mud ---------------------------------------------------------------
+# The strike lands on the second of those cells, at the ability's own 70 m radius and for its own
+# 1 200 ticks, which covers the whole of all three lanes and then some. `attributes` on the same
+# cell afterwards is the surface having changed, and the speed in every `unit` line below is that
+# surface's doing.
+ability WeatherControl -51 -237 0
+tick 1
+attributes -51 -237
+
+# --- the orders -------------------------------------------------------------------------------------
+# Issued by the script, through the same command a click issues, and identical for the three: the
+# same distance in a straight line up each of the three lanes. Nothing here favours anybody.
+order 509 move -79 -182
+order 508 move -51 -182
+order 507 move -23 -182
+
+# --- ten seconds of the same mud --------------------------------------------------------------------
+# `unit` prints what each column covered and the ground line under it is the arithmetic: the surface
+# under it, the pressure its school's hull puts on that surface, the cost those two make together,
+# and the fraction of its nominal speed it is therefore left with.
+tick 200
+unit 509
+unit 508
+unit 507
+
+# --- the ledger of measurements ---------------------------------------------------------------------
+# Read off the three `travel` lines above and re-read the day the ground-pressure figures move.
+#
+# The Σοβιετικοί column covers about two thirds again what the Δυτικοί one does in the same ten
+# seconds, on the same mud, at the same catalogue speed — heavy where it does not move, light where
+# it does. The Κινέζοι hull presses hardest of the three and is last.
+#
+# These are not the whole of the arithmetic below them, and the difference is churn: a column wears
+# the ground it drives over and a heavier one wears it faster, so the cost each pays rises as it
+# goes — 216 ‰ for the Σοβιετικοί column and 281 ‰ for the Δυτικοί one against the 187 and 275 the
+# same two would pay for being the first vehicle on a fresh cell. The gap widens with distance,
+# which is the rasputitsa arriving rather than a bug in it.
+expect "Σοβιετικοί metres of mud in ten seconds" 39 39 1
+expect "Δυτικοί metres of mud in ten seconds" 23 23 1
+expect "Κινέζοι metres of mud in ten seconds" 20 20 1

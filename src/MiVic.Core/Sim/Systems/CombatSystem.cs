@@ -198,38 +198,47 @@ public static class CombatSystem
             int damageScale = attackerTeam.DamagePermille > 0 ? attackerTeam.DamagePermille : 1_000;
             int damage = Math.Max(1, (weapon.AttackDamage * damageScale) / 1_000);
 
-            // What the target is standing behind counts. Trees are cover to a man who
-            // can lie in them and nothing to a tank sitting on top of them, which is the
-            // same asymmetry the movement costs have: this is where infantry hold a
-            // wood against armour.
-            damage = ApplyCover(world, ref target, damage);
-
+            // What the target is standing behind, and what it is made of, are one question asked
+            // in one place. Cover is where it stands — trees are cover to a man who can lie in
+            // them and nothing to a tank sitting on top of them, which is the same asymmetry the
+            // movement costs have — and armour is what it is built from. The order between them,
+            // and the floor of one damage, live in DamageRules and nowhere else, so that a salvo
+            // and an off-map strike cannot answer the question differently from this gun.
+            //
+            // A salvo is handed its damage *before* that, deliberately: the shell that lands is
+            // the same shell whoever it lands on, so it is composed against each victim inside
+            // FireScattered rather than once against the thing it was aimed at.
             if (weapon.ScatterMm > 0)
             {
                 FireScattered(world, slot, ref attacker, weapon, damage);
             }
-            else if (target.Health <= damage)
-            {
-                // The shot lands on the man, and what is behind him is the deck he is standing on.
-                world.Bridgeworks.DamageAt(
-                    world.TerrainTypes,
-                    target.Position,
-                    Bridgeworks.DeckDamage(damage),
-                    attacker.TeamId);
-
-                Kill(world, attacker.TargetSlot);
-                attacker.TargetSlot = -1;
-                attacker.HasAttackOrder = false;
-            }
             else
             {
-                world.Bridgeworks.DamageAt(
-                    world.TerrainTypes,
-                    target.Position,
-                    Bridgeworks.DeckDamage(damage),
-                    attacker.TeamId);
+                int hit = DamageRules.Against(world, attacker.TargetSlot, damage);
 
-                target.Health -= damage;
+                if (target.Health <= hit)
+                {
+                    // The shot lands on the man, and what is behind him is the deck he is standing on.
+                    world.Bridgeworks.DamageAt(
+                        world.TerrainTypes,
+                        target.Position,
+                        Bridgeworks.DeckDamage(hit),
+                        attacker.TeamId);
+
+                    Kill(world, attacker.TargetSlot);
+                    attacker.TargetSlot = -1;
+                    attacker.HasAttackOrder = false;
+                }
+                else
+                {
+                    world.Bridgeworks.DamageAt(
+                        world.TerrainTypes,
+                        target.Position,
+                        Bridgeworks.DeckDamage(hit),
+                        attacker.TeamId);
+
+                    target.Health -= hit;
+                }
             }
 
             // Firing gives away a position: a stealthed unit is visible to the enemy
@@ -255,37 +264,25 @@ public static class CombatSystem
     }
 
     /// <summary>
-    /// Scales damage by whatever cover the target is standing in, never below one.
-    /// <para>
-    /// The multiplier is not capped at "no cover": ground that hides nothing leaves the shot
-    /// alone, and a crest, which is the opposite of cover, makes it land harder. One is the
-    /// floor because a shot that does nothing at all reads as a bug, and because a defender
-    /// who is genuinely untouchable should be untouchable by rule — out of range, or unseen —
-    /// rather than by a rounding of the damage. <see cref="TerrainLayer.CoverPermille"/>
-    /// guarantees a positive multiplier, so a hit can never be zeroed out here.
-    /// </para>
-    /// </summary>
-    private static int ApplyCover(SimWorld world, ref Entity target, int damage)
-    {
-        MovementClass movement = UnitCatalog.Get(target.Kind).Movement;
-        int cover = world.TerrainTypes.CoverAt(
-            world.TerrainTypes.IndexOfWorld(target.Position.X, target.Position.Z),
-            movement);
-
-        return Math.Max(1, (damage * cover) / TerrainLayer.NoCoverPermille);
-    }
-
-    /// <summary>
     /// Fires an inaccurate salvo at a target's position.
     /// <para>
     /// The impact point is offset from the target by a deterministic pseudo-random
     /// vector derived from the tick and the two slots, so a salvo scatters the same
     /// way in a replay without needing a random source in the hot loop. Every
-    /// hostile entity inside the splash radius takes full damage, and the intended
+    /// hostile entity inside the splash radius takes damage, and the intended
     /// target may be missed entirely — which is the whole point of the Κατιούσα.
     /// <em>Hostile</em> there means <see cref="SimWorld.IsHostile"/> and not "of another
     /// team": artillery that lands on its own side is not a stray shell, it is friendly
     /// fire, and the same predicate the gun in front of it asks settles both.
+    /// </para>
+    /// <para>
+    /// <b>Every victim is composed against itself.</b> The salvo arrives here with the shell's own
+    /// damage and asks <see cref="DamageRules"/> once per thing the blast reached, so a unit
+    /// standing in the open beside a target in a wood takes the hit the open ground allows it —
+    /// not the hit the wood allowed the thing that was aimed at. Before this the whole blast
+    /// shared one cover value, worked out for the sticky target and applied to everyone, which
+    /// was invisible while there was only one multiplier on the path and would have been an
+    /// armour bug the moment there were two.
     /// </para>
     /// </summary>
     private static void FireScattered(
@@ -305,7 +302,9 @@ public static class CombatSystem
         int capacity = world.Capacity;
 
         // A salvo is aimed at the ground rather than at a man, so it is the weapon that cuts a
-        // crossing: every block of an enemy's deck inside the radius takes the full damage.
+        // crossing: every block of an enemy's deck inside the radius takes the full damage. The
+        // deck is ground and not a unit — it has no owner to wear armour and no movement class to
+        // be sheltered by — so it takes the shell itself rather than a composed version of it.
         world.Bridgeworks.DamageArea(
             world.TerrainTypes,
             impactX,
@@ -341,13 +340,15 @@ public static class CombatSystem
                 continue;
             }
 
-            if (victim.Health <= damage)
+            int hit = DamageRules.Against(world, other, damage);
+
+            if (victim.Health <= hit)
             {
                 Kill(world, other);
             }
             else
             {
-                victim.Health -= damage;
+                victim.Health -= hit;
             }
         }
 

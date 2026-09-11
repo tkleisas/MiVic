@@ -663,12 +663,16 @@ public sealed class EmplacementCoverTests
         Assert.True(woodsCover < sandCover, $"woodland is not better cover than sand on this ground. {report}");
         Assert.True(sandLost > woodsLost, $"the ground the emplacement stands on made no difference to the damage it took. {report}");
 
-        // Damage is the catalogue's, scaled once by the cover of the cell the target occupies —
-        // the same arithmetic CombatSystem does, and the number the report above would be wrong
-        // about if it did not hold.
+        // Damage is the catalogue's, composed by the simulation's own rule — the ground the target
+        // occupies and then the armour it is made of, floored once at the end. It is asked of
+        // DamageRules rather than written out here: this assertion used to be a second copy of
+        // CombatSystem's arithmetic, which passed for as long as there was one multiplier on the
+        // path and would have gone on passing after armour made it two, by agreeing with itself
+        // instead of with the gun.
         int damage = UnitCatalog.Get(UnitKind.Tank).AttackDamage;
+        int armour = UnitCatalog.ArmourPermille(Faction.Western, UnitKind.GunEmplacement);
 
-        Assert.Equal(Math.Max(1, (damage * woodsCover) / TerrainLayer.NoCoverPermille), woodsLost);
-        Assert.Equal(Math.Max(1, (damage * sandCover) / TerrainLayer.NoCoverPermille), sandLost);
+        Assert.Equal(DamageRules.Compose(damage, woodsCover, armour), woodsLost);
+        Assert.Equal(DamageRules.Compose(damage, sandCover, armour), sandLost);
     }
 }

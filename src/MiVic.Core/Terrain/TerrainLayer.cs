@@ -1504,6 +1504,72 @@ public sealed class TerrainLayer
     public bool IsPassable(int index, MovementClass movement)
         => BaseCostPermille(movement, TypeAt(index)) != 0;
 
+    /// <summary>
+    /// The surfaces that yield under a track or a wheel and care how heavily the mover presses on
+    /// them. It is the same pair <see cref="CostPermille"/> already singles out, named once so that
+    /// the two callers cannot disagree about which ground the ground-pressure figure is about.
+    /// </summary>
+    public static bool IsSoft(TerrainType type) => type is TerrainType.Mud or TerrainType.Snow;
+
+    /// <summary>
+    /// The slowest soft ground may make anything go, in permille of its own speed: a tenth. A
+    /// floor by rule rather than by arithmetic, for the reason
+    /// <see cref="MinCoverPermille"/> gives about the other scale — a mover brought to a standstill
+    /// in a bog is a unit that cannot leave the mud it drove into, which is a state the player has
+    /// no order that fixes.
+    /// </summary>
+    public const int MinSoftGroundSpeedPermille = 100;
+
+    /// <summary>
+    /// What one cell of ground does to a mover's speed, in permille of its own: 1 000 is its full
+    /// speed, 500 is half of it, and hard ground is not in this question at all.
+    /// <para>
+    /// <b>This is the half of the ground-pressure system that was missing.</b>
+    /// <see cref="CostPermille"/> has always turned pressure into a cost and the pathfinder has
+    /// always spent it, so a heavy hull routes around a bog — but nothing on the movement path
+    /// read the cost, so every vehicle that entered one crossed it at exactly its catalogue speed.
+    /// Mud was a detour and not an obstacle, and the rasputitsa was latent in the numbers with no
+    /// way to observe it. Here the cost the ground already charges is turned into the speed the
+    /// mover actually makes, using the cost function itself rather than a second opinion about
+    /// mud, so the pathfinder's arithmetic and the wheels' arithmetic are the same arithmetic.
+    /// </para>
+    /// <para>
+    /// <b>Only the soft surfaces.</b> A first version scaled the step by whatever the ground cost,
+    /// which would have slowed the whole game down on rock, sand and forest and changed movement
+    /// everywhere in order to make one season of one weather ability mean something.
+    /// <see cref="IsSoft"/> is the narrower rule the terrain layer already draws — the surfaces
+    /// that care about pressure — and it is deliberately narrower than "everything above the
+    /// baseline": churned ground still costs a route and does not yet cost a speed, which is the
+    /// next thing to look at and is not this change.
+    /// </para>
+    /// <para>
+    /// Air is not on the ground and is not slowed by it. A mover standing on grass is at its
+    /// nominal speed, so nothing about the ordinary case has moved.
+    /// </para>
+    /// </summary>
+    /// <param name="index">Cell the mover is standing on or entering.</param>
+    /// <param name="movement">How it travels.</param>
+    /// <param name="groundPressurePermille">Nominal pressure, 1 000 being the baseline hull.</param>
+    public int SpeedPermilleAt(int index, MovementClass movement, int groundPressurePermille)
+    {
+        if (movement == MovementClass.Air || !IsSoft(TypeAt(index)))
+        {
+            return 1_000;
+        }
+
+        int cost = CostPermille(index, movement, groundPressurePermille);
+
+        // The baseline going is BasePermille, so a cell that costs exactly that is not worse than
+        // ordinary ground and takes nothing off. Below it — the 25 the clamp allows — would be
+        // ground faster than grass, which is not a thing this scale is allowed to say.
+        if (cost <= BasePermille)
+        {
+            return 1_000;
+        }
+
+        return IntMath.Clamp((BasePermille * 1_000) / cost, MinSoftGroundSpeedPermille, 1_000);
+    }
+
     /// <summary>Greek name of a surface, for the interface.</summary>
     public static string GreekName(TerrainType type) => type switch
     {

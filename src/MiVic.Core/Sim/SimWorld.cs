@@ -1160,13 +1160,24 @@ public sealed class SimWorld
                 continue;
             }
 
-            if (victim.Health <= definition.Damage)
+            // Off-map support asks the same question a rifle does. It used to apply the
+            // catalogue's damage raw, which made an orbital strike the one weapon in the game that
+            // ignored the ground the target was standing on and the armour it was made of — and a
+            // rule that holds for every damage path except one is not a rule, it is a special
+            // case waiting to be discovered by whoever balances the next ability. The nuke is
+            // included, which is a deliberate cost rather than an oversight: a bank of earth is
+            // not what saves a tank from one, but one rule that every path follows is worth more
+            // than a hand-written exception, and two damage rules are two rules a reader has to
+            // hold in their head at once.
+            int hit = DamageRules.Against(this, slot, definition.Damage);
+
+            if (victim.Health <= hit)
             {
                 Despawn(new EntityId(slot, victim.Generation));
             }
             else
             {
-                victim.Health -= definition.Damage;
+                victim.Health -= hit;
             }
         }
 

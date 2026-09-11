@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using MiVic.Core.Numerics;
+using MiVic.Core.Pathfinding;
 using MiVic.Core.Sim;
 using MiVic.Core.Terrain;using MiVic.Game.Data;
 using MiVic.Game.Sim;
@@ -318,6 +319,15 @@ public sealed class ProbeRunner
             case "exposure":
                 Exposure(command);
                 break;
+            case "armour":
+                Armour(command);
+                break;
+            case "order":
+                Order(command);
+                break;
+            case "ability":
+                Ability(command);
+                break;
             case "expect":
                 Expect(command);
                 break;
@@ -326,7 +336,7 @@ public sealed class ProbeRunner
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
                     "surfaces, attributes, units, unit, count, parts, model, visible, events, teams, bridge, " +
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
-                    "range, power, detect, exposure, expect");
+                    "range, power, detect, exposure, armour, order, ability, expect");
         }
     }
 
@@ -1434,6 +1444,7 @@ public sealed class ProbeRunner
         ref Entity entity = ref world.GetRefBySlot(slot);
         UnitDefinition definition = UnitCatalog.Get(entity.Kind);
         int cell = world.Navigation.IndexOfWorld(entity.Position);
+        int step = MovementSystem.StepMmPerTick(world, slot);
         ProbeCamera camera = _host.ReadCamera();
         bool visible = entity.TeamId == _host.ViewerTeam ||
             (!world.IsHiddenFrom(_host.ViewerTeam, slot) && world.Visibility.IsVisible(_host.ViewerTeam, cell));
@@ -1442,6 +1453,8 @@ public sealed class ProbeRunner
         Emit($"query:   position   {ProbeFormat.Point(SimBridge.ToMetres(entity.Position))}, cell {cell % world.Navigation.Size},{cell / world.Navigation.Size} on {ProbeLabels.Surface(world.TerrainTypes.TypeAt(cell))}");
         Emit($"query:   heading    {ProbeFormat.Angle(SimBridge.HeadingRadians(entity.Heading))}, {entity.Heading} brads of 65536");
         Emit($"query:   health     {entity.Health}/{definition.Health} ({(definition.Health > 0 ? entity.Health * 100 / definition.Health : 0)}%)");
+        Emit($"query:   {DescribeArmour(world, ref entity, definition)}");
+        Emit($"query:   {DescribeGround(world, cell, ref entity, definition, step)}");
         Emit($"query:   morale     {entity.Morale.ToFloat():0.000}{(entity.Routed ? ", routing" : ", steady")}");
         Emit(
             $"query:   move       {(entity.HasMoveGoal ? $"goal {ProbeFormat.Ground(entity.MoveGoal)}, {ProbeFormat.Metres(entity.Position.HorizontalDistanceTo(entity.MoveGoal) / (float)WorldPos.MmPerMetre)} to go" : "none")}, " +
@@ -1449,8 +1462,12 @@ public sealed class ProbeRunner
         Emit($"query:   attack     {DescribeAttack(world, ref entity, definition)}");
         Emit(
             $"query:   travel     {ProbeFormat.Metres(entity.DistanceTravelledMm / (float)WorldPos.MmPerMetre)} covered at " +
-            $"{ProbeFormat.Metres(entity.SpeedMmPerTick.ToFloat() * SimConstants.TickRate / WorldPos.MmPerMetre)} per second " +
-            $"({ProbeFormat.Metres(entity.SpeedMmPerTick.ToFloat() / WorldPos.MmPerMetre)} per tick)");
+            $"{ProbeFormat.Metres(step * SimConstants.TickRate / (float)WorldPos.MmPerMetre)} per second " +
+            $"({ProbeFormat.Metres(step / (float)WorldPos.MmPerMetre)} per tick)" +
+            (step == entity.SpeedMmPerTick.ToIntRound()
+                ? string.Empty
+                : $", against {ProbeFormat.Metres(entity.SpeedMmPerTick.ToFloat() * SimConstants.TickRate / WorldPos.MmPerMetre)} per second " +
+                  $"({ProbeFormat.Metres(entity.SpeedMmPerTick.ToFloat() / WorldPos.MmPerMetre)} per tick) on clear ground"));
         Emit($"query:   structure  building {(definition.IsBuilding ? "yes" : "no")}, queued {ProbeFormat.Count(entity.QueueLength, "job")}, construction {DescribeConstruction(ref entity)}");
         Emit($"query:   render     {(visible ? "drawn" : "not drawn (fog or stealth)")}, camera at {ProbeFormat.Metres(Vector3.Distance(camera.Position, SimBridge.ToMetres(entity.Position)))}");
     }
@@ -1588,8 +1605,270 @@ public sealed class ProbeRunner
         Emit($"query:   detection  the cell is {(world.Visibility.IsDetected(team, cell) ? "detected" : "not detected")} by team {team}");
     }
 
-    private static string DescribeAttack(SimWorld world, ref Entity entity, UnitDefinition definition)
+    /// <summary>
+    /// <b>What armour does to one hit, per faction, with no battle in it.</b>
+    /// <para>
+    /// The composition rule in full, asked of a role and a cell: the ground's cover, then each
+    /// power's armour — the role's own construction times that power's philosophy — and the damage
+    /// a hit of a given size is left with. It exists because the claim this feature makes is a
+    /// <em>difference between factions</em>, and a difference read off three health bars is a
+    /// measurement of one battle while a difference read off this table is the rule itself.
+    /// <c>events</c> is the other half, and the two agreeing is the proof.
+    /// </para>
+    /// <para>
+    /// The arithmetic is asked of <see cref="DamageRules.Compose"/> and the figures of
+    /// <see cref="UnitCatalog.ArmourPermille"/> rather than written out again here, so a transcript
+    /// cannot report a rule the guns do not follow — which is the failure mode a second copy of the
+    /// sums always has, and the reason the whole rule lives in one function.
+    /// </para>
+    /// </summary>
+    private void Armour(ProbeCommand command)
     {
+        const string Usage = "armour <kind> <x> <z> [damage]";
+
+        UnitKind kind = ParseKind(command.Argument(0, "a role such as CommandCentre or Tank", Usage));
+        float x = command.Number(1, "an x in metres", Usage);
+        float z = command.Number(2, "a z in metres", Usage);
+        int damage = (int)command.OptionalNumber(3, 45f, "damage per hit", Usage);
+
+        SimWorld world = _host.Simulation.World;
+        UnitDefinition definition = UnitCatalog.Get(kind);
+        int cell = world.TerrainTypes.IndexOfWorld((int)(x * WorldPos.MmPerMetre), (int)(z * WorldPos.MmPerMetre));
+
+        if (cell < 0)
+        {
+            throw new ProbeException($"({x}, {z}) m is off the map — {Usage}, and the map is +-300 m");
+        }
+
+        int cover = world.TerrainTypes.CoverAt(cell, definition.Movement);
+        ArmourClass armourClass = UnitCatalog.ArmourClassOf(kind);
+
+        Emit(
+            $"query: armour: a {damage}-damage hit on {ProbeLabels.KindName(kind)} at (x {x:0.#}, z {z:0.#}) m — " +
+            $"{DescribeCell(world, cell)}, {armourClass.ToString().ToLowerInvariant()} armour");
+        Emit("query:   rule       damage × cover ÷ 1000 × armour ÷ 1000, floored at 1 — DamageRules.Compose, the one place a hit becomes damage");
+        Emit(
+            $"query:   cover      {ProbeFormat.Permille(cover)} for {definition.Movement.ToString().ToLowerInvariant()} " +
+            $"— what the ground lets through, and 1000 is ground that hides nobody");
+
+        foreach (FactionProfile profile in FactionProfile.All)
+        {
+            Faction faction = profile.Faction;
+            int factionArmour = profile.ArmourPermilleFor(armourClass);
+            int armour = UnitCatalog.ArmourPermille(faction, kind);
+            int hit = DamageRules.Compose(damage, cover, armour);
+
+            Emit(
+                $"query:   {Greek(faction),-11}  role {ProbeFormat.Permille(definition.RoleArmourPermille)} × " +
+                $"faction {ProbeFormat.Permille(factionArmour)} = {ProbeFormat.Permille(armour)} → " +
+                $"{hit} damage, {damage - hit} turned away");
+        }
+    }
+
+    /// <summary>The faction's Greek name, padded for the column it is printed in.</summary>
+    private static string Greek(Faction faction)
+        => faction == Faction.None ? "—" : FactionProfile.For(faction).GreekName;
+
+    /// <summary>
+    /// <b>Gives one unit an order through the simulation's own command queue.</b>
+    /// <para>
+    /// A probe cannot place a unit, and until now it could not tell one to go anywhere either — so
+    /// every question about a unit <em>moving</em> had to be answered by a fixture that ordered it,
+    /// which made the order part of the premise instead of part of the demonstration. This is the
+    /// same <see cref="SimCommand"/> a click issues, enqueued for the next tick, so a script that
+    /// orders a column across a bog is driving the real thing: the order is validated where an
+    /// order is validated, and a refusal is printed rather than assumed.
+    /// </para>
+    /// <para>
+    /// It is the fourth command in this tool that changes the world, after the three that had to:
+    /// a crossing cannot be inspected until it is built, a structure cannot be inspected until it
+    /// is raised, and a distance cannot be inspected until something is told to cover it.
+    /// </para>
+    /// </summary>
+    private void Order(ProbeCommand command)
+    {
+        const string Usage = "order <slot> move <x> <z> | order <slot> attack <slot>";
+
+        int slot = command.Whole(0, "a slot number", Usage, 0, MaxSlot);
+        string what = command.Argument(1, "'move' or 'attack'", Usage).ToLowerInvariant();
+        SimWorld world = _host.Simulation.World;
+
+        if (!world.IsAliveSlot(slot))
+        {
+            throw new ProbeException($"slot {slot} holds nothing alive — {Usage}; `units` lists what does");
+        }
+
+        ref Entity entity = ref world.GetRefBySlot(slot);
+        SimCommand issued;
+
+        if (what == "move")
+        {
+            float x = command.Number(2, "an x in metres", Usage);
+            float z = command.Number(3, "a z in metres", Usage);
+            var goal = new WorldPos((int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre));
+
+            if (world.TerrainTypes.IndexOfWorld(goal.X, goal.Z) < 0)
+            {
+                throw new ProbeException($"({x}, {z}) m is off the map — {Usage}, and the map is +-300 m");
+            }
+
+            issued = SimCommand.Move(new EntityId(slot, entity.Generation), goal, world.Tick + 1, entity.TeamId);
+
+            Emit($"query: order {slot} move to (x {x:0.#}, z {z:0.#}) m — {DescribeCell(world, world.TerrainTypes.IndexOfWorld(goal.X, goal.Z))}");
+        }
+        else if (what == "attack")
+        {
+            int victim = command.Whole(2, "a slot number", Usage, 0, MaxSlot);
+
+            if (!world.IsAliveSlot(victim))
+            {
+                throw new ProbeException($"slot {victim} holds nothing alive to attack — {Usage}");
+            }
+
+            issued = SimCommand.Attack(new EntityId(slot, entity.Generation), new EntityId(victim, world.GetRefBySlot(victim).Generation), world.Tick + 1, entity.TeamId);
+
+            bool hostile = world.IsHostile(entity.TeamId, world.GetRefBySlot(victim).TeamId);
+
+            Emit($"query: order {slot} attack {victim} — {ProbeLabels.KindName(world.GetRefBySlot(victim).Kind)}, " +
+                 (hostile ? "hostile, so the order stands" : "NOT HOSTILE, so the order is thrown away rather than obeyed"));
+        }
+        else
+        {
+            throw new ProbeException($"'{what}' is not an order a probe can give — usage: {Usage}");
+        }
+
+        world.Enqueue(issued);
+
+        Emit(
+            $"ok: {ProbeLabels.KindName(entity.Kind)} at slot {slot} ordered to {what}, executing on tick {world.Tick + 1} — " +
+            $"`tick 1` issues it and `unit {slot}` reads what came of it");
+    }
+
+    /// <summary>
+    /// <b>Calls in an off-map ability at a point, through the world's own ability path.</b>
+    /// <para>
+    /// The signature verb of a faction that has one, and until now the only way to see an ability
+    /// work was to build a world with its prerequisites already met and watch. That is fine for a
+    /// nuke and useless for weather control, whose whole point is a surface the <em>player</em>
+    /// chooses — the mud is laid where the enemy has to cross, so a script has to be able to say
+    /// where that is.
+    /// </para>
+    /// <para>
+    /// The verdict is the world's, not this command's: <see cref="SimWorld.CanUseAbility"/> is
+    /// asked first and its refusal — in the words the player is shown — is printed, so a script
+    /// that tries to call down a strike it has not researched reads the same sentence a player
+    /// would.
+    /// </para>
+    /// </summary>
+    private void Ability(ProbeCommand command)
+    {
+        const string Usage = "ability <name> <x> <z> [team]";
+
+        string name = command.Argument(0, "an ability such as WeatherControl", Usage);
+
+        if (!Enum.TryParse(name, ignoreCase: true, out AbilityId id) || !AbilityCatalog.TryGet(id, out AbilityDefinition definition))
+        {
+            throw new ProbeException($"'{name}' is not an ability the catalogue knows — {Usage}");
+        }
+
+        float x = command.Number(1, "an x in metres", Usage);
+        float z = command.Number(2, "a z in metres", Usage);
+        int team = (int)command.OptionalNumber(3, 0f, "a team number", Usage);
+
+        if ((uint)team >= SimConstants.TeamCount)
+        {
+            throw new ProbeException($"team {team} is not one of the {SimConstants.TeamCount} the simulation has — {Usage}");
+        }
+
+        SimWorld world = _host.Simulation.World;
+        var target = new WorldPos((int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre));
+
+        if (world.TerrainTypes.IndexOfWorld(target.X, target.Z) < 0)
+        {
+            throw new ProbeException($"({x}, {z}) m is off the map — {Usage}, and the map is +-300 m");
+        }
+
+        Emit($"query: ability {definition.GreekName} at (x {x:0.#}, z {z:0.#}) m for team {team}");
+        Emit($"query:   costs      {definition.MaterialCost} Π, ready again {ProbeFormat.Ticks(definition.CooldownTicks)} after it lands");
+        Emit($"query:   arrives    {definition.Damage} damage inside {ProbeFormat.Millimetres(definition.RadiusMm)}" +
+             (definition.WeatherDurationTicks > 0 ? $", and {ProbeFormat.Ticks(definition.WeatherDurationTicks)} of mud" : string.Empty));
+        if (!world.CanUseAbility(team, id, out string reason))
+        {
+            Emit($"query:   verdict    refused — {reason}");
+
+            // Not an error: a refusal is an answer, and the reason is the sentence the player
+            // would be shown. A script that only ever calls abilities it has researched will
+            // never read this line, and one that does has found out why.
+            RecordCheck($"ability {id} available to team {team}", false, $"refused — {reason}");
+            return;
+        }
+
+        world.Enqueue(SimCommand.UseAbility(id, target, world.Tick + 1, team));
+
+        Emit($"ok: {definition.GreekName} called down at (x {x:0.#}, z {z:0.#}) m for team {team}, executing on tick {world.Tick + 1}");
+    }
+
+    /// <summary>
+    /// One entity's armour, written the way the rule reads: the class it belongs to, the role's own
+    /// figure, its owner's, and the product — which is the share of every hit that lands on it.
+    /// </summary>
+    private static string DescribeArmour(SimWorld world, ref Entity entity, UnitDefinition definition)
+    {
+        ArmourClass armourClass = UnitCatalog.ArmourClassOf(entity.Kind);
+
+        if (armourClass == ArmourClass.None)
+        {
+            return "armour     none — a man on foot wears no plate, and the ground he stands on is his protection";
+        }
+
+        int faction = entity.Faction == Faction.None ? 1_000 : FactionProfile.For(entity.Faction).ArmourPermilleFor(armourClass);
+        int armour = UnitCatalog.ArmourPermille(entity.Faction, entity.Kind);
+        int cell = world.TerrainTypes.IndexOfWorld(entity.Position.X, entity.Position.Z);
+        int example = DamageRules.Compose(45, world.TerrainTypes.CoverAt(cell, definition.Movement), armour);
+
+        return
+            $"armour     {armourClass.ToString().ToLowerInvariant()} — role {ProbeFormat.Permille(definition.RoleArmourPermille)} × " +
+            $"faction {ProbeFormat.Permille(faction)} = {ProbeFormat.Permille(armour)}, so a 45-damage hit here lands as {example}";
+    }
+
+    /// <summary>
+    /// What the ground under one unit is doing to it, which is the other half of why a column is
+    /// slow. It is the answer to "the tanks are crawling and nothing is shooting at them": the
+    /// surface, the pressure this school's hull puts on it, the cost those two make together, and
+    /// the fraction of its own speed the unit is left with — all read from the same calls the
+    /// movement system makes, so a transcript cannot report a cost the wheels do not pay.
+    /// </summary>
+    private static string DescribeGround(SimWorld world, int cell, ref Entity entity, UnitDefinition definition, int step)
+    {
+        if (definition.IsBuilding)
+        {
+            return "ground     does not move, so the ground it stands on costs it nothing";
+        }
+
+        if (cell < 0)
+        {
+            return "ground     off the map, so no terrain cost applies";
+        }
+
+        PathContext context = world.PathContextOf(entity.TeamId, entity.Faction, entity.Kind);
+
+        if (context.Movement == MovementClass.Air)
+        {
+            return "ground     flies over it: 1000 ‰ of its speed on every surface";
+        }
+
+        int cost = world.TerrainTypes.CostPermille(cell, context.Movement, context.GroundPressurePermille);
+        int permille = world.TerrainTypes.SpeedPermilleAt(cell, context.Movement, context.GroundPressurePermille);
+        int nominal = Math.Max(0, entity.SpeedMmPerTick.ToIntRound());
+
+        return
+            $"ground     {ProbeLabels.Surface(world.TerrainTypes.TypeAt(cell))}, " +
+            $"{context.Movement.ToString().ToLowerInvariant()} at {ProbeFormat.Permille(context.GroundPressurePermille)} pressure — " +
+            $"costs {ProbeFormat.Permille(cost)} of the baseline, so {step} of its {nominal} mm per tick " +
+            $"({ProbeFormat.Permille(permille)} of its speed)";
+    }
+
+    private static string DescribeAttack(SimWorld world, ref Entity entity, UnitDefinition definition)    {
         if (!definition.IsArmed)
         {
             return "unarmed";

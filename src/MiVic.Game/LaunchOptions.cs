@@ -109,7 +109,7 @@ public sealed record LaunchOptions
     /// thing the fixture exists to show.
     /// </para>
     /// </summary>
-    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || EmplacementDemo || DetectionDemo || AllianceDemo || IsProbe;
+    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || EmplacementDemo || DetectionDemo || AllianceDemo || ArmourDemo || MudDemo || IsProbe;
 
     /// <summary>
     /// When set, run the probe script in this file and exit.
@@ -173,11 +173,27 @@ public sealed record LaunchOptions
     public bool DetectionDemo { get; init; }
 
     /// <summary>
-    /// Two allied machines inside each other's killing range with an enemy further out: the
+    /// Three allied machines inside each other's killing range with an enemy further out: the
     /// scene in which "an ally is not a target" can be watched, read with the probe's
     /// <c>teams</c> and <c>unit</c> queries.
     /// </summary>
     public bool AllianceDemo { get; init; }
+
+    /// <summary>
+    /// Three headquarters of one role, one per power, each with the same gun thirty-five metres off
+    /// it: the scene in which "the same weapon does measurably less to a Σοβιετικοί building than to
+    /// a Κινέζοι one" can be measured rather than asserted. Read with the probe's <c>events</c>,
+    /// <c>attributes</c> and <c>armour</c> queries.
+    /// </summary>
+    public bool ArmourDemo { get; init; }
+
+    /// <summary>
+    /// A Σοβιετικοί, a Δυτικοί and a Κινέζοι tank at the near end of one lane each, on ground that
+    /// is plain until the probe calls Έλεγχος Καιρού down on it: the rasputitsa, with the weather
+    /// strike that makes it as part of the demonstration rather than as a premise. Read with the
+    /// probe's <c>ability</c>, <c>attributes</c>, <c>order</c> and <c>unit</c> queries.
+    /// </summary>
+    public bool MudDemo { get; init; }
 
     /// <summary>
     /// Names one surface for the ground fixture to frame instead of the most varied
@@ -224,6 +240,8 @@ public sealed record LaunchOptions
           --particle-demo       Επίδειξη σωματιδίων (εκρήξεις, καπνός)
           --turret-demo         Δύο άρματα που πυροβολούνται, για τον πύργο
           --alliance-demo       Δύο σύμμαχοι σε εμβέλεια, με εχθρό πιο πέρα
+          --armour-demo         Ίδιο όπλο σε τρία επιτελεία, ένα ανά παράταξη
+          --mud-demo            Δύο σχολές στην ίδια λάσπη, με Έλεγχο Καιρού
           --flight-demo         Αεροσκάφη σε πτήση, για την κατεύθυνση της πλώρης
           --render-audio <dir>  Εξαγωγή θεμάτων μουσικής σε αρχεία WAV
           --render-sfx <dir>    Εξαγωγή ηχητικών εφέ σε αρχεία WAV
@@ -483,6 +501,20 @@ public sealed record LaunchOptions
                     // Two seconds in, which is long enough for every weapon in the line-up to
                     // have acquired and fired at least once: a tank's reload is 24 ticks.
                     options = options with { AllianceDemo = true, ShowHelp = false, ScreenshotFrame = 60 };
+                    break;
+
+                case "--armour-demo":
+                    // Long enough for every gun in the line-up to have landed several shells: the
+                    // emplacement's reload is fifty ticks, so three hundred is six hits apiece —
+                    // enough that a transcript of the events stream is a measurement rather than a
+                    // single coincidence.
+                    options = options with { ArmourDemo = true, ShowHelp = false, ScreenshotFrame = 300 };
+                    break;
+
+                case "--mud-demo":
+                    // Ten seconds, by which time the Σοβιετικοί column has pulled well clear of the
+                    // Δυτικοί one and neither has reached the end of the lane.
+                    options = options with { MudDemo = true, ShowHelp = false, ScreenshotFrame = 220 };
                     break;
 
                 case "--render-audio":

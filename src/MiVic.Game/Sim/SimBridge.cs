@@ -1,5 +1,6 @@
 using MiVic.Core.Campaign;
 using MiVic.Core.Numerics;
+using MiVic.Core.Pathfinding;
 using MiVic.Core.Random;
 using MiVic.Core.Replay;
 using MiVic.Core.Sim;
@@ -602,6 +603,262 @@ public sealed class SimBridge
 
         return bridge;
     }
+
+    /// <summary>
+    /// Three headquarters of the same role, one per power, each with the same gun standing thirty-five
+    /// metres off it: the scene in which "the same weapon does measurably less to a Σοβιετικοί
+    /// building than to a Κινέζοι one" stops being a table of permille and becomes three numbers on
+    /// three health bars.
+    /// <para>
+    /// Why a fixture is needed at all: no match contains three of anything, because a match is
+    /// between powers and a demonstration of armour is <em>across</em> them. The three buildings are
+    /// identical in every respect except who built them — same role, same hit points, same ground,
+    /// same distance from the same gun — so the difference the probe reads off them is the armour
+    /// and nothing else. The guns stand on the undeclared fourth team so that the computer opponent
+    /// does not adopt them, and the buildings stand on team 2 so that the guns may shoot them; a
+    /// building cannot walk away from either.
+    /// </para>
+    /// <para>
+    /// The ground under the three targets is levelled to one surface with no canopy and no landform:
+    /// cover and armour are two multipliers on the same path, and a fixture that let the ground
+    /// differ between the three would be showing the map while claiming to show the armour. The
+    /// probe's own <c>attributes</c> on the three cells is how a reader checks that.
+    /// </para>
+    /// <para>
+    /// Down the Z axis with the guns to the +X side, thirty-five metres from their own building and
+    /// forty-six from the next one along, so each gun's nearest hostile is the building it was stood
+    /// beside. The gun emplacement is the shooter because it is 45 damage on a fifty-tick reload —
+    /// slow enough that several hits from each can be read in one transcript, and a number the
+    /// probe's <c>armour</c> query can be checked against directly.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateArmourDemo(ulong seed)
+    {
+        var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
+
+        SimWorld world = bridge.World;
+        Clear(bridge);
+
+        if (!TryFindClearing(world.TerrainTypes, metres: 70f, out int bestCell, out int bestScore))
+        {
+            return bridge;
+        }
+
+        (int centreX, int centreZ) = CellCentreMetres(world.TerrainTypes, bestCell);
+
+        Console.WriteLine($"armour-demo: open ground at {centreX}, {centreZ} (score {bestScore})");
+
+        // Σοβιετικοί, Κινέζοι, Δυτικοί — in that order, which is the order the ordering is read in.
+        Faction[] built = [Faction.Soviet, Faction.Chinese, Faction.Western];
+
+        // The two teams that make this a measurement rather than a battle. The targets stand on the
+        // undeclared fourth slot, which no match declares and the computer therefore does not play:
+        // a headquarters the opponent owns produces infantry, and the first attempt at this fixture
+        // had a Δυτικοί rifleman walk into the frame and start shooting one of the guns. The guns
+        // stand on team 2, which the computer does play — and owns nothing but three emplacements
+        // that cannot move and have no materials to spend, so the only thing it can order them to do
+        // is what they were already doing.
+        foreach (int team in new[] { 0, 1, DefencelessTeam })
+        {
+            world.TeamRef(team).Materials = 0;
+            world.TeamRef(team).Energy = 0;
+            world.TeamRef(team).Water = 0;
+        }
+
+        for (int i = 0; i < built.Length; i++)
+        {
+            int z = centreZ + ((i - 1) * 30);
+
+            LevelGround(world, centreX, z);
+
+            EntityId target = world.Spawn(
+                built[i],
+                NeutralTeam,
+                UnitKind.CommandCentre,
+                WorldPos.GroundMetres(centreX, z),
+                Fix32.Zero,
+                UnitCatalog.Get(UnitKind.CommandCentre).Health);
+
+            // The gun, thirty-five metres east of it and forty-six from the next headquarters
+            // along, so that each gun's nearest hostile is the building it was stood beside.
+            SpawnAbsolute(world, Faction.Soviet, DefencelessTeam, UnitKind.GunEmplacement, centreX + 35, z);
+
+            Console.WriteLine($"armour-demo: {built[i]} headquarters at slot {target.Slot}, gun 35 m east of it");
+        }
+
+        return bridge;
+    }
+
+    /// <summary>
+    /// Two ground tanks of two schools on the same mud, with the mud laid by the Σοβιετικοί weather
+    /// ability rather than by the fixture: the rasputitsa, end to end.
+    /// <para>
+    /// The fixture supplies the situation and nothing else. It finds a block of ground the
+    /// pathfinder has no opinion about, lays one surface over the whole of it so that a route cannot
+    /// be a difference between the lanes, stands a Σοβιετικοί, a Δυτικοί and a Κινέζοι tank at the
+    /// near end of one lane each, and gives team 0 the era, the bureau and the materials that
+    /// Έλεγχος Καιρού is behind. What turns the ground to mud is then the probe's own
+    /// <c>ability</c> command, through the ability the player would press: if the weather strike did
+    /// not lay mud, both columns would cross at their catalogue speed and the transcript would say
+    /// so.
+    /// </para>
+    /// <para>
+    /// The tanks are on the undeclared fourth team, all three of them, which is the only way three
+    /// different schools can stand within sight of each other without shooting: an undeclared team
+    /// is its own ally, and the computer opponent does not play it. They are ordered across by the
+    /// probe, so nothing in this scene has been given an order by the fixture.
+    /// </para>
+    /// <para>
+    /// The bureau stands two lanes clear of the column, past the 110 m a tank shoots, because a
+    /// structure that the subjects spend the measurement shelling is a distraction in a transcript
+    /// about speed.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateMudDemo(ulong seed)
+    {
+        var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
+
+        SimWorld world = bridge.World;
+        Clear(bridge);
+
+        if (!TryFindOpenBlock(world, BlockRadius, out int blockCell))
+        {
+            Console.WriteLine("mud-demo: the map has no open block wide enough for three lanes");
+            return bridge;
+        }
+
+        // Cells to metres, once, here: the block is searched for on the navigation lattice and
+        // everything below stands in metres. The first version of this fixture mixed the two and
+        // laid its lanes a hundred and eighty metres away from the ground it had just cleared.
+        (int centreX, int centreZ) = CellCentreMetres(world.TerrainTypes, blockCell);
+
+        Console.WriteLine($"mud-demo: open block at {centreX}, {centreZ} m");
+
+        int blockX = blockCell % world.TerrainTypes.Size;
+        int blockZ = blockCell / world.TerrainTypes.Size;
+
+        for (int dz = -BlockRadius; dz <= BlockRadius; dz++)
+        {
+            for (int dx = -BlockRadius; dx <= BlockRadius; dx++)
+            {
+                world.TerrainTypes.SetType(world.Navigation.IndexOf(blockX + dx, blockZ + dz), TerrainType.Grass);
+            }
+        }
+
+        // Σοβιετικοί first, because the lane nearest the camera is the one a reader follows.
+        Faction[] schools = [Faction.Soviet, Faction.Western, Faction.Chinese];
+
+        for (int i = 0; i < schools.Length; i++)
+        {
+            EntityId tank = SpawnAbsolute(
+                world,
+                schools[i],
+                NeutralTeam,
+                UnitKind.Tank,
+                centreX + ((i - 1) * 28),
+                centreZ - 56);
+
+            Console.WriteLine($"mud-demo: {schools[i]} tank at slot {tank.Slot}, lane x {centreX + ((i - 1) * 28)}");
+        }
+
+        // The weather ability's own prerequisites, met as a player would meet them: the era, the
+        // project, the design bureau and the materials. Without this the probe's `ability` line
+        // would be refused and the demonstration would have no mud in it.
+        //
+        // Sixteen cells to the side, which is a hundred and fifty metres: past the hundred and ten a
+        // tank shoots, from every point of every lane, because a design bureau that the subjects
+        // spend the measurement shelling is a distraction in a transcript about speed.
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.DesignBureau, centreX + 150, centreZ);
+
+        ref TeamState caster = ref world.TeamRef(0);
+        caster.TechTier = 4;
+        caster.TechMask |= 1UL << (int)TechId.SovietAdvance4;
+        caster.Materials = 5_000;
+        caster.Energy = 2_000;
+        caster.Water = 2_000;
+
+        return bridge;
+    }
+
+    /// <summary>Half the width, in cells, of the block the mud demonstration is laid over.</summary>
+    private const int BlockRadius = 8;
+
+    /// <summary>
+    /// A square of ground <paramref name="radius"/> cells in every direction on which every cell is
+    /// walkable, with room beside it for a structure two lanes clear of the lanes themselves.
+    /// <para>
+    /// Walkable rather than merely dry: a navigation cell the slope made impassable is an obstacle
+    /// whatever its surface is, and a column that routed around one would be measuring the map
+    /// instead of the mud. It is the same search the fixtures do for a clearing, asked of the grid
+    /// the pathfinder uses rather than of the surfaces. It answers with a cell index, and the
+    /// margin is wide enough that the bureau the caller stands beside the block is on the map too.
+    /// </para>
+    /// </summary>
+    private static bool TryFindOpenBlock(SimWorld world, int radius, out int cell)
+    {
+        NavGrid grid = world.Navigation;
+        int margin = radius + 18;
+
+        for (int z = radius + 2; z < grid.Size - radius - 2; z++)
+        {
+            for (int x = margin; x < grid.Size - margin; x++)
+            {
+                bool open = true;
+
+                for (int dz = -radius; dz <= radius && open; dz++)
+                {
+                    for (int dx = -radius; dx <= radius; dx++)
+                    {
+                        if (!grid.IsWalkable(grid.IndexOf(x + dx, z + dz)))
+                        {
+                            open = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (open)
+                {
+                    cell = grid.IndexOf(x, z);
+                    return true;
+                }
+            }
+        }
+
+        cell = -1;
+        return false;
+    }
+
+    /// <summary>
+    /// Sets the ground under one point to bare sand, so that two targets can be compared without the
+    /// ground being a second difference between them.
+    /// </summary>
+    private static void LevelGround(SimWorld world, int xMetres, int zMetres)
+    {
+        TerrainLayer terrain = world.TerrainTypes;
+        int cell = terrain.IndexOfWorld(xMetres * WorldPos.MmPerMetre, zMetres * WorldPos.MmPerMetre);
+
+        if (cell < 0)
+        {
+            return;
+        }
+
+        terrain.SetType(cell, TerrainType.Sand);
+        terrain.SetAttributes(
+            cell,
+            terrain.AttributesAt(cell).WithLandform(TerrainShape.Plain).WithVegetation(0));
+    }
+
+    /// <summary>
+    /// The team the armour demonstration's guns stand on.
+    /// <para>
+    /// A team the match declares rather than the undeclared slot, because the targets have to stand
+    /// on the undeclared one — they are three buildings of three powers and no match contains three
+    /// of anything — and the two sides have to be hostile to each other for a shot to be fired at
+    /// all. The undeclared team is its own ally, so the guns cannot be on it too.
+    /// </para>
+    /// </summary>
+    private const int DefencelessTeam = 2;
 
     /// <summary>
     /// Spawns one unit at an exact metre position, without the legal-ground search a
