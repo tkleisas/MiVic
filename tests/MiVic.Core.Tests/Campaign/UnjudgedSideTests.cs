@@ -117,6 +117,41 @@ public sealed class UnjudgedSideTests
         return world;
     }
 
+    /// <summary>Ticks the clock mission's limit is written in.</summary>
+    private const int ClockMissionLimit = 200;
+
+    /// <summary>
+    /// <b>A match that can only be lost by its clock:</b> a two-faction mission, both armies standing,
+    /// and one primary objective that no deadline can fail — so the limit is the only thing left that
+    /// can end it. The limit is short because a test has to reach it, and what its length changes is
+    /// how long that takes and nothing else.
+    /// </summary>
+    private static MissionDefinition ClockMission() => new(
+        Id: "clock_mission",
+        GreekTitle: "Δοκιμή: η αποστολή που χάνεται με το ρολόι",
+        GreekBriefing:
+            "Μια αποστολή που δεν μπορεί να χαθεί από τους στόχους της: " +
+            "ο μόνος στόχος δεν έχει διορία, οπότε το ρολόι είναι αυτό που την κρίνει.",
+        Seed: 20250104UL,
+        PlayerBase: new WorldPos(-180_000, 0, -180_000),
+        AllyBase: default,
+        EnemyBase: new WorldPos(180_000, 0, 180_000),
+        PlayerUnits: 8,
+        AllyUnits: 0,
+        EnemyUnits: 8,
+        Objectives:
+        [
+            new ObjectiveDefinition(
+                ObjectiveKind.ReachTechTier,
+                "Φτάστε σε τεχνολογικό επίπεδο 3.",
+                Team: 0,
+                TierTarget: 3),
+        ],
+        TimeLimitTicks: ClockMissionLimit)
+    {
+        Roster = MatchRoster.Duel,
+    };
+
     private static string Joined(IReadOnlyList<string> problems) => string.Join(" | ", problems);
 
     /// <summary>Number of live entities a team owns.</summary>
@@ -235,20 +270,26 @@ public sealed class UnjudgedSideTests
         Assert.True(world.Objectives[0].IsPending);
     }
 
-    // ---------------------------------------------------------------- the two kinds of defeat
+    // ---------------------------------------------------------------- why a defeat records
 
     /// <summary>
-    /// <b>The rule's defeat and the objectives' defeat are not the same event, and the one fact that
-    /// tells them apart is what the banner reads.</b>
+    /// <b>The rule's defeat and the objectives' defeat are not the same event, and what tells them
+    /// apart is what the banner names.</b>
     /// <para>
     /// The client's defeat line said <em>your side was destroyed</em> for every defeat there is —
     /// including a mission lost by an objective failing or by its clock running out with both armies
-    /// standing, over a panel showing sixteen units and four structures alive on each side. The fix is
-    /// not new wording for the rule's defeat; it is that the banner asks the world whether the player's
-    /// side holds anything before it says the side was destroyed, and the answers are exactly the two
-    /// asserted here: a defeat the rule reached has the side in nothing, and a defeat the objectives
-    /// reached has it standing. <see cref="VictorySystem.SideHasStructures"/> is the question and the
-    /// banner is one line of copy over it; this is that line's honesty in the layer that can be asked.
+    /// standing, over a panel showing sixteen units and four structures alive on each side. The fix was
+    /// never new wording for the rule's defeat; it is that the banner asks the world why the match was
+    /// lost before it says anything about the side, and the answers are exactly the two asserted here:
+    /// a defeat the rule reached has the side in nothing, and a defeat the objectives reached has it
+    /// standing. <see cref="DefeatReport.Of"/> is that question, and the banner is one line of copy
+    /// over it; this is the answer's honesty in the layer that can be asked.
+    /// </para>
+    /// <para>
+    /// <b>The invariant the interface rests on is asserted as an equivalence rather than as a pair of
+    /// examples:</b> a verdict of <see cref="DefeatCause.SideDestroyed"/> is reachable exactly when the
+    /// side holds nothing, so no wording over it can state a destruction that did not happen, and the
+    /// line that claims one has nowhere else to come from.
     /// </para>
     /// </summary>
     [Fact]
@@ -264,11 +305,14 @@ public sealed class UnjudgedSideTests
 
         Assert.Equal(GameOutcome.Defeat, duel.Outcome);
         Assert.False(VictorySystem.SideHasStructures(duel, duel.Roster.PlayerSide));
+        Assert.Equal(DefeatCause.SideDestroyed, DefeatReport.Of(duel).Cause);
 
-        // The objectives' defeat: a mission whose clock runs out with the objective still open, and
-        // nothing at all destroyed on either side. The outcome is the same word and the world is not.
-        // The limit is the helper's own — 7 200 ticks — and the check interval on top of it is what
-        // lets the objectives be evaluated on the tick the limit is applied on.
+        // The objectives' defeat: a mission whose objective runs out of time with nothing at all
+        // destroyed on either side. The outcome is the same word and the world is not. The deadline
+        // that arrives first is the objective's own — 6 000 ticks against the mission's limit of
+        // 7 200 — and the run below passes both, so this also pins the order: the report asks the
+        // objectives before the clock, and names the objective that failed rather than the limit that
+        // arrived after it.
         SimWorld mission = Build(Mission(judged: false));
         mission.RunTicks(7_200 + MissionSystem.CheckInterval);
 
@@ -277,6 +321,121 @@ public sealed class UnjudgedSideTests
         Assert.True(
             VictorySystem.SideHasStructures(mission, mission.Roster.PlayerSide),
             "The mission was lost with the player's side destroyed, which is not the case this asserts.");
+
+        DefeatVerdict verdict = DefeatReport.Of(mission);
+
+        Assert.Equal(DefeatCause.ObjectiveFailed, verdict.Cause);
+
+        // Named, and the one that failed: the copy over this verdict quotes this description, so the
+        // banner and the mission panel cannot be talking about two different objectives.
+        Assert.Same(mission.Mission!.Objectives[0], verdict.Objective);
+        Assert.Equal("Φτάστε σε τεχνολογικό επίπεδο 3.", verdict.FailedObjectiveDescription);
+
+        // And the equivalence the interface rests on, over both worlds: the destruction line is
+        // reachable exactly when the side really holds nothing.
+        foreach (SimWorld world in new[] { duel, mission })
+        {
+            Assert.Equal(
+                !VictorySystem.SideHasStructures(world, world.Roster.PlayerSide),
+                DefeatReport.Of(world).Cause == DefeatCause.SideDestroyed);
+        }
+    }
+
+    /// <summary>
+    /// <b>The clock is the third reason, and the one no objective can be named for.</b>
+    /// <para>
+    /// A mission is lost by time when the limit arrives with a primary objective still open and none
+    /// failed, which takes an objective with no deadline of its own: an objective whose deadline is the
+    /// mission's limit fails on the very evaluation that applies the limit, and the report names it.
+    /// That is the shipped shape and not a curiosity — <c>m4_pass</c> is lost exactly this way by a
+    /// player who lets the ambush stand, because its scripted objective has no deadline and only the
+    /// trigger that sees the ambush broken can complete it. The mission here is built for the case
+    /// rather than borrowed, so the test does not depend on what the AI does with a column in ten
+    /// minutes of game time.
+    /// </para>
+    /// <para>
+    /// What the banner must be able to say about it is that the clock ran out rather than that an
+    /// objective failed — a distinction the report has to make out of the world's own records, since
+    /// the outcome word is the same and the panel shows a side that is entirely intact.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AClockThatRunsOutWithAnObjectiveOpenIsItsOwnReason()
+    {
+        SimWorld world = Build(ClockMission());
+        world.RunTicks(ClockMissionLimit + MissionSystem.CheckInterval);
+
+        Assert.Equal(GameOutcome.Defeat, world.Outcome);
+
+        // Nothing failed: the objective is still open, which is the state that made the clock the
+        // reason — had its deadline passed instead, this would be the objective's defeat.
+        Assert.True(world.Objectives[0].IsPending);
+        Assert.True(VictorySystem.SideHasStructures(world, world.Roster.PlayerSide));
+
+        DefeatVerdict verdict = DefeatReport.Of(world);
+
+        Assert.Equal(DefeatCause.TimeExpired, verdict.Cause);
+
+        // No objective to name, which is what the interface's copy for this cause rests on: it is the
+        // one of the three that names nothing, and an empty description is how the verdict says so.
+        Assert.Null(verdict.Objective);
+        Assert.Equal(string.Empty, verdict.FailedObjectiveDescription);
+    }
+
+    /// <summary>
+    /// <b>The hard corner of the invariant: a side can lose the ground the rule weighed and still be
+    /// standing on ground it never did.</b>
+    /// <para>
+    /// The rule asks a side's question of the teams it judges, so a match declaring a team it does not
+    /// judge *on the player's own side* has two grounds on that side and only one of them counted:
+    /// break the judged team's base and the rule calls the side beaten, while the outpost beside it —
+    /// a building of a team that holds objectives rather than ground — is still standing on the map in
+    /// front of the player. This is the world in which a banner asking the rule's question narrowly
+    /// would say the side had been destroyed over a building the player is looking at, so
+    /// <see cref="DefeatCause.SideStanding"/> exists to answer it and the destroyed line rests on a
+    /// question asked of the whole side instead.
+    /// </para>
+    /// <para>
+    /// No shipped mission stages it — a non-player force has no base by design — which is exactly why
+    /// the copy must not depend on one never being written. See the declaration tests above for the
+    /// same arrangement without the building: the rule is asked the same question there and answers
+    /// nothing at all.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void ADefeatOverGroundTheRuleNeverWeighedIsNotADestroyedSide()
+    {
+        MatchRoster roster = MatchRoster.Declare(
+            new MatchTeam(0, Faction.Soviet, 0),
+            new MatchTeam(ForceTeam, Faction.Chinese, 0, Judged: false),
+            new MatchTeam(2, Faction.Western, 1));
+
+        var world = new SimWorld(seed: 4242, capacity: 64, roster);
+
+        int centreHealth = UnitCatalog.Get(UnitKind.CommandCentre).Health;
+
+        // Both on the player's side of the line: the base the rule measures, and the outpost it does
+        // not — which is the whole of the case.
+        world.Spawn(Faction.Soviet, 0, UnitKind.CommandCentre, WorldPos.GroundMetres(-180, -180), default, centreHealth);
+        world.Spawn(Faction.Chinese, ForceTeam, UnitKind.CommandCentre, WorldPos.GroundMetres(60, 60), default, centreHealth);
+
+        // The enemy's side, intact, so the match is decided on the player's side and nowhere else.
+        world.Spawn(Faction.Western, 2, UnitKind.CommandCentre, WorldPos.GroundMetres(200, 0), default, centreHealth);
+
+        BreakStructures(world, 0);
+        world.RunTicks(VictorySystem.CheckInterval + 1);
+
+        Assert.Equal(GameOutcome.Defeat, world.Outcome);
+        Assert.False(VictorySystem.HasStructures(world, 0));
+        Assert.True(VictorySystem.SideHasStructures(world, world.Roster.PlayerSide));
+
+        DefeatVerdict verdict = DefeatReport.Of(world);
+
+        Assert.Equal(DefeatCause.SideStanding, verdict.Cause);
+
+        // And not the destruction, which is the assertion this test exists for: the side the banner is
+        // describing still has a building on the map.
+        Assert.NotEqual(DefeatCause.SideDestroyed, verdict.Cause);
     }
 
     /// <summary>

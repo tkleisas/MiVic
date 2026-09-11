@@ -1616,14 +1616,18 @@ What the transcript says, one line at a time:
   its sentence would have been a reason that does not apply;
 - **the shot the script takes is that defeat as the player sees it**, and it is worth reading twice.
   The panel in it says sixteen units and four structures on each side and `12/4 εχθρικές μονάδες
-  μέσα` against the denial; the banner across the middle used to say *Η πλευρά σας διαλύθηκε* — the
-  victory rule's own story, told about an outcome the objectives decided, over a battle in which
-  nothing had been lost. It now says *Η αποστολή χάθηκε. Η πλευρά σας στέκεται ακόμη.* — "the mission
-  was lost, your side is still standing" — because the line asks the world whether the player's side
-  holds anything before it claims the side was destroyed. That is the same defect `teams` had, in the
-  copy a player actually reads, and it is fixed rather than reported now; the **wording** of the new
-  line is still the interface's decision to make, and what the line may not do is state a destruction
-  that did not happen. `artifacts/probe/objectives-defeat.png`;
+  μέσα` against the denial; the banner across the middle says *Γνώρισες την πικρή γεύση της ήττας.
+  Αλλά μερικές φορές χρειάζεται να κάνεις ένα βήμα πίσω για να κάνεις δύο βήματα μπροστά.* — a line
+  true of every defeat there is, which is why it needs no condition — and under it, plainly,
+  *Χάθηκε ο στόχος: «Οι Δυτικοί δεν πρέπει να φτάσουν στο σημείο διαφυγής με 4 μονάδες.»*, which is
+  the objective the panel above it draws with a `×` beside it. It used to say *Η πλευρά σας
+  διαλύθηκε* — the victory rule's own story, told about an outcome the objectives decided, over a
+  battle in which nothing had been lost. The banner now asks the world why the match was lost before
+  it says anything about the side: `DefeatReport.Of` answers out of the objectives, the mission's
+  clock and the side's own structures, so the copy is the wording of that answer rather than a second
+  opinion about it. That is the same defect `teams` had, in the copy a player actually reads, and the
+  destroyed line is still there — reachable now only from a side that really holds nothing, which is
+  the case it was written for. `artifacts/probe/objectives-defeat.png`;
 - **the four missions the campaign ships are asked the same question and all four hold.** That is the
   half a validator lives or dies by: it is the first honest run of the check against content that
   exists, and a check that fired on the campaign would be a check nobody keeps. `m4_pass` is the one

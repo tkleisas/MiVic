@@ -283,25 +283,32 @@ public sealed class GameHud
         // between two other factions. What the outcome means is a fact about the sides, and the
         // sides are the match's — the panel that draws them is the one that names them.
         //
-        // **A defeat says the side was destroyed only when it was.** The rule's defeat and a
-        // mission's are not the same event: the rule has the player's side beaten when it holds no
-        // structures, while a mission is lost by an objective failing or by its clock running out
-        // with both armies standing — the demonstration mission is lost with sixteen units and four
-        // structures alive on each side, and the banner over that panel used to say the player's side
-        // had been destroyed. So the fact is asked of the world rather than assumed from the outcome:
-        // a side still holding something was lost some other way, and one holding nothing is the
-        // destruction the old line was written for. The wording of that second line is still the
-        // interface's to decide; what it may not do is state a destruction that did not happen.
+        // **A defeat's first line is true of every defeat, so it needs no condition.** The line it
+        // replaced had to ask the world whether the player's side had been destroyed in order to
+        // choose a string, and asked it backwards on the first attempt — which is the argument against
+        // asking here at all: a condition in the interface over a fact the interface cannot check is a
+        // lie waiting for its next edit. So the defeat says one thing that is true of a lost match
+        // however it was lost, and then, on its own line below, why.
+        //
+        // That second line is *not* the interface's to work out. `DefeatReport` answers it out of the
+        // objectives, the mission's clock and the side's own structures, in the order the simulation
+        // asks them, and `DefeatCauseLine` below is the wording of its answer: a failed objective by
+        // name, a clock that ran out, or a side that holds nothing — the case the old line was written
+        // for, now reachable only from a side that really is in nothing.
         string detail = outcome switch
         {
             GameOutcome.Victory => "Οι αντίπαλοι κατέρρευσαν. Ο δρόμος για μια νέα ισορροπία είναι ανοιχτός.",
-            GameOutcome.Defeat => VictorySystem.SideHasStructures(
-                snapshot.Simulation.World,
-                snapshot.Simulation.World.Roster.PlayerSide)
-                ? "Η αποστολή χάθηκε. Η πλευρά σας στέκεται ακόμη."
-                : "Η πλευρά σας διαλύθηκε. Οι αντίπαλοι κυριαρχούν.",
+            GameOutcome.Defeat =>
+                "Γνώρισες την πικρή γεύση της ήττας. " +
+                "Αλλά μερικές φορές χρειάζεται να κάνεις ένα βήμα πίσω για να κάνεις δύο βήματα μπροστά.",
             _ => "Και οι δύο πλευρές εξοντώθηκαν.",
         };
+
+        // Why it was lost, and only for a defeat: a player who is not told why has been told nothing
+        // they can act on. Null rather than an empty line, so the drawing below skips it.
+        string? cause = outcome == GameOutcome.Defeat
+            ? DefeatCauseLine(snapshot.Simulation.World)
+            : null;
 
         NVec4 accent = outcome == GameOutcome.Victory
             ? new NVec4(0.45f, 1f, 0.5f, 1f)
@@ -352,12 +359,50 @@ public sealed class GameHud
             ImGui.PopFont();
             ImGui.Separator();
             ImGui.TextWrapped(detail);
+
+            if (cause is not null)
+            {
+                // A paragraph below the line above it rather than a third line of the same thought:
+                // the first line is what the match means, and this one is what became of it, which is
+                // the half a player reads twice.
+                ImGui.Spacing();
+                ImGui.TextWrapped(cause);
+            }
         }
 
         ImGui.End();
 
         ImGui.PopStyleColor(2);
         ImGui.PopStyleVar(2);
+    }
+
+    /// <summary>
+    /// Why the match was lost, in the words for the answer the world records.
+    /// <para>
+    /// <see cref="DefeatReport.Of"/> decides which reason it was, so the only condition under this
+    /// banner is a switch over the value it returned — no question is asked of the world here, and the
+    /// objective that lost the mission is named from the verdict rather than looked up again. The
+    /// wording of a destruction is the one that was already there, kept because this is the case it was
+    /// written for and it is now reachable only from a side that really holds nothing.
+    /// </para>
+    /// </summary>
+    private static string DefeatCauseLine(SimWorld world)
+    {
+        DefeatVerdict verdict = DefeatReport.Of(world);
+
+        return verdict.Cause switch
+        {
+            // The objective's own description, quoted, because it is a sentence with a full stop of
+            // its own and the player has read it in the mission panel all match.
+            DefeatCause.ObjectiveFailed => $"Χάθηκε ο στόχος: «{verdict.FailedObjectiveDescription}»",
+            DefeatCause.TimeExpired => "Ο χρόνος της αποστολής εξέπνευσε. Οι στόχοι έμειναν ανοιχτοί.",
+            DefeatCause.SideDestroyed => "Η πλευρά σας διαλύθηκε. Οι αντίπαλοι κυριαρχούν.",
+
+            // The side stands and the match ended anyway: the rule has no ground of its own question
+            // left to point at, so this claims only what the verdict established — that the side is
+            // still standing, which is why it is not the line above it.
+            _ => "Η πλευρά σας στέκεται ακόμη. Η μάχη κρίθηκε.",
+        };
     }
 
     /// <summary>

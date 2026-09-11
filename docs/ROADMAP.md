@@ -686,12 +686,22 @@ palette.
 Units as dots with a heading arrow, structures as squares, in the owning faction's colour over the
 terrain's own. Then the layers that make it a diagnostic rather than a map:
 
+- **trajectories** — each unit should show both where it is *trying* to go and where it has *been*: the
+  intended route as a polyline (the path the pathfinder actually returned) and the ground covered as a
+  trail. The pair answers the question this project spent a fortnight on — **a unit with a drawn path
+  and no trail is a unit that is not moving** — and two hundred of those in one frame is the starvation
+  bug as a picture instead of a census of five hundred slots. Trails also make pace legible: a column
+  crossing mud shows as wider spacing between ticks, which is the *rasputitsa* visible without reading
+  a cost figure, and where trails converge a front line draws itself.
+
+  A trail needs sampled positions, which the simulation does not keep — and it does not need to: the
+  drawing tool steps the world itself, or reads a replay, and the checkpoint work in this section makes
+  stepping back through one cheap. That is the second reason these two belong together.
 - **who is stuck** — a unit holding a goal with no route, or idle with no target, drawn differently from
   one that is fighting. Two hundred motionless units in one picture, which took a census of five hundred
   units to establish;
 - **what can see what** — vision and radar coverage as translucent discs, which is how the sensor chain
   is actually judged;
-- **the paths** — where a unit is trying to go against where it is;
 - **the script** — objective circles, deadlines, and which trigger has fired;
 - **the events** — shots, hits and deaths as marks, so a fight reads as a diagram rather than a film.
 
