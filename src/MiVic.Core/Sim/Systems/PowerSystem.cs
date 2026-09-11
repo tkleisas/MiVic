@@ -177,6 +177,84 @@ public static class PowerSystem
             : $"λείπει ισχύς {state.PowerShortfall} Ε";
 
     /// <summary>
+    /// True when a team could add one more radar station to what it has and still run it.
+    /// <para>
+    /// <b>The question a buyer has to ask, answered from the table the dishes are lit from.</b>
+    /// A radar is the only structure in the game whose price is not its whole cost: it also
+    /// occupies generation for as long as it is on, and a radar that does not fit is not a
+    /// weak radar, it is a dark one — the team has paid for a building that does nothing and
+    /// that takes a power plant to redeem. So whoever is deciding whether to buy one asks
+    /// here, of <see cref="DrawOf"/> and <see cref="GenerationOf"/> rather than of a second
+    /// copy of them, and gets the same answer the lighting pass gives.
+    /// </para>
+    /// <para>
+    /// <b>Everything the team has committed to counts, including a building site.</b> The
+    /// question is what the ledger will be once the work standing on the ground is finished:
+    /// a generation that counted only finished plants would let a caller order a radar on the
+    /// strength of a power plant that is still a hole in the ground, and shed the dish on the
+    /// tick it came up. A radar already committed counts as load for the same reason — the
+    /// answer is "one more than what I have", not "one".
+    /// </para>
+    /// <para>
+    /// What is <em>not</em> counted is a structure still in a production queue: it has not
+    /// been committed to the ground and has no site yet. A caller that has one coming asks
+    /// about its own queue as well — see <c>AiSystem.TryQueuePowerPlant</c>, which does
+    /// exactly that before ordering a second plant.
+    /// </para>
+    /// </summary>
+    public static bool HasRoomForRadar(SimWorld world, int team)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        if ((uint)team >= SimConstants.TeamCount)
+        {
+            return false;
+        }
+
+        int generation = CommandCentreStandby;
+        int load = 0;
+        int capacity = world.Capacity;
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!IsCommittedStructure(world, slot, team, out UnitKind kind))
+            {
+                continue;
+            }
+
+            generation += GenerationOf(kind);
+            load += DrawOf(kind);
+        }
+
+        return generation - load >= RadarDraw;
+    }
+
+    /// <summary>
+    /// True when a slot is a structure of a team — finished, or still being raised. The
+    /// difference from <see cref="IsPoweredStructure"/> is the tense: the lighting pass asks
+    /// what is switched on now, and a projection asks what the team has already paid for.
+    /// </summary>
+    private static bool IsCommittedStructure(SimWorld world, int slot, int team, out UnitKind kind)
+    {
+        kind = UnitKind.None;
+
+        if (!world.IsAliveSlot(slot))
+        {
+            return false;
+        }
+
+        ref Entity entity = ref world.GetRefBySlot(slot);
+
+        if (entity.TeamId != team)
+        {
+            return false;
+        }
+
+        kind = entity.Kind;
+        return UnitCatalog.Get(kind).IsBuilding;
+    }
+
+    /// <summary>
     /// True when a slot is a finished, working structure of a team. A building site is
     /// not: it produces nothing, draws nothing and watches nothing until it is up, which
     /// is the same rule the economy and the guns already follow.

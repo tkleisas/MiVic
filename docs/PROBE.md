@@ -668,6 +668,75 @@ Five facts, and each of them is a different failure mode:
   same camera with the HUD on: the ring on the ground is the reach, and it is visibly smaller
   in the second one.
 
+## Worked example: does the computer opponent build a defensive line?
+
+Whether an AI *knows* about defence is not a question any assertion answers: it is a question about
+what a base looks like a minute into a match, on ground nobody chose in advance. The emplacement,
+radar and power questions were all asked above about structures a script had placed; this one is
+asked about structures the AI decided on, with no script touching them.
+
+`tools/probe/ai-line.probe`, run against the default skirmish — teams 1 and 2 played by `AiSystem`,
+nobody playing team 0 — trimmed to the answers (`…` marks lines cut out of the middle):
+
+```
+cmd: tick 60
+cmd: structures 1
+query: structures: 7 structures for team 1, tick 62
+query:   slot  170 CommandCentre (Κέντρο Διοίκησης) at (x 145.3, z -98.5) m, cell 47,21 — whole, 5000 hit points
+…
+query:   slot  510 GunEmplacement (Πυροβολείο) at (x 42.2, z 4.7) m, cell 36,32 — building — 78 of 120 ticks left, 3.9 s, 1400 hit points
+query:   slot  511 RadarStation (Σταθμός Ραντάρ) at (x 173.4, z 4.7) m, cell 50,32 — building — 124 of 146 ticks left, 6.2 s, 900 hit points
+query:   slot  513 GunEmplacement (Πυροβολείο) at (x 4.7, z -61.0) m, cell 32,25 — building — 118 of 120 ticks left, 5.9 s, 1400 hit points
+cmd: attributes 42.2 4.7
+query: attributes at (x 42.2, z 4.7) m — cell 36,32 of 65, index 2116
+query:   surface    Forest (Δάσος), churn 0/255
+query:   ground     vegetation 246/255, moisture 7/15, aspect flat (8), landform valley (3), fuel 0, flags none
+query:   cover      foot 540 ‰, tracked 810 ‰, wheeled 810 ‰, air 1000 ‰   (damage that lands: 1000 ‰ is no cover at all)
+cmd: attributes 145.3 -98.5
+query:   cover      foot 927 ‰, tracked 978 ‰, wheeled 978 ‰, air 1000 ‰   (damage that lands: 1000 ‰ is no cover at all)
+cmd: range 510
+query:   gun        200.0 m, 45 damage every 50 ticks
+query:   eyes       170.0 m — as far as its own sensors reach
+query:   radar      under coverage, team 1 has 1 radar on the air
+query:   reach      200.0 m — the furthest it can engage anything at
+cmd: unit 510
+query:   health     746/1400 (53%)
+query:   attack     slot 340 (western/CommandCentre at 193.2 m), cooldown 36 ticks of 50, order automatic, 45 damage out to 200.0 m
+cmd: power 1
+query:   generation 16 Ε per tick, from the structures standing
+query:   draw       11 Ε per tick, including the radars that are on
+query:   surplus    5 Ε per tick
+query:   radars     1 lit, 0 dark, 0 Ε short of running them all
+query:   brown-out  none
+cmd: events 12
+query:   #250 tick 548 shot      slot  510 chinese/GunEmplacement at (42.2, 18.1, 4.7) m firing at western/DesignBureau (slot 343), direction (-0.01, -0.01, 1.00) bearing 90.8°, 142.5 m away
+```
+
+Five facts, and each of them was a different failure mode before this was built:
+
+- **three building sites exist by tick 62 that no script ordered** — a gun, the radar that gives it
+  its reach, and a second gun — and none of them is at an offset from anything: the AI asked for a
+  site through the same plan a click is judged by, so `structures` prints the cell each one chose;
+- **the ground under it is a choice, and the answer is visible**: the emplacement stands in closed
+  woodland in a valley at `cover foot 540 ‰`, against `927 ‰` under the headquarters it was bought to
+  defend. That is the same number the combat system scales every hit on that building by, so the
+  ground the AI picked is 39 % off every shot that lands on it. An AI that scored its sites by
+  distance alone would have both guns on the headquarters' own kind of ground;
+- **`reach 200.0 m` against `eyes 170.0 m`** is the radar being worth its price, and `unit 510`
+  is the proof of what that is for: the gun is engaging a headquarters **193 m away**,
+  `order automatic`, which is past the 170 m it could see without one. The kill it is in the middle
+  of — 746 of 1400 hit points — is a fight it would not have been in at all;
+- **`generation 16` against `draw 11`, `1 lit, 0 dark, brown-out none`** is the failure mode this
+  feature can create, answered: an AI that raises a dish its grid cannot run has paid for a building
+  that switches itself off, and detection is what the ledger sheds first. This one bought the
+  generation it needed before it bought the radar, and the ledger is still solvent a minute later;
+- **the shot in `events`** is the same emplacement, at 142.5 m, with the bearing on the shot and the
+  bearing of the building's own model agreeing — a defensive line that fights rather than one that
+  stands.
+
+The script carries the numbers as checks, so the day the AI stops building a line, or starts
+shedding the radar it built, the probe fails rather than reporting something else.
+
 ## `parts <slot>` in full
 
 ### A tank's turret

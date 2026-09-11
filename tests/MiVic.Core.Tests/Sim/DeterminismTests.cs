@@ -355,14 +355,25 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by the production queues becoming state: which role a building is making, how
+    /// Last changed by the AI learning what a defended position is. Teams 1 and 2 in this scenario
+    /// are played by <see cref="AiSystem"/>, and it now raises a Πυροβολείο, a Σταθμός Ραντάρ and an
+    /// Αντιαεροπολικό Πυροβολείο on sites it chooses and scores for itself — two more structures on
+    /// the ground beside the two AI headquarters here — and it commands the armour the scenario
+    /// spawns by a different rule than it did: an enemy the team cannot see is not a target for an
+    /// attack order, an ally is never one, and a position covered by enemy guns is not assaulted by
+    /// a force that cannot answer them. Both halves are inside this scenario rather than beside it,
+    /// so both are part of what moved the number.
+    /// </para>
+    /// <para>
+    /// Before that it was the production queues becoming state: which role a building is making, how
     /// long the job was always going to take, how far along it is and how many are waiting are
     /// folded in for every live slot — whether or not it is building anything, because an empty
-    /// queue is the number zero rather than an absence, the same rule the crossings carry. This
-    /// scenario's queues do move: the AI fills them from its starting command centres, so this is
-    /// not merely a shifted stream. What the scenario does not exercise is the AI raising a
-    /// <em>structure</em> — see <see cref="BuildScenario"/>, where the measured counts are written
-    /// down — so that path is covered by StructurePlacementTests instead.
+    /// queue is the number zero rather than an absence, the same rule the crossings carry. That
+    /// entry's own note — that this scenario's queues move but that it never exercised the AI
+    /// raising a <em>structure</em> — is no longer true of the path: the AI raises structures here
+    /// now, which is most of why this number moved.
+    /// </para>
+    /// <para>
     /// Before that it was the crossings a team builds becoming state: a bridge is engineering work
     /// now — the span is recorded when it is ordered, its deck goes up a cell at a time, and the
     /// ford appears as the work reaches it — so the spans, their start ticks and how much of each
@@ -380,20 +391,22 @@ public sealed class DeterminismTests
     /// which are cut from the map's relief and stacked in order so that sand and snow can appear
     /// at all.
     /// </para>
-    /// </summary>
     /// <para>
-    /// <b>It did not move when detection and power arrived, and that is recorded rather than
-    /// assumed.</b> This scenario has no emplacement, no radar, no stealth and nothing whose
-    /// weapon outranges its eyes — it is sixty tanks, three headquarters and three power
-    /// plants — so the sensor chain has nothing here to decide differently. A tank sees 130 m
-    /// and shoots 110, which is the one case where reach and sight already agreed. The new
-    /// systems are pinned by <see cref="GoldenSensorScenarioHash_IsStable"/> instead, which is
-    /// a scenario built to exercise them.
+    /// <b>It did not move when detection and power arrived, and that was recorded rather than
+    /// assumed; it moved when the AI began to use them, which is not the same event.</b> This
+    /// scenario still contains nothing that anybody <em>placed</em>: it is sixty tanks, three
+    /// headquarters and three power plants, and a tank sees 130 m and shoots 110 — the one case
+    /// where reach and sight already agreed — so the arrival of the sensor chain had nothing here
+    /// to decide differently. What the AI spends the material it earns on is a fact about this
+    /// scenario though, and the emplacements and the radar standing beside two of these
+    /// headquarters by tick five hundred are the sensor chain deciding something. The systems
+    /// themselves are pinned by <see cref="GoldenSensorScenarioHash_IsStable"/>, which is a
+    /// scenario built to exercise them.
     /// </para>
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(16140099771963057552UL, HashScenario(20250101));
+        => Assert.Equal(4615945465731198775UL, HashScenario(20250101));
 
     /// <summary>
     /// A fixed defensive scene with the whole sensor chain in it: a Σοβιετικοί line of two gun

@@ -1,0 +1,99 @@
+# Q: does the computer opponent build a defensive line, put it on ground worth standing on, and
+#    keep its radar on the air while it does?
+#
+#   MiVic.Game.exe --probe tools/probe/ai-line.probe --probe-out artifacts/probe/ai-line.txt
+#
+# The default skirmish, unmodified, with nobody playing team 0: three bases on the standard map and
+# teams 1 and 2 run by AiSystem. Nothing in this script places a building or orders a unit — every
+# structure below is one the AI decided to raise, on a site the AI chose, judged by the same rule a
+# player's click is judged by. That is the question: `structures` says what it built and where,
+# `power` says whether it can still run it, `attributes` says what the ground it chose is worth,
+# `range` says whether the radar gave the guns the reach they were bought for, and `unit` says
+# whether an emplacement is firing on its own.
+#
+# The line is expected in this order: a Πυροβολείο from about tick 40 (120 ticks of work for the
+# Κινέζοι), then the Σταθμός Ραντάρ that gives it its 200 m, then a second gun, then the
+# Αντιαεροπορικό Πυροβολείο once the era that builds aircraft has been researched. The slots are this
+# run's own and are stable because a probe is deterministic: guns 510 and 513, radar 511, anti-air 427.
+
+# --- what the AI started with ------------------------------------------------------------------
+tick 2
+structures 1
+power 1
+
+# --- the decision, three seconds in -----------------------------------------------------------------
+# Three building sites for team 1 and two for team 2, raised within three decisions of the match
+# starting, none of them at an offset from anything: a gun, the radar that will give it its reach,
+# and a second gun. Every one of them is rising on a cell the AI picked out of the ground around its
+# base. Team 2's line does not survive the match — the Κινέζοι army takes its base apart — which is
+# what a real match looks like and why team 1 is the one read further down.
+tick 60
+structures 1
+structures 2
+power 1
+power 2
+
+# --- half a minute in: the line ----------------------------------------------------------------
+tick 500
+structures 1
+structures 2
+power 1
+power 2
+
+# --- the ground the AI chose ---------------------------------------------------------------------
+# The two Πυροβολεία, the cells they stand on, and — for comparison — the ground under the
+# headquarters they were bought to defend. `cover foot` is how much of a shot aimed at the building
+# lands: 1000 ‰ is no cover at all. Both guns are standing in closed woodland in a valley, which is
+# 540 ‰ and 563 ‰, and the headquarters' own cell is 927 ‰. That difference is the whole of what the
+# site search maximised, and it is the same number the combat system scales every hit on them by.
+attributes 42.2 4.7
+attributes 4.7 -61
+attributes 145.3 -98.5
+
+# --- the radar, and what it is worth to the gun --------------------------------------------------
+# A Πυροβολείο sees 170 m and shoots 200, so its reach is 170 until a powered radar covers the ground
+# both ends of the shot stand on — and the whole 200 once one does.
+range 510
+range 511
+
+# --- the gun firing with nobody having ordered it -------------------------------------------------
+# `order automatic` is the client reading the simulation: the emplacement picked that target itself.
+# And the target is 193 m away, which is past the 170 m this gun can see on its own — the shot is the
+# radar's, as much as the gun's.
+unit 510
+unit 513
+events 12
+
+# --- and a minute in, with the anti-aircraft emplacement up -------------------------------------
+tick 600
+structures 1
+power 1
+range 427
+
+# --- the ledger after all of it, which is the failure mode this feature can create ---------------
+# Generation against load, and the dish still on the air: an AI that raises a radar its grid cannot
+# run has made itself worse than one that never built it, because detection is what the ledger sheds
+# first.
+tick 600
+power 1
+power 2
+structures 1
+
+# --- the ledger of measurements -------------------------------------------------------------------
+# Written down as the numbers they were read as, so that the day the AI stops building a line — or
+# starts shedding the radar it built — this script fails instead of quietly reporting something else.
+expect "the gun's own eyes" 170.0 170.0 0
+expect "the gun's gun" 200.0 200.0 0
+expect "the reach the radar gives it" 200.0 200.0 0
+expect "the radar covers" 260.0 260.0 0
+expect "the anti-aircraft emplacement reaches" 180.0 180.0 0
+expect "gun emplacements raised" 2 2 0
+expect "radar stations raised" 1 1 0
+expect "anti-aircraft emplacements raised" 1 1 0
+expect "and the other AI team raised its own gun" 1 1 0
+expect "and its own radar" 1 1 0
+expect "generation" 16 16 0
+expect "load" 11 11 0
+expect "radars dark" 0 0 0
+expect "the cover the first gun stands in, in permille" 540 540 0
+expect "the cover the second gun stands in, in permille" 563 563 0
