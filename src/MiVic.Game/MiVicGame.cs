@@ -53,6 +53,33 @@ public sealed partial class MiVicGame : XnaGame
     private static readonly Color BackgroundColor = new(14, 16, 20);
 
     /// <summary>
+    /// Whether this run draws fog of war at all.
+    /// <para>
+    /// A fixture is a laboratory rather than a view: it has no player, so the fog over it is
+    /// a rule nobody in it is playing by — and that fog is not a harmless dimming. The client
+    /// culls an enemy the player cannot see, so a fixture whose subject stands on another team
+    /// photographs an empty clearing. Measured at the emplacement fixture's own camera, every
+    /// one of its entities projected inside the viewport and the command centre was the only
+    /// one drawn; the armour fixture drew none of its six, and the mud fixture none of the
+    /// three tanks it exists to measure. The ground under them was black for the same reason:
+    /// the overlay that says "nobody is looking here" covered half the armour fixture's frame
+    /// and a third of the emplacement one.
+    /// </para>
+    /// <para>
+    /// A fixture that is <em>about</em> what a player can see still has to buy its own eyes,
+    /// which is what the wood and ground fixtures do by ringing their frame with observers.
+    /// This is for the rest: fog over the subject is fog over the answer, exactly as the HUD
+    /// over it would be, and both are off in an inspection run.
+    /// </para>
+    /// <para>
+    /// Presentation only. The simulation's visibility grid is untouched, so a probe's
+    /// <c>exposure</c>, <c>detect</c> and <c>range</c> answers are still the ones the guns ask
+    /// for, and a match is unchanged.
+    /// </para>
+    /// </summary>
+    private bool DrawsFogOfWar => !_options.IsFixture;
+
+    /// <summary>
     /// The window title, in Greek.
     /// <para>
     /// MonoGame creates the window through <c>SDL_CreateWindow</c>, whose title
@@ -539,11 +566,14 @@ public sealed partial class MiVicGame : XnaGame
         }
         else if (_options.EmplacementDemo)
         {
-            // From above and to one side, far enough out to hold a gun emplacement and the
-            // tanks it is shooting at in one frame: the claim being looked at is a building
-            // firing across a hundred and fifty metres, and a frame that showed either end
-            // of that on its own would show nothing.
-            _camera.ZoomTo(_options.ScreenshotZoom ?? 260f);
+            // From above and to one side. The claim being looked at is a building firing across
+            // a hundred and fifty metres, and a frame that showed either end of that on its own
+            // would show nothing — but the distance to hold is the claim's own hundred and fifty
+            // metres and not more. Two hundred and sixty was chosen when the camera was aimed
+            // forty-five metres east of the middle of the shot and needed the slack; at a hundred
+            // and ninety the two ends still sit well inside the frame and a tank is a third larger
+            // on screen, which is the difference between a machine and a speck.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 190f);
             _camera.TiltTo(_options.ScreenshotPitch ?? -0.72f);
             _camera.Yaw = _options.ScreenshotYaw ?? 0.55f;
         }
@@ -737,13 +767,33 @@ public sealed partial class MiVicGame : XnaGame
 
         if (_options.EmplacementDemo)
         {
-            FocusOnClearing(new Vector3(75f, 0f, 0f));
+            // The enemy line, named by team, with no offset. The claim is the shot a gun fires
+            // across from the middle of the clearing to a tank a hundred and fifty metres east of
+            // it, and the three machines to the east are the only entities in the claim: the
+            // command centre that raises the gun stands two hundred metres behind the clearing and
+            // used to drag a centroid taken over everything into the western half of the map, which
+            // a hand-picked +75 m on the X axis then had to cancel. Measured, that left the frame
+            // forty-five metres east of the middle of the shot; dropped, it leaves the gun's own
+            // site ninety metres west of the middle of a frame that holds both ends of it.
+            FocusOnClearing(Vector3.Zero, team: 2);
         }
 
         if (_options.ArmourDemo)
         {
             // Centred on the six of them: the claim is a difference between three buildings, and a
             // frame that cut one of the pairs off would show three numbers and no comparison.
+            FocusOnClearing(Vector3.Zero);
+        }
+
+        if (_options.AllianceDemo)
+        {
+            // Centred on the five of them, which is the only thing this fixture can be framed on:
+            // its subject stands on three teams — the machine that ignored the ally, the ally it
+            // ignored and the enemy beyond both — so there is no team to name. The fixture used to
+            // name none and aim at nothing, which left the camera on the middle of the map with the
+            // whole line of three two hundred metres off to one side: measured, two of the five
+            // machines were inside the viewport and both of them were from the control pair to the
+            // south, which is a picture of the half of the demonstration that proves the least.
             FocusOnClearing(Vector3.Zero);
         }
 
@@ -1332,7 +1382,7 @@ public sealed partial class MiVicGame : XnaGame
             RefreshTerrainMeshIfChanged();
         }
 
-        if (_fog is not null && !_options.IsModelGallery)
+        if (_fog is not null && DrawsFogOfWar && !_options.IsModelGallery)
         {
             // Visibility only changes on its own interval, so the mask is rebuilt
             // then rather than every frame — the texture upload is the expensive
@@ -1510,7 +1560,8 @@ public sealed partial class MiVicGame : XnaGame
                 continue;
             }
 
-            if (entity.TeamId != PlayerTeam &&
+            if (DrawsFogOfWar &&
+                entity.TeamId != PlayerTeam &&
                 (world.IsHiddenFrom(PlayerTeam, slot) ||
                  !world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(entity.Position))))
             {
@@ -1624,7 +1675,8 @@ public sealed partial class MiVicGame : XnaGame
             // Enemies the player cannot see are simply not drawn: that is the
             // whole point of fog of war. A stealthed enemy outside detection range
             // is hidden for the same reason, and stays hidden until it fires.
-            if (entity.TeamId != PlayerTeam &&
+            if (DrawsFogOfWar &&
+                entity.TeamId != PlayerTeam &&
                 (world.IsHiddenFrom(PlayerTeam, slot) ||
                  !world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(entity.Position))))
             {
@@ -4514,11 +4566,16 @@ public sealed partial class MiVicGame : XnaGame
     /// being photographed needs.
     /// <para>
     /// The emplacement fixture's enemies are out to the +X side of its clearing and the emplacement
-    /// is ordered into the middle of it, so its frame is centred between the two rather than on
-    /// either — a gun, a tank a hundred and fifty metres away and the shot crossing between them.
-    /// The other fixtures that use this pass their own offset and, where a structure belongs to the
-    /// scene but not to the claim — a design bureau that exists only to unlock an ability — a team,
-    /// so that one building cannot drag the frame off the thing being looked at.
+    /// is ordered into the middle of it, so its frame is centred on the enemy line — a gun, a tank a
+    /// hundred and fifty metres away and the shot crossing between them — with the clearing that
+    /// gun will stand in inside the same frame. The other fixtures that use this pass an offset
+    /// along the ground, and, where a structure belongs to the scene but not to the claim — a design
+    /// bureau that exists only to unlock an ability, a command centre that exists only to raise a
+    /// building — a team, so that one building cannot drag the frame off the thing being looked at.
+    /// That team is not decoration: an average over everything on the map is the middle of the scene
+    /// and not of the claim, and the emplacement fixture's frame used to sit forty-five metres east
+    /// of the shot it was meant to be centred on because a building two hundred metres behind the
+    /// clearing was in the average.
     /// </para>
     /// </summary>
     private void FocusOnClearing(Vector3 backOff, int? team = null)
@@ -5069,8 +5126,11 @@ public sealed partial class MiVicGame : XnaGame
         foreach (SimEvent simEvent in _simulation.Events)
         {
             // An enemy dying where the player cannot see must not produce a
-            // visible explosion, or fog of war would leak information.
-            bool visible = simEvent.TeamId == PlayerTeam ||
+            // visible explosion, or fog of war would leak information. A fixture
+            // has no player to leak it to, and a shell crossing the frame from a
+            // machine it is not allowed to draw is half a firefight.
+            bool visible = !DrawsFogOfWar ||
+                simEvent.TeamId == PlayerTeam ||
                 world.AreAllied(simEvent.TeamId, PlayerTeam) ||
                 world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(simEvent.PositionMm));
 
@@ -5175,7 +5235,8 @@ public sealed partial class MiVicGame : XnaGame
             ref Entity entity = ref world.GetRefBySlot(slot);
             UnitDefinition definition = UnitCatalog.Get(entity.Kind);
 
-            bool visible = entity.TeamId == PlayerTeam ||
+            bool visible = !DrawsFogOfWar ||
+                entity.TeamId == PlayerTeam ||
                 world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(entity.Position));
 
             if (!visible)

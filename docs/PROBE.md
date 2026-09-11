@@ -281,7 +281,7 @@ cmd: tick 40
 ok: ran 40 ticks (2.0 s), simulation now at tick 40
 cmd: parts 509 turret
 query: parts slot 509 soviet/Tank team 0, tick 40
-query:   model    Generated/soviet_tank.glb, scale 0.837 x 0.837 x 0.837, 54 parts, wheel radius none — any wheel_ part on this model is drawn still, filtered to 'turret'
+query:   model    Generated/soviet_tank.glb, scale 0.837 x 0.837 x 0.837, 54 parts, wheel radius 0.4 m, filtered to 'turret'
 query:   entity   at (-7.0, 13.9, -212.0) m, heading 0.0°, which the entity transform turns into (1.00, 0.00, 0.00) bearing 0.0°
 query:   turret   the turret part points +33.7° off the hull (world bearing 33.7°, hull 0.0°); the animator's own TurretYaw is -0.588 rad (-33.7°) in the model's frame
 query:   [31] 'turret' parent -  local T(0.00, 1.48, 0.00) m X(1.00, 0.00, 0.00) Y(0.00, 1.00, 0.00) Z(0.00, 0.00, 1.00)  motion rotates about (0.00, 1.00, 0.00) by +33.7°  bounds max (1.2, 1.1, 2.0) m  world T(-7.46, 15.16, -212.00) m X(-0.46, 0.00, 0.70) Y(0.00, 0.84, 0.00) Z(-0.70, 0.00, -0.46)  nose (0.83, 0.00, 0.55) bearing 33.7°
@@ -387,10 +387,15 @@ query:   going      foot impassable, tracked impassable, wheeled impassable, air
 ```
 
 The goal is deep water: no route exists, `PathFailures` never counts it, and the unit waits
-forever. (Both halves of that are worth a look: the wander orders pick a destination
-without asking whether anything can stand on it, and a route that never arrives leaves a
-unit stuck rather than dropped. That is what this query is for — a screenshot of a tank
-standing on mud says nothing at all.)
+forever. Two things had to meet for that: something has to hand out a goal on ground nothing
+can stand on, and a route that never arrives has to leave a unit waiting rather than drop the
+order. The first of those was the wander orders, which picked a destination without asking
+whether anything could stand there — they now ask the navigation grid and the surface the same
+question the pathfinder asks, and refuse the wish when the answer is no. The second is still
+true and is worth a look of its own: a 600-tick default skirmish with the wander fix in place
+still leaves 35 units in exactly this state, all of them holding a goal an *attack* order set at
+its target's position — a target on lava, or a building an attacker cannot occupy. That is what
+this query is for — a screenshot of a tank standing on mud says nothing at all.
 
 ## Worked example: why did clicking on the water do nothing?
 
@@ -945,7 +950,7 @@ is not on the map, and `artifacts/probe/two-faction-victory.png` is the banner t
 
 ```
 query: parts slot 509 soviet/Tank team 0, tick 40
-query:   model    Generated/soviet_tank.glb, scale 0.837 x 0.837 x 0.837, 54 parts, wheel radius none — any wheel_ part on this model is drawn still, filtered to 'turret'
+query:   model    Generated/soviet_tank.glb, scale 0.837 x 0.837 x 0.837, 54 parts, wheel radius 0.4 m, filtered to 'turret'
 query:   entity   at (-7.0, 13.9, -212.0) m, heading 0.0°, which the entity transform turns into (1.00, 0.00, 0.00) bearing 0.0°
 query:   turret   the turret part points +33.7° off the hull (world bearing 33.7°, hull 0.0°); the animator's own TurretYaw is -0.588 rad (-33.7°) in the model's frame
 query:   note     local = as the model declares it, motion = what the animator applied, world = the chain composed; nose is the image of the model's own -Z, which is the front every generated model is authored with
@@ -958,7 +963,7 @@ query:   2 parts listed of 54
 
 ```
 query: parts slot 0 soviet/CommandCentre team 0, tick 40
-query:   model    Generated/soviet_hq.glb, scale 0.526 x 0.526 x 0.526, 35 parts, wheel radius none — any wheel_ part on this model is drawn still, filtered to 'radar'
+query:   model    Generated/soviet_hq.glb, scale 0.526 x 0.526 x 0.526, 35 parts, wheel radius none — this model has no wheel_ part, filtered to 'radar'
 query:   entity   at (-180.0, 0.0, -180.0) m, heading 0.0°, which the entity transform turns into (1.00, 0.00, 0.00) bearing 0.0°
 query:   turret   the turret part points 0.0° off the hull (world bearing 0.0°, hull 0.0°); the animator's own TurretYaw is 0.000 rad (0.0°) in the model's frame
 query:   note     local = as the model declares it, motion = what the animator applied, world = the chain composed; nose is the image of the model's own -Z, which is the front every generated model is authored with
@@ -1245,18 +1250,23 @@ What the four parts of that transcript prove, in the order the feature was decid
   army was over the ceiling — see `ai-line.probe`, where the extra generation shows up in a defensive
   line's power ledger.
 
-One check in that run fails, and it is the tool's rather than the engine's. `teams` records an
+One check in that run used to fail, and it was the tool's rather than the engine's. `teams` records an
 invariant of its own — no weapon held an ally as a target, fired at one, or damaged one without a shot
-to explain it — and it reports one damage event unexplained. The two numbers beside it are what
-passed, and they are the ones the clause exists for: **0 ticks with an ally held as a target, 0 shots
-fired at an ally.** The third clause caught a lava burn instead: the hazard step runs before the
-movement step, so a unit standing in lava when it burns and stepping off it on the same tick is
-reported at the cell it is standing on *afterwards*, and `IsTerrainDamage` asks about that cell. The
-cell the script prints at the end is the lava one of them was standing on — 6 damage a tick is exactly
-`HazardSystem.LavaDamagePerTick` — and the damage lands on team 1's own column threading that field on
-its way to the enemy, which is a fact about the map and the order of the tick rather than about the
-ceiling. It is written down here rather than tuned away because a probe that hides a failing check is
-worse than one that reports a false one.
+to explain it — and it reported one damage event unexplained, which failed the check and left
+`capacity.probe` as the one red script in a suite where everything else was green. The two numbers
+beside it are what passed, and they are the ones the clause exists for: **0 ticks with an ally held as
+a target, 0 shots fired at an ally.** The third clause had caught a lava burn instead, and it caught it
+by asking the wrong cell. The hazard step runs before the movement step, so a unit standing in lava
+when it burns and stepping off it on the same tick was reported at the cell it stood on *afterwards* —
+and `IsTerrainDamage` asks the surface under the position the event carries. 6 damage a tick is exactly
+`HazardSystem.LavaDamagePerTick`, and the damage lands on team 1's own column threading that field on
+its way to the enemy, which is a fact about the map and not about the ceiling.
+
+It is fixed rather than written down: a `UnitHit` event now carries the position its victim was
+standing on when the damage landed, which is the position it entered the tick with, because everything
+that damages — the hazard step and the combat step — runs before the movement step that moved it. A
+burn in lava and a death in lava are now attributed to the same cell instead of to two different ones.
+The same run reads `0 damage events unexplained` and exits 0.
 
 ## Worked example: does a mission's script actually happen?
 

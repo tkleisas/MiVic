@@ -1237,11 +1237,24 @@ public sealed class SimBridge
                     // A hit is a shot that landed. The two are separate events because
                     // they are separate things to draw: a shot gets a tracer from the
                     // muzzle, a hit gets an impact where it arrived.
+                    //
+                    // The position is the one the entity was standing on *entering* the
+                    // tick, not the one it ends it on, because everything that damages runs
+                    // before the movement step: the hazard step burns whatever is in the
+                    // crater and the combat step fires from where the guns are, and the unit
+                    // is somewhere else by the time this is read. That somewhere else is
+                    // what the ledger of unexplained damage was asking about — it asks
+                    // whether the victim was on lava — so a unit that burned and then drove
+                    // off the crater in the same tick had its burn checked against the rock
+                    // it arrived on, which is a cell no hazard ever touched. The destroyed
+                    // branch below has used the entering position for the same reason since
+                    // it was written, and a death in lava and a burn in lava were being
+                    // attributed to two different cells of the same run of ticks.
                     _events.Add(new SimEvent(
                         SimEventType.UnitHit,
                         slot,
-                        GetRenderPosition(slot, interpolate: false),
-                        entity.Position,
+                        ToMetres(_previousPositions[slot]),
+                        _previousPositions[slot],
                         entity.Faction,
                         entity.TeamId,
                         entity.Kind,
@@ -1392,7 +1405,15 @@ public sealed class SimBridge
 
             ref Entity entity = ref World.GetRefBySlot(slot);
 
-            if (entity.HasMoveGoal || entity.Kind == UnitKind.CommandCentre || (slot % WanderStride) != 0)
+            // A wander is a wish to *move*, so only something that can move is offered one.
+            // The command centre was the only role excluded before this and it was excluded
+            // for the wrong reason — the headquarters is not the only thing on the map with
+            // nought millimetres a tick to spend: a design bureau was found at (x 46.8,
+            // z 153.6) m with 9.1 m to go and one cell of a route in front of it, which is a
+            // building as close to arriving as it will ever be.
+            if (UnitCatalog.Get(entity.Kind).IsBuilding
+                || entity.HasMoveGoal
+                || (slot % WanderStride) != 0)
             {
                 continue;
             }
@@ -1406,8 +1427,58 @@ public sealed class SimBridge
                 home.Y,
                 ClampToMap(home.Z + dz));
 
+            // A destination the unit cannot stand on is not a goal, it is a trap, and the
+            // unit does not come back from it. The route search asks the ground only what
+            // it may *enter*, so a goal in deep water is snapped back to the nearest cell
+            // it could have entered — which, for a unit wandering within forty-five metres
+            // of where it started, is often the cell it is standing on. The order then reads
+            // as arrived on one tick, the goal is never reached on any tick, and the movement
+            // step asks for the same route again: `path 0 cells at 0, waiting for a route,
+            // 0 failures`, travel frozen, for the rest of the match. Reproduced by hand with
+            // the same order — a tank sent to (x -155.7, z -201.9) m on the standard skirmish
+            // reads exactly that from tick 40 onwards and has stopped moving by tick 240 —
+            // which is what a wander draw used to be able to do to a unit.
+            //
+            // So the wish is dropped rather than obeyed. A wander is a whim and not an
+            // order anybody is waiting on: the unit stands where it is, which is a state
+            // the world already understands, and the next interval offers it somewhere
+            // else. Picking a *different* destination here was the other option and is
+            // worse — it would spend a second draw from the generator every unit shares,
+            // so one unit's water would move every other unit's goal.
+            if (!CanStandOn(slot, destination))
+            {
+                continue;
+            }
+
             World.OrderMove(new EntityId(slot, entity.Generation), destination, entity.TeamId);
         }
+    }
+
+    /// <summary>
+    /// Whether a mover may occupy a point, asked of the two things the route search asks:
+    /// the grid's own walkability, and the surface's cost for this mover's movement class.
+    /// <para>
+    /// The same pair <c>NavGrid.Passable</c> and <c>MovementSystem</c> use, and deliberately
+    /// not a second opinion about water: the movement class comes from
+    /// <see cref="SimWorld.PathContextOf"/>, which is where the pathfinder reads it, so a
+    /// flying unit passes over the sea it really can cross and a tank is refused the lake it
+    /// really cannot.
+    /// </para>
+    /// </summary>
+    private bool CanStandOn(int slot, WorldPos position)
+    {
+        int cell = World.Navigation.IndexOfWorld(position);
+
+        if (cell < 0 || !World.Navigation.IsWalkable(cell))
+        {
+            return false;
+        }
+
+        ref Entity entity = ref World.GetRefBySlot(slot);
+
+        return World.TerrainTypes.IsPassable(
+            cell,
+            World.PathContextOf(entity.TeamId, entity.Faction, entity.Kind).Movement);
     }
 
     private static int ClampToMap(int millimetres)

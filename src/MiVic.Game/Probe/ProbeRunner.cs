@@ -1470,7 +1470,8 @@ public sealed class ProbeRunner
         int cell = world.Navigation.IndexOfWorld(entity.Position);
         int step = MovementSystem.StepMmPerTick(world, slot);
         ProbeCamera camera = _host.ReadCamera();
-        bool visible = entity.TeamId == _host.ViewerTeam ||
+        bool visible = !_host.DrawsFogOfWar ||
+            entity.TeamId == _host.ViewerTeam ||
             (!world.IsHiddenFrom(_host.ViewerTeam, slot) && world.Visibility.IsVisible(_host.ViewerTeam, cell));
 
         Emit($"query: unit {slot} {entity.Faction.ToString().ToLowerInvariant()}/{entity.Kind} {ProbeLabels.KindName(entity.Kind)}, team {entity.TeamId}, generation {entity.Generation}");
@@ -2168,10 +2169,21 @@ public sealed class ProbeRunner
         {
             float wheel = _host.Catalog.WheelRadius(described.Faction, described.Kind);
 
+            // Which of the two ways a model can have no radius it is, because they are two
+            // different facts and one of them used to be a bug: a headquarters genuinely has
+            // no `wheel_` part, while every tank in the game reported `none` for years
+            // because the radius was measured against a matrix's yawed M11.
+            bool hasWheel = described.Parts.Any(part => part.Name.StartsWith("wheel_", StringComparison.Ordinal));
+            string wheelText = wheel > 0f
+                ? ProbeFormat.Metres(wheel)
+                : hasWheel
+                    ? "none — this model declares wheel_ parts that are drawn still"
+                    : "none — this model has no wheel_ part";
+
             Emit(
                 $"query:   model    {relative}, scale {ProbeFormat.Scale(described.ModelTransform)}, " +
                 $"{ProbeFormat.Count(described.Parts.Length, "part")}, " +
-                $"wheel radius {(wheel > 0f ? ProbeFormat.Metres(wheel) : "none — any wheel_ part on this model is drawn still")}" +
+                $"wheel radius {wheelText}" +
                 $"{(filter is null ? string.Empty : $", filtered to '{filter}'")}");
         }
 

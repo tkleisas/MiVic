@@ -118,7 +118,21 @@ public sealed class ModelCatalog : IDisposable
 
         PartMesh[] parts = new PartMesh[model.Value.Parts.Count];
         float wheelRadius = 0f;
-        float modelScale = model.Value.ModelTransform.M11;
+
+        // The model transform's own scale, as the length of its first basis vector rather
+        // than as M11.
+        //
+        // The transform carries a rotation as well as a scale — the loader turns any model
+        // whose longest axis is not X, and several of the specs turn their own by hand — so
+        // M11 is the cosine of that turn, not the scale. For a tank it is cos(-90°), which
+        // in single precision is -3.7e-8 rather than zero, and multiplying a wheel's radius
+        // by it leaves every one of them at nought: `parts <slot>` has reported `wheel radius
+        // none` for every vehicle in the game, and the animator skips a wheel whose radius is
+        // zero, so no road wheel in MiVic has ever turned.
+        float modelScale = new Vector3(
+            model.Value.ModelTransform.M11,
+            model.Value.ModelTransform.M12,
+            model.Value.ModelTransform.M13).Length();
 
         for (int i = 0; i < parts.Length; i++)
         {
@@ -137,8 +151,11 @@ public sealed class ModelCatalog : IDisposable
             {
                 Vector3 size = max - min;
 
-                // A wheel is a disc: its radius is half of whichever cross-section
-                // is smaller, so the axle direction does not matter.
+                // A wheel is a disc standing across the hull: its own X is the axle, and
+                // the diameter is its extent in Y and Z. Both turns the pipeline makes are
+                // about Y — the loader's alignment and the catalogue's yaw offset — so the
+                // axle is on X however the model was authored, and the extent along it is
+                // the tyre's width rather than anything to do with the radius.
                 wheelRadius = MathF.Min(size.Y, size.Z) * 0.5f * modelScale;
             }
         }

@@ -109,6 +109,16 @@ each as a pure function of simulation state:
 | `wheel_*` | `Entity.DistanceTravelledMm` ÷ the wheel's own measured radius |
 | `radar` | the tick, so a dish sweeps identically in a replay |
 
+The radius is measured from the model rather than typed into a table — the wheel's own
+cross-section, times the scale the loader fitted it at — so a new vehicle needs no number
+entered by hand. The scale is read as the **length of the model transform's first basis row**,
+never as `M11`: the transform carries the turn that aligns the model, so `M11` is the cosine of
+that turn, and for every tank in the game it is `cos(-90°)` — four times ten to the minus eight,
+which multiplied every road wheel's radius down to nothing and left every one of them drawn
+still. A wheel radius of zero is skipped by the animator, so the symptom was silence rather
+than a wrong speed: `parts <slot>` reported `wheel radius none` for vehicles that have ten of
+them, which is what the query is for.
+
 The odometer lives in the simulation rather than the client precisely so that a
 replay spins the wheels the same way; deriving it from frame-to-frame movement in
 the client would make the animation frame-rate dependent. It accumulates Euclidean

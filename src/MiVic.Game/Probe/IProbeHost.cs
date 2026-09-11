@@ -29,6 +29,14 @@ public interface IProbeHost
     /// </summary>
     int ViewerTeam { get; }
 
+    /// <summary>
+    /// Whether the frame on screen culls entities on fog and stealth at all. False in an
+    /// inspection fixture, which has no player for the fog to be about, and every answer that
+    /// depends on the client's own visibility test has to ask this first or it will report a
+    /// subject the picture is holding.
+    /// </summary>
+    bool DrawsFogOfWar { get; }
+
     /// <summary>What the last submitted frame drew, without submitting another one.</summary>
     ProbeFrameStats Stats { get; }
 

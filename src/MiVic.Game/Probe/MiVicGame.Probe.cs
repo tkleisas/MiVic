@@ -78,6 +78,14 @@ public sealed partial class MiVicGame : IProbeHost
 
     int IProbeHost.ViewerTeam => PlayerTeam;
 
+    /// <summary>
+    /// The client's own answer to "would a frame draw this enemy", asked rather than worked
+    /// out again: a probe that reimplemented the submission loop's fog test reported three
+    /// tanks of the emplacement fixture as "not drawn" in the same run that drew all three,
+    /// which is exactly the report that disagrees with the picture.
+    /// </summary>
+    bool IProbeHost.DrawsFogOfWar => DrawsFogOfWar;
+
     ProbeFrameStats IProbeHost.Stats => ProbeStats();
 
     /// <summary>
