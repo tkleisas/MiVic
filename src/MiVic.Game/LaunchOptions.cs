@@ -99,7 +99,7 @@ public sealed record LaunchOptions
     /// thing the fixture exists to show.
     /// </para>
     /// </summary>
-    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || EmplacementDemo || DetectionDemo || IsProbe;
+    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || EmplacementDemo || DetectionDemo || AllianceDemo || IsProbe;
 
     /// <summary>
     /// When set, run the probe script in this file and exit.
@@ -163,6 +163,13 @@ public sealed record LaunchOptions
     public bool DetectionDemo { get; init; }
 
     /// <summary>
+    /// Two allied machines inside each other's killing range with an enemy further out: the
+    /// scene in which "an ally is not a target" can be watched, read with the probe's
+    /// <c>teams</c> and <c>unit</c> queries.
+    /// </summary>
+    public bool AllianceDemo { get; init; }
+
+    /// <summary>
     /// Names one surface for the ground fixture to frame instead of the most varied
     /// ground: "Mud", "Sand", "Rock" and so on. A treatment is judged from a frame that
     /// is mostly the surface it belongs to, which the varied frame is not.
@@ -204,6 +211,7 @@ public sealed record LaunchOptions
           --mission-list        Λίστα αποστολών
           --particle-demo       Επίδειξη σωματιδίων (εκρήξεις, καπνός)
           --turret-demo         Δύο άρματα που πυροβολούνται, για τον πύργο
+          --alliance-demo       Δύο σύμμαχοι σε εμβέλεια, με εχθρό πιο πέρα
           --flight-demo         Αεροσκάφη σε πτήση, για την κατεύθυνση της πλώρης
           --render-audio <dir>  Εξαγωγή θεμάτων μουσικής σε αρχεία WAV
           --render-sfx <dir>    Εξαγωγή ηχητικών εφέ σε αρχεία WAV
@@ -457,6 +465,12 @@ public sealed record LaunchOptions
                     // picture: the claim being looked at is a distance, and a distance needs
                     // both ends of it in the frame.
                     options = options with { DetectionDemo = true, ShowHelp = false, ScreenshotFrame = 200 };
+                    break;
+
+                case "--alliance-demo":
+                    // Two seconds in, which is long enough for every weapon in the line-up to
+                    // have acquired and fired at least once: a tank's reload is 24 ticks.
+                    options = options with { AllianceDemo = true, ShowHelp = false, ScreenshotFrame = 60 };
                     break;
 
                 case "--render-audio":

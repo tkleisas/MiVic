@@ -49,6 +49,11 @@ public static class HazardSystem
             UnitDefinition definition = UnitCatalog.Get(entity.Kind);
             int damage = definition.IsBuilding ? Math.Max(1, LavaDamagePerTick / StructureDamageDivisor) : LavaDamagePerTick;
 
+            // Nothing is asked about friend or foe here, and that is the point: lava has no
+            // owner, so it is the one damage path that cannot point a weapon at anybody. It
+            // burns whoever is standing in it — the caster's own units included — which is the
+            // same "does not care who it hits" case an ability declares with
+            // DamagesFriendlies, and not a hostility question answered wrongly.
             if (entity.Health <= damage)
             {
                 world.Despawn(new EntityId(slot, entity.Generation));

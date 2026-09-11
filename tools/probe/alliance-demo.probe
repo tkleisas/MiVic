@@ -1,0 +1,53 @@
+# Q: does a gun with an allied unit inside its killing range shoot at it?
+#
+#   MiVic.Game.exe --alliance-demo --probe tools/probe/alliance-demo.probe --probe-out artifacts/probe/alliance-demo.txt
+#
+# Five tanks on open ground, in two scenes. To the south, a Σοβιετικοί tank with a Κινέζοι tank
+# sixty metres from it and nothing else inside its reach at all. To the north, the same pair with a
+# Δυτικοί tank a hundred metres out — so the ally is the *nearer* of the two candidates the northern
+# tank has, and nothing but the side they are on can decide which of them it engages.
+#
+# Teams 0 and 1 are allied and team 2 is not, which `teams` prints from SimWorld.AreAllied — the same
+# question every weapon asks. Each tank has five thousand hit points so that the line-up survives the
+# demonstration; `units` prints the role's catalogue health after the slash, so that reads 5000/320.
+#
+# The standard skirmish cannot show this. On most seeds its two allied armies never come within
+# weapon reach of each other at all once they stop shooting each other — the fighting that used to
+# drag them together was the bug — so a probe run of a match reads a zero that could mean anything.
+# This fixture puts the ally in the crosshairs and lets the zero mean what it says.
+
+# --- the line-up, and what the world says about it -------------------------------------------------
+units
+teams
+
+# --- the moment of decision ------------------------------------------------------------------------
+# One tick: every weapon here starts with its cooldown at zero, so after one tick each of them has
+# acquired a target and fired once. `unit` prints the target it picked and the distance to it, and
+# `range` prints the reach that choice was made inside.
+tick 1
+teams
+unit 509
+unit 508
+unit 506
+range 509
+
+# --- a few seconds later ---------------------------------------------------------------------------
+# The northern Σοβιετικοί tank is shooting the Δυτικοί tank a hundred metres away while its Κινέζοι
+# ally stands at sixty; the Δυτικοί tank, whose nearest hostile is that ally, is shooting back at it;
+# and the southern Σοβιετικοί tank, with an ally sixty metres away and no enemy in reach, holds no
+# target at all.
+tick 200
+teams
+unit 509
+unit 506
+events 8
+
+# --- the ledger of measurements --------------------------------------------------------------------
+# Every one of these is a zero that must stay a zero: the map's allied pair is one pair, nothing aims
+# at an ally while an ally is in reach, no weapon holds an ally as a target on any tick, no shot is
+# fired at one, and no damage or loss goes unexplained.
+expect "allied pairs on this map" 1 1 0
+expect "units aiming at an ally while an ally is in reach" 0 0 0
+expect "ticks with an ally held as a target" 0 0 0
+expect "shots fired at an ally" 0 0 0
+expect "damage no hostile weapon can account for" 0 0 0

@@ -283,6 +283,9 @@ public static class CombatSystem
     /// way in a replay without needing a random source in the hot loop. Every
     /// hostile entity inside the splash radius takes full damage, and the intended
     /// target may be missed entirely — which is the whole point of the Κατιούσα.
+    /// <em>Hostile</em> there means <see cref="SimWorld.IsHostile"/> and not "of another
+    /// team": artillery that lands on its own side is not a stray shell, it is friendly
+    /// fire, and the same predicate the gun in front of it asks settles both.
     /// </para>
     /// </summary>
     private static void FireScattered(
@@ -320,7 +323,12 @@ public static class CombatSystem
 
             ref Entity victim = ref world.GetRefBySlot(other);
 
-            if (victim.TeamId == attacker.TeamId)
+            // The blast spares everyone on the shooter's side, and "side" is the alliance
+            // rather than the team id: a salvo that caught a brother-in-arms would be the
+            // same friendly fire as a gun aimed at one, and it is the rule the deck under
+            // the same blast already followed — see Bridgeworks, which asks the same
+            // predicate about the crossing. One question, asked in both places.
+            if (!SimWorld.IsHostile(attacker.TeamId, victim.TeamId))
             {
                 continue;
             }
@@ -433,7 +441,12 @@ public static class CombatSystem
 
         ref Entity target = ref world.GetRefBySlot(slot);
 
-        if (target.TeamId == attacker.TeamId)
+        // Enemies only, and an ally is not an enemy. This used to compare team ids, which
+        // answers "the same team" and reported teams 0 and 1 — allied in the standard
+        // skirmish — as each other's targets, so the two computer allies spent every match
+        // shooting each other while the AI that chose their targets had already been taught
+        // not to. The question belongs to SimWorld, which owns the alliance.
+        if (!SimWorld.IsHostile(attacker.TeamId, target.TeamId))
         {
             return false;
         }

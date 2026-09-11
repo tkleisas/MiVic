@@ -557,6 +557,15 @@ public sealed partial class MiVicGame : XnaGame
             _camera.Yaw = _options.ScreenshotYaw ?? 0f;
             _camera.FocusOn(new Vector3(0f, 0f, -80f));
         }
+        else if (_options.AllianceDemo)
+        {
+            // Along the line the three tanks stand on, from above: the claim is a distance
+            // between two of them, so both the ally and the enemy beyond it have to be in the
+            // frame with the machine that ignored one of them.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 220f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.78f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 1.5708f;
+        }
         else if (_options.ScreenshotPath is not null)
         {
             _camera.ZoomTo(_options.ScreenshotZoom ?? 430f);
@@ -583,7 +592,9 @@ public sealed partial class MiVicGame : XnaGame
                                         ? SimBridge.CreateEmplacementDemo(_options.Seed)
                                         : _options.DetectionDemo
                                             ? SimBridge.CreateDetectionDemo(_options.Seed)
-                                            : new SimBridge(_options.Seed, _options.IsModelGallery);
+                                            : _options.AllianceDemo
+                                                ? SimBridge.CreateAllianceDemo(_options.Seed)
+                                                : new SimBridge(_options.Seed, _options.IsModelGallery);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
@@ -5747,7 +5758,13 @@ public sealed partial class MiVicGame : XnaGame
 
             ref Entity candidate = ref world.GetRefBySlot(slot);
 
-            if (candidate.TeamId == PlayerTeam || !IsBuilding(candidate.Kind))
+            // An enemy's building, and an ally's is not one. This used to be "any team but
+            // mine", which on the standard skirmish picks the Κινέζοι headquarters half the
+            // time — the order was then refused by the simulation for aiming at an ally, and
+            // the check reported the order path as broken. It was the check that was wrong:
+            // it had its own answer to who an enemy is, which is the mistake the whole
+            // friend-or-foe rule exists to prevent.
+            if (!SimWorld.IsHostile(candidate.TeamId, PlayerTeam) || !IsBuilding(candidate.Kind))
             {
                 continue;
             }

@@ -260,7 +260,7 @@ public sealed class SimBridge
         var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
 
         SimWorld world = bridge.World;
-        Clear(world);
+        Clear(bridge);
 
         if (!TryFindClearing(world.TerrainTypes, metres: 90f, out int bestCell, out int bestScore))
         {
@@ -310,7 +310,7 @@ public sealed class SimBridge
         var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
 
         SimWorld world = bridge.World;
-        Clear(world);
+        Clear(bridge);
 
         if (!TryFindClearing(world.TerrainTypes, metres: 90f, out int bestCell, out int bestScore))
         {
@@ -387,7 +387,7 @@ public sealed class SimBridge
         var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
 
         SimWorld world = bridge.World;
-        Clear(world);
+        Clear(bridge);
 
         ref TeamState state = ref world.TeamRef(0);
         state.TechTier = 1;
@@ -532,6 +532,65 @@ public sealed class SimBridge
     }
 
     /// <summary>
+    /// Two allied machines inside each other's killing range, with an enemy further out: the
+    /// one scene in which "an ally is not a target" can be watched rather than argued about.
+    /// <para>
+    /// A Σοβιετικοί tank on the near side, a Κινέζοι tank sixty metres from it — well inside
+    /// the hundred and ten metres a tank shoots — and a Δυτικοί tank a hundred metres the
+    /// other way. Teams 0 and 1 are allied, so the near pair must ignore each other and both
+    /// engage the enemy beyond them: a weapon that picked its target by distance alone picks
+    /// the ally, and one that picks it by side picks the enemy, and a probe transcript of the
+    /// two says which of those the engine does.
+    /// </para>
+    /// <para>
+    /// The three stand in a line rather than around a corner, because the point is a distance:
+    /// the ally is the <em>nearer</em> of the two candidates, so nothing about cover, sight or
+    /// angles is doing the deciding. Each has five thousand hit points so that the line-up
+    /// survives the demonstration — a fixture in which the enemy dies in four seconds is a
+    /// fixture that stops showing the thing it was built for.
+    /// </para>
+    /// <para>
+    /// It exists because the standard skirmish cannot answer this. On most seeds the two allied
+    /// armies never come within weapon reach of each other at all once they stop shooting each
+    /// other, so a probe run of a match shows a zero that could mean anything. This shows the
+    /// zero with the ally in the crosshairs, and with a second pair to the south that has an
+    /// ally in reach and no enemy at all.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateAllianceDemo(ulong seed)
+    {
+        var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
+
+        SimWorld world = bridge.World;
+        Clear(bridge);
+
+        if (!TryFindClearing(world.TerrainTypes, metres: 90f, out int bestCell, out int bestScore))
+        {
+            return bridge;
+        }
+
+        (int centreX, int centreZ) = CellCentreMetres(world.TerrainTypes, bestCell);
+
+        Console.WriteLine($"alliance-demo: open ground at {centreX}, {centreZ} (score {bestScore})");
+
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.Tank, centreX, centreZ, health: 5_000);
+        SpawnAbsolute(world, Faction.Chinese, 1, UnitKind.Tank, centreX + 60, centreZ, health: 5_000);
+        SpawnAbsolute(world, Faction.Western, 2, UnitKind.Tank, centreX + 100, centreZ, health: 5_000);
+
+        // And the other half of the rule, a hundred and forty metres to the south: an allied tank
+        // with a friend sixty metres from it and *nothing else* inside its reach at all. It holds
+        // no target for as long as the scene stands, which is what "an ally is not a target" means
+        // when there is no enemy to prefer — the case a gun that fell back on "anything nearby"
+        // would fail. The enemy in the northern line is 156 m from this pair and 126 m from the
+        // southern ally, outside the 110 m either of them can shoot and outside its own reach of
+        // them, so the two scenes do not interfere.
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.Tank, centreX, centreZ + 140, health: 5_000);
+        SpawnAbsolute(world, Faction.Chinese, 1, UnitKind.Tank, centreX + 60, centreZ + 140, health: 5_000);
+
+        return bridge;
+    }
+
+    /// <summary>
     /// Spawns one unit at an exact metre position, without the legal-ground search a
     /// formation spawn uses.
     /// <para>
@@ -541,7 +600,14 @@ public sealed class SimBridge
     /// ground already, which is why the search is not needed here.
     /// </para>
     /// </summary>
-    private static EntityId SpawnAbsolute(SimWorld world, Faction faction, int team, UnitKind kind, int x, int z)
+    private static EntityId SpawnAbsolute(
+        SimWorld world,
+        Faction faction,
+        int team,
+        UnitKind kind,
+        int x,
+        int z,
+        int health = 0)
     {
         UnitDefinition definition = UnitCatalog.Get(kind);
 
@@ -551,7 +617,7 @@ public sealed class SimBridge
             kind,
             WorldPos.GroundMetres(x, z),
             Fix32.FromInt(definition.SpeedMmPerTick),
-            definition.Health);
+            health > 0 ? health : definition.Health);
     }
 
     /// <summary>
@@ -579,7 +645,7 @@ public sealed class SimBridge
         var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
 
         SimWorld world = bridge.World;
-        Clear(world);
+        Clear(bridge);
 
         // One lane each, so a model cannot hide behind the one in front of it.
         (Faction Faction, UnitKind Kind, int Z)[] flyers =
@@ -610,9 +676,15 @@ public sealed class SimBridge
         return bridge;
     }
 
-    /// <summary>Empties the world, so a fixture's own line-up is the whole scene.</summary>
-    private static void Clear(SimWorld world)
+    /// <summary>
+    /// Empties the world, so a fixture's own line-up is the whole scene — and re-reads the
+    /// bridge's baseline afterwards, because a bridge that still remembers the scenario it was
+    /// built from would report every unit removed here as a casualty of the first tick.
+    /// </summary>
+    private static void Clear(SimBridge bridge)
     {
+        SimWorld world = bridge.World;
+
         for (int slot = 0; slot < world.Capacity; slot++)
         {
             if (world.IsAliveSlot(slot))
@@ -620,6 +692,8 @@ public sealed class SimBridge
                 world.Despawn(new EntityId(slot, world.GetRefBySlot(slot).Generation));
             }
         }
+
+        bridge.CaptureBaseline();
     }
 
     /// <summary>Spawns one unit of a kind at a metre position, on legal ground.</summary>
@@ -739,12 +813,36 @@ public sealed class SimBridge
             }
         }
 
+        CaptureBaseline();
+    }
+
+    /// <summary>
+    /// Reads the world as the state the next tick is compared against: what is alive, what health
+    /// it has, what it was aiming at and how far along its reload it was.
+    /// <para>
+    /// The constructor calls it once, and a fixture calls it again after rearranging the world.
+    /// Without that second call every tracker still describes the scenario the bridge was built
+    /// from, so a fixture that cleared five hundred units off the map sees all five hundred as
+    /// having <em>just died</em> on the first tick: the client draws an explosion for each one and
+    /// anything reading the event stream — a probe ledger, for one — counts them as casualties of
+    /// a battle that never happened. The turret, emplacement, detection, firing-range and alliance
+    /// fixtures all clear the field, so they all say so through <see cref="Clear"/>.
+    /// </para>
+    /// </summary>
+    private void CaptureBaseline()
+    {
         CapturePreviousPositions();
 
         for (int slot = 0; slot < World.Capacity; slot++)
         {
             _wasAlive[slot] = World.IsAliveSlot(slot);
             _previousHealth[slot] = _wasAlive[slot] ? World.GetRefBySlot(slot).Health : 0;
+
+            // A slot that has just been emptied is about to be reused by something the fixture
+            // spawns into it, and the dead unit's cooldown left behind would read as the new
+            // arrival firing on its first tick.
+            _previousCooldown[slot] = 0;
+            _previousTarget[slot] = -1;
         }
     }
 

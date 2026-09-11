@@ -803,6 +803,34 @@ public sealed class SimWorld
     public static bool AreAllied(int a, int b) => a == b || (a is 0 or 1 && b is 0 or 1);
 
     /// <summary>
+    /// <b>The one question every damage path asks: may a thing owned by
+    /// <paramref name="attackerTeam"/> hurt a thing owned by <paramref name="victimTeam"/>?</b>
+    /// <para>
+    /// It is the negation of <see cref="AreAllied"/>, and it is deliberately nothing else: the
+    /// alliance itself is defined once, above, where it can be read, and every path that
+    /// damages, targets or classifies a friend asks this rather than comparing team ids. A
+    /// comparison of ids answers "same team" and quietly reports an ally as an enemy, which is
+    /// what this replaces: direct fire, artillery splash, the attack order and off-map support
+    /// all asked <c>TeamId == TeamId</c>, so the allied pair in the standard skirmish — teams 0
+    /// and 1 — shot each other in every match while the crossing rule beside them spared an
+    /// ally's bridge because it had been written by asking the real question.
+    /// </para>
+    /// <para>
+    /// <b>Not every effect asks it, and the ones that do not are the ones that do not care.</b>
+    /// Lava burns whoever stands in it and an ability documented as
+    /// <see cref="AbilityDefinition.DamagesFriendlies"/> hits its own side on purpose: both are
+    /// callers that have no team question to ask, rather than callers that asked it and got the
+    /// wrong answer. What may never happen is a <em>weapon</em> pointed at an ally, and that is
+    /// what this answers.
+    /// </para>
+    /// <para>
+    /// It is symmetric — alliance here is a shared side rather than an attitude — but it takes
+    /// the attacker first because at every call site the direction is what is being decided.
+    /// </para>
+    /// </summary>
+    public static bool IsHostile(int attackerTeam, int victimTeam) => !AreAllied(attackerTeam, victimTeam);
+
+    /// <summary>
     /// True when a team may build a role: either it researched the tier, or an
     /// ally licensed the design to it. A licence deliberately bypasses the
     /// faction's tech ceiling — that is the whole point of the alliance.
@@ -1012,6 +1040,13 @@ public sealed class SimWorld
     /// <summary>
     /// Resolves an off-map strike. The blast is applied in ascending slot order so
     /// the outcome is independent of the order entities happen to be stored in.
+    /// <para>
+    /// The target is a position on the ground rather than an entity, which is the one
+    /// shape of attack that must never be refused for want of an enemy standing there:
+    /// a strike called on a crossroads, on a bridge or on empty ground is a legitimate
+    /// order, and the only thing the friend-or-foe rule does here is decide who inside
+    /// the radius is caught by it.
+    /// </para>
     /// </summary>
     private bool TryUseAbility(AbilityId ability, WorldPos target, int team)
     {
@@ -1070,7 +1105,14 @@ public sealed class SimWorld
 
             ref Entity victim = ref _entities[slot];
 
-            if (!definition.DamagesFriendlies && victim.TeamId == team)
+            // A strike that distinguishes friend from foe spares the whole side, not the
+            // team: an ally standing in the radius is exactly as much a friendly as the
+            // caster's own, and before this it was hit while its own team was not. The
+            // clause is skipped entirely for an ability that does not care who it hits —
+            // that is a design decision, not a bug — which is what keeps
+            // AbilityDefinition.DamagesFriendlies working; see ANukeDoesNotDistinguishFriendFromFoe,
+            // which pins it.
+            if (!definition.DamagesFriendlies && !IsHostile(team, victim.TeamId))
             {
                 continue;
             }
@@ -2306,7 +2348,12 @@ public sealed class SimWorld
 
         ref Entity target = ref _entities[victimSlot];
 
-        if (target.TeamId == attacker.TeamId)
+        // An order to attack an ally is refused, not obeyed and then ignored: the order
+        // would otherwise sit on the unit setting HasAttackOrder and a move goal towards
+        // its friend, and a unit marching at an ally is the mistake this rule exists to
+        // stop, whether a player or a script made it. Compare CombatSystem, which asks the
+        // same question, so an order can never be issued for a target the gun will refuse.
+        if (!IsHostile(attacker.TeamId, target.TeamId))
         {
             return false;
         }

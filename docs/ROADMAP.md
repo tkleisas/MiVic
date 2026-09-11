@@ -234,6 +234,173 @@ worth checking when this is tuned. And a Soviet vehicle that is light *and* chea
 to lose something else, or the mobility is free; the obvious place is survivability, which is what
 the armour figure already says, so the temptation to soften it elsewhere should be resisted.
 
+## 7. Alliances that move
+
+Alliances are currently fixed when the scenario is built. They should be **dynamic, and able to change
+during a match** — which turns a table of who is on whose side into a mechanic, and a mechanic that
+fits this game's fiction better than most: a coalition of convenience against a common enemy is the
+whole premise, and the campaign titles already suggest it — *Multi Polar World*, and *Black cat,
+white cat, as long as it catches a mouse*.
+
+**What it requires, none of which is diplomacy itself:**
+
+- **Hostility is asked, never cached.** Every decision — acquisition, a held target, a standing attack
+  order, a bridge's owner, an ability's blast — has to ask the live question at the moment it acts.
+  A cached ally set is a bug waiting for the first betrayal.
+- **A held order must survive the flip correctly.** A unit ordered to attack someone who then stops
+  being an enemy has to stop shooting them. The sensor chain already re-validates a held target every
+  tick, so the machinery exists; the rule has to be stated and tested rather than assumed.
+- **The alliance state belongs in the state hash.** It is simulation state the moment it can change,
+  and this project has closed two holes of exactly this kind already — the production queues, and a
+  field hashed only when non-empty.
+- **Allied vision is a decision, and a good one.** Do allies share what they can see? If they do, an
+  ally's radar lights your guns, which makes a coalition genuinely worth having — and it means the
+  vision function has one more input rather than a second implementation. If they do not, say so, but
+  the sensor chain makes the answer consequential either way.
+- **The player has to be able to see it.** Who is allied to whom, changing when it changes. A
+  betrayal nobody notices is indistinguishable from a bug.
+
+**And the part that is actually design rather than plumbing:** who may propose an alliance, what it
+costs, whether it can be refused, how the AI values it, and how it is announced. A scripted flip in a
+mission is the cheap version and would already be worth having; a player-driven one is a feature of
+its own. The AI's own ally-marching bug and the combat system's missing alliance check were both
+found this week, which is a decent sign that the plumbing is worth getting right before the mechanic
+is built on top of it.
+
+## 8. Mission scripting, and maps that do not have three factions
+
+A mission today is a seed, three base positions, unit counts, a time limit and a list of objectives.
+That is enough for "destroy this" and nothing else. It cannot say *when* anything happens, which is
+what a campaign is made of.
+
+**Triggers are the missing layer**: a condition and an action, evaluated on the tick, in a fixed
+order, deterministic like everything else. A trigger that fires once needs to remember that it fired,
+which makes it state, which means it is hashed — the same rule the production queues and the alliance
+state are subject to. The conditions worth having first are the ones a mission actually uses: time
+elapsed, a unit entering an area, a structure destroyed, a count falling below a number, a flag set.
+The actions are the vocabulary of a campaign: spawn units or structures, reveal ground, grant or
+remove resources and technology, change an alliance, set or complete an objective, order a group to
+attack or move, show the player a message, end the mission.
+
+**A declarative list in the mission definition, not a scripting language.** Every mission then stays
+data, replayable and hashable, and the missions in the repository stay readable to anyone editing
+them. A language would be a project of its own and would buy nothing that a list of triggers does not.
+
+**Unique characters and vehicles** need three things the archive does not have: a name attached to a
+specific instance, stat overrides on one unit rather than on a role, and a rule about what happens
+when it dies. The first two are small. The third is free — "if this unit dies, fail" is a trigger,
+which is exactly the argument for building the trigger layer before building heroes.
+
+### The test case: Operation Paperclip
+
+A good mission to design the layer against, because it needs most of the vocabulary at once. Δυτικοί
+agents must move scientists out of a remnant outpost to an aircraft and fly them away; the Σοβιετικοί
+must stop it. It exercises a **non-player force** that is neither of the two player factions, a
+**moving objective** rather than a place, an **extraction** as a win condition, a **timer** that
+escalates, and an **asymmetric pair of objectives**: the West wins by getting the scientists out, the
+Soviets win by preventing it. That last one is a kind of objective the game does not have — all four
+existing kinds are things you do to the enemy, and none of them is *denial*.
+
+### Not every map has three factions
+
+The simulation assumes three teams; a two-faction mission is the ordinary case in a campaign, and it
+also makes an alliance map possible — two against one where the third is absent rather than allied.
+What this needs is modest and mostly plumbing: **per-mission participation** rather than a fixed
+roster, victory conditions that do not require destroying a faction that was never on the map, a HUD
+that does not show a score row for a faction with no units, and alliances that work in a two-team
+match. It buys a great deal of variety for very little risk, and it is the piece of this section that
+can be done first and independently.
+
+## 9. Monster generators
+
+A structure that produces hostiles on a cadence, belongs to nobody, and is hostile to everyone. The
+classic third-party threat: it makes a patch of the map a place rather than a space, gives neutral
+ground a reason to matter, and puts a pressure on a match that neither player controls.
+
+**It fits this game's fiction better than it fits most.** The setting already has nuclear plants, a
+lava surface with a damage rule, weather control that rewrites ground, and an alternate history in
+which unpleasant things were done in remote places. A generator is an exclusion zone with something
+still running inside it — no new fiction required, and the hazard machinery is already there.
+
+**What it needs:**
+
+- **Two kinds**, appended to the roster as always: the generator itself and what it emits. Perhaps
+  more than one thing emitted, at different cadences, so a zone escalates rather than repeating.
+- **A spawner system**, deterministic like every other: a cadence on the tick and the project's own
+  generator for anything that varies, with the count hashed — a spawner whose state is not in the
+  hash is a desync waiting to happen, and its state is the interesting kind (how many it has emitted,
+  how long since the last one).
+- **Neutral hostility, stated properly.** A generator on the neutral team is hostile to all three
+  factions, which makes it the first real test of the alliance work: *"is this an enemy"* has to
+  answer correctly for a team that is allied to nobody and at war with everybody. Worth doing after
+  alliances are dynamic, not before.
+- **Victory conditions that ignore it.** The same plumbing a two-faction map needs: a faction that
+  was never on the map, or one that exists only as an obstacle, must not be something the victory
+  check requires destroying. Both of these are the same fix, which is another argument for doing that
+  fix first.
+- **The AI has to cope.** Its emplacements will engage what comes at them, which is the right
+  emergent answer. What it must not do is treat a generator as an objective worth an army, or be
+  baited into a war of attrition against something that respawns.
+
+**The design questions worth deciding before it is built.** Is the generator destructible — because
+if it is, silencing a zone becomes a real tactical objective and the campaign can hang a mission on
+it, and if it is not, the zone is a permanent feature of the map. Does it escalate over time, which
+is a mission-pacing tool in disguise: a generator that grows turns a slow scenario into a race. And
+who does it attack — everything in reach, or only what comes close enough to provoke it, which is the
+difference between a hazard and a siege.
+
+**Answered, and each one lands somewhere useful:**
+
+- **Destructible is an attribute, not a rule.** Some zones can be silenced and some cannot, which is a
+  property of the generator rather than of the mechanic. That means the roster needs an invulnerable
+  kind of thing — and "cannot be killed" has to be honoured in the *same* place hostility is decided,
+  so that acquisition never picks a target it cannot hurt in the first place. A generator a unit
+  spends a minute shooting to no effect is worse than one it ignores.
+- **No escalation for now.** Constant cadence. Worth noting that escalation is cheap to add later
+  *if* it is written as a function of the tick rather than as accumulated state: a cadence derived
+  from elapsed time needs nothing new hashed, while a spawn count that grows needs hashing like any
+  other state. Leave the door open in the shape of the rule, not with a field.
+- **What it attacks is definable** — filterable by unit class and by faction. So a zone can be
+  indiscriminate, or aimed at one power, or blind to aircraft. **This is another input to the single
+  hostility predicate** the alliance work is consolidating: *is this an enemy* is answered by
+  alliance, then by the filter, then by reach and class. Which is the third reason in this document
+  to do that consolidation first — it is the things alliances, neutrals and generators all plug into.
+
+**The generator's parameters, which are three numbers and a kind:**
+
+| | |
+|---|---|
+| **output** | what it emits — one kind |
+| **interval** | how often it emits — **a time**, in seconds |
+| **count** | how many it will ever emit, or nothing at all for unlimited |
+
+One output kind per generator, so a zone that emits two things at two cadences is two generators at
+the same place — simpler than a weighted table, and it composes the same way.
+
+**The interval is a time, and a time in this simulation is a whole number of ticks.** The clock is
+fixed at twenty ticks a second and contains no floating point, so storing ticks is not an
+approximation of a duration — it *is* the duration, exactly, and it cannot drift the way a
+"twelve-second" timer would in a game with a variable frame time. A designer asking for one and a
+half seconds gets thirty ticks, which is the number the bridge already uses for one cell of deck.
+
+What that costs is granularity: a cadence is a multiple of fifty milliseconds. That is a fine trade
+for something nobody will perceive as off by a frame, and it is the trade the whole simulation
+already makes — but it should be said once rather than discovered by someone asking for 1.7 seconds.
+
+So: **ticks in the roster, seconds in the comment and in the interface**, which is the convention the
+build times and the bridge's cadence already follow.
+
+**Two notes on the count.** It is **state**: how many a generator has already emitted is per-instance
+simulation state, so it belongs in the entity and therefore in the state hash — a spawner whose count
+is not hashed is a spawner two machines can disagree about while every other number agrees, which is
+the exact shape of the two holes closed this week. And **zero meaning unlimited** is already this
+codebase's convention (`MaxAlive`), so the sentinel costs nothing and wants no explaining.
+
+**The interval and the cap interact, and the interaction wants stating.** A generator emitting a
+capped role will quietly stop once the team hits the cap, which is correct but invisible; and a
+generator on the neutral team is subject to no cap at all, which is how a zone ends up breeding. Say
+which of the two bounds a reader should expect to bite first, in the comment where the spawn happens.
+
 ## Also outstanding, from the art and rendering work
 
 Not on the list above, but open:

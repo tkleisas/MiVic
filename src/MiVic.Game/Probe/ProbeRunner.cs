@@ -50,9 +50,46 @@ public sealed class ProbeRunner
     private readonly IProbeHost _host;
     private readonly StringBuilder _report = new();
     private readonly List<ProbeEvent> _events = [];
+    private readonly List<ProbeEvent> _tickEvents = [];
+    private readonly List<int> _teamsThatFired = [];
     private readonly Dictionary<(int Slot, int Part), ProbePose> _poses = [];
     private readonly ProbeCommand[] _commands;
     private readonly string _outputPath;
+
+    /// <summary>
+    /// Shots between teams, as ordered pairs: index <c>(shooter * TeamCount) + target</c>. The
+    /// alliance is a question about sides, so the ledger that answers "has anything passed
+    /// between allies" is kept in the same terms — the same terms <c>teams</c> prints them in.
+    /// </summary>
+    private readonly int[] _shotsBetweenTeams = new int[SimConstants.TeamCount * SimConstants.TeamCount];
+
+    /// <summary>Damage-carrying events, the health they took and the units lost, per victim team.</summary>
+    private readonly int[] _hitsOnTeam = new int[SimConstants.TeamCount];
+    private readonly int[] _damageOnTeam = new int[SimConstants.TeamCount];
+    private readonly int[] _lossesOnTeam = new int[SimConstants.TeamCount];
+
+    /// <summary>Shots fired by a team at a team it is not at war with. The number has to be zero.</summary>
+    private int _shotsAtAllies;
+
+    /// <summary>Damage and losses no hostile weapon fired for on the same tick.</summary>
+    private int _unexplainedDamage;
+
+    /// <summary>Ticks on which an armed unit was holding a target of a team it is not at war with.</summary>
+    private int _alliedTargets;
+
+    /// <summary>
+    /// The world's own firing state, one entry per slot, read every tick.
+    /// <para>
+    /// The event stream is not enough to account for damage. A shot that kills what it was aimed at
+    /// clears the target in the same tick, and the client's tracer detection — which needs a target
+    /// still standing at the end of the tick — therefore reports no shot at all for it. That is fine
+    /// for drawing and useless for accounting: the most damaging shot of a fight would be the one
+    /// nobody fired. So the tick's fire is read from the same two fields the client reads it from —
+    /// a cooldown that was zero and is not — plus the target it was aimed at a tick earlier.
+    /// </para>
+    /// </summary>
+    private int[] _previousCooldown = [];
+    private int[] _previousTarget = [];
 
     private int _next;
     private int _eventsSeen;
@@ -233,6 +270,9 @@ public sealed class ProbeRunner
             case "events":
                 Events(command);
                 break;
+            case "teams":
+                Teams(command);
+                break;
             case "bridge":
                 Bridge(command);
                 break;
@@ -284,7 +324,7 @@ public sealed class ProbeRunner
             default:
                 throw new ProbeException(
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
-                    "surfaces, attributes, units, unit, count, parts, model, visible, events, bridge, " +
+                    "surfaces, attributes, units, unit, count, parts, model, visible, events, teams, bridge, " +
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, detect, exposure, expect");
         }
@@ -2188,13 +2228,343 @@ public sealed class ProbeRunner
     }
 
     /// <summary>
+    /// <b>Who is on whose side, and what has actually passed between them.</b>
+    /// <para>
+    /// The ally question is the world's own — <see cref="SimWorld.AreAllied"/>, the same predicate
+    /// a weapon, a salvo, an attack order, a bridge and an off-map strike all ask — so this line
+    /// cannot disagree with what the guns did. Everything under it is the evidence rather than the
+    /// rule: shots by ordered pair of teams, and the health and units each team has lost, counted
+    /// from the same event stream <c>events</c> prints.
+    /// </para>
+    /// <para>
+    /// Two numbers are the ones to read. A shot by a team at a team it is not at war with is a
+    /// weapon pointed at a friend. A damage event or a loss that no hostile weapon fired for, on
+    /// that same tick, is the other door: a scattered salvo catches an ally without ever naming
+    /// one, and it is the reason a blast has to be asked about separately from a target. Lava has
+    /// no owner and burns whoever stands in it, so a hit taken on a lava cell is counted as
+    /// terrain.
+    /// </para>
+    /// </summary>
+    private void Teams(ProbeCommand command)
+    {
+        SimWorld world = _host.Simulation.World;
+        int capacity = world.Capacity;
+
+        var alive = new int[SimConstants.TeamCount];
+        var structures = new int[SimConstants.TeamCount];
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if ((uint)entity.TeamId >= SimConstants.TeamCount)
+            {
+                continue;
+            }
+
+            alive[entity.TeamId]++;
+
+            if (UnitCatalog.Get(entity.Kind).IsBuilding)
+            {
+                structures[entity.TeamId]++;
+            }
+        }
+
+        int inPlay = 0;
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (alive[team] > 0 || structures[team] > 0)
+            {
+                inPlay++;
+            }
+        }
+
+        Emit($"query: teams: {inPlay} teams in play of {SimConstants.TeamCount} slots at tick {world.Tick}");
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (alive[team] == 0)
+            {
+                continue;
+            }
+
+            Emit(
+                $"query:   team {team} {SimWorld.FactionOfTeam(team).ToString().ToLowerInvariant(),-8} " +
+                $"{ProbeFormat.Count(alive[team], "alive", "alive")}, " +
+                $"{ProbeFormat.Count(structures[team], "structure")}");
+        }
+
+        var allied = new List<string>();
+
+        for (int a = 0; a < SimConstants.TeamCount; a++)
+        {
+            for (int b = a + 1; b < SimConstants.TeamCount; b++)
+            {
+                if (alive[a] == 0 || alive[b] == 0)
+                {
+                    continue;
+                }
+
+                allied.Add($"{a}+{b} {(SimWorld.AreAllied(a, b) ? "allied" : "hostile")}");
+            }
+        }
+
+        Emit($"query:   sides      {string.Join(", ", allied)} — SimWorld.AreAllied, which is what every weapon asks");
+
+        var shots = new List<string>();
+
+        for (int shooter = 0; shooter < SimConstants.TeamCount; shooter++)
+        {
+            for (int target = 0; target < SimConstants.TeamCount; target++)
+            {
+                if (shooter == target)
+                {
+                    continue;
+                }
+
+                int count = _shotsBetweenTeams[(shooter * SimConstants.TeamCount) + target];
+
+                // The allied pairs are printed whether or not they are zero, because the zero is
+                // the reading; a hostile pair that has never fired at anything is just noise.
+                if (count == 0 && SimWorld.IsHostile(shooter, target))
+                {
+                    continue;
+                }
+
+                shots.Add($"{shooter} at {target}: {count}");
+            }
+        }
+
+        Emit(
+            $"query:   shots      {(shots.Count == 0 ? "none" : string.Join(", ", shots))} — since the script " +
+            "started, read from the world's own cooldowns so that a shot which killed its target is in the count");
+
+        var damage = new List<string>();
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (alive[team] == 0 && _hitsOnTeam[team] == 0 && _lossesOnTeam[team] == 0)
+            {
+                continue;
+            }
+
+            damage.Add(
+                $"team {team} {ProbeFormat.Count(_hitsOnTeam[team], "hit")}, " +
+                $"{ProbeFormat.Count(_lossesOnTeam[team], "loss", "losses")}, {_damageOnTeam[team]} health");
+        }
+
+        Emit($"query:   damage     {string.Join("; ", damage)} — the health lost by the team that lost it");
+
+        Emit(_shotsAtAllies == 0 && _alliedTargets == 0 && _unexplainedDamage == 0
+            ? "query:   friendly   none — no weapon held an ally as a target, none fired at one, and no damage went unexplained"
+            : $"query:   friendly   {ProbeFormat.Count(_alliedTargets, "tick")} with an ally held as a target, " +
+              $"{ProbeFormat.Count(_shotsAtAllies, "shot")} fired at an ally, " +
+              $"{ProbeFormat.Count(_unexplainedDamage, "damage event")} unexplained");
+
+        // The three readings above are not measurements to look at, they are a rule being broken:
+        // an engine in which a weapon can point at a friend has a bug, and a probe that reads one
+        // and exits 0 is a probe that hides it. So they are recorded as a check rather than printed
+        // for a reader to compare — which `expect` cannot do, because it takes the numbers written
+        // in the script and these are read from the world.
+        RecordCheck(
+            "no weapon aimed, fired or damaged an ally",
+            _shotsAtAllies == 0 && _alliedTargets == 0 && _unexplainedDamage == 0,
+            $"{_alliedTargets} ticks with an ally held as a target, {_shotsAtAllies} shots at an ally, " +
+            $"{_unexplainedDamage} damage events unexplained");
+
+        // The demonstration rather than the ledger, and the one question a total cannot answer:
+        // an armed unit with an ally of the other team inside its own weapon reach is a unit that
+        // could have shot a friend — and what it is aimed at *instead* is the answer. Asked of the
+        // world as it stands, now, rather than counted over the run.
+        int inReach = 0;
+        int nearer = 0;
+        int aimingAtAlly = 0;
+        int aimingAtEnemy = 0;
+        int aimingAtNothing = 0;
+        var examples = new List<string>();
+        var idleExamples = new List<string>();
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId is not (0 or 1))
+            {
+                continue;
+            }
+
+            UnitDefinition weapon = UnitCatalog.Get(entity.Kind);
+
+            if (!weapon.IsArmed || entity.Routed || (weapon.IsBuilding && !world.IsComplete(slot)))
+            {
+                continue;
+            }
+
+            int allyDistance = NearestAllyInReachMm(world, slot, ref entity, CombatSystem.EngagementRadiusMm(world, slot));
+
+            if (allyDistance < 0)
+            {
+                continue;
+            }
+
+            inReach++;
+
+            string aimedAt = "nothing";
+            int targetDistance = -1;
+
+            if (entity.TargetSlot >= 0)
+            {
+                ref Entity aim = ref world.GetRefBySlot(entity.TargetSlot);
+                targetDistance = (int)entity.Position.HorizontalDistanceTo(aim.Position);
+
+                aimedAt = $"{aim.Faction.ToString().ToLowerInvariant()}/{aim.Kind} (slot {entity.TargetSlot}, team {aim.TeamId}) " +
+                    $"at {ProbeFormat.Millimetres(targetDistance)}";
+
+                if (SimWorld.IsHostile(entity.TeamId, aim.TeamId))
+                {
+                    aimingAtEnemy++;
+                }
+                else
+                {
+                    aimingAtAlly++;
+                }
+            }
+            else
+            {
+                aimingAtNothing++;
+            }
+
+            // The comparison that is the demonstration rather than the ledger: an ally *nearer*
+            // than the enemy this weapon is firing at is a target that distance alone would have
+            // picked the ally for, and the number of those is the answer to "did it choose the
+            // enemy over the friend standing in front of it".
+            string example =
+                $"slot {slot} team {entity.TeamId} with an ally at {ProbeFormat.Millimetres(allyDistance)} aiming at {aimedAt}";
+
+            if (targetDistance >= 0 && allyDistance < targetDistance)
+            {
+                nearer++;
+            }
+
+            // A unit that is shooting at somebody is the better example to quote; a unit with
+            // nothing to shoot at only shows that there was nothing to shoot at.
+            if (targetDistance < 0)
+            {
+                if (idleExamples.Count < 3)
+                {
+                    idleExamples.Add(example);
+                }
+            }
+            else if (examples.Count < 3)
+            {
+                examples.Add(example);
+            }
+        }
+
+        List<string> shown = examples.Count > 0 ? examples : idleExamples;
+
+        Emit(
+            $"query:   in reach   {ProbeFormat.Count(inReach, "armed unit")} of team 0 or 1 have an ally of the other " +
+            $"team inside the reach they can engage at: {aimingAtAlly} aimed at an ally, " +
+            $"{aimingAtEnemy} at an enemy, {aimingAtNothing} at nothing, and {nearer} had the ally nearer than the " +
+            $"target they were firing at" +
+            (shown.Count == 0 ? string.Empty : $" — e.g. {string.Join("; ", shown)}"));
+    }
+
+    /// <summary>
+    /// The distance to the nearest unit of the other allied team that stands inside
+    /// <paramref name="reachMm"/>, or -1 when there is none: the encounter that makes "it did not
+    /// shoot" mean something.
+    /// <para>
+    /// The reach passed in is <see cref="CombatSystem.EngagementRadiusMm"/> — the engine's own
+    /// answer, which is the weapon's range capped by the shooter's eyes unless a powered radar
+    /// covers both ends of the shot. Using the weapon's bare range instead was this line's first
+    /// version and it lied: an Artillery reaches 220 m with its gun and 160 m with its eyes, so a
+    /// formation 200 m away read as "in reach" when no weapon in the game could have touched it.
+    /// </para>
+    /// </summary>
+    private static int NearestAllyInReachMm(SimWorld world, int slot, ref Entity shooter, int reachMm)
+    {
+        if (reachMm <= 0)
+        {
+            return -1;
+        }
+
+        SpatialIndex index = world.Spatial;
+        int nearest = -1;
+        int minX = index.CoordinateOf(shooter.Position.X - reachMm);
+        int maxX = index.CoordinateOf(shooter.Position.X + reachMm);
+        int minZ = index.CoordinateOf(shooter.Position.Z - reachMm);
+        int maxZ = index.CoordinateOf(shooter.Position.Z + reachMm);
+
+        for (int cellZ = minZ; cellZ <= maxZ; cellZ++)
+        {
+            for (int cellX = minX; cellX <= maxX; cellX++)
+            {
+                foreach (int other in index.Cell(index.IndexOf(cellX, cellZ)))
+                {
+                    if (other == slot || !world.IsAliveSlot(other))
+                    {
+                        continue;
+                    }
+
+                    ref Entity candidate = ref world.GetRefBySlot(other);
+
+                    // An ally, and not a brother on the same team: the encounter that can turn
+                    // into friendly fire is between the two teams, not inside one.
+                    if (candidate.TeamId == shooter.TeamId || candidate.TeamId is not (0 or 1))
+                    {
+                        continue;
+                    }
+
+                    int dx = shooter.Position.X - candidate.Position.X;
+                    int dz = shooter.Position.Z - candidate.Position.Z;
+                    long distanceSquared = ((long)dx * dx) + ((long)dz * dz);
+
+                    if (distanceSquared > (long)reachMm * reachMm)
+                    {
+                        continue;
+                    }
+
+                    int distance = (int)shooter.Position.HorizontalDistanceTo(candidate.Position);
+
+                    if (nearest < 0 || distance < nearest)
+                    {
+                        nearest = distance;
+                    }
+                }
+            }
+        }
+
+        return nearest;
+    }
+
+    /// <summary>
     /// Copies whatever the simulation has reported since the last look into the probe's own
-    /// history.
+    /// history, and accounts for it.
     /// <para>
     /// The bridge's queue is deliberately left alone rather than drained: the client turns
     /// its events into effects once a frame, and a frame is what <c>settle</c> asks for. A
     /// probe that ate them would leave <c>settle</c> with nothing to draw and no way for a
     /// script to photograph the shot it just asked about.
+    /// </para>
+    /// <para>
+    /// <b>This runs on every tick, including the ones that reported nothing</b>, because the
+    /// ledger watches the world's cooldowns as well as its events: a tick skipped as uneventful
+    /// is a tick whose cooldowns were never read, and the shot two ticks later then looks like a
+    /// cooldown that was already running rather than one that had just been set — which reads as
+    /// damage nobody fired for. That mistake was made here once and the tally said 39.
     /// </para>
     /// </summary>
     private void HarvestEvents(long tick)
@@ -2208,9 +2578,19 @@ public sealed class ProbeRunner
             _eventsSeen = 0;
         }
 
+        SimWorld world = _host.Simulation.World;
+
+        // This tick's events are collected before any of them is accounted for, because whether
+        // a hit is explained by hostile fire is a question about the whole tick: the events
+        // arrive in slot order, so the shot that caused a hit on slot 3 may come from slot 500.
+        _tickEvents.Clear();
+
         for (int i = _eventsSeen; i < events.Count; i++)
         {
-            _events.Add(ProbeEvent.From(events[i], tick, _host.Simulation.World));
+            ProbeEvent probeEvent = ProbeEvent.From(events[i], tick, world);
+
+            _tickEvents.Add(probeEvent);
+            _events.Add(probeEvent);
 
             if (_events.Count > EventHistory)
             {
@@ -2219,6 +2599,156 @@ public sealed class ProbeRunner
         }
 
         _eventsSeen = events.Count;
+
+        AccountForTick(world);
+    }
+
+    /// <summary>
+    /// Keeps the running tally of who fired at whom and who was hurt, which is what <c>teams</c>
+    /// reads back. Run once per tick, from the world as it stands at the end of it.
+    /// <para>
+    /// Three things are counted, and they are the three doors damage can come through. A weapon
+    /// <em>aimed</em> at a team it is not at war with is the bug itself, and it is checked on every
+    /// armed unit on every tick rather than when it happens to fire, because a target is held across
+    /// ticks and the one that matters is the one held. A <em>shot</em> at an ally is the same thing
+    /// arriving: a held ally killed outright clears the target in the same tick, so the pair is read
+    /// from where the weapon was aimed a tick earlier — the one approximation here, and it can only
+    /// ever invent a pair that was real a tick ago, never an allied one, because an armed unit never
+    /// holds an ally for the approximation to find. And a <em>damage event, or a loss, in a tick
+    /// where no team hostile to the victim fired</em> is the door artillery comes through: a
+    /// scattered salvo catches an ally without ever naming one, so no check on targets can see it.
+    /// </para>
+    /// <para>
+    /// Lava is the exception and it is asked about rather than assumed: it has no owner and burns
+    /// whoever stands in it, so a unit hurt on a lava cell is counted as terrain damage and not as a
+    /// shot nobody fired.
+    /// </para>
+    /// </summary>
+    private void AccountForTick(SimWorld world)
+    {
+        int capacity = world.Capacity;
+
+        if (_previousCooldown.Length < capacity)
+        {
+            _previousCooldown = new int[capacity];
+            _previousTarget = new int[capacity];
+
+            for (int slot = 0; slot < capacity; slot++)
+            {
+                _previousTarget[slot] = -1;
+            }
+        }
+
+        _teamsThatFired.Clear();
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                // A dead slot's cooldown is stale data waiting to be reused by the next unit
+                // spawned into it, which would otherwise read as that unit firing on arrival.
+                _previousCooldown[slot] = 0;
+                _previousTarget[slot] = -1;
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+            UnitDefinition weapon = UnitCatalog.Get(entity.Kind);
+
+            if (!weapon.IsArmed || entity.Routed || (weapon.IsBuilding && !world.IsComplete(slot)))
+            {
+                _previousCooldown[slot] = entity.AttackCooldown;
+                _previousTarget[slot] = entity.TargetSlot;
+                continue;
+            }
+
+            bool fired = _previousCooldown[slot] == 0 && entity.AttackCooldown > 0;
+            int aim = entity.TargetSlot >= 0 ? entity.TargetSlot : (fired ? _previousTarget[slot] : -1);
+
+            if (fired)
+            {
+                if (!_teamsThatFired.Contains(entity.TeamId))
+                {
+                    _teamsThatFired.Add(entity.TeamId);
+                }
+
+                if ((uint)aim < (uint)capacity)
+                {
+                    ref Entity target = ref world.GetRefBySlot(aim);
+                    int aimTeam = target.TeamId;
+
+                    if ((uint)entity.TeamId < SimConstants.TeamCount && (uint)aimTeam < SimConstants.TeamCount)
+                    {
+                        _shotsBetweenTeams[(entity.TeamId * SimConstants.TeamCount) + aimTeam]++;
+
+                        if (!SimWorld.IsHostile(entity.TeamId, aimTeam))
+                        {
+                            _shotsAtAllies++;
+                        }
+                    }
+                }
+            }
+
+            if (entity.TargetSlot >= 0 && (uint)entity.TeamId < SimConstants.TeamCount)
+            {
+                int heldTeam = world.GetRefBySlot(entity.TargetSlot).TeamId;
+
+                if (!SimWorld.IsHostile(entity.TeamId, heldTeam))
+                {
+                    _alliedTargets++;
+                }
+            }
+
+            _previousCooldown[slot] = entity.AttackCooldown;
+            _previousTarget[slot] = entity.TargetSlot;
+        }
+
+        foreach (ProbeEvent probeEvent in _tickEvents)
+        {
+            if (probeEvent.Type == SimEventType.ShotFired ||
+                (uint)probeEvent.TeamId >= SimConstants.TeamCount)
+            {
+                continue;
+            }
+
+            int victim = probeEvent.TeamId;
+
+            if (probeEvent.Type == SimEventType.UnitHit)
+            {
+                _hitsOnTeam[victim]++;
+                _damageOnTeam[victim] += probeEvent.Damage;
+            }
+            else
+            {
+                _lossesOnTeam[victim]++;
+            }
+
+            if (!IsTerrainDamage(world, probeEvent.PositionMm) && !ExplainedByHostileFire(victim))
+            {
+                _unexplainedDamage++;
+            }
+        }
+    }
+
+    /// <summary>True when some team that fired this tick is at war with the victim's.</summary>
+    private bool ExplainedByHostileFire(int victimTeam)
+    {
+        foreach (int team in _teamsThatFired)
+        {
+            if (SimWorld.IsHostile(team, victimTeam))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>True when the event happened on lava, which has no owner and burns anybody.</summary>
+    private static bool IsTerrainDamage(SimWorld world, WorldPos position)
+    {
+        int cell = world.Navigation.IndexOfWorld(position);
+        return cell >= 0 && world.TerrainTypes.TypeAt(cell) == TerrainType.Lava;
     }
 
     // ---------------------------------------------------------------- checks
@@ -2254,6 +2784,31 @@ public sealed class ProbeRunner
         Emit($"fail: FAIL '{label}' — got {actual}, expected {expected}{(tolerance is { } slack ? $" +- {slack:0.###}" : string.Empty)}");
     }
 
+    /// <summary>
+    /// Records a check whose numbers come from the world rather than from the script.
+    /// <para>
+    /// <c>expect</c> compares two literals the script carries, which is what makes a script a
+    /// record of numbers somebody measured — and what makes it useless for an invariant. "No
+    /// weapon may aim at an ally" is not a value to compare against a transcript: it is a rule
+    /// that either held in this run or did not, and a probe that printed a violation and exited 0
+    /// would be hiding the thing it exists to find. These checks go through the same counter and
+    /// the same two prefixes as <c>expect</c>, so the run's exit status covers them.
+    /// </para>
+    /// </summary>
+    private void RecordCheck(string label, bool held, string detail)
+    {
+        _checks++;
+
+        if (held)
+        {
+            Emit($"check: PASS '{label}' — {detail}");
+            return;
+        }
+
+        _checksFailed++;
+        Emit($"fail: FAIL '{label}' — {detail}");
+    }
+
     private static bool Matches(string actual, string expected, float? tolerance)
     {
         if (float.TryParse(actual, NumberStyles.Float, CultureInfo.InvariantCulture, out float left) &&
@@ -2281,10 +2836,13 @@ public sealed class ProbeRunner
         SimEventType Type,
         int Slot,
         Faction Faction,
+        int TeamId,
         UnitKind Kind,
         Vector3 Position,
+        WorldPos PositionMm,
         int Damage,
         int TargetSlot,
+        int TargetTeamId,
         string Target,
         Vector3 Direction,
         bool HasDirection,
@@ -2296,6 +2854,7 @@ public sealed class ProbeRunner
             var direction = Vector3.Zero;
             var range = 0f;
             var target = "-";
+            int targetTeam = -1;
             bool hasDirection = false;
 
             if (simEvent.TargetSlot >= 0 && simEvent.TargetSlot < world.Capacity)
@@ -2306,7 +2865,8 @@ public sealed class ProbeRunner
                 ref Entity victim = ref world.GetRefBySlot(simEvent.TargetSlot);
                 Vector3 point = SimBridge.ToMetres(victim.Position);
 
-                target = $"{victim.Faction.ToString().ToLowerInvariant()}/{victim.Kind} (slot {simEvent.TargetSlot}{(victim.Alive ? string.Empty : ", destroyed by this")})";
+                targetTeam = victim.TeamId;
+                target = $"{victim.Faction.ToString().ToLowerInvariant()}/{victim.Kind} (slot {simEvent.TargetSlot}, team {victim.TeamId}{(victim.Alive ? string.Empty : ", destroyed by this")})";
 
                 Vector3 delta = point - simEvent.Position;
                 range = new Vector2(delta.X, delta.Z).Length();
@@ -2323,10 +2883,13 @@ public sealed class ProbeRunner
                 simEvent.Type,
                 simEvent.Slot,
                 simEvent.Faction,
+                simEvent.TeamId,
                 simEvent.Kind,
                 simEvent.Position,
+                simEvent.PositionMm,
                 simEvent.Damage,
                 simEvent.TargetSlot,
+                targetTeam,
                 target,
                 direction,
                 hasDirection,
@@ -2334,6 +2897,12 @@ public sealed class ProbeRunner
         }
 
         /// <summary>One line: what happened, where, and for a shot which way it went.</summary>
+        /// <remarks>
+        /// Every line names the team as well as the faction, because the question a reader of
+        /// this stream is asking is almost always a question about sides — "did team 0 shoot at
+        /// team 1" — and the pair of names is what answers it. See <c>teams</c>, which asks the
+        /// world itself and counts the same events.
+        /// </remarks>
         public string Describe()
         {
             string what = Type switch
@@ -2345,7 +2914,7 @@ public sealed class ProbeRunner
 
             var text = new StringBuilder();
 
-            text.Append($"{what,-9} slot {Slot,4} {Faction.ToString().ToLowerInvariant()}/{Kind} at {ProbeFormat.Point(Position)}");
+            text.Append($"{what,-9} slot {Slot,4} {Faction.ToString().ToLowerInvariant()}/{Kind} team {TeamId} at {ProbeFormat.Point(Position)}");
 
             if (Type == SimEventType.ShotFired)
             {

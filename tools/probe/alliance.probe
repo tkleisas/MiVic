@@ -1,0 +1,75 @@
+# Q: do allied forces damage each other in a real match?
+#
+#   MiVic.Game.exe --seed 4711 --probe tools/probe/alliance.probe --probe-out artifacts/probe/alliance.txt
+#
+# The standard skirmish, nobody playing any team: three bases on the standard map, teams 1 and 2 run
+# by AiSystem and team 0 left alone. Teams 0 and 1 are allied and team 2 is not, which is what
+# `teams` prints from SimWorld.AreAllied — the same question every weapon, salvo, attack order,
+# bridge and off-map strike asks.
+#
+# What to read:
+#
+#   - `sides` says 0+1 are allied and 0+2, 1+2 are not. Nothing else here is a rule; the rest is
+#     evidence.
+#   - `shots` is by ordered pair of teams, and the allied pairs are printed whether or not they are
+#     zero, so "0 at 1: 0" is a reading rather than an omission. Shots by 0 and 1 at 2 keep climbing
+#     and team 2 keeps shooting back, which is the damage between the allies and their enemy that has
+#     to continue. The count comes from the world's own cooldowns rather than from the event stream,
+#     because a shot that kills what it was aimed at clears its target in the same tick and the
+#     client's tracer detection — which needs the target still standing — reports no shot at all for
+#     it. Those numbers move with balance and are read rather than pinned; the zeros below are pinned.
+#   - `damage` says who is being hurt: the allied pair takes it from team 2, and team 2 takes it from
+#     both of them.
+#   - `friendly` is the line that has to say none, and it covers three doors rather than one: a weapon
+#     *holding* an ally as a target on any tick, a shot *fired* at one, and a damage event or a loss
+#     in a tick where no team hostile to the victim fired. The third is the door artillery comes
+#     through — a scattered salvo catches an ally without ever naming one — so a blast cannot be
+#     checked by looking at targets alone. These are not compared by the script's own `expect` lines,
+#     which take the numbers written in them; the command records a check of its own, so a run that
+#     reads a violation fails instead of printing one.
+#   - `in reach` counts armed units of one allied team with an ally of the other inside the reach they
+#     can actually engage at, and what each is aimed at instead.
+#
+# On this seed that last line reads zero, and it is worth being straight about what that means: the
+# two allied armies never come within weapon reach of each other in this match at all once they stop
+# shooting each other, so the zeros above are evidence that nothing passed between them and not proof
+# that anything would have. `tools/probe/alliance-demo.probe` is the script that forces the case: two
+# allied tanks in killing range of each other with an enemy further out, where the ally is the
+# *nearer* of the two candidates. Run that one to see the rule take effect; run this one to see a
+# match. The seed is the one thing taken from outside the default, because on the default seed
+# (20250101) the allied formations never meet at all.
+
+# --- the teams, before anybody has fired ----------------------------------------------------------
+teams
+
+# --- ten seconds in: the ledger begins ------------------------------------------------------------
+tick 200
+teams
+
+# --- the nearest this match comes to an allied engagement ------------------------------------------
+# Two Σοβιετικοί howitzers firing at a Δυτικοί gun emplacement 149 m away — `range` gives the 160 m
+# reach that shot was made inside — with the Κινέζοι line elsewhere on the map. The `in reach` line
+# above is the one that says whether any ally of theirs was inside that reach, and on this match it
+# was not.
+unit 115
+unit 127
+range 115
+
+# --- twenty seconds: still nobody shooting an ally, and team 2 taking the damage ------------------
+tick 200
+teams
+
+# --- the events themselves, in team terms ---------------------------------------------------------
+# Every line names the team as well as the faction, so the stream can be read for the question it is
+# being asked: which team fired at which. There is no line here of the form "team 0 ... firing at
+# ... team 1".
+events 10
+
+# --- the ledger of measurements -------------------------------------------------------------------
+# The numbers this script was read as, written down so that the day they stop being true the next
+# reader has something to compare against.
+expect "allied pairs in the standard skirmish" 1 1 0
+expect "units aiming at an ally while an ally is in reach" 0 0 0
+expect "ticks with an ally held as a target" 0 0 0
+expect "shots fired at an ally" 0 0 0
+expect "damage no hostile weapon can account for" 0 0 0

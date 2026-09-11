@@ -28,7 +28,9 @@ Two fixtures exist because a probe cannot place a unit. They are `--emplacement-
 clears the field and puts a command centre and three enemies on the clearest ground the map
 has, and `--detection-demo`, which lays a defensive post, a radar and a base up the map's centre
 column with a tank held at 190 m and a Καταδρομέας walking down it — see
-`tools/probe/detection.probe` below for what that one is for.
+`tools/probe/detection.probe` below for what that one is for. A third, `--alliance-demo`, puts two
+allied tanks inside each other's killing range with an enemy further out, because no match puts them
+there: see `tools/probe/alliance-demo.probe`.
 
 **PowerShell does not wait for this executable.** The client is a `WinExe`, so `& $exe …`
 returns immediately and `$LASTEXITCODE` is empty. Use `Start-Process -Wait -PassThru` (as
@@ -178,7 +180,8 @@ them and it is gone.
 
 | Command | Answer |
 |---|---|
-| `events [n]` | the most recent simulation events the client has seen: shots with the direction fired and the range, hits with the damage, deaths with the position |
+| `events [n]` | the most recent simulation events the client has seen: shots with the direction fired and the range, hits with the damage, deaths with the position. Every line names the team as well as the faction, because the question a reader of the stream is asking is usually a question about sides |
+| `teams` | who is on whose side and what has actually passed between them: each team with its faction and what is alive on it, the alliance of every pair asked of `SimWorld.AreAllied` — the same question a weapon asks — and a running ledger of shots by pair of teams, health lost per team, and **whether any weapon has aimed at, fired at or damaged an ally**. It records a check of its own, so a run that reads a violation fails |
 
 Firing is not re-detected here: the events come from `SimBridge`'s own cooldown diffing, so
 a shot in the transcript and a tracer on screen are the same shot.
@@ -191,7 +194,10 @@ a shot in the transcript and a tracer on screen are the same shot.
 
 `expect` takes literals, not query results: it is a ledger of values you measured once and
 want to keep true. `expect "the map has lava" 55 55` fails the run the day lava stops being
-generated — which has happened once already.
+generated — which has happened once already. A command whose answer is an *invariant* rather than a
+measurement records its own check instead, with the same two prefixes and the same exit status:
+`teams` fails the run when some weapon has aimed at, fired at or damaged an ally, because a
+transcript that reads a violation and exits 0 is a transcript that hides it.
 
 ## Output format
 
@@ -736,6 +742,81 @@ Five facts, and each of them was a different failure mode before this was built:
 
 The script carries the numbers as checks, so the day the AI stops building a line, or starts
 shedding the radar it built, the probe fails rather than reporting something else.
+
+## Worked example: do allied forces damage each other?
+
+Teams 0 and 1 are on the same side in every match this game ships, so "an ally is not a target" is a
+rule the engine either keeps or breaks, and no single line of a transcript is the answer: it takes
+the sides, the fire, and the health lost, over a match. `tools/probe/alliance.probe`, run against the
+standard skirmish with nobody playing, trimmed to the answers (`…` marks lines cut out of the
+middle):
+
+```
+cmd: tick 200
+cmd: teams
+query: teams: 3 teams in play of 4 slots at tick 200
+query:   team 0 soviet   170 alive, 4 structures
+query:   team 1 chinese  172 alive, 6 structures
+query:   team 2 western  173 alive, 7 structures
+query:   sides      0+1 allied, 0+2 hostile, 1+2 hostile — SimWorld.AreAllied, which is what every weapon asks
+query:   shots      0 at 1: 0, 0 at 2: 36, 1 at 0: 0, 1 at 2: 1, 2 at 1: 195 — since the script started, …
+query:   damage     team 0 0 hits, 0 losses, 0 health; team 1 74 hits, 3 losses, 3665 health; team 2 20 hits, 0 losses, 846 health
+query:   friendly   none — no weapon held an ally as a target, none fired at one, and no damage went unexplained
+check: PASS 'no weapon aimed, fired or damaged an ally' — 0 ticks with an ally held as a target, 0 shots at an ally, 0 damage events unexplained
+query:   in reach   0 armed units of team 0 or 1 have an ally of the other team inside the reach they can engage at: …
+```
+
+Five facts, and the fourth is the one the command fails the run over:
+
+- **`sides` comes from the world, not from the script**: `SimWorld.AreAllied` is the same predicate
+  a weapon, a salvo, an attack order, a bridge and an off-map strike ask, so this line cannot
+  disagree with what the guns did;
+- **`shots` names the allied pairs whether or not they are zero**, so `0 at 1: 0` is a reading
+  rather than an omission — where a hostile pair that has never fired is simply left out;
+- **the damage continues in the direction it should**: team 1 loses 3 665 health and 3 units to team
+  2, team 2 loses 846 to the allies, and team 0 — the team nobody is playing — is untouched;
+- **`friendly` is three numbers that all have to be zero, and the command records them as a check**,
+  not as a line to compare by eye: a weapon *holding* an ally as a target on any tick, a shot fired
+  at one, and a damage event or a loss in a tick where no team hostile to the victim fired. The last
+  is the door artillery comes through — a scattered salvo catches an ally without ever naming one —
+  so no check on targets alone can see it;
+- **`in reach` reads zero here, and that is worth being exact about.** The two allied armies never
+  come within weapon reach of each other in this match at all, so the zeros above say that nothing
+  passed between them and not that anything would have.
+
+Forcing the case needs a scene no match provides, which is what `--alliance-demo` is:
+`tools/probe/alliance-demo.probe` against it, with the tanks' five thousand hit points showing as
+`5000/320` because `units` prints the role's catalogue health after the slash:
+
+```
+cmd: tick 1
+cmd: teams
+query:   sides      0+1 allied, 0+2 hostile, 1+2 hostile — SimWorld.AreAllied, which is what every weapon asks
+query:   shots      0 at 1: 0, 0 at 2: 1, 1 at 0: 0, 1 at 2: 1, 2 at 1: 1 — …
+query:   in reach   4 armed units of team 0 or 1 have an ally of the other team inside the reach they can engage at:
+                     0 aimed at an ally, 2 at an enemy, 2 at nothing, and 1 had the ally nearer than the target they
+                     were firing at — e.g. … slot 509 team 0 with an ally at 60.0 m aiming at western/Tank (slot 507,
+                     team 2) at 100.0 m
+cmd: unit 509
+query: unit 509 soviet/Tank Tank (Άρμα), team 0, generation 1
+query:   attack     slot 507 (western/Tank at 100.0 m), cooldown 14 ticks of 24, order automatic, 35 damage out to 110.0 m
+cmd: unit 506
+query:   attack     none, cooldown 5 ticks of 24, order automatic, 35 damage out to 110.0 m
+```
+
+Three facts:
+
+- **the Σοβιετικοί tank at slot 509 is firing at a Δυτικοί tank a hundred metres away while a Κινέζοι
+  ally of its own stands at sixty** — the ally is the *nearer* of the two candidates, so nothing but
+  the side they are on can have decided it, and `1 had the ally nearer than the target they were
+  firing at` is that fact counted;
+- **the tank at slot 506 has an ally sixty metres away and no enemy in reach at all**, and it holds
+  no target — an ally is not a target even when it is the only thing there is;
+- **the same run against the engine before this rule was fixed** reads `attack slot 508
+  (chinese/Tank at 60.0 m)` for slot 509 and `attack slot 505 (chinese/Tank at 60.0 m)` for slot 506:
+  `603 ticks with an ally held as a target, 32 shots fired at an ally, 29 damage events unexplained`,
+  two failed checks and an exit status of 1. The same script, the same fixture, the same seed — which
+  is what makes it an instrument rather than an illustration.
 
 ## `parts <slot>` in full
 

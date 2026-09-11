@@ -142,7 +142,11 @@ public static class MoraleSystem
                         continue;
                     }
 
-                    if (candidate.TeamId == entity.TeamId)
+                    // Friend or foe is the alliance and not the team id. Counting an ally as
+                    // an enemy would make a man standing beside his brother-in-arms feel
+                    // outnumbered by him — the same mistake the guns were making, one system
+                    // over, and the same predicate settles it.
+                    if (!SimWorld.IsHostile(entity.TeamId, candidate.TeamId))
                     {
                         friends++;
 

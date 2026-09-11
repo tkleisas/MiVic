@@ -542,12 +542,17 @@ public sealed class ResearchTests
 
             // Enough enemies that the force-balance term is negative and the morale
             // target is not simply clamped at maximum — otherwise cohesion would be
-            // invisible against the ceiling.
+            // invisible against the ceiling. These have to be Δυτικοί on team 2 and not
+            // Σοβιετικοί on team 0, which is who stood here when this was written: teams 0
+            // and 1 are allied, so a team-0 unit beside a Κινέζοι one is a friend, and a
+            // fixture that called it an enemy was describing the morale system's own
+            // mistake back to it. The intent is unchanged — a unit outnumbered by the
+            // enemy — and now the enemy is one.
             for (int i = 1; i <= 6; i++)
             {
                 world.Spawn(
-                    Faction.Soviet,
-                    0,
+                    Faction.Western,
+                    2,
                     UnitKind.Infantry,
                     new WorldPos(centre.X - (i * 10_000), 0, centre.Z),
                     Fix32.Zero,

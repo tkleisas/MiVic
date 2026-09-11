@@ -355,7 +355,22 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by the AI learning what a defended position is. Teams 1 and 2 in this scenario
+    /// Last changed by allied forces ceasing to damage each other. Teams 0 and 1 are allied in
+    /// this scenario and in every match the game ships, and every weapon, blast, attack order and
+    /// off-map strike asked whether a target was on the <em>same team</em> rather than on the same
+    /// side — so the two allies shot each other whenever their formations met, and the crossing
+    /// rule beside them spared an ally's bridge only because it had been written by asking the real
+    /// question. This scenario has a hundred and eighty tanks across all three teams and the AI
+    /// plays two of them, so the fix moves it in both directions: the allied pair stops killing its
+    /// own, and the enemy meets an army that is still intact. The morale system counted friends and
+    /// enemies the same wrong way — an ally standing beside a unit was counted as an enemy, and a
+    /// unit that feels outnumbered is a unit that reloads slower — so that correction is inside this
+    /// number as well. <c>AllianceTests</c> pins each path, including a four-hundred-tick run of the
+    /// standard skirmish that fails with a hundred and twenty allied targets on the old rule; the
+    /// sensor scenario below is untouched by any of it, because it has no allied pair on it.
+    /// </para>
+    /// <para>
+    /// Before that it was the AI learning what a defended position is. Teams 1 and 2 in this scenario
     /// are played by <see cref="AiSystem"/>, and it now raises a Πυροβολείο, a Σταθμός Ραντάρ and an
     /// Αντιαεροπολικό Πυροβολείο on sites it chooses and scores for itself — two more structures on
     /// the ground beside the two AI headquarters here — and it commands the armour the scenario
@@ -406,7 +421,7 @@ public sealed class DeterminismTests
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(4615945465731198775UL, HashScenario(20250101));
+        => Assert.Equal(15926114484445000828UL, HashScenario(20250101));
 
     /// <summary>
     /// A fixed defensive scene with the whole sensor chain in it: a Σοβιετικοί line of two gun

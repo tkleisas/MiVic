@@ -423,7 +423,7 @@ public sealed class Bridgeworks
                     continue;
                 }
 
-                if (sparesFriends && (_owner[cell] == attackerTeam || SimWorld.AreAllied(_owner[cell], attackerTeam)))
+                if (sparesFriends && !SimWorld.IsHostile(attackerTeam, _owner[cell]))
                 {
                     continue;
                 }
@@ -454,8 +454,11 @@ public sealed class Bridgeworks
 
         // Your own deck is not a target, and neither is an ally's: the same rule the splash damage
         // on units follows, for the same reason — a stray shell should not cut the crossing your own
-        // army is using.
-        if (_owner[cell] == attackerTeam || SimWorld.AreAllied(_owner[cell], attackerTeam))
+        // army is using. It is asked through SimWorld.IsHostile so that the deck and the men standing
+        // on it cannot answer the question differently: the two used to be written separately, one of
+        // them as an alliance and the other as a comparison of team ids, and that is exactly how an
+        // artillery salvo came to spare the crossing and kill the unit on it.
+        if (!SimWorld.IsHostile(attackerTeam, _owner[cell]))
         {
             return false;
         }
