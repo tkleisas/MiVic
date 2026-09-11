@@ -1,0 +1,49 @@
+# Q: does a match of two factions reach a result — and is the faction that is not in it required?
+#
+#   MiVic.Game.exe --rivals --victory-demo --probe tools/probe/two-faction-decided.probe `
+#       --probe-out artifacts/probe/two-faction-decided.txt
+#
+# The same match as `two-faction.probe` — Σοβιετικοί against Κινέζοι, Δυτικοί absent — reached its
+# verdict. `--victory-demo` is the fixture that knocks out every structure the player does not own, so
+# the match is decided within a second of the first check; that is what it has always been for (it is
+# how the banner is photographed), and it is used here for the same reason: a two-faction match of 170
+# units against 170 is a war of attrition that a transcript cannot sit through, and what is being
+# asked about is the *rule*, not the battle.
+#
+# What to read:
+#
+#   - `match` names the two teams that are playing and the two slots that are not. The Δυτικοί are
+#     absent, and the verdict below is reached without them being anything: under the rule this
+#     replaced, `HasStructures(2)` was one half of the question, so a match without them was decided
+#     on its very first check — the player's side "won" because a team that was not on the map had no
+#     buildings. That is what this pair of transcripts shows from both ends.
+#   - `sides` reads `0+1 hostile`: the enemy is the team that is normally the ally, and there is no
+#     ally at all.
+#   - `outcome` is the verdict, which is the whole of the victory rule: *the player's side has no
+#     enemies left*. Team 1 still has 170 units alive and the match is over, because a side is out
+#     when it has no structures left to rebuild from — and the absent team is not a side this check
+#     ever looks at.
+#   - the two shots are the status panel as the player sees it: `Παράταξη` with a row for Σοβιετικοί
+#     and a row for Κινέζοι, and no row for the Δυτικοί, who are not in this match. The second frame
+#     is the banner the verdict raises.
+
+# --- the panel, before the verdict: one row per team in this match, and no third row --------------
+hud on
+focus -180 -180
+zoom 420
+pitch -0.85
+settle
+shot artifacts/probe/two-faction-panel.png
+
+# --- the match at the moment the fixture has left the enemy with nothing but units -----------------
+teams
+
+# --- two seconds later: the first check has run, and the match is decided ---------------------------
+tick 40
+teams
+settle
+shot artifacts/probe/two-faction-victory.png
+
+# --- the ledger of measurements -------------------------------------------------------------------
+expect "teams the match declares" 2 2 0
+expect "the enemy side still owns a structure" 0 0 0

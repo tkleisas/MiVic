@@ -1,0 +1,57 @@
+# Q: does a match of two factions run — and are the two teams that were always allies now enemies?
+#
+#   MiVic.Game.exe --rivals --probe tools/probe/two-faction.probe --probe-out artifacts/probe/two-faction.txt
+#
+# A match declares its teams. `--rivals` declares two of them: Σοβιετικοί (team 0, the player) against
+# Κινέζοι (team 1, the computer), with the Δυτικοί absent. Nothing about that is a fixture — it is a
+# match, with both bases on the map and the ordinary victory rule running over it.
+#
+# The two teams it puts at war are the two teams that are on the same side in every other match this
+# game ships, which is the point: the alliance used to be a predicate over team numbers
+# (`0 and 1 against the rest`), and it is now a side the match declares. Nothing else can express a
+# Σοβιετικοί-against-Κινέζοι war at all.
+#
+# What to read:
+#
+#   - `match` is the declaration itself, printed from MatchRoster: how many teams are playing, which
+#     faction each one plays, which side each one is on, and which teams are *not* in the match. Team
+#     2 (western) is named there as absent, and everything below follows from that one fact.
+#   - `sides` reads `0+1 hostile` — from `SimWorld.AreAllied`, the same question a weapon, a salvo, an
+#     attack order, a bridge and an off-map strike ask. The allied pair of the standard skirmish is
+#     the enemy pair here.
+#   - `outcome` is the victory rule's own verdict, asked of the sides rather than of teams 0, 1 and 2:
+#     `ongoing; team 0, team 1 still hold structures`. The Δυτικοί hold nothing and never will, and
+#     the match is not decided by that — which is the whole reason the check had to stop reading team
+#     numbers.
+#   - `shots` and `damage` are the evidence that the two are really at war: fire in *both* directions,
+#     health lost on *both* teams, and deaths on team 1. A declaration that nothing acts on would
+#     show two bases and no fighting.
+#   - `friendly` is the line that has to say none, and it covers three doors rather than one: a weapon
+#     holding an ally as a target, a shot fired at one, and damage no hostile weapon can account for.
+#     In a match with no ally at all the first two are zero for want of anybody to shoot, and the
+#     command still records the check, because the day this match grows a third side is the day the
+#     line starts meaning something.
+#   - `events` names the teams on every line, which is the fight in team terms rather than in totals.
+#
+# The 1 200 ticks are read as they stand and are pinned below: on this seed the two armies meet at
+# about tick 900 and by tick 1 200 have traded sixteen shots one way and seven the other.
+
+# --- the declaration, before anybody has fired ----------------------------------------------------
+teams
+
+# --- ten seconds in: the computer has bought its line, and the armies have not met ---------------
+tick 200
+teams
+
+# --- a minute in: contact, in both directions -----------------------------------------------------
+tick 1000
+teams
+events 10
+
+# --- the ledger of measurements -------------------------------------------------------------------
+# Written down as measured so the day they stop being true the next reader has something to compare
+# against. The first is the whole job in one number: two teams, not three.
+expect "teams the match declares" 2 2 0
+expect "shots fired by team 0 at team 1" 16 16 0
+expect "shots fired by team 1 at team 0" 7 7 0
+expect "units team 1 has lost to team 0" 8 8 0

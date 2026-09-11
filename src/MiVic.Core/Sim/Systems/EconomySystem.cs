@@ -133,7 +133,7 @@ public static class EconomySystem
             state.Energy = Math.Max(0, state.Energy + state.EnergyPerTick);
             state.Water = Math.Max(0, state.Water + state.WaterPerTick);
 
-            PayUpkeep(ref state, SimWorld.FactionOfTeam(team));
+            PayUpkeep(ref state, world.FactionOfTeam(team));
         }
     }
 

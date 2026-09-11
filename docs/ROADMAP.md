@@ -303,13 +303,31 @@ existing kinds are things you do to the enemy, and none of them is *denial*.
 
 ### Not every map has three factions
 
-The simulation assumes three teams; a two-faction mission is the ordinary case in a campaign, and it
-also makes an alliance map possible — two against one where the third is absent rather than allied.
-What this needs is modest and mostly plumbing: **per-mission participation** rather than a fixed
-roster, victory conditions that do not require destroying a faction that was never on the map, a HUD
-that does not show a score row for a faction with no units, and alliances that work in a two-team
-match. It buys a great deal of variety for very little risk, and it is the piece of this section that
-can be done first and independently.
+**Built.** A match declares its teams: `MatchRoster` says which team slots are playing, which faction
+each one plays and which side each one is on, and the world holds the declaration it was built with
+(`SimWorld.Roster`). Everything that needs to know asks it — the victory rule, the AI, the status
+panel, the client's palette and labels, the probe — and nothing decides it by index any more.
+
+What that bought, in the order the plan above asked for it:
+
+- **participation rather than a fixed roster**: `ScenarioKind.Duel` (Σοβιετικοί against Δυτικοί, no
+  ally) and `ScenarioKind.Rivals` (Σοβιετικοί against Κινέζοι, Δυτικοί absent), started with `--duel`
+  and `--rivals`; `MatchRoster.Declare` for anything else, including a free-for-all. A mission declares
+  its own match too — `MissionDefinition.Roster` — so the campaign's ally is a side the mission says it
+  has rather than a column of the scenario builder, and a mission without one lays out two forces;
+- **victory conditions that do not require destroying a faction that was never on the map**: the rule
+  is now *the player's side has no enemies left*, asked of the sides the match declares, so zero, one
+  and two enemies all resolve through one line. A team the match does not declare is not a side the
+  check looks at — which is the same requirement the monster generator below has, and the reason both
+  wanted this;
+- **a HUD with a row per team that is playing**, labelled with the faction that team plays, and a
+  licence panel that asks the match who the ally is instead of assuming team 1;
+- **alliances that work in a two-team match**, including one with no ally at all, because the alliance
+  is a side the match declares rather than a predicate over two team numbers.
+
+Still open here, and deliberately so: alliances are fixed when the match is built (§7), so a match
+still cannot *change* sides mid-game, and the roster is not yet part of the state hash for the same
+reason — it cannot change yet.
 
 ## 9. Monster generators
 
@@ -332,12 +350,13 @@ still running inside it — no new fiction required, and the hazard machinery is
   how long since the last one).
 - **Neutral hostility, stated properly.** A generator on the neutral team is hostile to all three
   factions, which makes it the first real test of the alliance work: *"is this an enemy"* has to
-  answer correctly for a team that is allied to nobody and at war with everybody. Worth doing after
-  alliances are dynamic, not before.
-- **Victory conditions that ignore it.** The same plumbing a two-faction map needs: a faction that
-  was never on the map, or one that exists only as an obstacle, must not be something the victory
-  check requires destroying. Both of these are the same fix, which is another argument for doing that
-  fix first.
+  answer correctly for a team that is allied to nobody and at war with everybody. An undeclared team
+  already answers that way — see §8 — so what is left is declaring the generator's own team in the
+  match and giving it a side of its own.
+- **Victory conditions that ignore it.** A faction that was never on the map, or one that exists only
+  as an obstacle, must not be something the victory check requires destroying. **This is done**: the
+  check walks the sides the match declares, so a team the match does not declare is never required of
+  anybody, and a generator would be declared in it only if it were meant to be fought.
 - **The AI has to cope.** Its emplacements will engage what comes at them, which is the right
   emergent answer. What it must not do is treat a generator as an objective worth an army, or be
   baited into a war of attrition against something that respawns.

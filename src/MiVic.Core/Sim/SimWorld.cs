@@ -35,21 +35,37 @@ public sealed class SimWorld
     private bool _insideStep;
     private int _freeCount;
 
-    /// <summary>Creates a world with the maximum entity capacity.</summary>
+    /// <summary>Creates a world with the maximum entity capacity, playing the standard skirmish.</summary>
     public SimWorld(ulong seed)
-        : this(seed, SimConstants.MaxEntities)
+        : this(seed, SimConstants.MaxEntities, MatchRoster.StandardSkirmish)
     {
     }
 
-    /// <summary>Creates a world with an explicit capacity, for tests.</summary>
+    /// <summary>Creates a world with an explicit capacity, playing the standard skirmish.</summary>
     public SimWorld(ulong seed, int capacity)
+        : this(seed, capacity, MatchRoster.StandardSkirmish)
     {
+    }
+
+    /// <summary>Creates a world with an explicit capacity and an explicit match.</summary>
+    /// <param name="seed">Seed every generated thing derives from.</param>
+    /// <param name="capacity">Entity slots the world is built with.</param>
+    /// <param name="roster">
+    /// Who is playing: which teams are in the match, what faction each one plays and which side each
+    /// one is on. It is fixed for the life of the world — an alliance that could change mid-match
+    /// would need a command and a state field, and nothing in the game asks for one yet.
+    /// </param>
+    public SimWorld(ulong seed, int capacity, MatchRoster roster)
+    {
+        ArgumentNullException.ThrowIfNull(roster);
+
         if (capacity <= 0 || capacity > SimConstants.MaxEntities)
         {
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be in (0, MaxEntities].");
         }
 
         Seed = seed;
+        Roster = roster;
         _entities = new Entity[capacity];
         _freeSlots = new int[capacity];
         _freeCount = capacity;
@@ -70,7 +86,7 @@ public sealed class SimWorld
 
         // The deck tables are sized by the lattice the bridges are built on, so they are made here
         // rather than in a field initialiser that would run before the grid exists.
-        Bridgeworks = new Bridgeworks(Navigation.CellCount);
+        Bridgeworks = new Bridgeworks(Navigation.CellCount, roster);
         _pathFinder = new PathFinder(Navigation.CellCount);
         _pathCells = new int[capacity * SimConstants.MaxPathCells];
         _jobs = new ProductionJob[capacity * SimConstants.MaxQueueLength];
@@ -165,6 +181,12 @@ public sealed class SimWorld
 
     /// <summary>Seed this world was created with.</summary>
     public ulong Seed { get; }
+
+    /// <summary>
+    /// Who is playing this match: the teams in it, the faction each one plays and the side each one
+    /// is on. Fixed when the world is built — see <see cref="MatchRoster"/> for why it is not state.
+    /// </summary>
+    public MatchRoster Roster { get; }
 
     /// <summary>Ticks elapsed. Zero before the first <see cref="Step"/>.</summary>
     public long Tick { get; private set; }
@@ -790,30 +812,43 @@ public sealed class SimWorld
         }
     }
 
-    /// <summary>The faction that owns a team slot.</summary>
-    public static Faction FactionOfTeam(int team) => team switch
-    {
-        0 => Faction.Soviet,
-        1 => Faction.Chinese,
-        2 => Faction.Western,
-        _ => Faction.None,
-    };
+    /// <summary>
+    /// The faction a team plays, as this match declares it. A team's faction is an assignment
+    /// rather than its number — see <see cref="MatchTeam"/> — and the match is what says so.
+    /// </summary>
+    public Faction FactionOfTeam(int team) => Roster.FactionOf(team);
 
-    /// <summary>True when two teams may not attack each other.</summary>
-    public static bool AreAllied(int a, int b) => a == b || (a is 0 or 1 && b is 0 or 1);
+    /// <summary>True when a team is playing this match.</summary>
+    public bool IsTeamInPlay(int team) => Roster.IsInPlay(team);
+
+    /// <summary>True when two teams are on the same side, as this match declares the sides.</summary>
+    /// <remarks>
+    /// The rule is written once, in <see cref="MatchRoster.AreAllied"/>; this is the world's own
+    /// answer to it, which is the question every caller should be asking. It used to be a static
+    /// function of two team ids — <c>0 and 1 against the rest</c> — which is a statement about a
+    /// particular match written as though it were a law of the engine.
+    /// </remarks>
+    public bool AreAllied(int a, int b) => Roster.AreAllied(a, b);
 
     /// <summary>
     /// <b>The one question every damage path asks: may a thing owned by
     /// <paramref name="attackerTeam"/> hurt a thing owned by <paramref name="victimTeam"/>?</b>
     /// <para>
     /// It is the negation of <see cref="AreAllied"/>, and it is deliberately nothing else: the
-    /// alliance itself is defined once, above, where it can be read, and every path that
+    /// alliance itself is defined once, in the match the world was built with, and every path that
     /// damages, targets or classifies a friend asks this rather than comparing team ids. A
     /// comparison of ids answers "same team" and quietly reports an ally as an enemy, which is
     /// what this replaces: direct fire, artillery splash, the attack order and off-map support
     /// all asked <c>TeamId == TeamId</c>, so the allied pair in the standard skirmish — teams 0
     /// and 1 — shot each other in every match while the crossing rule beside them spared an
     /// ally's bridge because it had been written by asking the real question.
+    /// </para>
+    /// <para>
+    /// <b>The sides come from the match, not from the numbers.</b> Which teams are allies is now
+    /// declared by <see cref="Roster"/> rather than baked into this method, so a match of two teams
+    /// with no ally at all, or of the two teams that were always allied, resolves through this same
+    /// line. A team the match does not declare is nobody's ally and is hostile to every side in it,
+    /// which is what the fourth slot has always been.
     /// </para>
     /// <para>
     /// <b>Not every effect asks it, and the ones that do not are the ones that do not care.</b>
@@ -828,7 +863,7 @@ public sealed class SimWorld
     /// the attacker first because at every call site the direction is what is being decided.
     /// </para>
     /// </summary>
-    public static bool IsHostile(int attackerTeam, int victimTeam) => !AreAllied(attackerTeam, victimTeam);
+    public bool IsHostile(int attackerTeam, int victimTeam) => !AreAllied(attackerTeam, victimTeam);
 
     /// <summary>
     /// True when a team may build a role: either it researched the tier, or an

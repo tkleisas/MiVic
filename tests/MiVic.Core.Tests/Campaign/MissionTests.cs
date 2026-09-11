@@ -53,7 +53,60 @@ public sealed class MissionTests
             Assert.NotEmpty(mission.Objectives);
             Assert.Contains(mission.Objectives, objective => objective.IsPrimary);
             Assert.NotNull(MissionCatalog.Find(mission.Id));
+
+            // Every mission the campaign ships is fought by the standard three-faction match: the
+            // ally is a side the mission declares rather than a column of the scenario builder, and
+            // these three declare the same sides the campaign has always been fought on.
+            Assert.Equal(MatchRoster.StandardSkirmish, mission.Roster);
         }
+    }
+
+    /// <summary>
+    /// A mission that declares two sides is laid out with two forces. The campaign's ally used to be
+    /// team 1 given <c>AllyBase</c> and <c>AllyUnits</c>, always and only that team, so a mission
+    /// without an ally was a mission with a third base on the map that nobody was playing. It is a
+    /// side the mission says it has: one line of data, and the layout follows it.
+    /// </summary>
+    [Fact]
+    public void AMissionThatDeclaresTwoSidesIsLaidOutWithTwoForces()
+    {
+        MissionDefinition solo = MissionCatalog.Require("m1_bridgehead") with { Roster = MatchRoster.Duel };
+
+        SimWorld world = Scenario.NewWorld(ScenarioKind.Mission, solo.Seed, Capacity, solo);
+        ScenarioSetup setup = Scenario.BuildMission(world, solo);
+
+        Assert.Equal(2, setup.CommandCentres.Count);
+        Assert.True(world.IsTeamInPlay(0));
+        Assert.False(world.IsTeamInPlay(1));
+        Assert.True(world.IsTeamInPlay(2));
+
+        // The absent team owns nothing at all — not even the base the mission still carries data
+        // for, which is what makes this a change of who is playing rather than of where they stand.
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (world.IsAliveSlot(slot))
+            {
+                Assert.NotEqual(1, world.GetRefBySlot(slot).TeamId);
+            }
+        }
+
+        // And the mission is still attached: the objectives decide it, not the last side standing.
+        Assert.True(world.HasMission);
+    }
+
+    /// <summary>
+    /// The layout refuses a world whose sides disagree with the mission's, for the same reason a
+    /// scenario does: the match is not part of the state hash, so a disagreement would be a desync
+    /// nothing could see.
+    /// </summary>
+    [Fact]
+    public void AMissionRefusesAWorldBuiltForAnotherMatch()
+    {
+        MissionDefinition solo = MissionCatalog.Require("m1_bridgehead") with { Roster = MatchRoster.Duel };
+
+        var world = new SimWorld(solo.Seed, Capacity);
+
+        Assert.Throws<InvalidOperationException>(() => Scenario.BuildMission(world, solo));
     }
 
     [Fact]
@@ -96,7 +149,7 @@ public sealed class MissionTests
 
         Assert.Equal(before + 1, world.TeamRef(2).StructuresLost);
         Assert.True(world.Objectives[0].IsComplete, "Destroying the enemy command centre did not complete the objective.");
-        Assert.Equal(GameOutcome.AllianceVictory, world.Outcome);
+        Assert.Equal(GameOutcome.Victory, world.Outcome);
     }
 
     [Fact]
@@ -119,7 +172,7 @@ public sealed class MissionTests
         world.RunTicks(MissionSystem.CheckInterval);
 
         Assert.True(world.Objectives[2].IsFailed, "The protection objective did not fail.");
-        Assert.Equal(GameOutcome.WesternVictory, world.Outcome);
+        Assert.Equal(GameOutcome.Defeat, world.Outcome);
     }
 
     [Fact]
@@ -195,7 +248,7 @@ public sealed class MissionTests
 
         Assert.True(world.Objectives[0].IsComplete, "Tech objective did not complete.");
         Assert.True(world.Objectives[1].IsComplete, "Materials objective did not complete.");
-        Assert.Equal(GameOutcome.AllianceVictory, world.Outcome);
+        Assert.Equal(GameOutcome.Victory, world.Outcome);
     }
 
     [Fact]
@@ -225,7 +278,7 @@ public sealed class MissionTests
         world.RunTicks(mission.TimeLimitTicks + MissionSystem.CheckInterval);
 
         Assert.True(world.Objectives[0].IsFailed);
-        Assert.Equal(GameOutcome.WesternVictory, world.Outcome);
+        Assert.Equal(GameOutcome.Defeat, world.Outcome);
     }
 
     [Fact]

@@ -72,6 +72,13 @@ morale rises with nearby friendly count, making the swarm steadier than it looks
 
 ## 4. The alliance as a mechanic
 
+**Who is allied to whom is a fact about the match, not about the factions.** A team's faction is
+assigned to it and the side it fights on is assigned to it, both in one declaration (`MatchRoster`)
+that the victory rule, the AI, the interface and the probe all read; two teams on the same side are
+allies, and there is no third state. So the pitched premise below — Σοβιετικοί and Κινέζοι against the
+Δυτικοί — is one declaration among several rather than the shape of the engine, and matches without
+the Δυτικοί, or with the Κινέζοι on the other side, are the same code path.
+
 - **Άδεια Παραγωγής (Licence Production):** the Soviets sell a design to China.
   China builds it at *Chinese* speed but at *−1 tech tier*. The Soviets get
   resources or research back.

@@ -717,7 +717,7 @@ public sealed class ProbeRunner
             $"query:   verdict    accepted for team {team} — it would stand at " +
             $"{ProbeFormat.Ground(planned)}, {DescribeCell(world, world.TerrainTypes.IndexOfWorld(planned.X, planned.Z))}");
 
-        int ticks = UnitCatalog.BuildTicks(SimWorld.FactionOfTeam(team), kind);
+        int ticks = UnitCatalog.BuildTicks(world.FactionOfTeam(team), kind);
 
         Emit(
             $"query:   work       {ProbeFormat.Ticks(ticks)} of construction, rising out of the ground " +
@@ -726,9 +726,9 @@ public sealed class ProbeRunner
         TeamState state = world.Team(team);
 
         Emit(
-            $"query:   cost       {UnitCatalog.MaterialCost(SimWorld.FactionOfTeam(team), kind)} Π, " +
-            $"{UnitCatalog.EnergyCost(SimWorld.FactionOfTeam(team), kind)} Ε, " +
-            $"{UnitCatalog.WaterCost(SimWorld.FactionOfTeam(team), kind)} Ν, " +
+            $"query:   cost       {UnitCatalog.MaterialCost(world.FactionOfTeam(team), kind)} Π, " +
+            $"{UnitCatalog.EnergyCost(world.FactionOfTeam(team), kind)} Ε, " +
+            $"{UnitCatalog.WaterCost(world.FactionOfTeam(team), kind)} Ν, " +
             $"{definition.Health} hit points");
         Emit($"query:   team       {team} has {state.Materials} Π, {state.Energy} Ε, {state.Water} Ν");
 
@@ -2286,6 +2286,7 @@ public sealed class ProbeRunner
         }
 
         Emit($"query: teams: {inPlay} teams in play of {SimConstants.TeamCount} slots at tick {world.Tick}");
+        Emit($"query:   match      {DescribeMatch(world)} — MatchRoster, which is what the victory check and the AI read");
 
         for (int team = 0; team < SimConstants.TeamCount; team++)
         {
@@ -2295,7 +2296,7 @@ public sealed class ProbeRunner
             }
 
             Emit(
-                $"query:   team {team} {SimWorld.FactionOfTeam(team).ToString().ToLowerInvariant(),-8} " +
+                $"query:   team {team} {world.FactionOfTeam(team).ToString().ToLowerInvariant(),-8} " +
                 $"{ProbeFormat.Count(alive[team], "alive", "alive")}, " +
                 $"{ProbeFormat.Count(structures[team], "structure")}");
         }
@@ -2311,11 +2312,15 @@ public sealed class ProbeRunner
                     continue;
                 }
 
-                allied.Add($"{a}+{b} {(SimWorld.AreAllied(a, b) ? "allied" : "hostile")}");
+                allied.Add($"{a}+{b} {(world.AreAllied(a, b) ? "allied" : "hostile")}");
             }
         }
 
         Emit($"query:   sides      {string.Join(", ", allied)} — SimWorld.AreAllied, which is what every weapon asks");
+
+        // The verdict, from the rule itself rather than from the banner: the outcome is simulation
+        // state, so it is the same answer a replay reaches, and a match that has ended says so here.
+        Emit($"query:   outcome    {DescribeOutcome(world)}");
 
         var shots = new List<string>();
 
@@ -2332,7 +2337,7 @@ public sealed class ProbeRunner
 
                 // The allied pairs are printed whether or not they are zero, because the zero is
                 // the reading; a hostile pair that has never fired at anything is just noise.
-                if (count == 0 && SimWorld.IsHostile(shooter, target))
+                if (count == 0 && world.IsHostile(shooter, target))
                 {
                     continue;
                 }
@@ -2399,11 +2404,6 @@ public sealed class ProbeRunner
 
             ref Entity entity = ref world.GetRefBySlot(slot);
 
-            if (entity.TeamId is not (0 or 1))
-            {
-                continue;
-            }
-
             UnitDefinition weapon = UnitCatalog.Get(entity.Kind);
 
             if (!weapon.IsArmed || entity.Routed || (weapon.IsBuilding && !world.IsComplete(slot)))
@@ -2431,7 +2431,7 @@ public sealed class ProbeRunner
                 aimedAt = $"{aim.Faction.ToString().ToLowerInvariant()}/{aim.Kind} (slot {entity.TargetSlot}, team {aim.TeamId}) " +
                     $"at {ProbeFormat.Millimetres(targetDistance)}";
 
-                if (SimWorld.IsHostile(entity.TeamId, aim.TeamId))
+                if (world.IsHostile(entity.TeamId, aim.TeamId))
                 {
                     aimingAtEnemy++;
                 }
@@ -2475,11 +2475,70 @@ public sealed class ProbeRunner
         List<string> shown = examples.Count > 0 ? examples : idleExamples;
 
         Emit(
-            $"query:   in reach   {ProbeFormat.Count(inReach, "armed unit")} of team 0 or 1 have an ally of the other " +
-            $"team inside the reach they can engage at: {aimingAtAlly} aimed at an ally, " +
+            $"query:   in reach   {ProbeFormat.Count(inReach, "armed unit")} have a unit of an allied team inside the " +
+            $"reach they can engage at: {aimingAtAlly} aimed at an ally, " +
             $"{aimingAtEnemy} at an enemy, {aimingAtNothing} at nothing, and {nearer} had the ally nearer than the " +
             $"target they were firing at" +
             (shown.Count == 0 ? string.Empty : $" — e.g. {string.Join("; ", shown)}"));
+    }
+
+    /// <summary>
+    /// What the match declares, in the terms the victory check and the AI read it: how many teams
+    /// are playing, which faction each one plays, and which side each one is on. Teams the match
+    /// does not declare are named too, because "the Δυτικοί are not in this match" is the fact a
+    /// two-faction match turns on and an omission would leave it to the reader to infer.
+    /// </summary>
+    private static string DescribeMatch(SimWorld world)
+    {
+        MatchRoster roster = world.Roster;
+        var playing = new List<string>();
+        var absent = new List<string>();
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (roster.IsInPlay(team))
+            {
+                playing.Add($"{team} {roster.FactionOf(team).ToString().ToLowerInvariant()} side {roster.SideOf(team)}");
+            }
+            else
+            {
+                absent.Add($"team {team} ({roster.FactionOf(team).ToString().ToLowerInvariant()})");
+            }
+        }
+
+        return $"{ProbeFormat.Count(roster.TeamsInPlay, "team")} declared: {string.Join(", ", playing)}" +
+            $"; not in the match: {string.Join(", ", absent)}";
+    }
+
+    /// <summary>
+    /// The verdict, and which declared teams it was reached from: the outcome is simulation state,
+    /// so this is the same answer a replay arrives at, and the sides still holding structures are
+    /// the reading rather than a summary of it. A match that has ended says so here.
+    /// </summary>
+    private static string DescribeOutcome(SimWorld world)
+    {
+        string verdict = world.Outcome switch
+        {
+            GameOutcome.Victory => "victory — the player's side is the last one holding structures",
+            GameOutcome.Defeat => "defeat — the player's side holds no structures",
+            GameOutcome.Draw => "draw — no side holds any",
+            _ => "ongoing",
+        };
+
+        MatchRoster roster = world.Roster;
+        var standing = new List<string>();
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (roster.IsInPlay(team) && VictorySystem.HasStructures(world, team))
+            {
+                standing.Add($"team {team}");
+            }
+        }
+
+        return standing.Count == 0
+            ? $"{verdict}; no declared team holds a structure"
+            : $"{verdict}; still holding structures: {string.Join(", ", standing)}";
     }
 
     /// <summary>
@@ -2522,8 +2581,12 @@ public sealed class ProbeRunner
                     ref Entity candidate = ref world.GetRefBySlot(other);
 
                     // An ally, and not a brother on the same team: the encounter that can turn
-                    // into friendly fire is between the two teams, not inside one.
-                    if (candidate.TeamId == shooter.TeamId || candidate.TeamId is not (0 or 1))
+                    // into friendly fire is between two teams, not inside one. Which two is the
+                    // match's answer — this used to be "a unit of team 0 or 1 looking at the
+                    // other", which is a description of the standard skirmish rather than of an
+                    // alliance, and in a match with no ally at all it would have gone looking for
+                    // a friend that does not exist.
+                    if (candidate.TeamId == shooter.TeamId || !world.AreAllied(shooter.TeamId, candidate.TeamId))
                     {
                         continue;
                     }
@@ -2681,7 +2744,7 @@ public sealed class ProbeRunner
                     {
                         _shotsBetweenTeams[(entity.TeamId * SimConstants.TeamCount) + aimTeam]++;
 
-                        if (!SimWorld.IsHostile(entity.TeamId, aimTeam))
+                        if (!world.IsHostile(entity.TeamId, aimTeam))
                         {
                             _shotsAtAllies++;
                         }
@@ -2693,7 +2756,7 @@ public sealed class ProbeRunner
             {
                 int heldTeam = world.GetRefBySlot(entity.TargetSlot).TeamId;
 
-                if (!SimWorld.IsHostile(entity.TeamId, heldTeam))
+                if (!world.IsHostile(entity.TeamId, heldTeam))
                 {
                     _alliedTargets++;
                 }
@@ -2735,7 +2798,7 @@ public sealed class ProbeRunner
     {
         foreach (int team in _teamsThatFired)
         {
-            if (SimWorld.IsHostile(team, victimTeam))
+            if (_host.Simulation.World.IsHostile(team, victimTeam))
             {
                 return true;
             }

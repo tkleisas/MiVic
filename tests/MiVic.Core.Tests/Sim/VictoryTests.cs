@@ -36,7 +36,7 @@ public sealed class VictoryTests
 
         world.RunTicks(VictorySystem.CheckInterval + 1);
 
-        Assert.Equal(GameOutcome.AllianceVictory, world.Outcome);
+        Assert.Equal(GameOutcome.Victory, world.Outcome);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public sealed class VictoryTests
 
         world.RunTicks(VictorySystem.CheckInterval + 1);
 
-        Assert.Equal(GameOutcome.WesternVictory, world.Outcome);
+        Assert.Equal(GameOutcome.Defeat, world.Outcome);
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public sealed class VictoryTests
 
         world.RunTicks(VictorySystem.CheckInterval + 1);
 
-        Assert.Equal(GameOutcome.AllianceVictory, world.Outcome);
+        Assert.Equal(GameOutcome.Victory, world.Outcome);
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public sealed class VictoryTests
         world.Despawn(headquarters);
         world.RunTicks(VictorySystem.CheckInterval + 1);
 
-        Assert.Equal(GameOutcome.WesternVictory, world.Outcome);
+        Assert.Equal(GameOutcome.Defeat, world.Outcome);
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class VictoryTests
         decided.RunTicks(VictorySystem.CheckInterval + 1);
 
         Assert.Equal(GameOutcome.Ongoing, ongoing.Outcome);
-        Assert.Equal(GameOutcome.AllianceVictory, decided.Outcome);
+        Assert.Equal(GameOutcome.Victory, decided.Outcome);
         Assert.NotEqual(StateHash.Compute(ongoing), StateHash.Compute(decided));
     }
 

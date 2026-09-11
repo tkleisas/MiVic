@@ -188,7 +188,7 @@ public sealed class BridgeRenderer : IDisposable
                 water,
                 (navigation.OriginMm + (cellZ * navigation.CellSizeMm) + (navigation.CellSizeMm / 2)) / (float)WorldPos.MmPerMetre);
 
-            Vector4 colour = OwnerColour(block.Team);
+            Vector4 colour = OwnerColour(world, block.Team);
 
             _blocks[_blockCount++] = new InstanceData(turn * Matrix.CreateTranslation(centre), colour);
 
@@ -277,18 +277,19 @@ public sealed class BridgeRenderer : IDisposable
     }
 
     /// <summary>
-    /// The colour a block's rail is painted in: the owning team's faction colour. The kit's paint
-    /// mask is what makes it apply to the kerbs alone — the deck's planks carry a mask of zero and
-    /// are left in their own timber — so a tint handed to every block paints exactly one part of it.
+    /// The colour a block's rail is painted in: the faction colour of the team that laid it, as the
+    /// match says that team plays. The kit's paint mask is what makes it apply to the kerbs alone —
+    /// the deck's planks carry a mask of zero and are left in their own timber — so a tint handed
+    /// to every block paints exactly one part of it.
     /// </summary>
-    private static Vector4 OwnerColour(int team)
+    private static Vector4 OwnerColour(SimWorld world, int team)
     {
         if ((uint)team >= SimConstants.TeamCount)
         {
             return Vector4.One;
         }
 
-        Color colour = FactionPalette.Primary(SimWorld.FactionOfTeam(team));
+        Color colour = FactionPalette.Primary(world.FactionOfTeam(team));
         return colour.ToVector4();
     }
 

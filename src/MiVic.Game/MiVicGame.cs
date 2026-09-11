@@ -594,7 +594,7 @@ public sealed partial class MiVicGame : XnaGame
                                             ? SimBridge.CreateDetectionDemo(_options.Seed)
                                             : _options.AllianceDemo
                                                 ? SimBridge.CreateAllianceDemo(_options.Seed)
-                                                : new SimBridge(_options.Seed, _options.IsModelGallery);
+                                                : new SimBridge(_options.Seed, _options.IsModelGallery ? ScenarioKind.ModelGallery : _options.Match);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
@@ -2543,7 +2543,7 @@ public sealed partial class MiVicGame : XnaGame
             // Only enemies are attacked. An ally under the cursor used to produce
             // an attack order that the simulation rejected, so the click appeared
             // to do nothing at all.
-            if (picked.TeamId != PlayerTeam && !SimWorld.AreAllied(picked.TeamId, PlayerTeam))
+            if (picked.TeamId != PlayerTeam && !_simulation.World.AreAllied(picked.TeamId, PlayerTeam))
             {
                 IssueAttackOrders(targetSlot);
                 return;
@@ -2944,7 +2944,7 @@ public sealed partial class MiVicGame : XnaGame
         float z = stand.Z / (float)WorldPos.MmPerMetre;
         float y = DrawnHeightAtMetres(world, world.TerrainTypes, x, z) + PlacementPreview.LiftMetres;
 
-        InstancedRenderer.Mesh ghost = _catalog!.Whole(SimWorld.FactionOfTeam(PlayerTeam), _pendingStructure);
+        InstancedRenderer.Mesh ghost = _catalog!.Whole(world.FactionOfTeam(PlayerTeam), _pendingStructure);
 
         // No rotation: a structure is raised facing its model's own forward, which is what the
         // entity transform does with a heading of zero.
@@ -3713,12 +3713,15 @@ public sealed partial class MiVicGame : XnaGame
                 break;
 
             case HudCommandKind.Licence:
-                int ally = AllyBuildingSlot();
+                // A licence goes to whoever is on the player's side, which is the match's answer
+                // rather than a team number: a one-against-one match has no ally and this does
+                // nothing, which is the honest outcome rather than an order at an absent team.
+                int ally = AllyTeam();
 
-                if (ally >= 0)
+                if (ally >= 0 && AllyBuildingSlot(ally) is int allySlot and >= 0)
                 {
-                    ref Entity allyBuilding = ref _simulation.World.GetRefBySlot(ally);
-                    var allyId = new EntityId(ally, allyBuilding.Generation);
+                    ref Entity allyBuilding = ref _simulation.World.GetRefBySlot(allySlot);
+                    var allyId = new EntityId(allySlot, allyBuilding.Generation);
 
                     _simulation.World.Enqueue(SimCommand.Licence(allyId, command.Unit, executeTick, building.TeamId));
                 }
@@ -3727,10 +3730,35 @@ public sealed partial class MiVicGame : XnaGame
         }
     }
 
-    /// <summary>Slot of the ally's first building, which is where licences land.</summary>
-    private int AllyBuildingSlot()
+    /// <summary>
+    /// The team on the player's side in this match, or -1 when there is none. Only teams that are
+    /// <em>playing</em> can be allies, so a match of two factions answers -1 and the interface
+    /// offers nobody a licence.
+    /// </summary>
+    private int AllyTeam()
     {
         if (_simulation is null)
+        {
+            return -1;
+        }
+
+        SimWorld world = _simulation.World;
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (team != PlayerTeam && world.AreAllied(PlayerTeam, team))
+            {
+                return team;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>Slot of one team's first building, which is where a licence lands.</summary>
+    private int AllyBuildingSlot(int team)
+    {
+        if (_simulation is null || team < 0)
         {
             return -1;
         }
@@ -3746,7 +3774,7 @@ public sealed partial class MiVicGame : XnaGame
 
             ref Entity entity = ref world.GetRefBySlot(slot);
 
-            if (entity.TeamId == 1 && IsBuilding(entity.Kind))
+            if (entity.TeamId == team && IsBuilding(entity.Kind))
             {
                 return slot;
             }
@@ -5005,7 +5033,7 @@ public sealed partial class MiVicGame : XnaGame
             // An enemy dying where the player cannot see must not produce a
             // visible explosion, or fog of war would leak information.
             bool visible = simEvent.TeamId == PlayerTeam ||
-                SimWorld.AreAllied(simEvent.TeamId, PlayerTeam) ||
+                world.AreAllied(simEvent.TeamId, PlayerTeam) ||
                 world.Visibility.IsVisible(PlayerTeam, world.Navigation.IndexOfWorld(simEvent.PositionMm));
 
             if (!visible)
@@ -5664,7 +5692,7 @@ public sealed partial class MiVicGame : XnaGame
                 continue;
             }
 
-            int cost = definition.MaterialCost * FactionProfile.For(SimWorld.FactionOfTeam(PlayerTeam)).CostPermille / 1_000;
+            int cost = definition.MaterialCost * FactionProfile.For(world.FactionOfTeam(PlayerTeam)).CostPermille / 1_000;
 
             if (world.Team(PlayerTeam).Materials >= cost)
             {
@@ -5764,7 +5792,7 @@ public sealed partial class MiVicGame : XnaGame
             // the check reported the order path as broken. It was the check that was wrong:
             // it had its own answer to who an enemy is, which is the mistake the whole
             // friend-or-foe rule exists to prevent.
-            if (!SimWorld.IsHostile(candidate.TeamId, PlayerTeam) || !IsBuilding(candidate.Kind))
+            if (!world.IsHostile(candidate.TeamId, PlayerTeam) || !IsBuilding(candidate.Kind))
             {
                 continue;
             }
@@ -5830,7 +5858,7 @@ public sealed partial class MiVicGame : XnaGame
             _selection.Count,
             SelectedBuildingSlot(),
             SelectedUnitSlot(),
-            AllyBuildingSlot(),
+            AllyTeam(),
             _imgui!.LargeFont,
             _simulation!.IsPlayback,
             _simulation!.IsPlaybackFinished,

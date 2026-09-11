@@ -274,15 +274,19 @@ public sealed class ReplayFile
     {
         ArgumentNullException.ThrowIfNull(replay);
 
-        var world = new SimWorld(replay.Seed, replay.Capacity);
+        // The match is rebuilt with the world rather than after it: which teams are playing is
+        // part of what the scenario lays out — a two-faction match has two bases on the map — and
+        // the scenario refuses to lay anything out in a world whose sides disagree with it.
+        // A mission carries its own layout and its own sides, so it is rebuilt from its id.
+        MissionDefinition? mission = replay.MissionId is { } id ? MissionCatalog.Require(id) : null;
 
-        // A mission carries its own layout, so it is rebuilt from its id rather
-        // than from the scenario enum.
-        if (replay.MissionId is { } missionId)
+        var world = new SimWorld(replay.Seed, replay.Capacity, MatchRoster.For(replay.Scenario, mission));
+
+        if (mission is not null)
         {
             // Fully qualified: inside this class, "Scenario" binds to the
             // property of the same name rather than to the builder type.
-            MiVic.Core.Sim.Scenario.BuildMission(world, MissionCatalog.Require(missionId));
+            MiVic.Core.Sim.Scenario.BuildMission(world, mission);
         }
         else
         {

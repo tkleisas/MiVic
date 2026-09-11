@@ -65,7 +65,11 @@ public readonly record struct HudCommand(
 /// <param name="SelectedCount">Units currently selected.</param>
 /// <param name="SelectedBuildingSlot">Slot of the single selected building, or -1.</param>
 /// <param name="SelectedUnitSlot">Slot of the single selected unit, or -1.</param>
-/// <param name="AllyBuildingSlot">Slot of the ally's first building, or -1.</param>
+/// <param name="AllyTeam">
+/// The team on the player's side in this match, or -1 when the player has none. It is a team
+/// rather than a building because a licence is granted to whoever is on your side, and which
+/// team that is is the match's answer — see <see cref="MatchRoster"/> — not an index.
+/// </param>
 /// <param name="LargeFont">Headline font, loaded at a larger size.</param>
 /// <param name="Playback">True when a recorded match is being played back.</param>
 /// <param name="PlaybackFinished">True once playback has run past the end of the recording.</param>
@@ -99,7 +103,7 @@ public readonly record struct HudSnapshot(
     int SelectedCount,
     int SelectedBuildingSlot,
     int SelectedUnitSlot,
-    int AllyBuildingSlot,
+    int AllyTeam,
     ImFontPtr LargeFont,
     bool Playback,
     bool PlaybackFinished,
@@ -269,19 +273,23 @@ public sealed class GameHud
 
         string headline = outcome switch
         {
-            GameOutcome.AllianceVictory => "ΝΙΚΗ",
-            GameOutcome.WesternVictory => "ΗΤΤΑ",
+            GameOutcome.Victory => "ΝΙΚΗ",
+            GameOutcome.Defeat => "ΗΤΤΑ",
             _ => "ΙΣΟΠΑΛΙΑ",
         };
 
+        // The detail lines name no faction, which is the point: they used to say that the Western
+        // empire had fallen and that the West now ruled, and neither is true of a match decided
+        // between two other factions. What the outcome means is a fact about the sides, and the
+        // sides are the match's — the panel that draws them is the one that names them.
         string detail = outcome switch
         {
-            GameOutcome.AllianceVictory => "Η Δυτική αυτοκρατορία έπεσε. Ο δρόμος για έναν ειρηνικό, σοσιαλιστικό κόσμο είναι ανοιχτός.",
-            GameOutcome.WesternVictory => "Η συμμαχία διαλύθηκε. Η Δύση κυριαρχεί.",
+            GameOutcome.Victory => "Οι αντίπαλοι κατέρρευσαν. Ο δρόμος για μια νέα ισορροπία είναι ανοιχτός.",
+            GameOutcome.Defeat => "Η πλευρά σας διαλύθηκε. Οι αντίπαλοι κυριαρχούν.",
             _ => "Και οι δύο πλευρές εξοντώθηκαν.",
         };
 
-        NVec4 accent = outcome == GameOutcome.AllianceVictory
+        NVec4 accent = outcome == GameOutcome.Victory
             ? new NVec4(0.45f, 1f, 0.5f, 1f)
             : WarningColor;
 
@@ -449,7 +457,7 @@ public sealed class GameHud
         ImGui.TextUnformatted("MiVic — Στρατηγική Πραγματικού Χρόνου");
         ImGui.SameLine();
         ImGui.TextColored(MutedColor, GameVersion.Display);
-        ImGui.TextColored(MutedColor, "Ο στόχος: η ήττα της Δυτικής αυτοκρατορίας.");
+        ImGui.TextColored(MutedColor, "Ο στόχος: η συντριβή των αντιπάλων.");
         ImGui.Separator();
 
         if (snapshot.Playback)
@@ -470,10 +478,22 @@ public sealed class GameHud
         ImGui.Separator();
         ImGui.TextUnformatted("Παράταξη");
 
-        foreach (FactionProfile profile in FactionProfile.All)
+        // One row per team <em>playing this match</em>, labelled with the faction that team plays
+        // and counted by it. The panel used to draw a row for every faction in the game whether or
+        // not it was on the map, which is three rows in a match of two and a row for a side that
+        // does not exist at all — and it read each row's team as "the faction's number minus one",
+        // which is a statement about the standard skirmish rather than about who is playing. See
+        // MatchRoster: the match declares the teams, and this draws them.
+        Span<int> teams = stackalloc int[SimConstants.TeamCount];
+        int playing = world.Roster.TeamsInPlayInto(teams);
+
+        for (int row = 0; row < playing; row++)
         {
-            int count = CountUnits(world, profile.Faction);
-            NVec4 color = ToVector4(FactionPalette.Primary(profile.Faction));
+            int team = teams[row];
+            Faction faction = world.FactionOfTeam(team);
+            FactionProfile profile = FactionProfile.For(faction);
+            int count = CountUnits(world, faction);
+            NVec4 color = ToVector4(FactionPalette.Primary(faction));
 
             ImGui.TextColored(color, profile.GreekName);
             ImGui.SameLine(150f);
@@ -482,8 +502,7 @@ public sealed class GameHud
             ImGui.SameLine(210f);
             ImGui.TextColored(MutedColor, $"Τεχνολογία {profile.TechCeiling}   Παραγωγή {profile.ProductionSlots}");
 
-            // Faction ids map onto team slots by design: Soviet 1 -> team 0, and so on.
-            int bonus = world.Team((int)profile.Faction - 1).BonusSlots;
+            int bonus = world.Team(team).BonusSlots;
 
             if (bonus > 0)
             {
@@ -495,7 +514,7 @@ public sealed class GameHud
         ImGui.Separator();
 
         // Player resources.
-        TeamState player = world.Team(0);
+        TeamState player = world.Team(MatchRoster.PlayerTeam);
         ImGui.Text($"Πόροι: {player.Materials}  (+{player.MaterialsPerTick})");
 
         // The Western army has to be paid for. A player whose morale is collapsing
@@ -778,18 +797,27 @@ public sealed class GameHud
             }
         }
 
-        // Licence production: hand the Κινέζοι a design they could never research
-        // themselves. This is the alliance's whole strategic point.
-        if (building.TeamId == 0 && snapshot.AllyBuildingSlot >= 0)
+        // Licence production: hand an ally a design it could never research itself. This is the
+        // alliance's whole strategic point, and it is offered only when the match has given the
+        // player an ally at all — a one-against-one has no second team on this side, so there is
+        // nobody to licence anything to. The row's heading names the faction that would receive
+        // it rather than the Κινέζοι, because which faction that is is the match's answer.
+        int ally = snapshot.AllyTeam;
+
+        if (building.TeamId == MatchRoster.PlayerTeam && ally >= 0)
         {
             ImGui.Separator();
-            ImGui.TextColored(MutedColor, "Παραχώρηση άδειας στους Κινέζους");
+            ImGui.TextColored(
+                MutedColor,
+                $"Παραχώρηση άδειας: {FactionProfile.For(world.FactionOfTeam(ally)).GreekName}");
 
             bool any = false;
 
             foreach (UnitDefinition definition in UnitCatalog.BuildableBy(building.Faction))
             {
-                if (definition.IsBuilding || !world.CanBuild(0, definition.Kind) || world.CanBuild(1, definition.Kind))
+                if (definition.IsBuilding ||
+                    !world.CanBuild(building.TeamId, definition.Kind) ||
+                    world.CanBuild(ally, definition.Kind))
                 {
                     continue;
                 }
@@ -936,10 +964,11 @@ public sealed class GameHud
     {
         SimWorld world = snapshot.Simulation.World;
 
-        // The player owns team 0 throughout; the HUD has no other notion of "us".
-        const int Player = 0;
+        // The player owns one team throughout, and which one that is is the match's declaration
+        // rather than this panel's assumption; the HUD has no other notion of "us".
+        const int Player = MatchRoster.PlayerTeam;
 
-        Faction faction = SimWorld.FactionOfTeam(Player);
+        Faction faction = world.FactionOfTeam(Player);
         TeamState team = world.Team(Player);
 
         var options = new List<(AbilityDefinition Definition, bool Enabled, string Reason)>();

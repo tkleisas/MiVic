@@ -328,7 +328,7 @@ public static class CombatSystem
             // same friendly fire as a gun aimed at one, and it is the rule the deck under
             // the same blast already followed — see Bridgeworks, which asks the same
             // predicate about the crossing. One question, asked in both places.
-            if (!SimWorld.IsHostile(attacker.TeamId, victim.TeamId))
+            if (!world.IsHostile(attacker.TeamId, victim.TeamId))
             {
                 continue;
             }
@@ -445,8 +445,8 @@ public static class CombatSystem
         // answers "the same team" and reported teams 0 and 1 — allied in the standard
         // skirmish — as each other's targets, so the two computer allies spent every match
         // shooting each other while the AI that chose their targets had already been taught
-        // not to. The question belongs to SimWorld, which owns the alliance.
-        if (!SimWorld.IsHostile(attacker.TeamId, target.TeamId))
+        // not to. The question belongs to the world, which owns the match the sides come from.
+        if (!world.IsHostile(attacker.TeamId, target.TeamId))
         {
             return false;
         }

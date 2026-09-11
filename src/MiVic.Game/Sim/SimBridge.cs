@@ -95,6 +95,16 @@ public sealed class SimBridge
     }
 
     /// <summary>
+    /// Creates the match a scenario lays out — the standard three-faction skirmish, one of the
+    /// two-faction matches, or the model gallery. The world is built with the teams that scenario
+    /// declares, so the sides the simulation plays by and the bases on the map cannot disagree.
+    /// </summary>
+    public SimBridge(ulong seed, ScenarioKind scenario)
+        : this(seed, scenario, mission: null, replay: null)
+    {
+    }
+
+    /// <summary>
     /// Creates the model fixture: an empty world with exactly one entity in it.
     /// <para>
     /// One model and nothing else, so what is on screen is the model and only the
@@ -414,10 +424,13 @@ public sealed class SimBridge
         // combatants — see SpawnTarget — because a subject that dies in the middle of a
         // measurement cannot be asked about the rest of it.
         //
-        // And both stand on the neutral fourth team, which no faction owns and the computer
-        // does not play. That is not tidiness: the computer opponent owns team 2, and an
-        // opponent that has a headquarters orders the armour standing near it to gather, which
-        // would walk the 190 m this whole demonstration is measured at out of the experiment.
+        // And both stand on the neutral fourth team, which no faction owns, which this match does not
+        // declare, and which the computer therefore does not play. That is not tidiness: the computer
+        // plays every team the match declares except the player's, and an opponent that has a
+        // headquarters orders the armour standing near it to gather, which would walk the 190 m this
+        // whole demonstration is measured at out of the experiment. A team the match does not declare
+        // is also allied to nobody, so both subjects are enemies of every gun in the scene — which is
+        // the other half of why they are on this slot rather than on team 2.
         SpawnTarget(world, Faction.Western, NeutralTeam, UnitKind.Tank, 0, 120, MeasurementHealth);
 
         // And a Δυτικοί headquarters, far away and doing nothing, because a world with only one
@@ -777,7 +790,10 @@ public sealed class SimBridge
     {
         int capacity = replay?.Capacity ?? Capacity;
 
-        World = new SimWorld(seed, capacity);
+        // The match is declared before the world is built rather than after: which teams are
+        // playing, what faction each one plays and who is on whose side is what the layout is a
+        // function of, and the scenario builder refuses a world whose sides disagree with it.
+        World = new SimWorld(seed, capacity, MatchRoster.For(scenario, mission));
         _previousPositions = new WorldPos[World.Capacity];
         _homePositions = new WorldPos[World.Capacity];
         _wasAlive = new bool[World.Capacity];

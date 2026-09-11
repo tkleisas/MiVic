@@ -141,11 +141,11 @@ public static class SelfTestReport
 
         // The victory demo exists to prove the banner path end to end, so it
         // asserts the outcome instead of the AI checks it deliberately breaks.
-        bool victoryDemoOk = !options.VictoryDemo || simulation.World.Outcome == GameOutcome.AllianceVictory;
+        bool victoryDemoOk = !options.VictoryDemo || simulation.World.Outcome == GameOutcome.Victory;
 
         if (options.VictoryDemo)
         {
-            Append(report, $"victory demo         : {(victoryDemoOk ? "OK (AllianceVictory)" : $"FAIL (outcome {simulation.World.Outcome})")}");
+            Append(report, $"victory demo         : {(victoryDemoOk ? "OK (Victory)" : $"FAIL (outcome {simulation.World.Outcome})")}");
         }
 
         report.AppendLine("--- simulation profile (ms per tick) ---");

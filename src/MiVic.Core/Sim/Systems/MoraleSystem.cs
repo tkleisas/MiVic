@@ -146,7 +146,7 @@ public static class MoraleSystem
                     // an enemy would make a man standing beside his brother-in-arms feel
                     // outnumbered by him — the same mistake the guns were making, one system
                     // over, and the same predicate settles it.
-                    if (!SimWorld.IsHostile(entity.TeamId, candidate.TeamId))
+                    if (!world.IsHostile(entity.TeamId, candidate.TeamId))
                     {
                         friends++;
 

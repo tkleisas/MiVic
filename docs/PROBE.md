@@ -22,7 +22,8 @@ $p.ExitCode      # 0 = every command ran and every check held
 
 `--probe` composes with the fixtures, because a probe is a way of *looking*, not a scenario:
 `--turret-demo --probe tools/probe/turret.probe` puts two tanks 70 m apart and then answers
-questions about them.
+questions about them. `--duel` and `--rivals` compose with it the same way and are not fixtures: they
+choose a *match* — two factions instead of three — and the probe asks questions about it.
 
 Two fixtures exist because a probe cannot place a unit. They are `--emplacement-demo`, which
 clears the field and puts a command centre and three enemies on the clearest ground the map
@@ -181,7 +182,7 @@ them and it is gone.
 | Command | Answer |
 |---|---|
 | `events [n]` | the most recent simulation events the client has seen: shots with the direction fired and the range, hits with the damage, deaths with the position. Every line names the team as well as the faction, because the question a reader of the stream is asking is usually a question about sides |
-| `teams` | who is on whose side and what has actually passed between them: each team with its faction and what is alive on it, the alliance of every pair asked of `SimWorld.AreAllied` — the same question a weapon asks — and a running ledger of shots by pair of teams, health lost per team, and **whether any weapon has aimed at, fired at or damaged an ally**. It records a check of its own, so a run that reads a violation fails |
+| `teams` | who is on whose side and what has actually passed between them: **what the match declares** — which teams are playing, the faction each one plays, the side each one is on and which slots are not in the match at all — then each team with what is alive on it, the alliance of every pair asked of `SimWorld.AreAllied` — the same question a weapon asks — **the victory rule's own verdict** and which sides it was reached from, and a running ledger of shots by pair of teams, health lost per team, and **whether any weapon has aimed at, fired at or damaged an ally**. It records a check of its own, so a run that reads a violation fails |
 
 Firing is not re-detected here: the events come from `SimBridge`'s own cooldown diffing, so
 a shot in the transcript and a tracer on screen are the same shot.
@@ -763,7 +764,7 @@ query:   shots      0 at 1: 0, 0 at 2: 36, 1 at 0: 0, 1 at 2: 1, 2 at 1: 195 —
 query:   damage     team 0 0 hits, 0 losses, 0 health; team 1 74 hits, 3 losses, 3665 health; team 2 20 hits, 0 losses, 846 health
 query:   friendly   none — no weapon held an ally as a target, none fired at one, and no damage went unexplained
 check: PASS 'no weapon aimed, fired or damaged an ally' — 0 ticks with an ally held as a target, 0 shots at an ally, 0 damage events unexplained
-query:   in reach   0 armed units of team 0 or 1 have an ally of the other team inside the reach they can engage at: …
+query:   in reach   0 armed units have a unit of an allied team inside the reach they can engage at: …
 ```
 
 Five facts, and the fourth is the one the command fails the run over:
@@ -793,7 +794,7 @@ cmd: tick 1
 cmd: teams
 query:   sides      0+1 allied, 0+2 hostile, 1+2 hostile — SimWorld.AreAllied, which is what every weapon asks
 query:   shots      0 at 1: 0, 0 at 2: 1, 1 at 0: 0, 1 at 2: 1, 2 at 1: 1 — …
-query:   in reach   4 armed units of team 0 or 1 have an ally of the other team inside the reach they can engage at:
+query:   in reach   4 armed units have a unit of an allied team inside the reach they can engage at:
                      0 aimed at an ally, 2 at an enemy, 2 at nothing, and 1 had the ally nearer than the target they
                      were firing at — e.g. … slot 509 team 0 with an ally at 60.0 m aiming at western/Tank (slot 507,
                      team 2) at 100.0 m
@@ -817,6 +818,79 @@ Three facts:
   `603 ticks with an ally held as a target, 32 shots fired at an ally, 29 damage events unexplained`,
   two failed checks and an exit status of 1. The same script, the same fixture, the same seed — which
   is what makes it an instrument rather than an illustration.
+
+## Worked example: can a match have two factions?
+
+Every match this game shipped put three factions on the map and decided it by asking after teams 0, 1
+and 2 by number, so "Σοβιετικοί against Κινέζοι with the Δυτικοί absent" was not a match the engine
+could describe, let alone finish. A match now **declares its teams** — which ones are playing, the
+faction each one plays and the side each one is on — and the victory rule, the AI, the interface and
+this command all read that declaration rather than the numbers.
+
+`--rivals` starts such a match: Σοβιετικοί (team 0, the player) against Κινέζοι (team 1, the
+computer), with the Δυτικοί nowhere on the map. `tools/probe/two-faction.probe` runs it, trimmed here
+to the answers (`…` marks lines cut out of the middle):
+
+```
+cmd: teams
+query: teams: 2 teams in play of 4 slots at tick 0
+query:   match      2 teams declared: 0 soviet side 0, 1 chinese side 1; not in the match: team 2 (western), team 3 (none) — MatchRoster, which is what the victory check and the AI read
+query:   team 0 soviet   170 alive, 4 structures
+query:   team 1 chinese  170 alive, 4 structures
+query:   sides      0+1 hostile — SimWorld.AreAllied, which is what every weapon asks
+query:   outcome    ongoing; still holding structures: team 0, team 1
+…
+cmd: tick 1000
+cmd: teams
+query:   shots      0 at 1: 16, 1 at 0: 7 — since the script started, read from the world's own cooldowns …
+query:   damage     team 0 7 hits, 0 losses, 260 health; team 1 12 hits, 8 losses, 500 health — the health lost by the team that lost it
+cmd: events 10
+query:   #39 tick 1000 shot      slot  178 chinese/AntiAir team 1 at (-67.6, 2.9, -45.5) m firing at soviet/PowerPlant (slot 1, team 0), direction (-0.98, 0.02, -0.19) bearing -168.9°, 138.4 m away
+query:   #40 tick 1003 shot      slot  128 soviet/AntiAir team 0 at (-219.2, 8.1, -100.4) m firing at chinese/Aircraft (slot 203, team 1), direction (0.93, 0.36, 0.09) bearing 5.7°, 139.4 m away
+```
+
+Four facts, and each of them used to be an assumption:
+
+- **`match` is the declaration, not an inference**: two teams playing, each with the faction it plays
+  and the side it is on, and the two slots that are *not* in this match named as such. It is printed
+  from `MatchRoster`, which is the one place the victory check, the AI, the interface and the client's
+  palette and labels all read;
+- **`sides` reads `0+1 hostile`** — teams 0 and 1, which are allied in every other match this game
+  ships, and which a predicate over team numbers could never have put at war. There is exactly one
+  entry because there is exactly one pair in the match;
+- **`outcome` is the rule itself**: *the player's side has no enemies left*, asked of the sides the
+  match declares. It reads `ongoing` while both teams hold structures and stops reading `ongoing` the
+  moment the enemy side has none — see the second transcript;
+- **the war is real rather than declared**: fire in both directions, health lost on both teams, and
+  units destroyed on team 1, in a match where the only thing that changed is who the roster says is
+  playing. The Δυτικοί hold nothing, and are never asked about.
+
+`tools/probe/two-faction-decided.probe`, run with `--rivals --victory-demo` — the fixture that knocks
+out every structure the player does not own, so a match of 170 units against 170 is decided within a
+second instead of being a war of attrition a transcript cannot sit through:
+
+```
+cmd: teams
+query:   team 1 chinese  166 alive, 0 structures
+query:   outcome    ongoing; still holding structures: team 0
+cmd: tick 40
+cmd: teams
+query:   outcome    victory — the player's side is the last one holding structures; still holding structures: team 0
+check: PASS 'the enemy side still owns a structure' — 0 is within 0 of 0
+```
+
+The enemy still has 166 units alive and the match is over, because a side is out when it has no
+structures left to rebuild from. The Δυτικοί are not in the match, so nothing about them is required —
+and the rule that used to decide this match on its *first* check, `HasStructures(0) || HasStructures(1)`
+against `HasStructures(2)`, in which a team that is not on the map has no structures and a missing
+enemy reads as a dead one, is what these two transcripts are here to show the absence of.
+
+`--duel` is the other two-faction match: Σοβιετικοί against Δυτικοί with no ally at all, which is the
+one where the interface has a licence panel and nobody to offer it to.
+
+Those two frames are worth a look: `artifacts/probe/two-faction-panel.png` is the status panel of a
+two-faction match, with a row for Σοβιετικοί and a row for Κινέζοι and no third row for a faction that
+is not on the map, and `artifacts/probe/two-faction-victory.png` is the banner the verdict raises.
 
 ## `parts <slot>` in full
 

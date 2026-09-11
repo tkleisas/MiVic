@@ -51,21 +51,27 @@ public sealed class AllianceTests
     public void TeamsZeroAndOneAreAlliedAndTeamTwoIsNot()
     {
         // The premise of every test in this file, asserted rather than assumed: if the
-        // alliance ever changes, these tests stop meaning what they say.
-        Assert.True(SimWorld.AreAllied(0, 1));
-        Assert.True(SimWorld.AreAllied(1, 0));
-        Assert.False(SimWorld.IsHostile(0, 1));
-        Assert.False(SimWorld.IsHostile(1, 0));
+        // alliance ever changes, these tests stop meaning what they say. It is the standard
+        // skirmish's own answer — the sides a match declares, not a law about team numbers —
+        // which is why it is asked of a world.
+        SimWorld world = new(seed: 1, capacity: 4);
 
-        Assert.True(SimWorld.IsHostile(0, 2));
-        Assert.True(SimWorld.IsHostile(1, 2));
-        Assert.True(SimWorld.IsHostile(2, 0));
-        Assert.True(SimWorld.IsHostile(2, 1));
+        Assert.Equal(MatchRoster.StandardSkirmish, world.Roster);
+
+        Assert.True(world.AreAllied(0, 1));
+        Assert.True(world.AreAllied(1, 0));
+        Assert.False(world.IsHostile(0, 1));
+        Assert.False(world.IsHostile(1, 0));
+
+        Assert.True(world.IsHostile(0, 2));
+        Assert.True(world.IsHostile(1, 2));
+        Assert.True(world.IsHostile(2, 0));
+        Assert.True(world.IsHostile(2, 1));
 
         // A team is never at war with itself, which is the one thing the comparison of
         // team ids got right and the reason the mistake was invisible.
-        Assert.False(SimWorld.IsHostile(1, 1));
-        Assert.False(SimWorld.IsHostile(2, 2));
+        Assert.False(world.IsHostile(1, 1));
+        Assert.False(world.IsHostile(2, 2));
     }
 
     /// <summary>
@@ -302,7 +308,7 @@ public sealed class AllianceTests
         world.GetRefBySlot(target.Slot).TeamId = 1;
         int healthAtTheFlip = world.GetRefBySlot(target.Slot).Health;
 
-        Assert.False(SimWorld.IsHostile(0, 1));
+        Assert.False(world.IsHostile(0, 1));
 
         world.Step();
 
@@ -416,7 +422,7 @@ public sealed class AllianceTests
                 {
                     int targetTeam = world.GetRefBySlot(shooter.TargetSlot).TeamId;
 
-                    if (!SimWorld.IsHostile(shooter.TeamId, targetTeam))
+                    if (!world.IsHostile(shooter.TeamId, targetTeam))
                     {
                         alliedTargets++;
                     }
@@ -467,7 +473,7 @@ public sealed class AllianceTests
                         {
                             hazardDamage++;
                         }
-                        else if (!ExplainedByHostileFire(firedTeams, fired, victim.TeamId))
+                        else if (!ExplainedByHostileFire(world, firedTeams, fired, victim.TeamId))
                         {
                             // Damage no hostile weapon can account for. On an ally this is
                             // friendly fire, whether it was aimed at one or scattered onto
@@ -499,7 +505,7 @@ public sealed class AllianceTests
                     ref Entity fallen = ref world.GetRefBySlot(slot);
 
                     if (!IsLava(world, fallen.Position) &&
-                        !ExplainedByHostileFire(firedTeams, fired, fallen.TeamId))
+                        !ExplainedByHostileFire(world, firedTeams, fired, fallen.TeamId))
                     {
                         unexplained++;
 
@@ -616,11 +622,11 @@ public sealed class AllianceTests
     /// check conservative rather than the direction that makes it pass.
     /// </para>
     /// </summary>
-    private static bool ExplainedByHostileFire(int[] firedTeams, int count, int victimTeam)
+    private static bool ExplainedByHostileFire(SimWorld world, int[] firedTeams, int count, int victimTeam)
     {
         for (int i = 0; i < count; i++)
         {
-            if (SimWorld.IsHostile(firedTeams[i], victimTeam))
+            if (world.IsHostile(firedTeams[i], victimTeam))
             {
                 return true;
             }

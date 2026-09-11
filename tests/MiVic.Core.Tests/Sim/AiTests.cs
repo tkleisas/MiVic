@@ -135,9 +135,16 @@ public sealed class AiTests
     [Fact]
     public void AiDoesNotPlayThePlayersTeam()
     {
-        Assert.False(AiSystem.IsAiTeam(0));
-        Assert.True(AiSystem.IsAiTeam(1));
-        Assert.True(AiSystem.IsAiTeam(2));
+        // The standard skirmish: the computer plays the two teams that are not the player's.
+        SimWorld world = new(seed: 1, capacity: 4);
+
+        Assert.False(AiSystem.Plays(world, 0));
+        Assert.True(AiSystem.Plays(world, 1));
+        Assert.True(AiSystem.Plays(world, 2));
+
+        // The fourth slot is not in the match at all, and a team that is not playing is not
+        // played: this used to be answered "no" by luck, because the list happened to stop at 2.
+        Assert.False(AiSystem.Plays(world, 3));
     }
 }
 
@@ -228,10 +235,13 @@ public sealed class LicenceTests
     [Fact]
     public void AllianceIsSovietAndChineseOnly()
     {
-        Assert.True(SimWorld.AreAllied(0, 1));
-        Assert.True(SimWorld.AreAllied(1, 0));
-        Assert.True(SimWorld.AreAllied(2, 2));
-        Assert.False(SimWorld.AreAllied(0, 2));
-        Assert.False(SimWorld.AreAllied(1, 2));
+        // A licence needs an ally, and the ally is whatever the match says is on the same side.
+        SimWorld world = new(seed: 1, capacity: 4);
+
+        Assert.True(world.AreAllied(0, 1));
+        Assert.True(world.AreAllied(1, 0));
+        Assert.True(world.AreAllied(2, 2));
+        Assert.False(world.AreAllied(0, 2));
+        Assert.False(world.AreAllied(1, 2));
     }
 }

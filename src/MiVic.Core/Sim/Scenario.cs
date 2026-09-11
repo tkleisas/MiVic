@@ -17,6 +17,17 @@ public enum ScenarioKind : byte
     /// than from this enum, so a replay also stores the mission id.
     /// </summary>
     Mission = 2,
+
+    /// <summary>
+    /// Two factions, no ally: Σοβιετικοί against Δυτικοί. See <see cref="MatchRoster.Duel"/>.
+    /// </summary>
+    Duel = 3,
+
+    /// <summary>
+    /// Two factions, and the enemy is the one that is normally the ally: Σοβιετικοί against
+    /// Κινέζοι, with the Δυτικοί absent. See <see cref="MatchRoster.Rivals"/>.
+    /// </summary>
+    Rivals = 4,
 }
 
 /// <summary>An entity the scenario created, with the position it was asked for.</summary>
@@ -82,14 +93,38 @@ public readonly record struct ScenarioSetup(
 /// jitter is drawn from the world's own generator, so the layout is a pure
 /// function of the seed.
 /// </para>
+/// <para>
+/// <b>Who is playing comes from the world, not from this file.</b> The layout is a force per team
+/// <em>the match declares</em> (<see cref="SimWorld.Roster"/>), placed at the base site of the
+/// faction that team plays, so a two-faction match is the same code path as a three-faction one and
+/// a team that is not in the match is not on the map at all. The three-faction skirmish is the same
+/// three teams in the same order as it has always been, which is why its golden hash does not move.
+/// </para>
 /// </summary>
 public static class Scenario
 {
-    /// <summary>Units per faction in the skirmish, excluding structures.</summary>
+    /// <summary>Units per team in a skirmish, excluding structures.</summary>
     public const int UnitsPerFaction = 166;
 
     /// <summary>Half-extent of the map in millimetres.</summary>
     public const int MapHalfExtentMm = SimConstants.MapExtentMm / 2;
+
+    /// <summary>
+    /// The roster a scenario is fought under. The world a scenario is laid out in must have been
+    /// built with this one, or <see cref="Build"/> refuses to lay anything out — a world whose
+    /// sides disagree with the layout is a desync the state hash cannot see, because the match is
+    /// not part of it.
+    /// </summary>
+    public static MatchRoster RosterFor(ScenarioKind kind, MissionDefinition? mission = null)
+        => MatchRoster.For(kind, mission);
+
+    /// <summary>
+    /// Creates the world a scenario is played in: same seed, same capacity, and the teams that
+    /// scenario declares. The one call that builds a world for a match, so that the layout and the
+    /// sides cannot be chosen separately.
+    /// </summary>
+    public static SimWorld NewWorld(ScenarioKind kind, ulong seed, int capacity, MissionDefinition? mission = null)
+        => new(seed, capacity, RosterFor(kind, mission));
 
     /// <summary>
     /// Lays out <paramref name="kind"/> in <paramref name="world"/>. The world
@@ -98,6 +133,13 @@ public static class Scenario
     public static ScenarioSetup Build(SimWorld world, ScenarioKind kind)
     {
         ArgumentNullException.ThrowIfNull(world);
+
+        if (kind != ScenarioKind.Mission && !world.Roster.Equals(RosterFor(kind)))
+        {
+            throw new InvalidOperationException(
+                $"A {kind} world is built with {RosterFor(kind).TeamsInPlay} declared teams; this one " +
+                $"declares {world.Roster.TeamsInPlay}. Build it with Scenario.NewWorld.");
+        }
 
         var commandCentres = new List<EntityId>(3);
         var spawned = new List<SpawnedEntity>(4 + (UnitsPerFaction * 3));
@@ -175,9 +217,16 @@ public static class Scenario
     }
 
     /// <summary>
-    /// The skirmish: Σοβιετικοί (player, team 0) and Κινέζοι (ally, team 1)
-    /// against Δυτικοί (team 2). This mirrors the game's premise — the two
-    /// socialist powers must cooperate to defeat the Western empire.
+    /// The skirmish: a base and a starting force for every team the match declares. With the
+    /// standard roster that is Σοβιετικοί (player, team 0) and Κινέζοι (ally, team 1) against
+    /// Δυτικοί (team 2) — the game's premise, the two socialist powers cooperating against the
+    /// Western empire — and with a roster of two teams it is a one-against-one: Σοβιετικοί against
+    /// Δυτικοί, or Σοβιετικοί against Κινέζοι with the Δυτικοί nowhere on the map.
+    /// <para>
+    /// The teams are walked in slot order, which is the order the forces have always been spawned
+    /// in, so the standard match draws exactly the same jitter from the world's generator in exactly
+    /// the same order as before.
+    /// </para>
     /// </summary>
     private static void BuildSkirmish(
         SimWorld world,
@@ -185,55 +234,104 @@ public static class Scenario
         List<SpawnedEntity> spawned,
         List<BaseSitePlacement> baseSites)
     {
-        SpawnForce(
-            world, commandCentres, spawned, baseSites,
-            Faction.Soviet, teamId: 0, centre: new WorldPos(-180_000, 0, -180_000),
-            unitCount: UnitsPerFaction, fullBase: true, materials: 2_500, energy: 400, water: 400);
+        MatchRoster roster = world.Roster;
 
-        SpawnForce(
-            world, commandCentres, spawned, baseSites,
-            Faction.Chinese, teamId: 1, centre: new WorldPos(180_000, 0, -180_000),
-            unitCount: UnitsPerFaction, fullBase: true, materials: 2_500, energy: 400, water: 400);
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (!roster.IsInPlay(team))
+            {
+                continue;
+            }
 
-        SpawnForce(
-            world, commandCentres, spawned, baseSites,
-            Faction.Western, teamId: 2, centre: new WorldPos(0, 0, 200_000),
-            unitCount: UnitsPerFaction, fullBase: true, materials: 2_500, energy: 400, water: 400);
+            Faction faction = roster.FactionOf(team);
+
+            SpawnForce(
+                world, commandCentres, spawned, baseSites,
+                faction, team, BaseSiteOf(faction),
+                unitCount: UnitsPerFaction, fullBase: true, materials: 2_500, energy: 400, water: 400);
+        }
     }
 
     /// <summary>
-    /// Lays out a campaign mission: a small force for each side, a base apiece,
-    /// and the objectives attached to the world. The layout is a pure function of
-    /// the mission definition and the world's seed, so a replay reproduces it.
+    /// Where a faction's base belongs on the standard map: Σοβιετικοί in the south-west, Κινέζοι in
+    /// the south-east and Δυτικοί across the middle of the north. A base is a position rather than a
+    /// role, so it is keyed by the faction that stands there — which is what makes a match without
+    /// the Κινέζοι a map with two bases on it rather than three with one empty.
+    /// </summary>
+    public static WorldPos BaseSiteOf(Faction faction) => faction switch
+    {
+        Faction.Soviet => new WorldPos(-180_000, 0, -180_000),
+        Faction.Chinese => new WorldPos(180_000, 0, -180_000),
+        Faction.Western => new WorldPos(0, 0, 200_000),
+
+        // A team playing no faction at all is not a match this game ships, but the layout still has
+        // to put it somewhere rather than at the corner of the map, and the middle is the one site
+        // that belongs to nobody.
+        _ => default,
+    };
+
+    /// <summary>
+    /// Lays out a campaign mission: a small force for each side, a base apiece, and the objectives
+    /// attached to the world. The layout is a pure function of the mission definition and the
+    /// world's seed, so a replay reproduces it.
+    /// <para>
+    /// <b>The ally is a team in a match rather than a column of this method.</b> What gets spawned
+    /// is a force for every team the <em>mission</em> declares — see
+    /// <see cref="MissionDefinition.Roster"/> — so the campaign's ally is a side the mission says it
+    /// has, and a mission without one lays out two forces on the same map instead of a third that
+    /// has nothing to do. Each team's base, its starting force and whether it gets a full base are
+    /// the mission's own data, in the same order they have always been spawned.
+    /// </para>
     /// </summary>
     public static ScenarioSetup BuildMission(SimWorld world, MissionDefinition mission)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(mission);
 
+        if (!world.Roster.Equals(mission.Roster))
+        {
+            throw new InvalidOperationException(
+                $"Mission '{mission.Id}' declares {mission.Roster.TeamsInPlay} teams; this world was " +
+                $"built with {world.Roster.TeamsInPlay}. Build it with Scenario.NewWorld.");
+        }
+
         var commandCentres = new List<EntityId>(3);
         var spawned = new List<SpawnedEntity>(mission.PlayerUnits + mission.AllyUnits + mission.EnemyUnits + 11);
         var baseSites = new List<BaseSitePlacement>(3);
 
-        SpawnForce(
-            world, commandCentres, spawned, baseSites,
-            Faction.Soviet, teamId: 0, centre: mission.PlayerBase,
-            unitCount: mission.PlayerUnits, fullBase: true, materials: 1_500, energy: 300, water: 250);
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (!mission.Roster.IsInPlay(team))
+            {
+                continue;
+            }
 
-        SpawnForce(
-            world, commandCentres, spawned, baseSites,
-            Faction.Chinese, teamId: 1, centre: mission.AllyBase,
-            unitCount: mission.AllyUnits, fullBase: false, materials: 1_500, energy: 300, water: 250);
+            (WorldPos centre, int units, bool fullBase) = MissionForceOf(mission, team);
 
-        SpawnForce(
-            world, commandCentres, spawned, baseSites,
-            Faction.Western, teamId: 2, centre: mission.EnemyBase,
-            unitCount: mission.EnemyUnits, fullBase: true, materials: 1_500, energy: 300, water: 250);
+            SpawnForce(
+                world, commandCentres, spawned, baseSites,
+                mission.Roster.FactionOf(team), team, centre,
+                unitCount: units, fullBase: fullBase, materials: 1_500, energy: 300, water: 250);
+        }
 
         world.AttachMission(mission);
 
         return new ScenarioSetup(commandCentres, spawned, baseSites);
     }
+
+    /// <summary>
+    /// One team's part in a mission, as the mission's own data: the base it starts from, how many
+    /// units it begins with and whether it starts with a design bureau as well as the essentials.
+    /// The ally is the team that starts light, which is a fact about the campaign's missions rather
+    /// than about team 1.
+    /// </summary>
+    private static (WorldPos Centre, int Units, bool FullBase) MissionForceOf(MissionDefinition mission, int team) => team switch
+    {
+        0 => (mission.PlayerBase, mission.PlayerUnits, true),
+        1 => (mission.AllyBase, mission.AllyUnits, false),
+        2 => (mission.EnemyBase, mission.EnemyUnits, true),
+        _ => (default, 0, false),
+    };
 
     private static void SpawnForce(
         SimWorld world,

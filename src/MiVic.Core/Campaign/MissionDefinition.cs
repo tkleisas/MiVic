@@ -40,4 +40,23 @@ public sealed record MissionDefinition(
 {
     /// <summary>Objectives that decide the mission, as opposed to bonus ones.</summary>
     public IEnumerable<ObjectiveDefinition> PrimaryObjectives => Objectives.Where(objective => objective.IsPrimary);
+
+    /// <summary>
+    /// Who is fighting this mission: which teams are in it, what faction each one plays and which
+    /// side each one is on.
+    /// <para>
+    /// The campaign's ally used to be a column of the scenario builder — team 1, given
+    /// <see cref="AllyBase"/> and <see cref="AllyUnits"/>, always and only that team. It is a side
+    /// the mission says it has instead, so a mission can be fought with two sides rather than
+    /// three, and <see cref="Sim.Scenario.BuildMission"/> lays out a force for every team this
+    /// declares rather than for three teams by number.
+    /// </para>
+    /// <para>
+    /// The base, the starting force and the objectives of each team are still the mission's data,
+    /// keyed by team slot: this says <em>who is playing</em>, not where they stand. The three
+    /// missions the campaign ships therefore declare the standard three-faction skirmish and are
+    /// laid out exactly as they were.
+    /// </para>
+    /// </summary>
+    public Sim.MatchRoster Roster { get; init; } = Sim.MatchRoster.StandardSkirmish;
 }

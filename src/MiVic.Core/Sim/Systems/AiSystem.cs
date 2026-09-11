@@ -115,7 +115,7 @@ public static class AiSystem
         (UnitKind.AntiAirEmplacement, 1),
     ];
 
-    /// <summary>Runs one AI decision step for every AI-controlled team.</summary>
+    /// <summary>Runs one AI decision step for every team the computer plays.</summary>
     public static void Tick(SimWorld world)
     {
         ArgumentNullException.ThrowIfNull(world);
@@ -127,15 +127,35 @@ public static class AiSystem
 
         for (int team = 0; team < SimConstants.TeamCount; team++)
         {
-            if (IsAiTeam(team))
+            if (Plays(world, team))
             {
                 Decide(world, team);
             }
         }
     }
 
-    /// <summary>Teams the computer plays. The player owns team 0.</summary>
-    public static bool IsAiTeam(int team) => team is 1 or 2;
+    /// <summary>
+    /// True when the computer plays this team: it is in the match, and it is not the player's.
+    /// <para>
+    /// The two halves are the two assumptions this used to make. It played teams 1 and 2 by number,
+    /// which is a description of the standard three-faction skirmish written as though it were the
+    /// rule — so a match of two factions had the computer deciding for a team that was not on the
+    /// map, and a match whose enemy was team 1 had it deciding for team 2. It also assumed the
+    /// player had an ally, because team 1 exists in every match this game shipped; a one-against-one
+    /// has no ally to play, and <see cref="MatchRoster.IsInPlay"/> is what says so.
+    /// </para>
+    /// <para>
+    /// It is deliberately not "every team that is not the player's": a team the match does not
+    /// declare is not a side in it, and giving it orders would be the same mistake in the other
+    /// direction.
+    /// </para>
+    /// </summary>
+    public static bool Plays(SimWorld world, int team)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        return team != MatchRoster.PlayerTeam && world.IsTeamInPlay(team);
+    }
 
     /// <summary>One team's decision cycle.</summary>
     private static void Decide(SimWorld world, int team)
@@ -585,7 +605,7 @@ public static class AiSystem
     {
         ref TeamState state = ref world.TeamRef(team);
 
-        if (state.IsPrototyping || !UnitCatalog.IsUnlocked(SimWorld.FactionOfTeam(team), kind, state.TechTier, state.TechMask))
+        if (state.IsPrototyping || !UnitCatalog.IsUnlocked(world.FactionOfTeam(team), kind, state.TechTier, state.TechMask))
         {
             return false;
         }
@@ -908,12 +928,14 @@ public static class AiSystem
     }
 
     /// <summary>
-    /// True when two teams are on the same side. The alliance is not this system's rule —
-    /// <see cref="SimWorld.AreAllied"/> is — but an AI that ignored it would send its army at
-    /// its own ally's headquarters, which is what "nearest enemy building" means when the
-    /// word <em>enemy</em> was never actually asked.
+    /// True when two teams are on the same side. The alliance is not this system's rule — the match
+    /// the world was built with is, through <see cref="SimWorld.AreAllied"/> — but an AI that
+    /// ignored it would send its army at its own ally's headquarters, which is what "nearest enemy
+    /// building" means when the word <em>enemy</em> was never actually asked. In a one-against-one
+    /// there is simply nobody on this side but the team itself, and the same line answers that
+    /// without a special case.
     /// </summary>
-    private static bool IsFriendly(SimWorld world, int team, int other) => SimWorld.AreAllied(team, other);
+    private static bool IsFriendly(SimWorld world, int team, int other) => world.AreAllied(team, other);
 
     /// <summary>Queues a unit if the team can afford it.</summary>
     private static bool TryQueue(SimWorld world, EntityId building, Faction faction, UnitKind kind, int team)

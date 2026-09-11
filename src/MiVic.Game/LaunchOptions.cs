@@ -1,3 +1,5 @@
+using MiVic.Core.Sim;
+
 namespace MiVic.Game;
 
 /// <summary>Command-line options for the client.</summary>
@@ -90,6 +92,14 @@ public sealed record LaunchOptions
 
     /// <summary>Campaign mission to play, by id.</summary>
     public string? MissionId { get; init; }
+
+    /// <summary>
+    /// Which match to lay out: the standard three-faction skirmish unless the command line asks for
+    /// one of the two-faction ones. The match decides the sides the simulation plays by as well as
+    /// the bases on the map — see <c>MatchRoster</c> — so this is the only place the client chooses
+    /// who is fighting.
+    /// </summary>
+    public ScenarioKind Match { get; init; } = ScenarioKind.Skirmish;
 
     /// <summary>
     /// True when this run is one of the inspection fixtures rather than a match.
@@ -209,6 +219,8 @@ public sealed record LaunchOptions
           --watch <αρχείο>      Αναπαραγωγή καταγεγραμμένου αγώνα
           --mission <id>        Εκκίνηση αποστολής εκστρατείας
           --mission-list        Λίστα αποστολών
+          --duel                Δύο παρατάξεις: Σοβιετικοί εναντίον Δυτικών
+          --rivals              Δύο παρατάξεις: Σοβιετικοί εναντίον Κινέζων
           --particle-demo       Επίδειξη σωματιδίων (εκρήξεις, καπνός)
           --turret-demo         Δύο άρματα που πυροβολούνται, για τον πύργο
           --alliance-demo       Δύο σύμμαχοι σε εμβέλεια, με εχθρό πιο πέρα
@@ -497,6 +509,17 @@ public sealed record LaunchOptions
 
                 case "--mission":
                     options = options with { MissionId = NextValue(args, ref i, arg), ShowHelp = false };
+                    break;
+
+                case "--duel":
+                    // Two factions and no ally: the Κινέζοι are not in this match, so there is
+                    // nothing on the map for the victory check to require of them.
+                    options = options with { Match = ScenarioKind.Duel };
+                    break;
+
+                case "--rivals":
+                    // Two factions, and the enemy is the one that is normally the ally.
+                    options = options with { Match = ScenarioKind.Rivals };
                     break;
 
                 case "--mission-list":

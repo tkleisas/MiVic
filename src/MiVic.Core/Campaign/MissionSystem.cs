@@ -63,19 +63,19 @@ public static class MissionSystem
 
         if (primaryFailed)
         {
-            world.SetOutcome(GameOutcome.WesternVictory);
+            world.SetOutcome(GameOutcome.Defeat);
             return;
         }
 
         if (!primaryPending)
         {
-            world.SetOutcome(GameOutcome.AllianceVictory);
+            world.SetOutcome(GameOutcome.Victory);
             return;
         }
 
         if (mission.TimeLimitTicks > 0 && world.Tick >= mission.TimeLimitTicks)
         {
-            world.SetOutcome(GameOutcome.WesternVictory);
+            world.SetOutcome(GameOutcome.Defeat);
         }
     }
 
