@@ -909,9 +909,131 @@ public sealed class SimWorld
     }
 
     /// <summary>
+    /// <b>The whole of the production rule, in one question: could this building put this role on
+    /// its pad right now, and why not if it could not?</b>
+    /// <para>
+    /// It is one function rather than a clause at each call site because the three callers are the
+    /// three ways the same rule is met: the command that would carry the order out
+    /// (<see cref="TryQueueUnit"/>), the panel row that offers it, and the probe. A row that worked
+    /// the answer out for itself would be a second copy, and the first thing a copy does is drift —
+    /// the greyed-out row that does nothing when pressed is the bug this shape prevents. That is the
+    /// same argument <see cref="CanBuildStructure"/> and <see cref="CanBuildAnyBridge"/> are written
+    /// from.
+    /// </para>
+    /// <para>
+    /// The clauses are in the order a player meets them: whether this building makes that role at
+    /// all, then the design (<see cref="CanBuild"/> — technology, a licence, a prototype's own cap
+    /// and the Σοβιετικοί rule that a factory design be proven), then
+    /// <b>the command capacity</b>, then what it costs. Naming the shortfall rather than saying
+    /// "not available" is what the panel has always done, and the capacity refusal joins that list
+    /// in the same voice: <c>λείπει δυναμικότητα 174</c>.
+    /// </para>
+    /// <para>
+    /// <b>A structure is never refused for want of capacity, and that is load-bearing.</b> A side
+    /// over its ceiling that could not raise a building would be a side that could never raise the
+    /// building that would lift the ceiling — a deadlock, and a plausible one, because a stalemate
+    /// is exactly the state in which nobody is dying and nothing else would bring the army back
+    /// under. So the ceiling is the one clause here that asks the role's own
+    /// <see cref="UnitDefinition.IsBuilding"/> first, and the answer for a building is that the
+    /// question does not apply to it: structures are what capacity comes from, so they can never be
+    /// what capacity refuses. <c>ACappedTeamCanStillRaiseItsCeiling</c> is the test that pins it.
+    /// </para>
+    /// </summary>
+    /// <param name="building">The structure the work would happen at.</param>
+    /// <param name="kind">The role to put on its pad.</param>
+    /// <param name="reason">Empty when allowed, otherwise why not, in the player's own language.</param>
+    public bool CanProduce(EntityId building, UnitKind kind, out string reason)
+    {
+        reason = string.Empty;
+
+        if (!TryResolve(building, out int slot))
+        {
+            reason = "δεν υπάρχει τέτοιο κτίριο";
+            return false;
+        }
+
+        if (!UnitCatalog.TryGet(kind, out UnitDefinition definition))
+        {
+            reason = "άγνωστο σχέδιο";
+            return false;
+        }
+
+        ref Entity producer = ref _entities[slot];
+
+        if (definition.ProducedAt != producer.Kind)
+        {
+            reason = $"χρειάζεται {UnitCatalog.GreekName(definition.ProducedAt)}";
+            return false;
+        }
+
+        if ((uint)producer.TeamId >= SimConstants.TeamCount)
+        {
+            reason = "άγνωστη ομάδα";
+            return false;
+        }
+
+        if (!CanBuild(producer.TeamId, kind))
+        {
+            reason = ReasonUnbuildable(producer.TeamId, kind);
+            return false;
+        }
+
+        // The supply gate. A role that is not a building is what fields against the ceiling; a
+        // building is what grants it, so this clause cannot reach one — see the note above.
+        if (!definition.IsBuilding)
+        {
+            int over = OverCapacity(producer.TeamId);
+
+            if (over > 0)
+            {
+                reason = CapacitySystem.OverCapacityReason(over);
+                return false;
+            }
+        }
+
+        ref TeamState team = ref _teams[producer.TeamId];
+        Faction faction = producer.Faction;
+        int materials = UnitCatalog.MaterialCost(faction, kind);
+        int energy = UnitCatalog.EnergyCost(faction, kind);
+        int water = UnitCatalog.WaterCost(faction, kind);
+
+        // Every job costs all three: minerals for the hull, power for the tools and water for the
+        // cooling and the crews. Running one dry stops construction rather than silently producing
+        // for free.
+        if (team.Materials < materials)
+        {
+            reason = $"λείπουν {materials - team.Materials} Π";
+            return false;
+        }
+
+        if (team.Energy < energy)
+        {
+            reason = $"λείπουν {energy - team.Energy} Ε";
+            return false;
+        }
+
+        if (team.Water < water)
+        {
+            reason = $"λείπουν {water - team.Water} Ν";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Live and queued entities of a role for a team. Both count against a cap:
     /// otherwise a player could queue ten of a prototype in one tick and only be
     /// stopped once they started appearing.
+    /// <para>
+    /// <b>This is not the command capacity and the two must not be read as one rule.</b> What this
+    /// answers is <see cref="UnitDefinition.MaxAlive"/> — how many of one <em>role</em> a team may
+    /// ever have, which is what makes a prototype a prototype. Capacity is a ceiling on the whole
+    /// army, granted by structures and spent by every unit a side fields, and it lives in
+    /// <see cref="CapacitySystem"/>. A team can be inside one and outside the other, and a rule
+    /// that confused them would either let a side field two hundred electro prototypes or refuse it
+    /// a second rifleman.
+    /// </para>
     /// </summary>
     public int CountOf(int team, UnitKind kind)
     {
@@ -1053,7 +1175,26 @@ public sealed class SimWorld
     public bool IsComplete(int slot)
         => IsAliveSlot(slot) && _entities[slot].ConstructionTicksRemaining <= 0;
 
-    /// <summary>True when a team has at least one live structure of a role.</summary>
+    /// <summary>
+    /// How many units a team's structures support, and what its army is costing them. Both are
+    /// sums over what the team owns, answered by <see cref="CapacitySystem"/> when they are asked
+    /// rather than kept anywhere — see that class for why nothing here is state.
+    /// </summary>
+    public int CommandCapacity(int team) => CapacitySystem.CapacityOf(this, team);
+
+    /// <summary>What a team's live units cost against its command capacity.</summary>
+    public int ArmySupply(int team) => CapacitySystem.SupplyOf(this, team);
+
+    /// <summary>
+    /// How far over its command capacity a team is, in places, or zero when it is within it. The
+    /// question the production gate is closed by and the question the status panel draws.
+    /// </summary>
+    public int OverCapacity(int team) => CapacitySystem.OverCapacityOf(this, team);
+
+    /// <summary>
+    /// True when a team has at least one live structure of a role. Only finished ones count: a
+    /// building site is not doing anything yet.
+    /// </summary>
     public bool HasStructure(int team, UnitKind kind)
     {
         for (int slot = 0; slot < _entities.Length; slot++)
@@ -2318,6 +2459,18 @@ public sealed class SimWorld
             return false;
         }
 
+        // A completed prototype run delivers a real unit — see <see cref="PrototypeSystem"/> — so it
+        // is a way of fielding something, and the ceiling applies to it for the same reason it
+        // applies to a factory queue. The check is here rather than at delivery because the
+        // materials are charged here: a run that was paid for and could not deliver would be a unit
+        // bought and thrown away, and the command is refused before anything is spent.
+        int over = OverCapacity(bureau.TeamId);
+
+        if (over > 0)
+        {
+            return false;
+        }
+
         int materials = (UnitCatalog.MaterialCost(bureau.Faction, kind) * PrototypeCostPermille) / 1_000;
         int energy = (UnitCatalog.EnergyCost(bureau.Faction, kind) * PrototypeCostPermille) / 1_000;
         int water = (UnitCatalog.WaterCost(bureau.Faction, kind) * PrototypeCostPermille) / 1_000;
@@ -2432,39 +2585,24 @@ public sealed class SimWorld
 
     /// <summary>
     /// Queues a unit if the building can make it, the team has reached the
-    /// required tech tier, and it can pay. Costs are taken up front so a queue
-    /// cannot be filled with resources the team does not have.
+    /// required tech tier, the team is inside its command capacity and it can pay.
+    /// Costs are taken up front so a queue cannot be filled with resources the team
+    /// does not have.
+    /// <para>
+    /// The verdict is <see cref="CanProduce"/>'s and this method only carries it out, so the order
+    /// a click sends, the row a panel draws and the answer an AI gets are one rule. What is left
+    /// here is the arithmetic the question does not do: how long the job takes for this faction's
+    /// build speed, and the job itself.
+    /// </para>
     /// </summary>
     private bool TryQueueUnit(int slot, ref Entity building, UnitKind kind)
     {
-        if (!UnitCatalog.TryGet(kind, out UnitDefinition definition))
-        {
-            return false;
-        }
-
-        if (definition.ProducedAt != building.Kind || (uint)building.TeamId >= SimConstants.TeamCount)
+        if (!CanProduce(new EntityId(slot, building.Generation), kind, out _))
         {
             return false;
         }
 
         ref TeamState team = ref _teams[building.TeamId];
-
-        if (!CanBuild(building.TeamId, kind))
-        {
-            return false;
-        }
-
-        int materials = UnitCatalog.MaterialCost(building.Faction, kind);
-        int energy = UnitCatalog.EnergyCost(building.Faction, kind);
-        int water = UnitCatalog.WaterCost(building.Faction, kind);
-
-        // Every job costs all three: minerals for the hull, power for the tools
-        // and water for the cooling and the crews. Running one dry stops
-        // construction rather than silently producing for free.
-        if (team.Materials < materials || team.Energy < energy || team.Water < water)
-        {
-            return false;
-        }
 
         int ticks = UnitCatalog.BuildTicks(building.Faction, kind);
         int production = team.ProductionPermille > 0 ? team.ProductionPermille : 1_000;
@@ -2475,9 +2613,9 @@ public sealed class SimWorld
             return false;
         }
 
-        team.Materials -= materials;
-        team.Energy -= energy;
-        team.Water -= water;
+        team.Materials -= UnitCatalog.MaterialCost(building.Faction, kind);
+        team.Energy -= UnitCatalog.EnergyCost(building.Faction, kind);
+        team.Water -= UnitCatalog.WaterCost(building.Faction, kind);
         return true;
     }
 

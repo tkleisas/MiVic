@@ -122,6 +122,7 @@ shot out/frame-later.png
 | `blast <x> <z> [radius] [damage] [team]` | drops a blast on the ground, as a salvo or a strike does, and reports how many blocks of deck it knocked out and what is left of the one at the centre |
 | `range <slot>` | the sensor chain for one entity: the weapon's range, its own eyes, the radius those eyes find a hidden enemy at, whether a powered radar is covering it, and **the furthest it can engage anything at** — which is the smaller of the first two until a radar changes the answer |
 | `power [team]` | one team's power ledger: energy generated, energy drawn by the structures that are on, the surplus, how many radars are lit and how many the grid had to shed, and the reason the interface gives for a brown-out, in Greek |
+| `capacity [team]` | one team's command capacity: what its finished structures support and what each of them is worth, what its live units cost against it per role, how far over it is, and the words the refusal uses — the ceiling and the army that spends it, from the same functions the production gate asks |
 | `detect <team> <slot>` | whether one team can see one entity, and by which channel: hidden, the cell's sight, the cell's detection, and whether the target has revealed itself by firing |
 | `exposure <team> <x> <z>` | what one team knows about a point on the ground: whether a powered radar covers it, whether the cell is visible, and whether it is detected — the query to walk a boundary across one reading at a time |
 
@@ -171,6 +172,7 @@ with mud already in it.
 |---|---|
 | `order <slot> move <x> <z>` | issues a move order for one unit, executing on the next tick |
 | `order <slot> attack <slot>` | issues an attack order, and says whether the two are hostile — an order that is not is thrown away rather than obeyed |
+| `queue <slot> <role>` | puts a role on a building's production pad through the simulation's own command queue, and prints the verdict the player would be given — accepted with its cost and its time on the pad, or refused in the same words the build panel uses beside a greyed-out row (`λείπει δυναμικότητα 174`, `λείπουν 120 Π`, `όριο 2`) |
 | `ability <name> <x> <z> [team]` | calls in an off-map ability at a point: what it costs, what it does, and the world's own verdict, in the words the player would be shown when it is refused |
 
 `block` exists because a junction cannot be found in the `bridges` list. Two crossings may share a
@@ -728,16 +730,18 @@ query:   eyes       170.0 m — as far as its own sensors reach
 query:   radar      under coverage, team 1 has 1 radar on the air
 query:   reach      200.0 m — the furthest it can engage anything at
 cmd: unit 510
-query:   health     746/1400 (53%)
-query:   attack     slot 340 (western/CommandCentre at 193.2 m), cooldown 36 ticks of 50, order automatic, 45 damage out to 200.0 m
+query:   health     607/1400 (43%)
+query:   attack     slot 346 (western/Tank at 136.8 m), cooldown 36 ticks of 50, order automatic, 45 damage out to 200.0 m
+cmd: unit 513
+query:   attack     slot 348 (western/AntiAir at 175.3 m), cooldown 25 ticks of 50, order automatic, 45 damage out to 200.0 m
 cmd: power 1
-query:   generation 16 Ε per tick, from the structures standing
+query:   generation 46 Ε per tick, from the structures standing
 query:   draw       11 Ε per tick, including the radars that are on
-query:   surplus    5 Ε per tick
+query:   surplus    35 Ε per tick
 query:   radars     1 lit, 0 dark, 0 Ε short of running them all
 query:   brown-out  none
 cmd: events 12
-query:   #250 tick 548 shot      slot  510 chinese/GunEmplacement at (42.2, 18.1, 4.7) m firing at western/DesignBureau (slot 343), direction (-0.01, -0.01, 1.00) bearing 90.8°, 142.5 m away
+query:   #256 tick 562 hit       slot  510 chinese/GunEmplacement team 1 at (42.2, 18.1, 4.7) m took 12 damage
 ```
 
 Five facts, and each of them was a different failure mode before this was built:
@@ -750,17 +754,20 @@ Five facts, and each of them was a different failure mode before this was built:
   defend. That is the same number the combat system scales every hit on that building by, so the
   ground the AI picked is 39 % off every shot that lands on it. An AI that scored its sites by
   distance alone would have both guns on the headquarters' own kind of ground;
-- **`reach 200.0 m` against `eyes 170.0 m`** is the radar being worth its price, and `unit 510`
-  is the proof of what that is for: the gun is engaging a headquarters **193 m away**,
-  `order automatic`, which is past the 170 m it could see without one. The kill it is in the middle
-  of — 746 of 1400 hit points — is a fight it would not have been in at all;
-- **`generation 16` against `draw 11`, `1 lit, 0 dark, brown-out none`** is the failure mode this
-  feature can create, answered: an AI that raises a dish its grid cannot run has paid for a building
-  that switches itself off, and detection is what the ledger sheds first. This one bought the
-  generation it needed before it bought the radar, and the ledger is still solvent a minute later;
-- **the shot in `events`** is the same emplacement, at 142.5 m, with the bearing on the shot and the
-  bearing of the building's own model agreeing — a defensive line that fights rather than one that
-  stands.
+- **`reach 200.0 m` against `eyes 170.0 m`** is the radar being worth its price, and `unit 513` is the
+  proof of what that is for: the gun is engaging an anti-aircraft mount **175.3 m away**,
+  `order automatic`, which is past the 170 m it could see without one. The kill `unit 510` is in the
+  middle of — 607 of 1400 hit points — is a fight it would not have been in at all;
+- **`generation 46` against `draw 11`, `1 lit, 0 dark, brown-out none`** is the failure mode this
+  feature can create, answered — and this number has moved, for a reason worth reading: an AI that
+  raises a dish its grid cannot run has paid for a building that switches itself off, and detection is
+  what the ledger sheds first. Team 1 is over its command ceiling at the opening — see
+  `capacity.probe` — so it has spent the same three hundred ticks on the generation and the yards that
+  lift the ceiling, and three power plants and a second yard are inside the 46. The dish is still on
+  the air, the ledger is solvent by 35 a tick, and the line was bought anyway;
+- **the hits in `events`** are the same emplacements, taking and giving fire with nobody having
+  ordered either, on ground that is `540 ‰` and `563 ‰` cover — a defensive line that fights rather
+  than one that stands.
 
 The script carries the numbers as checks, so the day the AI stops building a line, or starts
 shedding the radar it built, the probe fails rather than reporting something else.
@@ -1131,3 +1138,103 @@ turret, and a report that disagrees with the picture is worse than no report —
 report that sends someone to fix the wrong file. The same reason is why
 `Probe/MiVicGame.Probe.cs` is a partial of the client: the answers are only trustworthy
 because they come out of the client's own code.
+
+## Worked example: what does a side over its command capacity get refused?
+
+Every side opens a standard match with 166 units and 446 places of supply against the 272, 320 or 368
+that its four starting buildings support, so the question is not academic: it is the first thing a
+player meets. `tools/probe/capacity.probe`, run against the default skirmish with nobody playing team
+0, trimmed to the answers (`…` marks lines cut out of the middle):
+
+```
+cmd: tick 2
+cmd: capacity 0
+query: capacity team 0 Σοβιετικοί — 446 places fielded against 272 supported, tick 2
+query:   rule       a structure grants capacity when it supports an army rather than being one, and a man is one place, a vehicle four, an aircraft six — CapacitySystem and UnitCatalog.SupplyCost
+query:   ceiling    272 places from 4 structures at 850‰ of what they are worth — a building site grants nothing until it is up
+query:      Κέντρο Διοίκησης         ×1    200 each =   200
+query:      Σταθμός Παραγωγής        ×1     30 each =    30
+query:      Εργοστάσιο               ×1     60 each =    60
+query:      Γραφείο Σχεδιασμού       ×1     30 each =    30
+query:   supply     446 places fielded by 166 units
+query:      Πεζικό                   ×82     1 each =    82
+query:      Άρμα                     ×42     4 each =   168
+query:      Πυροβολικό               ×14     4 each =    56
+query:      Αντιαεροπορικό           ×14     4 each =    56
+query:      Αεροσκάφος               ×14     6 each =    84
+query:   verdict    over the ceiling by 174 — no unit may be queued until 174 places of army are gone or built for
+query:   refusal    λείπει δυναμικότητα 174
+cmd: queue 0 Infantry
+query:   verdict    refused — λείπει δυναμικότητα 174
+query:   player     Πεζικό: λείπει δυναμικότητα 174.
+cmd: structure Factory -248.4 -89.1 0 build
+query:   verdict    accepted for team 0 — it would stand at (x -248.4, z -89.1) m, cell 5,22 of 65, index 1435, Sand (Άμμος)
+ok: Εργοστάσιο ordered for team 0 at (x -248.4, z -89.1) m, executing on tick 3 — `tick 1` starts it and `tick 272` finishes it
+cmd: tick 400
+cmd: capacity 0
+query: capacity team 0 Σοβιετικοί — 446 places fielded against 323 supported, tick 402
+query:      Εργοστάσιο               ×2     60 each =   120
+query:   verdict    over the ceiling by 123 — no unit may be queued until 123 places of army are gone or built for
+…
+cmd: tick 1000
+cmd: capacity 1
+query: capacity team 1 Κινέζοι — 231 places fielded against 540 supported, tick 1402
+query:      Κέντρο Διοίκησης         ×1    200 each =   200
+query:      Σταθμός Παραγωγής        ×4     30 each =   120
+query:      Εργοστάσιο               ×2     60 each =   120
+query:      Γραφείο Σχεδιασμού       ×1     30 each =    30
+query:      Πυροβολείο               ×2      0 each =     0   — it is the army, not the thing that supports it
+query:      Αντιαεροπορικό Πυροβολείο ×1      0 each =     0   — it is the army, not the thing that supports it
+query:      Σταθμός Ραντάρ           ×1      0 each =     0   — it is the army, not the thing that supports it
+query:   supply     231 places fielded by 109 units
+query:   verdict    within the ceiling, 309 places to spare — units may be queued
+query:   refusal    none
+cmd: count Commissar
+query: count Commissar: 0 alive (soviet 0, chinese 0, western 0)
+cmd: queue 170 Commissar
+query:   verdict    accepted — 42 Π, 0 Ε, 7 Ν, 33 ticks (1.7 s) on the pad
+ok: Κομισάριος ordered at slot 170 for team 1, executing on tick 1403 — `tick 1` starts it and `tick 33` finishes it
+cmd: tick 60
+cmd: count Commissar
+query: count Commissar: 1 alive (soviet 0, chinese 1, western 0)
+cmd: teams
+query:   team 0 soviet   171 alive, 5 structures
+query:   team 1 chinese  122 alive, 12 structures
+query:   team 2 western  121 alive, 3 structures
+query:   damage     team 0 0 hits, 0 losses, 0 health; team 1 512 hits, 57 losses, 5778 health; team 2 302 hits, 52 losses, 11014 health — the health lost by the team that lost it
+```
+
+What the four parts of that transcript prove, in the order the feature was decided:
+
+- **the refusal names the rule and says how far over the side is.** `λείπει δυναμικότητα 174` is the
+  Σοβιετικοί's own number, and it is not about money: the team at that moment holds 2 506 Π. The
+  ledger above it is the arithmetic — a man is one place, a tank four, an aeroplane six, and four
+  buildings support 272 — so a player can see why they are at their limit rather than being told;
+- **a structure is not refused, and that is the guard the whole rule needs.** A side over its ceiling
+  that could not raise a building could never raise the building that lifts its ceiling, and a
+  stalemate with nothing dying is exactly when that would happen. The yard is ordered through the
+  placement rule a click is judged by, stands whole four hundred ticks later, and the ceiling it was
+  refused against has gone from 272 to 323 — while the side is still over it;
+- **attrition opens the gate, and the same order then goes through.** The Κινέζοι are the side whose
+  army is actually being spent — 57 units lost to the Δυτικοί's 52, and 512 hits taken — and their
+  supply has fallen from 446 places to 231. The order the script was refused at the top is accepted,
+  and it is asked of a role the match does not otherwise contain: a Κομισάριος comes from no
+  scenario and is on nobody's production preference, so a count that goes from none to one is that
+  order and nothing else;
+- **and the AI is doing the same thing on its own.** Team 1's ceiling did not stay at 368: four power
+  plants, a second yard and its line are inside the 540, all of them bought by `AiSystem` while its
+  army was over the ceiling — see `ai-line.probe`, where the extra generation shows up in a defensive
+  line's power ledger.
+
+One check in that run fails, and it is the tool's rather than the engine's. `teams` records an
+invariant of its own — no weapon held an ally as a target, fired at one, or damaged one without a shot
+to explain it — and it reports one damage event unexplained. The two numbers beside it are what
+passed, and they are the ones the clause exists for: **0 ticks with an ally held as a target, 0 shots
+fired at an ally.** The third clause caught a lava burn instead: the hazard step runs before the
+movement step, so a unit standing in lava when it burns and stepping off it on the same tick is
+reported at the cell it is standing on *afterwards*, and `IsTerrainDamage` asks about that cell. The
+cell the script prints at the end is the lava one of them was standing on — 6 damage a tick is exactly
+`HazardSystem.LavaDamagePerTick` — and the damage lands on team 1's own column threading that field on
+its way to the enemy, which is a fact about the map and the order of the tick rather than about the
+ceiling. It is written down here rather than tuned away because a probe that hides a failing check is
+worse than one that reports a false one.

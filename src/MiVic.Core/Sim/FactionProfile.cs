@@ -155,6 +155,11 @@ public enum ArmourClass : byte
 /// The same figure for this faction's <em>machines</em> — anything with a hull, a track, a wheel
 /// or a wing, and not a man on foot. See <see cref="UnitCatalog.ArmourClassOf"/>.
 /// </param>
+/// <param name="CapacityPermille">
+/// Multiplier on the command capacity this faction's structures grant, in thousandths. Above 1 000
+/// is a power whose headquarters and yards support more units than anybody else's of the same size,
+/// below it one that supports fewer.
+/// </param>
 /// <remarks>
 /// <b>The two armour figures run in opposite directions, and that is the design.</b> Σοβιετικοί
 /// buildings are the most reinforced of the three and their machines the least; the Δυτικοί are
@@ -192,7 +197,8 @@ public readonly record struct FactionProfile(
     int PropagandaBonusRaw = 0,
     int PropagandaPenaltyRaw = 0,
     int StructureArmourPermille = 1_000,
-    int VehicleArmourPermille = 1_000)
+    int VehicleArmourPermille = 1_000,
+    int CapacityPermille = 1_000)
 {
     /// <summary>
     /// The three playable powers, ordered so that iteration is deterministic.
@@ -216,7 +222,15 @@ public readonly record struct FactionProfile(
         // hit on a structure is a large number on purpose — it has to be visible in a
         // transcript, and the compensation is on the vehicle figure beside it.
         StructureArmourPermille: 720,
-        VehicleArmourPermille: 970);
+        VehicleArmourPermille: 970,
+        // The smallest ceiling of the three, and the half of the asymmetry that is not about
+        // materials at all. A Soviet order of battle is narrow by design: four production slots,
+        // a bureau that has to prove every design before a factory may run it, and a staff that
+        // commands what it has rather than what it could raise. Fifteen per cent of places fewer
+        // than the Δυτικοί for the same four buildings is what that costs on the field — and the
+        // opening force of a standard match is 446 places, so it is also what makes the
+        // Σοβιετικοί the side that begins furthest over its own ceiling.
+        CapacityPermille: 850);
 
     public static readonly FactionProfile Chinese = new(
         Faction.Chinese,
@@ -235,7 +249,14 @@ public readonly record struct FactionProfile(
         // half of the design: the two light-tank schools arrive at the same place from opposite
         // directions, one by doctrine and one by economy.
         StructureArmourPermille: 930,
-        VehicleArmourPermille: 960);
+        VehicleArmourPermille: 960,
+        // The largest ceiling of the three, and the third axis the factions differ on: mass
+        // production stated as a number of places rather than as a price. Six production slots,
+        // units at seven tenths of the catalogue cost and a factory that builds half again as
+        // fast already say it three times; the ceiling says it where it matters, which is how
+        // much of that production can stand on the map at once. Fifteen per cent is not a lot on
+        // one building and it is a great deal on a base.
+        CapacityPermille: 1_150);
 
     public static readonly FactionProfile Western = new(
         Faction.Western,
@@ -259,7 +280,13 @@ public readonly record struct FactionProfile(
         // only a weakness if the mud can reach it, which is what <see cref="AbilityId.WeatherControl"/>
         // is for.
         StructureArmourPermille: 840,
-        VehicleArmourPermille: 850);
+        VehicleArmourPermille: 850,
+        // The ordinary ceiling, and deliberately the baseline: a Δυτικοί army is the dearest per
+        // hull and the best equipped, and neither of those is a claim about how many of them there
+        // are. Their asymmetry is paid for out of the treasury — 2 200 permille a unit against the
+        // Κινέζοι 700, and an income multiplier to match — so their places are what the other two
+        // are measured against rather than a third figure to justify.
+        CapacityPermille: 1_000);
 
     /// <summary>All playable factions in stable order.</summary>
     public static readonly FactionProfile[] All = [Soviet, Chinese, Western];

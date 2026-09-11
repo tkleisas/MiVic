@@ -70,6 +70,28 @@ using MiVic.Core.Terrain;
 /// reason <see cref="FactionProfile"/> gives: a bigger pool is a longer fight, a percentage is a
 /// different weapon.
 /// </param>
+/// <param name="SupplyCost">
+/// What one of these occupies of its team's command capacity: a whole number, and the one figure
+/// in the catalogue that is a place in the order of battle rather than a price.
+/// <para>
+/// <b>It is scaled by what the thing is, and by nothing else.</b> A man is one; an armoured
+/// vehicle is four, which is its crew and the tail that keeps it running; an aircraft is six,
+/// because an airframe is a crew, a ground crew and a fuel bowser wherever it lands; an unmanned
+/// one is half of that. The figure is deliberately faction-blind: a Δυτικοί tank costs two and a
+/// fifth the materials of a Σοβιετικοί one and takes the same four places, because quality is
+/// bought out of the treasury and not out of the ceiling. That is the same split the armour figures
+/// make — a role's own fact against its owner's philosophy — except that here the owner's figure
+/// lands on the <em>ceiling</em> rather than on the role, in
+/// <see cref="FactionProfile.CapacityPermille"/>.
+/// </para>
+/// <para>
+/// Zero is what a structure costs, and the zero is the point rather than an omission: a building is
+/// what supports an army rather than what is in it. <see cref="CapacitySystem"/> is where a
+/// structure's own grant is written down, and a role that is neither a building nor priced here
+/// would be a unit that costs no places at all — which
+/// <c>EveryUnitRoleCostsCapacity</c> refuses to let the roster contain.
+/// </para>
+/// </param>
 public readonly record struct UnitDefinition(
     UnitKind Kind,
     int MaterialCost,
@@ -98,7 +120,8 @@ public readonly record struct UnitDefinition(
     TechId RequiredTech = TechId.None,
     int FootprintRadiusCells = 0,
     bool CanHitGround = true,
-    int RoleArmourPermille = 1_000)
+    int RoleArmourPermille = 1_000,
+    int SupplyCost = 0)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -130,28 +153,34 @@ public static class UnitCatalog
     [
         // Roles. Cost, energy, ticks, health, speed, tier, produced at, building,
         // damage, range mm, cooldown ticks, can hit air, water, then movement and
-        // ground pressure — which is what the terrain layer charges for.
+        // ground pressure — which is what the terrain layer charges for — and
+        // supply, which is what the command capacity charges for. Supply is scaled
+        // by what the thing is and by nothing else: a man is one, an armoured
+        // vehicle is four, an aircraft is six. See SupplyCost for the whole rule.
         new(UnitKind.Infantry, 50, 0, 60, 100, 100, 1, UnitKind.CommandCentre, false, 8, 90_000, 10, false, 12,
-            Movement: MovementClass.Foot, GroundPressurePermille: 900),
+            Movement: MovementClass.Foot, GroundPressurePermille: 900, SupplyCost: 1),
         new(UnitKind.Tank, 150, 20, 120, 320, 400, 2, UnitKind.Factory, false, 35, 110_000, 24, false, 18,
-            Movement: MovementClass.Tracked, GroundPressurePermille: 1_000),
+            Movement: MovementClass.Tracked, GroundPressurePermille: 1_000, SupplyCost: 4),
         new(UnitKind.Artillery, 180, 30, 140, 210, 300, 2, UnitKind.Factory, false, 60, 220_000, 60, false, 22,
-            Movement: MovementClass.Tracked, GroundPressurePermille: 1_200),
+            Movement: MovementClass.Tracked, GroundPressurePermille: 1_200, SupplyCost: 4),
         new(UnitKind.AntiAir, 120, 20, 100, 190, 350, 2, UnitKind.Factory, false, 25, 150_000, 16, true, 16,
-            Movement: MovementClass.Tracked, GroundPressurePermille: 1_000),
+            Movement: MovementClass.Tracked, GroundPressurePermille: 1_000, SupplyCost: 4),
         new(UnitKind.Aircraft, 260, 60, 200, 160, 1_500, 3, UnitKind.Factory, false, 30, 100_000, 20, true, 45,
             // An airframe is not armour. It is the one machine on the roster with a role figure
             // above 1 000, and it is the reason an anti-aircraft gun is worth buying: whatever a
             // faction's philosophy says about its hulls, an aeroplane is a thin aluminium tube
-            // around an engine and takes a tenth more than the same faction's tanks do.
-            Movement: MovementClass.Air, GroundPressurePermille: 0, RoleArmourPermille: 1_100),
+            // around an engine and takes a tenth more than the same faction's tanks do. It is the
+            // heaviest thing a side can field against its ceiling for the same reason: six places
+            // is the airframe, the crew that flies it, the crew that turns it round and the fuel
+            // that gets it back.
+            Movement: MovementClass.Air, GroundPressurePermille: 0, RoleArmourPermille: 1_100, SupplyCost: 6),
 
         // Συλλέκτης: the role that makes a deposit worth anything. It has no weapon
         // and no place in a fight — its whole job is to sit on ore, which is why it
         // is the unit an opponent raids rather than shoots.
         new(UnitKind.Harvester, 200, 20, 150, 300, 260, 1, UnitKind.CommandCentre, false,
             0, 0, 0, false, 25,
-            Movement: MovementClass.Wheeled, GroundPressurePermille: 1_100),
+            Movement: MovementClass.Wheeled, GroundPressurePermille: 1_100, SupplyCost: 2),
 
         // Κατιούσα: one salvo is worth more than a howitzer's, but it lands
         // scattered over an area. Devastating against formations and buildings,
@@ -159,12 +188,13 @@ public static class UnitCatalog
         // the enemy to come to them in the open.
         new(UnitKind.RocketArtillery, 170, 25, 130, 160, 260, 2, UnitKind.Factory, false,
             95, 260_000, 90, false, 24, SplashRadiusMm: 22_000, ScatterMm: 26_000,
-            Movement: MovementClass.Wheeled, GroundPressurePermille: 1_100),
+            Movement: MovementClass.Wheeled, GroundPressurePermille: 1_100, SupplyCost: 4),
 
         // Κομισάριος: unarmed, cheap and worth killing. Steadies the morale of
         // friends around it; the initiative cost is not modelled yet.
         new(UnitKind.Commissar, 60, 0, 50, 90, 110, 1, UnitKind.CommandCentre, false,
-            WaterCost: 10, MoraleAuraRaw: 6_554, Movement: MovementClass.Foot, GroundPressurePermille: 900),
+            WaterCost: 10, MoraleAuraRaw: 6_554, Movement: MovementClass.Foot, GroundPressurePermille: 900,
+            SupplyCost: 1),
 
         // Κινέζοι automata: the faction cannot out-tech anyone, so its advanced
         // hardware is machines instead of people. No morale, no crews to feed, and
@@ -172,11 +202,11 @@ public static class UnitCatalog
         new(UnitKind.RobotInfantry, 70, 25, 70, 110, 130, 3, UnitKind.Factory, false,
             12, 95_000, 12, false, 0,
             Movement: MovementClass.Foot, GroundPressurePermille: 950,
-            IsAutomaton: true, OnlyFor: Faction.Chinese),
+            IsAutomaton: true, OnlyFor: Faction.Chinese, SupplyCost: 1),
         new(UnitKind.Drone, 90, 30, 90, 70, 1_300, 3, UnitKind.Factory, false,
             14, 80_000, 14, false, 0,
             Movement: MovementClass.Air, GroundPressurePermille: 0,
-            IsAutomaton: true, OnlyFor: Faction.Chinese),
+            IsAutomaton: true, OnlyFor: Faction.Chinese, SupplyCost: 3),
 
         // Μισθοφόρος: the best infantry in the game, and the only unit that has to
         // be paid every tick to keep fighting. Hired, not trained — so it needs no
@@ -184,23 +214,27 @@ public static class UnitCatalog
         new(UnitKind.Mercenary, 140, 0, 80, 140, 130, 1, UnitKind.CommandCentre, false,
             14, 100_000, 10, false, 14,
             Movement: MovementClass.Foot, GroundPressurePermille: 1_000,
-            OnlyFor: Faction.Western, WagePerTick: 1),
+            OnlyFor: Faction.Western, WagePerTick: 1, SupplyCost: 1),
 
         // Καταδρομέας: the Δυτικοί era-V edge. Fast, hard-hitting, fragile, and
         // invisible until it opens fire — you cannot shoot what you cannot see.
         new(UnitKind.StealthRecon, 200, 20, 120, 120, 420, 5, UnitKind.Factory, false,
             40, 120_000, 20, false, 18,
             Movement: MovementClass.Foot, GroundPressurePermille: 850,
-            OnlyFor: Faction.Western, Stealthy: true),
+            OnlyFor: Faction.Western, Stealthy: true, SupplyCost: 2),
 
         // Ηλεκτροπυροβόλο: the payoff of Ηλεκτροτεχνία, and the thing the two-tier
         // cost was decided for. It hits harder than anything else on the field and
         // a team may have at most two, counting the one in the queue — so it is a
         // capability rather than a unit type, and losing one is a campaign loss.
+        // Its six places against the ceiling are the heaviest a Σοβιετικοί side can
+        // spend on one hull, which is the other half of "a capability rather than a
+        // unit type": even an unlimited prototype would be a fraction of an army.
+        // That cap is a different rule from the ceiling — see CapacitySystem.
         new(UnitKind.ElectroPrototype, 320, 60, 260, 220, 280, 2, UnitKind.Factory, false,
             110, 240_000, 70, false, 40,
             SplashRadiusMm: 16_000, Movement: MovementClass.Tracked, GroundPressurePermille: 1_000,
-            OnlyFor: Faction.Soviet, MaxAlive: 2, RequiredTech: TechId.SovietElectro),
+            OnlyFor: Faction.Soviet, MaxAlive: 2, RequiredTech: TechId.SovietElectro, SupplyCost: 6),
 
         // Structures were unarmed until the emplacements below arrived; industry still
         // carries no gun, because a factory that could shoot would be a factory nobody
@@ -501,6 +535,27 @@ public static class UnitCatalog
     /// </summary>
     public static int FootprintRadiusCells(UnitKind kind)
         => TryGet(kind, out UnitDefinition definition) ? definition.FootprintRadiusCells : 0;
+
+    /// <summary>
+    /// What one of a role occupies of its team's command capacity: the role's own figure for
+    /// anything that fights or drives, and nothing at all for a structure.
+    /// <para>
+    /// <b>A structure is zero and that is a rule, not a hole.</b> Capacity comes from structures —
+    /// a headquarters supports an army and a gun emplacement <em>is</em> one — so a building that
+    /// was charged against the ceiling would be a building that could not be raised by a side at
+    /// its ceiling, which is the side that most needs to raise one. The refusal that keeps a team
+    /// inside its ceiling is written so that it can only ever be about a unit; see
+    /// <see cref="SimWorld.CanProduce"/>.
+    /// </para>
+    /// <para>
+    /// An unknown role answers zero, like <see cref="FootprintRadiusCells"/>: it is not a role, so
+    /// it is not a thing anybody fields.
+    /// </para>
+    /// </summary>
+    public static int SupplyCost(UnitKind kind)
+        => TryGet(kind, out UnitDefinition definition) && !definition.IsBuilding
+            ? definition.SupplyCost
+            : 0;
 
     /// <summary>True when a role is unmanned: no morale, no crews, no water.</summary>
     public static bool IsAutomaton(UnitKind kind) => TryGet(kind, out UnitDefinition definition)

@@ -63,8 +63,14 @@ public static class PowerSystem
     /// Πυροβολείο is a concrete pit with a gun in it and does not need the grid to fire,
     /// and giving it a load would have made every defensive line a power problem before
     /// the radar — the one building whose load is the point — ever reached the field.
+    /// <para>
+    /// It is public because the figure is not only this ledger's business: the same four energy a
+    /// factory occupies here is the four the economy charges its rate, and a buyer deciding whether
+    /// it can afford another yard has to ask about it — see <c>AiSystem.TryRaiseCapacity</c>, which
+    /// buys the generation before the load rather than freezing its own queue with it.
+    /// </para>
     /// </summary>
-    private static int DrawOf(UnitKind kind) => kind switch
+    public static int DrawOf(UnitKind kind) => kind switch
     {
         UnitKind.Factory => 4,
         UnitKind.DesignBureau => 3,

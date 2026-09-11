@@ -42,6 +42,13 @@ public sealed class ProbeRunner
     /// <summary>Presentation frames one <c>settle</c> runs when the script does not say.</summary>
     private const int DefaultSettleFrames = 15;
 
+    /// <summary>
+    /// Bins in a per-role tally: one per <see cref="UnitKind"/>, with room to spare, so a tally can
+    /// be indexed by the enum without asking how many roles there are — the same reason
+    /// <see cref="MaxSlot"/> is a bound rather than an exact count.
+    /// </summary>
+    private const int KindSlots = 32;
+
     /// <summary>Length of one presentation frame, in seconds. 60 Hz, so effects age as they would on screen.</summary>
     private const float SettleSeconds = 1f / 60f;
 
@@ -313,6 +320,12 @@ public sealed class ProbeRunner
             case "power":
                 Power(command);
                 break;
+            case "capacity":
+                Capacity(command);
+                break;
+            case "queue":
+                Queue(command);
+                break;
             case "detect":
                 Detect(command);
                 break;
@@ -336,7 +349,7 @@ public sealed class ProbeRunner
                     $"unknown command '{command.Verb}' — tick, settle, shot, focus, zoom, pitch, yaw, " +
                     "surfaces, attributes, units, unit, count, parts, model, visible, events, teams, bridge, " +
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
-                    "range, power, detect, exposure, armour, order, ability, expect");
+                    "range, power, capacity, queue, detect, exposure, armour, order, ability, expect");
         }
     }
 
@@ -1538,6 +1551,187 @@ public sealed class ProbeRunner
         Emit($"query:   surplus    {state.PowerSurplus} Ε per tick");
         Emit($"query:   radars     {state.RadarsLit} lit, {state.RadarsDark} dark, {state.PowerShortfall} Ε short of running them all");
         Emit($"query:   brown-out  {(state.IsDimmed ? PowerSystem.DimmedReason(state) : "none")}");
+    }
+
+    /// <summary>
+    /// One team's command capacity, as a ledger: what its structures support, what its army costs
+    /// against it, and the words the refusal uses when it is over.
+    /// <para>
+    /// A ledger rather than a number, for the reason <c>power</c> is one: "why can I not build
+    /// anything" has three answers — the team has no ceiling, its army is bigger than its ceiling,
+    /// or its army is within it and the reason is something else entirely — and only the breakdown
+    /// tells them apart. The two totals are asked of <see cref="CapacitySystem"/> itself, the same
+    /// functions the production gate and the panel ask, so a transcript cannot report a ceiling the
+    /// game does not use; the lines under them are the arithmetic that produced them, per role,
+    /// which is what lets a reader check the opening force against the ceiling by hand.
+    /// </para>
+    /// </summary>
+    private void Capacity(ProbeCommand command)
+    {
+        int team = (int)command.OptionalNumber(0, 0f, "a team number", "capacity [team]");
+
+        if ((uint)team >= SimConstants.TeamCount)
+        {
+            throw new ProbeException($"team {team} is not one of the {SimConstants.TeamCount} — capacity [team]");
+        }
+
+        SimWorld world = _host.Simulation.World;
+        Faction faction = world.FactionOfTeam(team);
+        int supply = world.ArmySupply(team);
+        int ceiling = world.CommandCapacity(team);
+        int over = world.OverCapacity(team);
+
+        Span<int> units = stackalloc int[KindSlots];
+        Span<int> structures = stackalloc int[KindSlots];
+
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId != team || (int)entity.Kind >= KindSlots)
+            {
+                continue;
+            }
+
+            if (UnitCatalog.Get(entity.Kind).IsBuilding)
+            {
+                structures[(int)entity.Kind]++;
+            }
+            else
+            {
+                units[(int)entity.Kind]++;
+            }
+        }
+
+        Emit(
+            $"query: capacity team {team} {(faction == Faction.None ? "no faction" : FactionProfile.For(faction).GreekName)} — " +
+            $"{supply} places fielded against {ceiling} supported, tick {world.Tick}");
+        Emit(
+            "query:   rule       a structure grants capacity when it supports an army rather than being one, " +
+            "and a man is one place, a vehicle four, an aircraft six — CapacitySystem and UnitCatalog.SupplyCost");
+
+        int structuresStanding = 0;
+
+        for (int kind = 0; kind < KindSlots; kind++)
+        {
+            if (structures[kind] > 0)
+            {
+                structuresStanding += structures[kind];
+            }
+        }
+
+        int permille = faction == Faction.None ? 1_000 : FactionProfile.For(faction).CapacityPermille;
+
+        Emit(
+            $"query:   ceiling    {ceiling} places from {ProbeFormat.Count(structuresStanding, "structure")} at " +
+            $"{permille}‰ of what they are worth — a building site grants nothing until it is up");
+
+        for (int kind = 0; kind < KindSlots; kind++)
+        {
+            if (structures[kind] == 0)
+            {
+                continue;
+            }
+
+            int grant = CapacitySystem.GrantOf((UnitKind)kind);
+
+            Emit(
+                $"query:      {FactionPalette.UnitLabel((UnitKind)kind),-24} ×{structures[kind],-3} " +
+                $"{grant,4} each = {grant * structures[kind],5}{(grant == 0 ? "   — it is the army, not the thing that supports it" : string.Empty)}");
+        }
+
+        int live = 0;
+
+        for (int kind = 0; kind < KindSlots; kind++)
+        {
+            live += units[kind];
+        }
+
+        Emit($"query:   supply     {supply} places fielded by {ProbeFormat.Count(live, "unit")}");
+
+        for (int kind = 0; kind < KindSlots; kind++)
+        {
+            if (units[kind] == 0)
+            {
+                continue;
+            }
+
+            int cost = UnitCatalog.SupplyCost((UnitKind)kind);
+
+            Emit($"query:      {FactionPalette.UnitLabel((UnitKind)kind),-24} ×{units[kind],-3} {cost,4} each = {cost * units[kind],5}");
+        }
+
+        Emit(over > 0
+            ? $"query:   verdict    over the ceiling by {over} — no unit may be queued until {over} places of army are gone or built for"
+            : $"query:   verdict    within the ceiling, {ceiling - supply} places to spare — units may be queued");
+        Emit($"query:   refusal    {(over > 0 ? CapacitySystem.OverCapacityReason(over) : "none")}");
+    }
+
+    /// <summary>
+    /// Puts a role on a building's production pad, down the simulation's own command queue — the
+    /// same queue a click writes to — and reports the verdict the player would be given.
+    /// <para>
+    /// It exists for the reason <c>build</c> on <c>bridge</c> and <c>structure</c> does: a refusal
+    /// cannot be inspected without asking for the thing that is refused, and the refusal is the
+    /// answer that matters here — a refused order is a sentence the player acts on, and
+    /// <c>λείπει δυναμικότητα 174</c> is a different sentence from <c>λείπουν 120 Π</c>. The verdict
+    /// and the words both come from <see cref="SimWorld.CanProduce"/>, which is the call the panel
+    /// row and the order itself are judged by.
+    /// </para>
+    /// </summary>
+    private void Queue(ProbeCommand command)
+    {
+        const string Usage = "queue <slot> <role>";
+
+        int slot = command.Whole(0, "the slot of the building that would make it", Usage, 0, MaxSlot);
+        UnitKind kind = ParseKind(command.Argument(1, "a role such as Infantry or Tank", Usage));
+
+        SimWorld world = _host.Simulation.World;
+
+        if (!world.IsAliveSlot(slot))
+        {
+            throw new ProbeException($"slot {slot} holds nothing alive — {Usage}; `structures` lists what does");
+        }
+
+        ref Entity building = ref world.GetRefBySlot(slot);
+        var id = new EntityId(slot, building.Generation);
+        Faction faction = building.Faction;
+
+        Emit(
+            $"query: queue {ProbeLabels.KindName(kind)} at slot {slot} {faction.ToString().ToLowerInvariant()}/{building.Kind}, " +
+            $"team {building.TeamId}");
+
+        if (!UnitCatalog.Get(kind).IsBuilding)
+        {
+            Emit(
+                $"query:   supply     {UnitCatalog.SupplyCost(kind)} places for this role; team {building.TeamId} fields " +
+                $"{world.ArmySupply(building.TeamId)} against {world.CommandCapacity(building.TeamId)} supported");
+        }
+
+        if (!world.CanProduce(id, kind, out string reason))
+        {
+            Emit($"query:   verdict    refused — {reason}");
+            Emit($"query:   player     {FactionPalette.UnitLabel(kind)}: {reason}.");
+            return;
+        }
+
+        int ticks = UnitCatalog.BuildTicks(faction, kind);
+
+        Emit(
+            $"query:   verdict    accepted — {UnitCatalog.MaterialCost(faction, kind)} Π, " +
+            $"{UnitCatalog.EnergyCost(faction, kind)} Ε, {UnitCatalog.WaterCost(faction, kind)} Ν, " +
+            $"{ProbeFormat.Ticks(ticks)} on the pad");
+
+        world.Enqueue(SimCommand.QueueUnit(id, kind, world.Tick + 1, building.TeamId));
+
+        Emit(
+            $"ok: {FactionPalette.UnitLabel(kind)} ordered at slot {slot} for team {building.TeamId}, executing on tick " +
+            $"{world.Tick + 1} — `tick 1` starts it and `tick {ticks}` finishes it");
     }
 
     /// <summary>

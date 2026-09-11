@@ -5717,35 +5717,53 @@ public sealed partial class MiVicGame : XnaGame
             return "FAIL: no player command centre";
         }
 
-        // Pick something the team can actually afford. The check used to top up
-        // the stockpile to force the issue, which silently broke mission replays:
-        // a direct resource write is not a command, so a replay could not
-        // reproduce it.
+        // Pick a row the panel would actually offer, which is the question the row itself asks: may
+        // this building put that role on its pad *right now*. It used to be "a role the team can
+        // afford", and that is no longer the whole answer — a standard skirmish opens with every side
+        // over its command capacity, so the first thing a player meets is a row refused for a reason
+        // that has nothing to do with the purse. Asking the gate is what lets this check report the
+        // rule instead of calling the panel broken.
+        //
+        // The check used to top up the stockpile to force the issue, which silently broke mission
+        // replays: a direct resource write is not a command, so a replay could not reproduce it.
         UnitKind affordable = UnitKind.None;
+        string refusal = "nothing to queue";
 
-        foreach (UnitDefinition definition in UnitCatalog.All)
+        foreach (UnitDefinition definition in UnitCatalog.BuildableBy(world.FactionOfTeam(PlayerTeam)))
         {
-            if (definition.IsBuilding || definition.RequiredTechTier > world.Team(PlayerTeam).TechTier)
+            if (definition.IsBuilding || definition.ProducedAt != UnitKind.CommandCentre)
             {
                 continue;
             }
 
-            int cost = definition.MaterialCost * FactionProfile.For(world.FactionOfTeam(PlayerTeam)).CostPermille / 1_000;
-
-            if (world.Team(PlayerTeam).Materials >= cost)
+            if (world.CanProduce(new EntityId(slot, world.GetRefBySlot(slot).Generation), definition.Kind, out refusal))
             {
                 affordable = definition.Kind;
                 break;
             }
         }
 
-        if (affordable == UnitKind.None)
-        {
-            return "SKIPPED (nothing affordable)";
-        }
-
         ref Entity building = ref world.GetRefBySlot(slot);
         _selection.Select(new EntityId(slot, building.Generation));
+
+        if (affordable == UnitKind.None)
+        {
+            // Every unit row is refused, and in the standard skirmish that is the rule rather than a
+            // fault: the side opens with more army than its structures support. The command path is
+            // still checked, through the row that survives it — a structure row is never refused for
+            // want of capacity, because capacity is what structures are for — so pressing one must
+            // arm a placement. Leaving the panel armed would change what every later check sees, so
+            // it is disarmed again here.
+            ApplyHudCommand(new HudCommand(HudCommandKind.PlaceStructure, UnitKind.Factory));
+
+            bool armed = _pendingStructure != UnitKind.None;
+            _pendingStructure = UnitKind.None;
+            _selection.Clear();
+
+            return armed
+                ? $"OK (no unit row is offered — {refusal}; the structure row armed a placement)"
+                : $"FAIL (no unit row is offered — {refusal}, and the structure row did not arm one)";
+        }
 
         int before = world.Team(PlayerTeam).Materials;
         ApplyHudCommand(new HudCommand(HudCommandKind.QueueUnit, affordable));

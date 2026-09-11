@@ -1,0 +1,112 @@
+# Q: what does a side that is over its command capacity get refused, what is it still allowed to
+#    build, and what brings production back?
+#
+#   MiVic.Game.exe --probe tools/probe/capacity.probe --probe-out artifacts/probe/capacity.txt
+#
+# The default skirmish, unmodified: three bases, 166 units a side, teams 1 and 2 run by AiSystem and
+# nobody playing team 0. Nothing in this script places a unit or a structure except the orders
+# written out in full below, and every one of them goes through the simulation's own command queue —
+# the same queue a click writes to, judged by the same rule the build panel asks. That is the
+# question: the ceiling is a sum over what a side's structures support, so what refuses a unit is
+# the ceiling and not the treasury, and a ceiling that refuses units must never refuse the building
+# that would raise it.
+#
+# The three answers are in this order: a refusal that names the rule and how far over the side is, a
+# structure ordered and raised while the side is over (the deadlock guard), and the same unit order
+# accepted once the army has been spent — which is the rule the whole feature was decided around.
+
+# --- what the match opens with -----------------------------------------------------------------
+# 446 places a side against the 272, 320 and 368 that four buildings support. The formation is 82
+# infantry at one place each, 42 tanks at four, 14 artillery at four, 14 anti-aircraft mounts at four
+# and 14 aircraft at six: 82 + 168 + 56 + 56 + 84 = 446. So every side opens with a mobilisation its
+# industry cannot sustain, and the Σοβιετικοί — the player's side in this match — are the furthest
+# over of the three.
+tick 2
+capacity 0
+capacity 1
+capacity 2
+
+# --- a unit is refused, and the refusal names the rule ------------------------------------------
+# Πεζικό is one place and Κομισάριος is one place, and neither refusal is about the purse: this side
+# has thousands of materials and one of the two things it owns is a structure that supports an army.
+# The words are the simulation's own — the same sentence the build panel prints beside a greyed-out
+# row, and the same sentence the probe's own `queue` refuses with.
+queue 0 Infantry
+queue 0 Commissar
+queue 170 Commissar
+
+# --- the same numbers on the screen -------------------------------------------------------------
+# The status panel draws every side's army against the ceiling its structures support, and says so
+# when a side is over — in the warning colour, with the sentence a refused order raises, so a player
+# can see why their factories are idle without clicking anything. The camera is on the Σοβιετικοί
+# base, which is where the player starts and what the numbers above are.
+hud on
+focus -248 -117
+zoom 300
+pitch -0.5
+settle
+shot artifacts/probe/capacity-hud.png
+hud off
+
+# --- a structure is not refused, and that is the deadlock guard ---------------------------------
+# A side over its ceiling that could not raise a building could never raise the building that lifts
+# its ceiling, and a stalemate is exactly the state where nobody is dying and nothing else would
+# bring the army back under. So the ceiling clause asks whether the role is a building first, and the
+# answer for this one is that the question does not apply: ordered through the placement rule a click
+# is judged by, and standing four hundred ticks later.
+structure Factory -248.4 -89.1 0 build
+tick 400
+structures 0
+capacity 0
+
+# --- and after the army has been spent the gate opens -------------------------------------------
+# The Κινέζοι are the side whose army is actually being spent: they and the Δυτικοί are the two the
+# computer plays, and they are the two that meet. Fourteen hundred ticks of that has taken their
+# supply from 446 places to 206 — below the 368 their four starting buildings support, never mind the
+# five hundred-odd they support by now — and the same order the script was refused at the top is now
+# accepted.
+#
+# What follows is the production itself rather than a promise of it, and it is asked of a role the
+# match does not otherwise contain: a Κομισάριος is made at a command centre, comes from no scenario,
+# and is on nobody's production preference, so a count that goes from none to one is this order and
+# nothing else. The `teams` ledger at the end is why the supply fell: 428 hits taken and 62 units lost
+# by team 1 against 202 and 31 by team 2, with team 0 — the player's side, which nobody is playing
+# and nobody is shooting at — untouched at 166 units.
+tick 1000
+capacity 1
+count Commissar
+queue 170 Commissar
+tick 60
+count Commissar
+teams
+
+# --- one check this run fails, and it is the tool's rather than the engine's ---------------------
+# `teams` records an invariant of its own — no weapon held an ally as a target, fired at one, or
+# damaged one without a shot to explain it — and on this run it reports one damage event
+# unexplained. The two numbers beside it say what actually passed: nothing held an ally as a target
+# and nothing fired at one. What the third clause caught is a lava burn: the hazard step runs before
+# the movement step, so a unit that is standing in lava when it burns and steps off it on the same
+# tick is reported at the cell it is standing on *afterwards*, which is rock, and the ledger's
+# IsTerrainDamage asks about that cell. The cell below is one of the lava fields the burns came from,
+# and 6 damage a tick is exactly HazardSystem.LavaDamagePerTick: an infantryman reported at
+# (84, -17) m was standing on the lava at (93, -17) m the tick before, and a tank reported at
+# (112, -18) m was on the lava beside it. Nothing about the ceiling is in this — units of team 1
+# thread that field on the way to the enemy whatever the ceiling says, and stepping off the lava on
+# the tick it burns is a fact about the map and the order of the tick.
+attributes 93 -17
+
+# --- the ledger of measurements ------------------------------------------------------------------
+# Written down as the numbers they were read as, so that the day a ceiling stops being a sum over
+# buildings, or a refusal stops naming the rule, this script fails instead of quietly reporting
+# something else.
+expect "the player's ceiling at the opening" 272 272 0
+expect "the player's supply at the opening" 446 446 0
+expect "what the player is over it by" 174 174 0
+expect "the Κινέζοι ceiling at the opening" 368 368 0
+expect "what the Κινέζοι are over it by" 78 78 0
+expect "the Δυτικοί ceiling at the opening" 320 320 0
+expect "what the Δυτικοί are over it by" 126 126 0
+expect "the ceiling after the yard the player raised while over it" 323 323 0
+expect "the Κινέζοι supply after the army was spent" 206 206 0
+expect "the places the Κινέζοι have to spare once it was" 300 300 0
+

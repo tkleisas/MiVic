@@ -15,8 +15,9 @@ namespace MiVic.Core.Sim;
 /// <para>
 /// It plays a simple but complete loop: keep the power on, put up the production
 /// buildings it is missing, raise a defensive line and choose where it stands, spend
-/// spare materials on research, keep the army growing, gather it, then push once it is
-/// large enough — and only at a place its force can answer.
+/// spare materials on research, lift a ceiling its army is over, keep the army growing,
+/// gather it, then push once it is large enough — and only at a place its force can
+/// answer.
 /// </para>
 /// <para>
 /// <b>The line is placed, not offset.</b> Emplacements and radar stations are the one
@@ -56,6 +57,19 @@ public static class AiSystem
     /// direction is a base whose other flank is free.
     /// </summary>
     public const int GunEmplacements = 2;
+
+    /// <summary>
+    /// Yards the AI will own before it starts lifting a ceiling with headquarters instead: the one
+    /// the scenario starts it with, plus two.
+    /// </summary>
+    public const int CapacityYards = 3;
+
+    /// <summary>
+    /// Headquarters the AI will own before it stops buying ceiling altogether. Two, because the
+    /// second one is the largest grant on the roster and the third would be a base with nowhere to
+    /// put its army.
+    /// </summary>
+    public const int CapacityHeadquarters = 2;
 
     /// <summary>
     /// Extra units the AI wants for every enemy gun that can already shoot the position it is
@@ -222,14 +236,87 @@ public static class AiSystem
             }
         }
 
-        // 5. Keep the army growing.
+        // 5. The ceiling, when the army is over it.
+        //
+        // A team over its command capacity cannot field a single unit — the gate is in the queue
+        // path, so it refuses the AI exactly as it refuses a player — and the only thing that lifts
+        // the ceiling is another structure that supports an army rather than being one. So the
+        // ceiling is bought rather than stalled under. It sits here rather than at the head of the
+        // loop because it is the one purchase that does not have to be made on the tick it is
+        // needed: a line that is not up yet is a base that can be overrun this minute, while a yard
+        // that is not up yet is production that resumes a little later. What it must not do is be
+        // starved by the steps below it — a capped team that never reaches this line is a team
+        // producing nothing for the rest of the match.
+        if (CapacitySystem.IsOver(world, team) && TryRaiseCapacity(world, team, faction))
+        {
+            return;
+        }
+
+        // 6. Keep the army growing.
         if (CountCombatUnits(world, team) < TargetArmySize)
         {
             ProduceArmy(world, team, faction);
         }
 
-        // 6. Gather, defend, or push.
+        // 7. Gather, defend, or push.
         CommandArmy(world, team, faction);
+    }
+
+    /// <summary>
+    /// Lifts the ceiling the army is over, and says whether a structure was ordered.
+    /// <para>
+    /// <b>A yard first, then a second headquarters.</b> A factory is the cheapest ceiling on the
+    /// roster that the AI would have wanted anyway — it supports an army and it produces one, and
+    /// at sixty places it is the second-largest grant in the game — so it is what a capped AI adds
+    /// while it is short of yards. Once it has enough of them the answer is the largest grant there
+    /// is, a second headquarters at two hundred, which is what actually closes an opening force's
+    /// gap; and a base that owns three yards and two headquarters has a ceiling that attrition, not
+    /// industry, will settle.
+    /// </para>
+    /// <para>
+    /// Both bounds are the point rather than tidiness. Being over the ceiling is not a state the AI
+    /// has to leave in a hurry — nothing is lost by sitting under it for a while, since the army is
+    /// already on the map — so the one failure this step could have is an AI that decides to pour
+    /// every material it earns into concrete for the rest of the match. Counting what is queued as
+    /// well as what is standing is what stops a second order going out every second before the
+    /// first building is up.
+    /// </para>
+    /// </summary>
+    private static bool TryRaiseCapacity(SimWorld world, int team, Faction faction)
+    {
+        if (!TryFindBuilding(world, team, UnitKind.CommandCentre, out EntityId headquarters, out _))
+        {
+            return false;
+        }
+
+        if (CountStructures(world, team, UnitKind.Factory) < CapacityYards)
+        {
+            // <b>A yard is a load before it is a ceiling, and a base that is short of power stops
+            // building altogether.</b> Production halts when a negative rate empties the stockpile,
+            // and the power plant that would fix it is then sitting in the queue the deficit has
+            // just stopped — so a ceiling bought with load is a ceiling that can take the whole base
+            // down with it, which is the opposite of what it is for. What the AI therefore asks is
+            // not "can I run one more yard" but "would I still be running with one power plant shot
+            // away", which is the state a raid leaves behind and the state nothing here can climb
+            // out of. The figure is this faction's own plant, income and all, so a Δυτικοί base
+            // demands the margin its twenty-five-energy plant justifies rather than the ten a
+            // Σοβιετικοί one gives.
+            FactionProfile profile = FactionProfile.For(faction);
+            int incomePermille = profile.IncomePermille > 0 ? profile.IncomePermille : 1_000;
+            int plantOutput = (EconomySystem.PowerPlantEnergy * incomePermille) / 1_000;
+
+            if (world.Team(team).EnergyPerTick < PowerSystem.DrawOf(UnitKind.Factory) + plantOutput)
+            {
+                return TryQueuePowerPlant(world, team);
+            }
+
+            return !IsQueued(world, team, UnitKind.Factory) &&
+                   TryQueue(world, headquarters, faction, UnitKind.Factory, team);
+        }
+
+        return CountStructures(world, team, UnitKind.CommandCentre) < CapacityHeadquarters &&
+               !IsQueued(world, team, UnitKind.CommandCentre) &&
+               TryQueue(world, headquarters, faction, UnitKind.CommandCentre, team);
     }
 
     /// <summary>
@@ -937,12 +1024,21 @@ public static class AiSystem
     /// </summary>
     private static bool IsFriendly(SimWorld world, int team, int other) => world.AreAllied(team, other);
 
-    /// <summary>Queues a unit if the team can afford it.</summary>
+    /// <summary>
+    /// Queues a unit if the team can afford it and the production rule allows it.
+    /// <para>
+    /// The rule is <see cref="SimWorld.CanProduce"/>'s, which is the same one the panel row and the
+    /// click are judged by — so the command capacity reaches the AI without a clause of its own
+    /// here, and an AI over its ceiling is refused a unit exactly as a player is. What this adds is
+    /// only the AI's own purse-keeping: the reserve it keeps back, so that a unit is never bought
+    /// with the material its next building was going to be paid for with.
+    /// </para>
+    /// </summary>
     private static bool TryQueue(SimWorld world, EntityId building, Faction faction, UnitKind kind, int team)
     {
         TeamState state = world.Team(team);
 
-        if (!world.CanBuild(team, kind))
+        if (!world.CanProduce(building, kind, out _))
         {
             return false;
         }

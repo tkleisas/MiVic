@@ -121,6 +121,40 @@ forces shrink. The second is a real change to the skirmish and the campaign.
 And the AI has to build capacity when it is capped, or it stalls at its limit producing
 nothing.
 
+**Built — the ceiling, and not the power half below.** The opening does not shrink and production is
+gated instead: a side over its ceiling may field no unit at all, and may keep building, so the
+mobilisation every match opens with becomes a supply-limited war as it is spent. The figures, and the
+arithmetic that puts the standard match over them from tick one:
+
+| a unit costs | places | |
+|---|---|---|
+| a man | 1 | Πεζικό, Κομισάριος, Ρομποτικό Πεζικό, Μισθοφόρος |
+| an armoured vehicle | 4 | Άρμα, Πυροβολικό, Αντιαεροπορικό, Κατιούσα; a Συλλέκτης is 2 |
+| an aircraft | 6 | a Ντρόουν is 3, a Καταδρομέας 2, a Ηλεκτροπυροβόλο 6 |
+| a structure | 0 | a building is what supports an army rather than what is in it |
+
+| a building supports | places | |
+|---|---|---|
+| Κέντρο Διοίκησης | 200 | the headquarters: the only structure whose whole purpose is an army |
+| Εργοστάσιο, Πυρηνικός Σταθμός | 60 | a yard supports the armour it makes; a reactor is the largest industrial site outside a headquarters |
+| Σταθμός Παραγωγής, Γραφείο Σχεδιασμού | 30 | they run a base rather than an army |
+| Πυροβολείο, Αντιαεροπορικό Πυροβολείο, Σταθμός Ραντάρ | 0 | a gun is not a headquarters and a radar is not either |
+
+The four buildings a skirmish starts every side with are worth 320, which is **272 for the
+Σοβιετικοί** (850 ‰), **320 for the Δυτικοί** (1 000 ‰) and **368 for the Κινέζοι** (1 150 ‰) — mass
+production stated as a number of places, which is the third axis the factions differ on. The opening
+force is 82 infantry, 42 tanks, 14 artillery, 14 anti-aircraft mounts and 14 aircraft: 82 + 168 + 56 +
+56 + 84 = **446 places**, so every side opens over its own ceiling by 174, 126 or 78 and the rule is
+in force before a shot is fired. Nothing new is hashed: the ceiling is a sum over the buildings a team
+owns, asked at the moment it is asked, exactly as the power ledger is derived every tick.
+`tools/probe/capacity.probe` is the transcript — refused with `λείπει δυναμικότητα 174`, a yard
+ordered and raised *while* over the ceiling (272 → 323), and the same order accepted once the army has
+been spent (446 → 231 places) — and `CapacityTests` pins each clause, including the one that matters:
+**a side over its ceiling can still raise its ceiling.** The AI buys the same ceiling, and buys the
+generation before the load: a base whose energy rate goes negative stops building altogether, and the
+power plant queued to fix it is in the queue the deficit has just stopped, so a yard is only ordered
+when the rate would still be sound with a plant shot away.
+
 **Power.** Energy exists as a stockpile that accrues and is spent on construction, with
 power plants and a nuclear plant generating it. There is no persistent *draw*: nothing a
 structure owns costs anything to keep running. The proposal is a per-structure draw, with

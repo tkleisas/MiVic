@@ -499,7 +499,25 @@ public sealed class GameHud
             ImGui.SameLine(150f);
             ImGui.Text($"{count,4}");
 
-            ImGui.SameLine(210f);
+            // The count on its own says nothing about what it costs, and a side that is over its
+            // command capacity is a side whose factories are standing idle — a fact the player has
+            // to be able to read off the panel without clicking anything. So the ceiling is drawn
+            // beside the count it limits, in the same words a refused order is refused with, and
+            // the whole row turns to the warning colour when the side is over it.
+            int supply = world.ArmySupply(team);
+            int ceiling = world.CommandCapacity(team);
+            int over = world.OverCapacity(team);
+
+            ImGui.SameLine(205f);
+            ImGui.TextColored(over > 0 ? WarningColor : MutedColor, $"Δύναμη {supply}/{ceiling}");
+
+            if (over > 0)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(WarningColor, CapacitySystem.OverCapacityReason(over));
+            }
+
+            ImGui.SameLine(470f);
             ImGui.TextColored(MutedColor, $"Τεχνολογία {profile.TechCeiling}   Παραγωγή {profile.ProductionSlots}");
 
             int bonus = world.Team(team).BonusSlots;
@@ -793,7 +811,13 @@ public sealed class GameHud
                     int cost = (UnitCatalog.MaterialCost(building.Faction, definition.Kind) * SimWorld.PrototypeCostPermille) / 1_000;
                     string label = $"Πρωτότυπο: {FactionPalette.UnitLabel(definition.Kind),-16} {cost,4}Π";
 
-                    ImGui.BeginDisabled(team.IsPrototyping || team.Materials < cost);
+                    // A completed run delivers the prototype as a real unit, so the ceiling
+                    // applies to it as it applies to a factory queue — and a row that is disabled
+                    // without saying why is the silent refusal this panel exists to avoid. The
+                    // words are the simulation's own, the same ones a refused queue raises.
+                    int over = world.OverCapacity(building.TeamId);
+
+                    ImGui.BeginDisabled(team.IsPrototyping || team.Materials < cost || over > 0);
 
                     if (ImGui.Button(label))
                     {
@@ -801,6 +825,12 @@ public sealed class GameHud
                     }
 
                     ImGui.EndDisabled();
+
+                    if (over > 0)
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(MutedColor, CapacitySystem.OverCapacityReason(over));
+                    }
                 }
 
                 if (!any && !team.IsPrototyping)
@@ -899,7 +929,6 @@ public sealed class GameHud
         }
 
         ref Entity building = ref world.GetRefBySlot(slot);
-        TeamState team = world.Team(building.TeamId);
 
         foreach (UnitDefinition definition in UnitCatalog.BuildableBy(building.Faction))
         {
@@ -929,40 +958,24 @@ public sealed class GameHud
                 continue;
             }
 
-            bool unlocked = UnitCatalog.IsUnlocked(building.Faction, definition.Kind, team.TechTier, team.TechMask);
-            uint bit = 1u << (int)definition.Kind;
-            bool licensed = (team.LicenceMask & bit) != 0;
-
-            // Σοβιετικοί factories may only build a design the bureau has proven.
-            bool approved = licensed
-                || building.Faction != Faction.Soviet
-                || definition.ProducedAt != UnitKind.Factory
-                || (team.ApprovedMask & bit) != 0;
-
-            // A capped design is a capability rather than a unit type.
-            bool capped = definition.MaxAlive > 0 && world.CountOf(building.TeamId, definition.Kind) >= definition.MaxAlive;
-
             int materials = UnitCatalog.MaterialCost(building.Faction, definition.Kind);
             int energy = UnitCatalog.EnergyCost(building.Faction, definition.Kind);
             int water = UnitCatalog.WaterCost(building.Faction, definition.Kind);
             int ticks = UnitCatalog.BuildTicks(building.Faction, definition.Kind);
-            bool affordable = team.Materials >= materials && team.Energy >= energy && team.Water >= water;
 
             string label =
                 $"{FactionPalette.UnitLabel(definition.Kind),-20} {materials,4}Π {energy,3}Ε {water,3}Ν {ticks / 20f,5:0.0}δ";
 
-            string reason = !unlocked
-                ? definition.RequiredTech != TechId.None && !TechCatalog.IsCompleted(team.TechMask, definition.RequiredTech)
-                    ? "χρειάζεται έρευνα"
-                    : $"χρειάζεται τεχνολογία {definition.RequiredTechTier}"
-                : capped ? $"όριο {definition.MaxAlive}"
-                : !approved ? "χρειάζεται πρωτότυπο στο σχεδιαστικό γραφείο"
-                : affordable ? string.Empty
-                : team.Materials < materials ? $"λείπουν {materials - team.Materials} Π"
-                : team.Energy < energy ? $"λείπουν {energy - team.Energy} Ε"
-                : $"λείπουν {water - team.Water} Ν";
+            // The verdict and the words are the simulation's, from the same call the order itself
+            // will be answered by: whether this building may put that role on its pad, and why not
+            // when it may not. It is the question the panel used to work out for itself — unlocked,
+            // then a licence, then the Σοβιετικοί prototype rule, then a role's own cap, then the
+            // purse — and a second copy of an answer is a copy that drifts. The command capacity is
+            // the newest clause in that list and it joined it here for free, which is the whole
+            // reason the question lives in one place.
+            bool canQueue = world.CanProduce(new EntityId(slot, building.Generation), definition.Kind, out string reason);
 
-            options.Add(new BuildOption(definition.Kind, label, unlocked && approved && !capped && affordable, reason));
+            options.Add(new BuildOption(definition.Kind, label, canQueue, reason));
         }
 
         return options;

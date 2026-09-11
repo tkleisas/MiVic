@@ -11,10 +11,15 @@
 # `range` says whether the radar gave the guns the reach they were bought for, and `unit` says
 # whether an emplacement is firing on its own.
 #
-# The line is expected in this order: a Πυροβολείο from about tick 40 (120 ticks of work for the
+# The line is expected in this order: a Πυροβολείo from about tick 40 (120 ticks of work for the
 # Κινέζοι), then the Σταθμός Ραντάρ that gives it its 200 m, then a second gun, then the
 # Αντιαεροπορικό Πυροβολείο once the era that builds aircraft has been researched. The slots are this
-# run's own and are stable because a probe is deterministic: guns 510 and 513, radar 511, anti-air 427.
+# run's own and are stable because a probe is deterministic: guns 510 and 513 and the radar 511 are
+# the three the line raises first, and the anti-aircraft emplacement, which comes later and lands in
+# whichever slot a casualty has freed by then, is 190. It used to be 427: the AI now spends on the
+# generation and the yards that lift a command ceiling its opening army is over, so more structures
+# and more material move through the world before that emplacement is ordered, and the slot it lands
+# in moved with them. See `capacity.probe` for that half of the AI's loop.
 
 # --- what the AI started with ------------------------------------------------------------------
 tick 2
@@ -68,7 +73,7 @@ events 12
 tick 600
 structures 1
 power 1
-range 427
+range 190
 
 # --- the ledger after all of it, which is the failure mode this feature can create ---------------
 # Generation against load, and the dish still on the air: an AI that raises a radar its grid cannot
