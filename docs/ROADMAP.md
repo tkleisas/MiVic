@@ -660,6 +660,25 @@ are still C# today), an edit list that survives load, re-derivation after a terr
 UI, and a test-play loop that renders the author's mission and reports the validators to them. The
 test-play half is nearly free already: `--mission <id>`, the probe, and the replay round trip cover it.
 
+**Answered: the environment is the authority, and the flow follows from it.** No buildings on water, no
+units on lava, no base on ground nothing can be built from — the editor does not get its own opinion
+about any of that, it asks the same functions the game asks. And because the ground is authoritative,
+authoring runs in the order the world resolves in: **shape the terrain first, then place on it.** An
+island is drawn, and then buildings go on the island because the island is what makes them legal.
+
+That settles the re-derive question in the direction that keeps the guarantees. The passes are re-run
+from the edited ground, so a raised ridge really is a ridge, a painted wood really is woodland, and the
+fords that keep the map connected are carved from the terrain that exists rather than the terrain that
+used to. What the editor owes the author in exchange is *what changed*: which placements the edit
+invalidated, and why.
+
+**And the AI plays a side that is not an army.** A mission can have a side whose purpose is to carry
+something somewhere rather than to take ground — which is the same side the victory rule does not judge
+— and yes, the computer should be able to play it. Today its decision cycle bails when a side owns no
+building, so such a side does nothing at all. What it needs is the other mode: a side with no industry
+follows its **objectives**, moving what it has toward the place the mission says matters, rather than
+trying to build. Small, and the objective data to drive it already exists.
+
 ## 11. Checkpoints, rewinding, and a map you can read
 
 Two tools for understanding what a match is doing, and they are the same tool from two sides: one moves
