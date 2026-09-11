@@ -9,12 +9,15 @@ namespace MiVic.Core.Tests.Campaign;
 /// <summary>
 /// The mission's script: a condition and its actions, evaluated on the tick, in list order.
 /// <para>
-/// Three things are under test here and they are not the same thing. The first is that a trigger
+/// Four things are under test here and they are not the same thing. The first is that a trigger
 /// fires <em>once</em> — the memory, and the reason it is state. The second is that every
 /// condition and every action does what its name says, because a vocabulary that is half-wired is
 /// worse than a smaller one. The third is the failure this project keeps meeting: a trigger that
 /// is authored and can never fire, which the counting test on the shipped mission and the script
-/// validation both exist to catch.
+/// validation both exist to catch. The fourth is that failure facing the other way — a condition
+/// that is already true of the world the mission opens in, so the trigger fires on the first tick
+/// whatever the player does — which the same validation asks of every condition and which a
+/// trigger that means it declares with <c>DependsOnOpeningWorld</c>.
 /// </para>
 /// </summary>
 public sealed class TriggerTests
@@ -137,6 +140,49 @@ public sealed class TriggerTests
         }
 
         return slots;
+    }
+
+    /// <summary>Where the first mobile unit of a team stands, asked of a world rather than assumed.</summary>
+    private static WorldPos FirstUnit(SimWorld world, int team)
+    {
+        for (int slot = 0; slot < world.Capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId == team && !UnitCatalog.Get(entity.Kind).IsBuilding)
+            {
+                return entity.Position;
+            }
+        }
+
+        throw new InvalidOperationException($"Team {team} has no units to stand anywhere.");
+    }
+
+    /// <summary>
+    /// A mission of this repository's own layout with a script written for the test, and the
+    /// objectives that mission already ships.
+    /// <para>
+    /// The objectives are the shipped ones deliberately: a scratch mission with a scripted
+    /// objective nothing completes is refused by the validator for a different reason, and a test
+    /// about one complaint must not have a second one standing next to it.
+    /// </para>
+    /// </summary>
+    private static MissionDefinition ScriptedMission(params TriggerDefinition[] triggers)
+        => MissionCatalog.Require("m1_bridgehead") with { Triggers = triggers };
+
+    private static string Joined(IReadOnlyList<string> problems) => string.Join(" | ", problems);
+
+    /// <summary>The same mission with one trigger's declaration of the opening world taken away.</summary>
+    private static MissionDefinition Unowned(MissionDefinition mission, int trigger)
+    {
+        var triggers = new List<TriggerDefinition>(mission.Triggers);
+        triggers[trigger] = triggers[trigger] with { DependsOnOpeningWorld = false };
+        return mission with { Triggers = triggers };
     }
 
     // ---------------------------------------------------------------- the memory
@@ -385,59 +431,108 @@ public sealed class TriggerTests
                 TriggerConditionKind.UnitInArea, Team: 0, Count: 1, CentreX: 250_000, CentreZ: 250_000, RadiusMm: 10_000)));
     }
 
+    /// <summary>
+    /// <b>The past-tense half of the pair: "they have lost N structures".</b> It reads the ledger
+    /// the DestroyStructures objective reads, so a structure the enemy rebuilds does not undo the
+    /// loss — and because a ledger starts at zero, this is the counting condition that cannot be
+    /// true of the world the mission opens in, and a trigger waiting on it cannot fire before
+    /// something has been destroyed.
+    /// </summary>
     [Fact]
-    public void StructureDestroyedCountsLossesAndSurvivesARebuild()
+    public void StructuresLostCountsLossesAndSurvivesARebuild()
     {
-        SimWorld world = Scripted();
-        var condition = new TriggerCondition(TriggerConditionKind.StructureDestroyed, Team: 2, Count: 2);
+        var condition = new TriggerCondition(TriggerConditionKind.StructuresLost, Team: 2, Count: 2);
 
+        SimWorld world = Scripted(new TriggerDefinition(
+            "attrition",
+            condition,
+            [new TriggerAction(TriggerActionKind.Message, GreekText: "Δύο θέσεις έπεσαν.")]));
+
+        // Nothing has been lost of the opening world, so the trigger is still waiting.
+        Assert.Equal(0, world.TeamRef(2).StructuresLost);
         Assert.False(TriggerSystem.Satisfied(world, condition));
+
+        world.RunTicks(5);
+        Assert.False(world.TriggerStates[0].HasFired);
 
         List<int> enemy = Structures(world, 2, UnitKind.CommandCentre);
         Assert.Single(enemy);
         world.Despawn(new EntityId(enemy[0], world.GetRefBySlot(enemy[0]).Generation));
+        world.RunTicks(1);
 
-        Assert.False(TriggerSystem.Satisfied(world, condition));
+        // One fallen of two asked: the ledger has moved and the condition has not been satisfied.
         Assert.Equal(1, world.TeamRef(2).StructuresLost);
+        Assert.False(TriggerSystem.Satisfied(world, condition));
+        Assert.False(world.TriggerStates[0].HasFired);
 
         // A structure the enemy raises afterwards does not undo the loss, which is why the
-        // condition reads a ledger rather than comparing a count of what is standing.
+        // condition reads a ledger rather than comparing a count of what is standing — and the
+        // ledger standing still is what keeps the trigger waiting.
         world.Spawn(Faction.Western, 2, UnitKind.CommandCentre, new WorldPos(0, 0, 250_000), default, 5_000);
+        world.RunTicks(1);
+
         Assert.Equal(1, world.CountStructures(2, UnitKind.CommandCentre));
         Assert.Equal(1, world.TeamRef(2).StructuresLost);
+        Assert.False(world.TriggerStates[0].HasFired);
 
-        world.Despawn(new EntityId(
-            Structures(world, 2, UnitKind.CommandCentre)[^1],
-            world.GetRefBySlot(Structures(world, 2, UnitKind.CommandCentre)[^1]).Generation));
+        List<int> rebuilt = Structures(world, 2, UnitKind.CommandCentre);
+        Assert.Single(rebuilt);
+        world.Despawn(new EntityId(rebuilt[0], world.GetRefBySlot(rebuilt[0]).Generation));
+        world.RunTicks(1);
 
         Assert.True(TriggerSystem.Satisfied(world, condition));
+        Assert.True(world.TriggerStates[0].HasFired);
+        Assert.Equal(world.Tick, world.TriggerStates[0].FiredTick);
     }
 
+    /// <summary>
+    /// <b>The present-tense half of the pair: "fewer than N stand now".</b> It counts what is on
+    /// the map rather than what has been lost, which is what lets a mission say "the ambush is
+    /// nearly broken" — and it is also the condition that can be true of the world the mission
+    /// opens in, because a side that starts with one structure is already below a threshold of
+    /// two.
+    /// </summary>
     [Fact]
-    public void StructuresBelowCountsWhatIsStandingAndCanBeNarrowedToOneRole()
+    public void StructuresStandingBelowCountsWhatIsStandingNowAndCanBeNarrowedToOneRole()
     {
-        SimWorld world = Scripted();
+        var condition = new TriggerCondition(TriggerConditionKind.StructuresStandingBelow, Team: 2, Count: 4);
 
-        int factories = world.CountStructures(2, UnitKind.Factory);
-        Assert.Equal(1, factories);
+        SimWorld world = Scripted(new TriggerDefinition(
+            "nearly-done",
+            condition,
+            [new TriggerAction(TriggerActionKind.Message, GreekText: "Τρεις θέσεις έμειναν.")]));
 
-        // Every structure the team has: the enemy's base, which is four buildings.
+        // Every structure the team has: the enemy's base, which is four buildings — so "fewer than
+        // four stand" is not true of the opening world and the trigger waits.
         Assert.Equal(4, world.CountStructures(2, UnitKind.None));
+        Assert.False(TriggerSystem.Satisfied(world, condition));
+
+        world.RunTicks(5);
+        Assert.False(world.TriggerStates[0].HasFired);
+        Assert.Equal(1, world.CountStructures(2, UnitKind.Factory));
+
+        // Narrowed to one role: one factory stands, so "fewer than one factory" is not true yet.
         Assert.False(TriggerSystem.Satisfied(
-            world, new TriggerCondition(TriggerConditionKind.StructuresBelow, Team: 2, Count: 4)));
-        Assert.False(TriggerSystem.Satisfied(
-            world, new TriggerCondition(TriggerConditionKind.StructuresBelow, Team: 2, Count: 1, Role: UnitKind.Factory)));
+            world, new TriggerCondition(TriggerConditionKind.StructuresStandingBelow, Team: 2, Count: 1, Role: UnitKind.Factory)));
 
-        // A role the team does not field is already below any positive number, which is the trap
-        // the mission validation warns about rather than a fault in the condition.
+        // A role the team does not field is already below any positive number, which is the
+        // opening-world trap the mission validation reports rather than a fault in the condition.
         Assert.True(TriggerSystem.Satisfied(
-            world, new TriggerCondition(TriggerConditionKind.StructuresBelow, Team: 2, Count: 1, Role: UnitKind.RadarStation)));
+            world, new TriggerCondition(TriggerConditionKind.StructuresStandingBelow, Team: 2, Count: 1, Role: UnitKind.RadarStation)));
 
-        List<int> guns = [.. Structures(world, 2, UnitKind.Factory)];
-        world.Despawn(new EntityId(guns[0], world.GetRefBySlot(guns[0]).Generation));
+        // The factory falls: three structures stand, which is fewer than four, and the trigger
+        // fires on the tick that happened rather than on a later one.
+        List<int> factories = [.. Structures(world, 2, UnitKind.Factory)];
+        world.Despawn(new EntityId(factories[0], world.GetRefBySlot(factories[0]).Generation));
+        world.RunTicks(1);
+
+        Assert.Equal(3, world.CountStructures(2, UnitKind.None));
+        Assert.True(TriggerSystem.Satisfied(world, condition));
+        Assert.True(world.TriggerStates[0].HasFired);
+        Assert.Equal(world.Tick, world.TriggerStates[0].FiredTick);
 
         Assert.True(TriggerSystem.Satisfied(
-            world, new TriggerCondition(TriggerConditionKind.StructuresBelow, Team: 2, Count: 1, Role: UnitKind.Factory)));
+            world, new TriggerCondition(TriggerConditionKind.StructuresStandingBelow, Team: 2, Count: 1, Role: UnitKind.Factory)));
 
         // A team the match does not declare stands in nothing at all, so "fewer than one of their
         // structures stands" is literally true of it. That is not a fault in the condition — it
@@ -446,7 +541,205 @@ public sealed class TriggerTests
         // discover a trigger that fires at once.
         Assert.False(world.IsTeamInPlay(3));
         Assert.True(TriggerSystem.Satisfied(
-            world, new TriggerCondition(TriggerConditionKind.StructuresBelow, Team: 3, Count: 1)));
+            world, new TriggerCondition(TriggerConditionKind.StructuresStandingBelow, Team: 3, Count: 1)));
+    }
+
+    // ---------------------------------------------------------------- the world the mission opens in
+
+    /// <summary>
+    /// <b>A condition that is already true of the world the mission opens in is caught before the
+    /// match starts, and named.</b>
+    /// <para>
+    /// The shape is the reported one: the enemy starts with no gun emplacement at all, an author
+    /// writes "fewer than two stand" meaning "when one has been destroyed", and the condition is
+    /// true of the map before anybody has moved — so the trigger fires on the very first tick and
+    /// the message about the first gun falling arrives before the first shot. Nothing static can
+    /// see it, because the answer is a fact about the map the scenario lays out.
+    /// </para>
+    /// <para>
+    /// The clock beside it and the loss ledger beside that are the controls. A condition that
+    /// waits for time and a condition that waits for a loss are both false of the world the
+    /// mission opens in, and the check asks them the same question rather than excusing them —
+    /// which is what makes this a sweep over the condition kinds rather than a list of the two
+    /// traps somebody happened to notice.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AnAlreadyTrueConditionIsCaughtByNameAndOwnedRatherThanRemoved()
+    {
+        MissionDefinition mission = ScriptedMission(
+            new TriggerDefinition(
+                "first-gun",
+                new TriggerCondition(
+                    TriggerConditionKind.StructuresStandingBelow, Team: 2, Count: 2, Role: UnitKind.GunEmplacement),
+                [new TriggerAction(TriggerActionKind.Message, GreekText: "Το πρώτο πυροβολείο σίγησε.")]),
+            new TriggerDefinition(
+                "later",
+                new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 400),
+                [new TriggerAction(TriggerActionKind.Message, GreekText: "Αργότερα.")]),
+            new TriggerDefinition(
+                "attrition",
+                new TriggerCondition(TriggerConditionKind.StructuresLost, Team: 2, Count: 1),
+                [new TriggerAction(TriggerActionKind.Message, GreekText: "Μία θέση έπεσε.")]));
+
+        string problems = Joined(TriggerSystem.Validate(mission));
+
+        // The trigger is named, and so is what the world answered: no gun emplacement stands in the
+        // world the mission opens in, and the condition asks for fewer than two.
+        Assert.Contains("trigger 0 'first-gun'", problems);
+        Assert.Contains("stands in 0 GunEmplacement", problems);
+        Assert.Contains("fires on the first tick", problems);
+        Assert.DoesNotContain("'later'", problems);
+        Assert.DoesNotContain("'attrition'", problems);
+
+        // The author who means it says so, and that is the whole of the opt-out: what the condition
+        // asks is unchanged — nothing about the meaning moves — and the mission is clean.
+        MissionDefinition owned = mission with
+        {
+            Triggers = [mission.Triggers[0] with { DependsOnOpeningWorld = true }, .. mission.Triggers.Skip(1)],
+        };
+
+        Assert.Empty(TriggerSystem.Validate(owned));
+    }
+
+    /// <summary>
+    /// <b>The generalisation, proven on the condition nobody has reported.</b> A circle with a unit
+    /// already standing inside it is true of the opening world exactly as a count below its
+    /// threshold is, and the same check catches it — which is the point of asking every condition
+    /// of that world rather than listing the traps that happen to have been noticed.
+    /// </summary>
+    [Fact]
+    public void AUnitAlreadyStandingInTheAreaIsCaughtTheSameWay()
+    {
+        MissionDefinition template = ScriptedMission(new TriggerDefinition(
+            "in-the-area",
+            new TriggerCondition(
+                TriggerConditionKind.UnitInArea, Team: 2, Count: 1, CentreX: 0, CentreZ: 0, RadiusMm: 20_000),
+            [new TriggerAction(TriggerActionKind.Message, GreekText: "Είναι ήδη εδώ.")]));
+
+        // Where the enemy actually stands, asked of the world the validator will build for itself:
+        // the scenario searches for a base site, so the coordinates a mission asks for are a wish,
+        // and the circle has to be put where a unit was put.
+        SimWorld opening = TriggerSystem.OpeningWorld(template);
+        WorldPos unit = FirstUnit(opening, 2);
+
+        Assert.True(opening.CountUnitsInArea(2, unit.X, unit.Z, 20_000) >= 1);
+
+        TriggerCondition condition = template.Triggers[0].Condition with { CentreX = unit.X, CentreZ = unit.Z };
+
+        MissionDefinition mission = template with
+        {
+            Triggers = [template.Triggers[0] with { Condition = condition }],
+        };
+
+        string problems = Joined(TriggerSystem.Validate(mission));
+
+        Assert.Contains("trigger 0 'in-the-area'", problems);
+        Assert.Contains("units inside the circle", problems);
+        Assert.Contains("fires on the first tick", problems);
+
+        MissionDefinition owned = mission with
+        {
+            Triggers = [mission.Triggers[0] with { DependsOnOpeningWorld = true }],
+        };
+
+        Assert.Empty(TriggerSystem.Validate(owned));
+    }
+
+    /// <summary>
+    /// <b>All five condition kinds, asked of the world the mission opens in one at a time.</b> Two
+    /// of them can be true before anything has happened — the present-tense count and an area with
+    /// somebody already standing in it — and three cannot, and each of the three is checked rather
+    /// than assumed:
+    /// <list type="bullet">
+    /// <item>the clock is not asked at all, and it is the only kind that is not: the first
+    /// evaluation happens on tick one with the clock at zero, and an author's own way of saying "at
+    /// once" — a tick of zero — is refused as a complaint about the clock already;</item>
+    /// <item>the loss ledger starts at zero, so "they have lost one" is false of a world in which
+    /// nothing has been destroyed;</item>
+    /// <item>flags start clear, so "the flag is set" is false of a world in which no trigger has
+    /// run — even though a trigger earlier in the list raises that very flag on the opening
+    /// tick.</item>
+    /// </list>
+    /// Exactly the two that can be true are reported, and they are reported in list order.
+    /// </summary>
+    [Fact]
+    public void EveryConditionIsAskedOfTheOpeningWorldAndOnlyTheTwoThatCanBeTrueAreReported()
+    {
+        MissionDefinition template = ScriptedMission(
+            new TriggerDefinition(
+                "clock",
+                new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 400),
+                [new TriggerAction(TriggerActionKind.SetFlag, Flag: 0)]),
+            new TriggerDefinition(
+                "flag",
+                new TriggerCondition(TriggerConditionKind.FlagSet, Flag: 0),
+                [new TriggerAction(TriggerActionKind.Message, GreekText: "Σημαία.")]),
+            new TriggerDefinition(
+                "losses",
+                new TriggerCondition(TriggerConditionKind.StructuresLost, Team: 2, Count: 1),
+                [new TriggerAction(TriggerActionKind.Message, GreekText: "Απώλεια.")]),
+            new TriggerDefinition(
+                "standing",
+                new TriggerCondition(
+                    TriggerConditionKind.StructuresStandingBelow, Team: 2, Count: 2, Role: UnitKind.GunEmplacement),
+                [new TriggerAction(TriggerActionKind.Message, GreekText: "Λίγα μένουν.")]),
+            new TriggerDefinition(
+                "present",
+                new TriggerCondition(
+                    TriggerConditionKind.UnitInArea, Team: 2, Count: 1, CentreX: 0, CentreZ: 0, RadiusMm: 20_000),
+                [new TriggerAction(TriggerActionKind.Message, GreekText: "Είναι ήδη εδώ.")]));
+
+        WorldPos unit = FirstUnit(TriggerSystem.OpeningWorld(template), 2);
+
+        MissionDefinition mission = template with
+        {
+            Triggers =
+            [
+                .. template.Triggers.Take(4),
+                template.Triggers[4] with
+                {
+                    Condition = template.Triggers[4].Condition with { CentreX = unit.X, CentreZ = unit.Z },
+                },
+            ],
+        };
+
+        IReadOnlyList<string> problems = TriggerSystem.Validate(mission);
+
+        Assert.Equal(2, problems.Count);
+        Assert.Contains("trigger 3 'standing'", problems[0]);
+        Assert.Contains("trigger 4 'present'", problems[1]);
+    }
+
+    /// <summary>
+    /// <b>The shipped mission trips the check, and its opt-out is what makes it validate.</b>
+    /// "Fewer than two Western guns stand" is true of the world the mission opens in — the two guns
+    /// are spawned by the trigger above it — and the mission is right anyway, because the list order
+    /// is the order of events: asked on the tick after that spawn, the count is two. The flag is
+    /// where that dependency is written down instead of being assumed by a reader.
+    /// </summary>
+    [Fact]
+    public void TheShippedMissionIsCleanOnlyBecauseItsAuthorOwnsThatCondition()
+    {
+        MissionDefinition mission = MissionCatalog.Require("m4_pass");
+        int firstGun = mission.IndexOfTrigger("first-gun");
+
+        Assert.True(firstGun >= 0);
+        Assert.True(
+            mission.Triggers[firstGun].DependsOnOpeningWorld,
+            "The shipped mission's opening-world condition is not owned by its author.");
+
+        // Take the declaration away, and the same mission is refused by the same validator the
+        // probe records as a check — which is the honest outcome for a condition that counts what
+        // an earlier trigger has just spawned.
+        string problems = Joined(TriggerSystem.Validate(Unowned(mission, firstGun)));
+
+        Assert.Contains($"trigger {firstGun} 'first-gun'", problems);
+        Assert.Contains("fires on the first tick", problems);
+
+        // And with it, the mission validates: nothing else in the shipped script is already true of
+        // the world it opens in.
+        Assert.Empty(TriggerSystem.Validate(mission));
     }
 
     /// <summary>
@@ -957,8 +1250,6 @@ public sealed class TriggerTests
     public void ValidationCatchesScriptsThatCanNeverHappen()
     {
         MissionDefinition template = MissionCatalog.Require("m4_pass");
-
-        static string Joined(IReadOnlyList<string> problems) => string.Join(" | ", problems);
 
         // A scripted objective with no trigger to complete it.
         MissionDefinition orphan = template with

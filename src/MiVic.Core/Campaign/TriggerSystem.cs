@@ -120,14 +120,15 @@ public static class TriggerSystem
                 return world.CountUnitsInArea(
                     condition.Team, condition.CentreX, condition.CentreZ, condition.RadiusMm) >= condition.Count;
 
-            case TriggerConditionKind.StructureDestroyed:
+            case TriggerConditionKind.StructuresLost:
                 // The ledger the DestroyStructures objective reads, and read the same way: it
                 // counts losses rather than comparing against a starting total, so a structure
-                // the enemy rebuilds does not undo the progress.
+                // the enemy rebuilds does not undo the progress. It is also the past-tense half
+                // of the pair, and starting at zero is what keeps it off the opening tick.
                 return (uint)condition.Team < SimConstants.TeamCount &&
                        world.TeamRef(condition.Team).StructuresLost >= condition.Count;
 
-            case TriggerConditionKind.StructuresBelow:
+            case TriggerConditionKind.StructuresStandingBelow:
                 // The opposite kind of number: derived, not remembered. A team the match does not
                 // declare stands in no structures at all, so the guard is what stops "fewer than
                 // three of their buildings stand" from being true of a team that is not playing.
@@ -399,9 +400,17 @@ public static class TriggerSystem
     /// happens is that same bug wearing a script. What can be checked statically is checked here —
     /// a flag nothing raises, an objective nothing completes, a denial with no clock to be decided
     /// by, a completion pointing at an objective that does not exist, a condition counting on a
-    /// team that is not in the match. What can only be checked against a running world — whether a
-    /// count is already below its threshold on the opening tick, whether a trigger ever really
-    /// fires — is what the mission tests do with a world in their hands.
+    /// team that is not in the match.
+    /// </para>
+    /// <para>
+    /// <b>And the failure from the other end, which is the same bug facing the other way: a trigger
+    /// that fires before its author meant it to.</b> A condition that is already true of the world
+    /// the mission opens in fires on the first tick whatever the player does, which is a message
+    /// about the first gun falling arriving before the first shot — see
+    /// <see cref="CheckTheOpeningWorld"/>, which asks every condition of that world and reports the
+    /// ones that are already satisfied. A mission that means it says so with
+    /// <see cref="TriggerDefinition.DependsOnOpeningWorld"/>, which is what makes this a check with
+    /// an opt-out rather than a refusal.
     /// </para>
     /// </summary>
     public static IReadOnlyList<string> Validate(MissionDefinition mission)
@@ -504,6 +513,14 @@ public static class TriggerSystem
             }
         }
 
+        // The second half of the script's integrity, and the only half that needs a world: a
+        // condition that is already true before anything has happened. A mission with no script
+        // has no script to ask it of, so it does not pay for the world.
+        if (mission.Triggers.Count > 0)
+        {
+            CheckTheOpeningWorld(mission, problems);
+        }
+
         // A scripted objective is completed by the mission and by nothing else, so a mission that
         // ships one and never completes it has shipped an objective that cannot be satisfied —
         // which loses the mission however well it is played.
@@ -561,8 +578,8 @@ public static class TriggerSystem
                 break;
 
             case TriggerConditionKind.UnitInArea:
-            case TriggerConditionKind.StructuresBelow:
-            case TriggerConditionKind.StructureDestroyed:
+            case TriggerConditionKind.StructuresStandingBelow:
+            case TriggerConditionKind.StructuresLost:
                 if (condition.Count <= 0)
                 {
                     problems.Add($"{where} counts to {condition.Count}: an area condition would hold with nobody in it, and a loss condition would never hold at all.");
@@ -576,7 +593,7 @@ public static class TriggerSystem
             problems.Add($"{where} watches a circle of radius {condition.RadiusMm}: no unit could ever be inside it.");
         }
 
-        if (condition.Kind == TriggerConditionKind.StructuresBelow &&
+        if (condition.Kind == TriggerConditionKind.StructuresStandingBelow &&
             condition.Role != UnitKind.None &&
             !UnitCatalog.TryGet(condition.Role, out _))
         {
@@ -611,6 +628,131 @@ public static class TriggerSystem
                 problems.Add($"{where} waits on flag {condition.Flag}, which only that same trigger raises — and its condition is asked before its actions, so it can never fire.");
             }
         }
+    }
+
+    /// <summary>
+    /// <b>The other way a script goes wrong: a condition that is already true of the world the
+    /// mission opens in, and so fires on the first tick whatever the player does.</b>
+    /// <para>
+    /// It is the mirror of the check above and it is not the same check. A condition that can
+    /// <em>never</em> fire is a feature that exists and does nothing; a condition that is already
+    /// true fires perfectly well, in the opening seconds, where its author is looking at
+    /// something else — "the first gun has been silenced" arriving before the first shot. Nothing
+    /// static can see it, because the answer is a fact about the map the scenario lays out, which
+    /// is why this is the one check in the validator that builds a world.
+    /// </para>
+    /// <para>
+    /// <b>Every condition but the clock is asked, and the sweep is deliberately not a list of the
+    /// kinds known to be able to fire early.</b> "Fewer than N of them stand now" is the shape
+    /// that gets reported, and a circle with a unit already standing inside it is the same trap on
+    /// a condition nobody has complained about; a list of the two known-traps would be a list that
+    /// goes stale the day a condition kind is added, which is the failure this whole file is
+    /// written against. The clock is the one exception, and not an oversight: the first evaluation
+    /// happens on tick one with the clock at zero, nothing has elapsed, and the author's own way
+    /// of saying "at once" — a tick of zero or less — is refused by <see cref="CheckCondition"/>
+    /// already, as a complaint about the clock rather than a second complaint about this one.
+    /// </para>
+    /// <para>
+    /// The two that remain cannot be true of an opening world, and they are asked anyway rather
+    /// than excused: the loss ledger starts at zero, so "they have lost two" is false until two
+    /// have been destroyed, and a mission's flags start clear, so "the flag is set" is false until
+    /// an earlier trigger raises it.
+    /// </para>
+    /// <para>
+    /// <b>Firing on the opening tick is occasionally the design</b> — a mission that branches on a
+    /// weak opening force is a legitimate mission — so this reports and does not refuse. A trigger
+    /// that means it carries <see cref="TriggerDefinition.DependsOnOpeningWorld"/>, which is the
+    /// author's declaration that the condition is about the opening world rather than about what
+    /// the player does with it.
+    /// </para>
+    /// </summary>
+    private static void CheckTheOpeningWorld(MissionDefinition mission, List<string> problems)
+    {
+        SimWorld opening = OpeningWorld(mission);
+
+        for (int i = 0; i < mission.Triggers.Count; i++)
+        {
+            TriggerDefinition trigger = mission.Triggers[i];
+
+            if (trigger.DependsOnOpeningWorld || trigger.Condition.Kind == TriggerConditionKind.TimeElapsed)
+            {
+                continue;
+            }
+
+            if (!Satisfied(opening, trigger.Condition))
+            {
+                continue;
+            }
+
+            problems.Add(
+                $"trigger {i} '{trigger.Id}' is already true of the world the mission opens in — " +
+                $"{AnsweredByTheOpeningWorld(opening, trigger.Condition)} — so it fires on the first tick " +
+                "whatever the player does; a trigger that means that says so with " +
+                "DependsOnOpeningWorld = true.");
+        }
+    }
+
+    /// <summary>
+    /// What the opening world answers, in the words of the condition it was asked.
+    /// <para>
+    /// The numbers are read from the world rather than repeated from the condition, because
+    /// "already true" is a fact about a map and this line exists to show which fact made it true:
+    /// an author who wrote a threshold of two against a side that has none is looking at the
+    /// difference between two and nought. Whether the condition is satisfied at all is
+    /// <see cref="Satisfied"/>'s answer and not this one's — this is the sentence, not the
+    /// verdict.
+    /// </para>
+    /// </summary>
+    private static string AnsweredByTheOpeningWorld(SimWorld world, in TriggerCondition condition)
+        => condition.Kind switch
+        {
+            TriggerConditionKind.UnitInArea =>
+                $"team {condition.Team} already has " +
+                $"{world.CountUnitsInArea(condition.Team, condition.CentreX, condition.CentreZ, condition.RadiusMm)} " +
+                $"units inside the circle and the condition waits for {condition.Count}",
+
+            TriggerConditionKind.StructuresStandingBelow =>
+                $"team {condition.Team} stands in {world.CountStructures(condition.Team, condition.Role)} " +
+                $"{RoleName(condition.Role)} and the condition asks for fewer than {condition.Count}",
+
+            // The two below cannot be true of a world nothing has happened in, so they carry the
+            // condition's own numbers: there is no measurement to make that would not be nought.
+            TriggerConditionKind.StructuresLost =>
+                $"team {condition.Team} has lost {condition.Count} structures",
+
+            TriggerConditionKind.FlagSet => $"flag {condition.Flag} is set",
+
+            _ => condition.Kind.ToString(),
+        };
+
+    /// <summary>A role as a reader would say it, with the count-everything role spelled out.</summary>
+    private static string RoleName(UnitKind role) => role == UnitKind.None ? "structures" : role.ToString();
+
+    /// <summary>
+    /// <b>The world a mission opens in: the scenario laid out, the mission attached, and not one
+    /// tick run.</b>
+    /// <para>
+    /// It is rebuilt here rather than handed in, because the question it answers — "is this
+    /// condition already true" — is a property of the mission rather than of a match: the probe
+    /// asks it of a world that is already forty seconds old, and a condition cannot be "already
+    /// true" of a world that has been played. The layout is a pure function of the mission's seed
+    /// and its definition, both of which the mission carries with it, so this is the same world
+    /// the player is handed, rebuilt.
+    /// </para>
+    /// <para>
+    /// The capacity is the world's own maximum, which is far more than any mission's opening force
+    /// needs and is deliberate: the layout never runs out of slots here, so no count this check
+    /// reads can be short because the check's own world was too small. The price is one world's
+    /// memory on a path that runs when the probe is asked, which is the cheap half of the trade.
+    /// </para>
+    /// </summary>
+    public static SimWorld OpeningWorld(MissionDefinition mission)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+
+        SimWorld world = Scenario.NewWorld(ScenarioKind.Mission, mission.Seed, SimConstants.MaxEntities, mission);
+        Scenario.BuildMission(world, mission);
+        return world;
     }
 
     /// <summary>

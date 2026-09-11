@@ -136,15 +136,26 @@ like ground somebody walked over. These three commands answer it.
 
 | Command | Answer |
 |---|---|
-| `triggers` | the mission's whole script: every trigger in the order the simulation evaluates it, what it waits for, what it does, whether it has fired and **on which tick** — then the flags it has raised, and a check of the mission's own integrity, which fails the run when a trigger waits on something that can never happen |
+| `triggers` | the mission's whole script: every trigger in the order the simulation evaluates it, what it waits for, what it does, whether it has fired and **on which tick** — then the flags it has raised, and a check of the mission's own integrity, which fails the run when a trigger waits on something that can never happen **or is already true of the world the mission opens in** |
 | `messages` | what the mission has shown the player, oldest first, with the tick and how long ago |
 | `objectives` | every objective the mission is judged by: kind, status, primary or bonus, the progress behind it, and the numbers it is asking — the same state the state hash folds in |
 
 `triggers` answers "did the second act of this mission happen at all", which is the failure a mission
 is most likely to ship: a trigger that exists and never fires. A transcript can read for forty lines
-without noticing one, so the command records a check of its own — *the mission's script can fire* —
-and prints the tick each trigger fired on, because a trigger that fired forty seconds late is a
-mission whose pacing is somewhere other than where its author put it.
+without noticing one, so the command records a check of its own — *the mission's script fires when it
+means to* — and prints the tick each trigger fired on, because a trigger that fired forty seconds late
+is a mission whose pacing is somewhere other than where its author put it.
+
+**The same check asks the mirror question, and it needs a world to ask it of.** A trigger fires the
+first tick its condition holds, so a condition that already holds *before any trigger has run* is a
+trigger that fires on the opening tick whatever the player does — a message about the first gun falling
+that arrives before the first shot. It is not the same failure as a trigger that can never fire; it is
+the same failure facing the other way. `TriggerSystem.Validate` therefore evaluates every condition
+but the clock against the world the mission opens in — the seed and the definition, laid out and not
+one tick run — and reports the ones already satisfied, naming the trigger and the count the world
+answered with. A trigger that means it carries `DependsOnOpeningWorld`, which the transcript prints as
+an `opening` line under the trigger, because a dependency on the opening world is a thing a mission
+should be able to say rather than a thing a reader should have to infer.
 
 ### What the player would see
 
@@ -1393,6 +1404,7 @@ cmd: tick 450
 cmd: triggers
 query: triggers: 6 triggers in 'm4_pass', 6 fired, at tick 1300
 query:   #4 first-gun        FIRED on tick 1090 (54.5 s in)
+query:       opening    the author declares this condition a fact about the world the mission opens in
 query:   #5 ambush-broken    FIRED on tick 1255 (62.8 s in)
 cmd: structures 2
 query: structures: 6 structures for team 2, tick 1300
@@ -1408,7 +1420,7 @@ cmd: objectives
 query: objectives: 2 objectives in 'm4_pass', outcome victory, at tick 3800
 query:   #0 DenyArea             complete primary progress 0, hold 0
 query:   #1 Scripted             complete primary progress 0, hold 0
-check: PASS 'the mission's script can fire' — every trigger waits on something that can happen, and every scripted objective is completed by one
+check: PASS 'the mission's script fires when it means to' — every trigger waits on something that can happen, every scripted objective is completed by one, and no condition is already true of the world the mission opens in
 probe: 60 commands, 60 ok, 0 errors, 0 checks failed
 ```
 

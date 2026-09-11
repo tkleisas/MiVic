@@ -318,14 +318,25 @@ public static class MissionCatalog
 
                 // 5. The first gun falls.
                 //
-                // "A count of them fallen below a number", and the number is the two guns the
-                // mission put there itself: below two is one, which is the first gun silenced.
-                // What it costs the Δυτικοί is their stores, which is the *removal* half of the
-                // resources action — the other half lands on the trigger below.
+                // The present-tense count — fewer than two stand now — and the number is the two
+                // guns the mission put there itself: below two is one, which is the first gun
+                // silenced. What it costs the Δυτικοί is their stores, which is the *removal* half
+                // of the resources action; the other half lands on the trigger below.
+                //
+                // *This is the trigger with a dependency on the opening world, declared rather
+                // than hidden.* In the world the mission *opens* in no Western gun stands at all —
+                // the two of them are spawned by the trigger above — so "fewer than two stand" is
+                // already true of that world, and the validation says so. By the time this
+                // condition is asked, on the first tick, the count is two: `preparation` is earlier
+                // in the list, and the list order is the order of the events. So the trigger is
+                // correct and the complaint is a statement about a dependency — the one this layer
+                // has carried as an open item since it was built, a condition whose answer is
+                // decided by what an earlier trigger has just spawned. The flag is where that
+                // dependency is written down instead of being assumed.
                 new TriggerDefinition(
                     Id: "first-gun",
                     Condition: new TriggerCondition(
-                        TriggerConditionKind.StructuresBelow,
+                        TriggerConditionKind.StructuresStandingBelow,
                         Team: 2,
                         Count: 2,
                         Role: UnitKind.GunEmplacement),
@@ -341,18 +352,21 @@ public static class MissionCatalog
                             Energy: -150),
                     ],
                     Note: "One gun down: fewer than two stand, and the detachment's stores go " +
-                          "with it."),
+                          "with it.",
+                    DependsOnOpeningWorld: true),
 
                 // 6. The ambush is broken.
                 //
                 // The ledger the DestroyStructures objective reads, asked of the mission instead
                 // of by an objective: two Western structures destroyed. In this mission those two
                 // are the guns, because nothing else of the Δυτικοί is ever in reach — and it is
-                // written as a count of losses rather than of survivors on purpose, so that a
-                // position the enemy rebuilds cannot un-break the ambush.
+                // written as the past-tense count, a number of losses, rather than as a number of
+                // survivors on purpose, so that a position the enemy rebuilds cannot un-break the
+                // ambush. It is also the half that cannot fire early, because the ledger starts at
+                // zero; the trigger above it is the half that can, and says so.
                 new TriggerDefinition(
                     Id: "ambush-broken",
-                    Condition: new TriggerCondition(TriggerConditionKind.StructureDestroyed, Team: 2, Count: 2),
+                    Condition: new TriggerCondition(TriggerConditionKind.StructuresLost, Team: 2, Count: 2),
                     Actions:
                     [
                         new TriggerAction(

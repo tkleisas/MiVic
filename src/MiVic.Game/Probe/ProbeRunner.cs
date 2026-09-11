@@ -3499,7 +3499,10 @@ public sealed class ProbeRunner
     /// — as a check rather than as a line of prose, so that a mission whose triggers <em>cannot</em>
     /// fire fails the run. That is the failure this project keeps meeting from the other side:
     /// a feature that exists and never happens, which a transcript can read for forty lines
-    /// without noticing.
+    /// without noticing. The check answers the mirror question too, since the same validator asks
+    /// every condition of the world the mission <em>opens</em> in and reports the ones already
+    /// true of it: a script that fires on the first tick by accident fails the run for the same
+    /// reason and with the same sentence naming the trigger.
     /// </para>
     /// </summary>
     private void Triggers(ProbeCommand command)
@@ -3549,6 +3552,15 @@ public sealed class ProbeRunner
             {
                 Emit($"query:       why        {trigger.Note}");
             }
+
+            // The author's own declaration, printed where the script is rather than left to be
+            // inferred from the check below: a trigger whose condition may already hold before the
+            // first trigger has run says so, and the validation asks the same question of the
+            // world the mission opens in.
+            if (trigger.DependsOnOpeningWorld)
+            {
+                Emit("query:       opening    the author declares this condition a fact about the world the mission opens in");
+            }
         }
 
         ReadOnlySpan<uint> flags = world.MissionFlags;
@@ -3568,10 +3580,11 @@ public sealed class ProbeRunner
         IReadOnlyList<string> problems = TriggerSystem.Validate(mission);
 
         RecordCheck(
-            "the mission's script can fire",
+            "the mission's script fires when it means to",
             problems.Count == 0,
             problems.Count == 0
-                ? "every trigger waits on something that can happen, and every scripted objective is completed by one"
+                ? "every trigger waits on something that can happen, every scripted objective is completed by one, " +
+                  "and no condition is already true of the world the mission opens in"
                 : string.Join("; ", problems));
     }
 
@@ -3679,7 +3692,11 @@ public sealed class ProbeRunner
         return string.Join(", ", parts);
     }
 
-    /// <summary>A trigger condition as a sentence, so the transcript reads as the mission's script.</summary>
+    /// <summary>
+    /// A trigger condition as a sentence, so the transcript reads as the mission's script. The two
+    /// counting conditions are the pair whose names carry their tense, and the sentences say it out
+    /// loud: "has lost" is a number of losses, "stand" is what is on the map now.
+    /// </summary>
     private static string DescribeCondition(TriggerCondition condition) => condition.Kind switch
     {
         TriggerConditionKind.TimeElapsed =>
@@ -3688,10 +3705,10 @@ public sealed class ProbeRunner
         TriggerConditionKind.UnitInArea =>
             $"{ProbeFormat.Count(condition.Count, "unit")} of team {condition.Team} inside {Circle(condition.CentreX, condition.CentreZ, condition.RadiusMm)}",
 
-        TriggerConditionKind.StructureDestroyed =>
+        TriggerConditionKind.StructuresLost =>
             $"team {condition.Team} has lost {ProbeFormat.Count(condition.Count, "structure")}",
 
-        TriggerConditionKind.StructuresBelow =>
+        TriggerConditionKind.StructuresStandingBelow =>
             $"fewer than {condition.Count} {DescribeRole(condition.Role)} of team {condition.Team} stand",
 
         TriggerConditionKind.FlagSet => $"flag {condition.Flag} is set",

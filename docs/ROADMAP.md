@@ -368,10 +368,13 @@ list of things that happen in order. Every trigger fires **at most once**.
 
 **The vocabulary that shipped**, and what it cost:
 
-- **conditions**: time elapsed · a count of a team's units inside an area · a structure of a team
-  destroyed (read off the loss ledger `DestroyStructures` already uses, so a rebuilt position does not
-  un-do it) · a count of a team's structures standing below a number, optionally of one role · a flag
-  an earlier trigger raised;
+- **conditions**: time elapsed · a count of a team's units inside an area · `StructuresLost`, how many
+  of a team's structures have been destroyed (read off the loss ledger `DestroyStructures` already
+  uses, so a rebuilt position does not un-do it) · `StructuresStandingBelow`, how many of a team's
+  structures stand now, below a number, optionally of one role · a flag an earlier trigger raised. The
+  two counting conditions read as a pair and their names carry their tense, because the same number
+  means two different things to them: "they have lost two" is a ledger that starts at zero, and "fewer
+  than two stand" is a count of the map that is already true of a side that never had two;
 - **actions**: spawn units or structures at a place · reveal ground for a team · grant or remove
   materials, energy and water (one action with signed amounts: the arithmetic and the floor at zero
   are the same either way) · complete an objective · show the player a message · order a group of
@@ -386,8 +389,9 @@ two sections are a story whose ending is already the objectives' job).
 never fire again, so what each trigger remembers — *that* it fired, and *when* — is state, and it goes
 in `StateHash` beside the objective progress and the production queues. What it does **not** need is a
 field of its own: a reveal is stamped fresh every tick from the fired tick that is hashed, through the
-same disc a unit's own eyes are stamped through, and a count like `StructuresBelow` is recomputed from
-entities the hash already walks. The distinction is the one the whole file turns on — **what a system
+same disc a unit's own eyes are stamped through, and a count like `StructuresStandingBelow` is
+recomputed from entities the hash already walks. The distinction is the one the whole file turns on —
+**what a system
 remembers is hashed, and what it can recompute is not**, because hashing a derived number puts one
 fact in the hash twice and makes the hash the thing that is wrong the day the two disagree. Both loops
 are mixed with no header, exactly as the objectives are, so **a match that uses no triggers mixes not
@@ -404,13 +408,26 @@ campaign's Κινέζοι ally, played by the computer — is a mission whose se
 else's battle. `tools/probe/triggers.probe` is the transcript of it, and each trigger is watched
 firing with the world changing under it.
 
-**The failure this layer was most likely to ship is the one it now tests for.** A trigger that is
-authored and can never fire is the same bug as the volcano line above every cell and the mud mechanic
-that was inert, so `TriggerSystem.Validate` refuses a script that waits on a flag nothing raises, an
-objective nothing completes, a denial with no clock to be decided by, a condition about a team the
-match does not declare — and the probe records that check, while
+**The failure this layer was most likely to ship is the one it now tests for, in both directions.** A
+trigger that is authored and can never fire is the same bug as the volcano line above every cell and
+the mud mechanic that was inert, so `TriggerSystem.Validate` refuses a script that waits on a flag
+nothing raises, an objective nothing completes, a denial with no clock to be decided by, a condition
+about a team the match does not declare — and the probe records that check, while
 `EveryTriggerInTheShippedMissionFiresWhenItShould` counts the six triggers of the shipped mission and
 asserts the tick each one fired on.
+
+The mirror failure is a trigger that fires *before* it was meant to. `StructuresStandingBelow` counts
+what is on the map rather than what has been lost — deliberately, because a remembered starting total
+would be state and state is hashed — so "fewer than two of their guns stand" is already true of a side
+that starts with one, or of a side that has not been given its guns yet, and the trigger fires on the
+first tick where its author is looking at the opening seconds of the match. `UnitInArea` carries the
+same trap for a unit that starts inside the circle; `TimeElapsed` (the clock starts at zero),
+`FlagSet` (flags start clear) and `StructuresLost` (a ledger that starts at zero) do not. So the same
+validator asks every condition of the world the mission *opens* in and reports the ones already
+satisfied, and a trigger that means to fire at once — or that counts what an earlier trigger has just
+spawned, which is the list-order dependency this layer was built with — declares it with
+`DependsOnOpeningWorld`. `m4_pass`'s `first-gun` is that declaration: in the world the mission opens
+in, no Western gun stands yet, and the two are put there by the trigger above it on the opening tick.
 
 ### The objective the vocabulary was missing: denial
 

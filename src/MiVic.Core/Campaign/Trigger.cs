@@ -9,6 +9,15 @@ namespace MiVic.Core.Campaign;
 /// mission is data, so it may only ask things the simulation can answer from itself, and
 /// the answer has to be the same on two machines running the same match.
 /// </para>
+/// <para>
+/// <b>The two counting conditions are complementary and their names say their tense, because
+/// the same number means two different things to them.</b> "They have lost two guns" is a fact
+/// about the match and is false until two have fallen; "fewer than two guns stand" is a fact
+/// about the map and is already true of a side that only ever had one. A trigger fires the
+/// first tick its condition holds, so the second is the one that can fire before the player has
+/// done anything — see <see cref="TriggerSystem.Validate"/>, which asks every condition this
+/// question of the world the mission opens in.
+/// </para>
 /// </summary>
 public enum TriggerConditionKind : byte
 {
@@ -18,23 +27,36 @@ public enum TriggerConditionKind : byte
     /// <summary>
     /// At least <see cref="TriggerCondition.Count"/> units of
     /// <see cref="TriggerCondition.Team"/> stand inside the circle.
+    /// <para>
+    /// A unit that <em>starts</em> inside the circle satisfies this on the opening tick, which is
+    /// the same trap the present-tense counting condition below carries.
+    /// </para>
     /// </summary>
     UnitInArea = 1,
 
     /// <summary>
-    /// <see cref="TriggerCondition.Team"/> has lost at least
-    /// <see cref="TriggerCondition.Count"/> structures. This reads the same ledger
+    /// <b>Past tense: <see cref="TriggerCondition.Team"/> has lost at least
+    /// <see cref="TriggerCondition.Count"/> structures.</b> This reads the same ledger
     /// <see cref="ObjectiveKind.DestroyStructures"/> reads, so a structure rebuilt later does not
-    /// undo it.
+    /// undo it — and a ledger that starts at zero is what makes this condition structurally
+    /// unable to fire before something has been destroyed.
     /// </summary>
-    StructureDestroyed = 2,
+    StructuresLost = 2,
 
     /// <summary>
-    /// Fewer than <see cref="TriggerCondition.Count"/> of <see cref="TriggerCondition.Team"/>'s
-    /// structures stand. <see cref="TriggerCondition.Role"/> narrows it to one role, and
+    /// <b>Present tense: fewer than <see cref="TriggerCondition.Count"/> of
+    /// <see cref="TriggerCondition.Team"/>'s structures stand now.</b>
+    /// <see cref="TriggerCondition.Role"/> narrows it to one role, and
     /// <see cref="UnitKind.None"/> counts every structure the team has.
+    /// <para>
+    /// The number is measured against nothing but the map — there is no remembered starting total
+    /// and deliberately so, because that would be state, and state is hashed. A team that starts
+    /// with one gun is therefore already below a threshold of two, and the condition is true of
+    /// the opening world: an author meaning "when one of them has been destroyed" wants
+    /// <see cref="StructuresLost"/>, which says exactly that.
+    /// </para>
     /// </summary>
-    StructuresBelow = 3,
+    StructuresStandingBelow = 3,
 
     /// <summary>An earlier trigger set the flag; see <see cref="TriggerActionKind.SetFlag"/>.</summary>
     FlagSet = 4,
@@ -105,7 +127,7 @@ public enum GroupOrder : byte
 /// <param name="CentreZ">Centre of the area, in millimetres.</param>
 /// <param name="RadiusMm">Radius of the area, in millimetres.</param>
 /// <param name="Role">
-/// A structure role to count, for <see cref="TriggerConditionKind.StructuresBelow"/>;
+/// A structure role to count, for <see cref="TriggerConditionKind.StructuresStandingBelow"/>;
 /// <see cref="UnitKind.None"/> counts every structure the team has.
 /// </param>
 /// <param name="Flag">Flag index, for <see cref="TriggerConditionKind.FlagSet"/>.</param>
@@ -189,11 +211,26 @@ public readonly record struct TriggerAction(
 /// <param name="Condition">What the trigger waits for.</param>
 /// <param name="Actions">What it does, in order, when the condition holds.</param>
 /// <param name="Note">Why the mission needs this trigger, in the author's own words.</param>
+/// <param name="DependsOnOpeningWorld">
+/// True when this trigger's answer is a fact about the world the mission opens in rather than
+/// about what the player does with it — so the condition may hold before the first trigger has
+/// run, and the trigger fires on the opening tick however the match is played.
+/// <para>
+/// It is the opt-out from <see cref="TriggerSystem.Validate"/>'s opening-world check, and it is
+/// the author's declaration that the trigger is meant rather than a permission to be handed out:
+/// a mission that branches on the force it starts with says so here, and every trigger that does
+/// not say so is reported. It covers both shapes of the dependency — a condition that is true of
+/// the ground the scenario lays out, and a condition that reads what an <em>earlier trigger has
+/// just spawned</em>, which is true of the opening world because the spawn has not happened yet
+/// and false by the time the condition is asked, because the list order is the order of events.
+/// </para>
+/// </param>
 public sealed record TriggerDefinition(
     string Id,
     TriggerCondition Condition,
     IReadOnlyList<TriggerAction> Actions,
-    string Note = "");
+    string Note = "",
+    bool DependsOnOpeningWorld = false);
 
 /// <summary>
 /// What one trigger remembers. Part of the simulation state, so it is hashed.
