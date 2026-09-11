@@ -1,0 +1,101 @@
+# Q: can a mission declare a side the victory rule does not judge — and is the same mission refused
+#    when the declaration is missing?
+#
+#   $exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
+#   $p = Start-Process -FilePath $exe -Wait -PassThru -NoNewWindow -WorkingDirectory . -ArgumentList `
+#       '--paperclip-demo', '--probe', 'tools/probe/paperclip.probe', `
+#       '--probe-out', 'artifacts/probe/paperclip.txt'
+#
+# Three layers read a world and were never asked about the world a mission *opens* in. The trigger
+# layer was the first (`tools/probe/triggers.probe`), the objectives the second
+# (`tools/probe/objectives.probe`), and the victory rule is the third. It has been safe by
+# construction rather than by being asked — the scenario lays a base down for every team a match
+# declares — and the mission this script runs is the one that construction cannot express: ROADMAP §8's
+# Operation Paperclip, where Δυτικοί agents come for the scientists of a remote outpost. The scientists
+# are an objective and not an army: no base, no structures, no ground of their own. A declared side
+# standing in nothing is exactly what the rule cannot tell from a side that has been destroyed, so
+# without a word from the match it is read as already beaten — and where such a side is the only one
+# off the player's, the match is won on the check that first asks it.
+#
+# The word is `Judged = false` on the team's declaration, and the pair of missions this script reads is
+# the whole of the demonstration:
+#
+#   paperclip         the mission as it should be. The outpost's team is declared a side the victory
+#                     rule does not judge, so it is a design rather than a mistake: it validates clean
+#                     and plays. Its objectives are sound — a denial with a deadline inside the time
+#                     limit, and a command-centre constraint with no deadline, which is the shape that
+#                     must stay exempt.
+#   paperclip_draft   the same mission as its author first wrote it, with three mistakes in it: the
+#                     declaration missing, the constraint without the word that makes it a constraint,
+#                     and a denial deadline of 9 000 ticks against a mission that has 7 200.
+#
+# Nothing the campaign ships trips any of the three checks, which is the point of them and also the
+# reason their refusals could never be read anywhere.
+#
+# **This run is supposed to end with one check failed.** That failing check is the validator refusing
+# the draft, with its reasons printed above it; a run that passed here would mean the third layer had
+# stopped looking.
+#
+# What to read:
+#
+#   - `validate` with no id asks about the mission the match is playing, which is the sound one: three
+#     teams in the match, no problem at all. `teams` beside it is the same fact from the side of the
+#     world — the `match` line names the outpost's team as *a side the victory rule does not judge*,
+#     which is the one part of a declaration that is not a faction, and the outpost has nothing else
+#     to be recognised by.
+#   - `validate paperclip_draft` is the refusal, in three sentences, and each names what it found:
+#     side 2 stands in no structures in the world the mission opens in, so the rule reads it as already
+#     beaten — and its verdict on that world is `victory` already; the command centre objective is not
+#     a constraint and has no deadline, so nothing could ever complete it; and the denial's deadline of
+#     9 000 arrives after the match is over, so it can never be reached. The three are reported
+#     together because they are three separate authoring mistakes and the author has to fix all three.
+#   - `tick 1` is the mission *playing*: the outpost's people are on the map — six unarmed Συλλέκτες of
+#     a side that owns no ground — and the match is `ongoing`, which is what it would not be if the
+#     declaration were missing. They stand where the mission's script put them, because a definition
+#     has no column for a fourth team and a side with no base is not a side the AI plays. The `units`
+#     line asks for them by *faction* and not by team, and that is the trap rather than a slip: a bare
+#     numeral in that argument is read as a faction first (see the command table), so `units 3` would
+#     list the Δυτικοί and not team 3. The team is named in the `match` line and nowhere else.
+#   - `tick 200` and `tick 1000` are the same reading later: the match is still being played, the
+#     outpost's team still holds nothing, and the objective that decides the mission is still open.
+#     That is the difference between a fix that enables a mission and one that only stops it being
+#     refused.
+#   - the shot is the player's view of it: three sides on the panel — Σοβιετικοί, Δυτικοί and the
+#     outpost's Κινέζοι, the last of them with nothing built — over ground the agents have to cross.
+
+# --- the mission as it should be: a side that holds objectives rather than ground -------------------------------
+validate
+teams
+
+# --- and the same mission as its author first wrote it: the same cast, without the word -------------------------
+validate paperclip_draft
+
+# --- the first tick: the outpost's people are on the map, and nothing has been decided --------------------------
+tick 1
+teams
+units chinese
+objectives
+
+# --- ten seconds in: the column is walking, and the match is still being played ---------------------------------
+tick 200
+teams
+objectives
+
+# --- a minute in: still nothing decided for the player -----------------------------------------------------------
+tick 1000
+teams
+
+# --- what the player sees: three sides, one of them holding nothing ----------------------------------------------
+hud on
+focus 250 0
+zoom 300
+pitch -0.85
+settle 20
+shot artifacts/probe/paperclip-sides.png
+
+# --- and the six themselves, close enough to count ---------------------------------------------------------------
+hud off
+zoom 110
+pitch -0.55
+settle 20
+shot artifacts/probe/paperclip-outpost.png

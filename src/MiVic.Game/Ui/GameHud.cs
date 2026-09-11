@@ -282,10 +282,24 @@ public sealed class GameHud
         // empire had fallen and that the West now ruled, and neither is true of a match decided
         // between two other factions. What the outcome means is a fact about the sides, and the
         // sides are the match's — the panel that draws them is the one that names them.
+        //
+        // **A defeat says the side was destroyed only when it was.** The rule's defeat and a
+        // mission's are not the same event: the rule has the player's side beaten when it holds no
+        // structures, while a mission is lost by an objective failing or by its clock running out
+        // with both armies standing — the demonstration mission is lost with sixteen units and four
+        // structures alive on each side, and the banner over that panel used to say the player's side
+        // had been destroyed. So the fact is asked of the world rather than assumed from the outcome:
+        // a side still holding something was lost some other way, and one holding nothing is the
+        // destruction the old line was written for. The wording of that second line is still the
+        // interface's to decide; what it may not do is state a destruction that did not happen.
         string detail = outcome switch
         {
             GameOutcome.Victory => "Οι αντίπαλοι κατέρρευσαν. Ο δρόμος για μια νέα ισορροπία είναι ανοιχτός.",
-            GameOutcome.Defeat => "Η πλευρά σας διαλύθηκε. Οι αντίπαλοι κυριαρχούν.",
+            GameOutcome.Defeat => VictorySystem.SideHasStructures(
+                snapshot.Simulation.World,
+                snapshot.Simulation.World.Roster.PlayerSide)
+                ? "Η αποστολή χάθηκε. Η πλευρά σας στέκεται ακόμη."
+                : "Η πλευρά σας διαλύθηκε. Οι αντίπαλοι κυριαρχούν.",
             _ => "Και οι δύο πλευρές εξοντώθηκαν.",
         };
 

@@ -885,13 +885,19 @@ public sealed class SimBridge
 
             // Every team is created at tier one, so an era the mission asks for is an era it hands
             // over — and a target of one reads exactly like a target the author thought was ahead.
+            //
+            // Its deadline is the mission's own time limit, and it used to be 12 000: a deadline past
+            // the limit is a moment the match never reaches, which the validator now refuses, and the
+            // author's remedy for a number nothing can arrive at is to change the number — see
+            // `CheckObjectiveClock`. The flaw it was, is one of the three this fixture's draft twin
+            // carries on purpose: `paperclip_draft`.
             new ObjectiveDefinition(
                 ObjectiveKind.ReachTechTier,
                 "Προαιρετικά: φτάστε σε τεχνολογικό επίπεδο 1.",
                 Team: 0,
                 TierTarget: 1,
                 IsPrimary: false,
-                DeadlineTick: 12_000),
+                DeadlineTick: 7_200),
 
             // The hold, written around the army's own camp: six units are standing in the circle
             // before the first tick, so the hold clock starts with nothing done.
@@ -904,13 +910,238 @@ public sealed class SimBridge
                 CentreX: -180_000,
                 CentreZ: -180_000,
                 RadiusMm: DemoCircleRadiusMm,
-                DeadlineTick: 9_000,
+                DeadlineTick: 7_200,
                 IsPrimary: false),
         ],
         TimeLimitTicks: 7_200)
     {
         Roster = MatchRoster.Duel,
     };
+
+    /// <summary>
+    /// Where the outpost's people are standing when the mission opens, in millimetres: east of
+    /// everything else on the map.
+    /// <para>
+    /// The position is the design and not a convenience. A side that is hostile to every other side
+    /// and cannot shoot back is a side the fighting will erase if the fighting is anywhere near it —
+    /// a hundred and forty metres from the agents' camp is inside their artillery's reach, and a
+    /// demonstration whose subject is dead within ten seconds is a demonstration of nothing. Three
+    /// hundred metres away from either base, on the far side of the map from the war the AI fights,
+    /// is where a non-combatant force survives long enough to be read: six units, no structures, and
+    /// not one weapon that can answer anything.
+    /// </para>
+    /// </summary>
+    private const int OutpostX = 250_000;
+    private const int OutpostZ = 0;
+
+    /// <summary>Radius of the denial written over the loading point, in millimetres.</summary>
+    private const int LoadingPointRadiusMm = 45_000;
+
+    /// <summary>
+    /// <b>Operation Paperclip: the mission §8 wants to build, and the side that had to exist before it
+    /// could be.</b>
+    /// <para>
+    /// Δυτικοί agents are coming for the people of a remote outpost — the scientists of an alternate
+    /// history's Operation Paperclip, who are an <em>objective</em> and not an army. They hold no
+    /// ground, they own no base and they never will: the mission's script stands them in the outpost
+    /// and walks them towards the loading point, and the whole of their part in the match is to be
+    /// carried out of it or prevented. The player is the Σοβιετικοί, whose mission is the denial over
+    /// that loading point, and the Δυτικοί are the ordinary enemy the AI plays.
+    /// </para>
+    /// <para>
+    /// <b>Two missions rather than one, and the pair is the demonstration.</b> This is the mission as
+    /// it should be: the outpost's team is declared with <see cref="MatchTeam.Judged"/> false, which
+    /// is the one word that says the victory rule does not judge it, and the mission validates clean
+    /// and plays. <see cref="PaperclipDraftMission"/> is the same mission as its author first wrote
+    /// it, with the declaration missing and two clocks wrong. Nothing the campaign ships trips the
+    /// checks the two of them are written against — which is the point of those checks and also the
+    /// reason their refusals could never be read anywhere — so this pair is the content the third
+    /// layer of the validator is watched working on. See <c>tools/probe/paperclip.probe</c>.
+    /// </para>
+    /// <para>
+    /// The seed is the mission's own, because the denial is written as a circle while the bases are
+    /// found by a search: "the loading point is empty when the mission opens" is a claim about the
+    /// layout that seed produces or it is nothing.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreatePaperclipDemo()
+    {
+        MissionDefinition mission = PaperclipMission;
+        var bridge = new SimBridge(mission);
+        SimWorld world = bridge.World;
+
+        ObjectiveDefinition denial = mission.Objectives[0];
+
+        int insideTheDenial = world.CountUnitsInArea(denial.TargetTeam, denial.CentreX, denial.CentreZ, denial.RadiusMm);
+
+        Console.WriteLine(
+            $"paperclip-demo: '{mission.Id}' built — {insideTheDenial} of the Δυτικοί inside the loading " +
+            $"point, {world.Roster.TeamsInPlay} teams in the match, the outpost's team " +
+            $"{(world.Roster.IsJudged(OutpostTeam) ? "judged" : "not judged")} by the victory rule");
+
+        if (insideTheDenial >= denial.TargetCount)
+        {
+            Console.WriteLine(
+                "paperclip-demo: the loading point is not clear in the world the mission opens in, so " +
+                "this fixture is demonstrating something else");
+        }
+
+        return bridge;
+    }
+
+    /// <summary>
+    /// The outpost's team: the fourth slot, which no mission column describes. Nothing is laid out for
+    /// it — no base, no starting force — so the mission's own script is what puts its people on the
+    /// map, which is the same door a gun on a ridge comes through.
+    /// </summary>
+    private const int OutpostTeam = 3;
+
+    /// <summary>
+    /// The mission the demonstration plays, as it should be: a match that declares three sides, one
+    /// of them a non-player force, and objectives that are sound.
+    /// </summary>
+    private static MissionDefinition PaperclipMission => new(
+        Id: "paperclip",
+        GreekTitle: "Επίδειξη: Επιχείρηση Paperclip — το φυλάκιο",
+        GreekBriefing:
+            "Δυτικοί πράκτορες ανεβαίνουν για τους επιστήμονες του φυλακίου. " +
+            "Οι άνθρωποι του φυλακίου δεν είναι στρατός: δεν κρατούν έδαφος και δεν υπερασπίζονται " +
+            "τίποτα — είναι ο λόγος που γίνεται η επιχείρηση. " +
+            "Κρατήστε τους Δυτικούς έξω από το σημείο παραλαβής.",
+        Seed: 20250105UL,
+        PlayerBase: new WorldPos(-180_000, 0, -180_000),
+        AllyBase: default,
+        EnemyBase: new WorldPos(0, 0, 200_000),
+        PlayerUnits: 20,
+        AllyUnits: 0,
+        EnemyUnits: 14,
+        Objectives:
+        [
+            // The extraction, denied: the loading point is the outpost itself — the aircraft comes to
+            // the people rather than the other way round — and four Δυτικοί units inside that circle
+            // before the deadline is the agents getting them out. It is decided by the clock and by
+            // nothing else: the deadline arriving with the circle still clear is the fact that they
+            // never arrived, and 3 600 is inside the mission's own 7 200, which is the sound shape of
+            // the deadline the draft gets wrong.
+            new ObjectiveDefinition(
+                ObjectiveKind.DenyArea,
+                "Οι Δυτικοί δεν πρέπει να φτάσουν στο σημείο παραλαβής με 4 μονάδες.",
+                Team: 0,
+                TargetTeam: 2,
+                TargetCount: 4,
+                CentreX: OutpostX,
+                CentreZ: OutpostZ,
+                RadiusMm: LoadingPointRadiusMm,
+                DeadlineTick: 3_600),
+
+            // A constraint with no deadline, which is the shape that must stay exempt: the mission is
+            // won by keeping the agents out, and this one only has to hold until then. It is m3's
+            // third objective, and the draft turns it into the mistake it is not.
+            new ObjectiveDefinition(
+                ObjectiveKind.ProtectCommandCentre,
+                "Το κέντρο διοίκησής σας πρέπει να επιβιώσει.",
+                Team: 0,
+                Constraint: true),
+        ],
+        TimeLimitTicks: 7_200)
+    {
+        // The one line that says what the outpost's side is: a team in the match that holds
+        // objectives rather than ground, and so is no part of what the victory rule decides.
+        Roster = MatchRoster.Declare(
+            new MatchTeam(0, Faction.Soviet, 0),
+            new MatchTeam(2, Faction.Western, 1),
+            new MatchTeam(OutpostTeam, Faction.Chinese, 2, Judged: false)),
+
+        Triggers =
+        [
+            // The people themselves. The mission has no column for them — a definition carries the
+            // player's force, the ally's and the enemy's — so the script is what stands them in the
+            // outpost, six unarmed units of a side that owns no buildings at all. They wait there,
+            // because waiting to be carried out of it is the whole of what such a side does: what
+            // moves in this mission is the agents, and the players' denial is aimed at them.
+            new TriggerDefinition(
+                Id: "the-outpost",
+                Condition: new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 1),
+                Actions:
+                [
+                    new TriggerAction(
+                        TriggerActionKind.Spawn,
+                        Team: OutpostTeam,
+                        Role: UnitKind.Harvester,
+                        Count: 6,
+                        CentreX: OutpostX,
+                        CentreZ: OutpostZ),
+                ],
+                Note: "The people are on the map from the first tick, in the outpost the agents are " +
+                      "coming for: a side that holds objectives rather than ground, which is what " +
+                      "Judged = false declares and what the mission's columns cannot express."),
+        ],
+    };
+
+    /// <summary>
+    /// <b>The same mission as its author first wrote it: three mistakes, and the third layer of the
+    /// validator is the one that reads them.</b>
+    /// <para>
+    /// The scientists' side is declared the way every side was declared before a match could say
+    /// otherwise, so a team that holds no ground is left to the victory rule — which cannot tell it
+    /// from a team that has been destroyed, and which on this cast calls the match for the player on
+    /// the check that first asks it. The command centre constraint loses the word that made it a
+    /// constraint, which turns a legitimate objective with no deadline into one nothing could ever
+    /// complete. And the denial asks for 9 000 ticks of a mission that has 7 200, so the moment it
+    /// would be decided is a moment the mission never reaches.
+    /// </para>
+    /// <para>
+    /// Wrong on purpose, and therefore beside the launch flags rather than in
+    /// <see cref="MissionCatalog"/>: the campaign is the content that has to pass the validator, and
+    /// this is the content that proves the validator is still looking. It is never played — the probe
+    /// asks the validator about it by id — which is why it needs no camera and no fixture.
+    /// </para>
+    /// </summary>
+    private static MissionDefinition PaperclipDraftMission => PaperclipMission with
+    {
+        Id = "paperclip_draft",
+        GreekTitle = "Επίδειξη: το φυλάκιο, με τα λάθη του συγγραφέα",
+        GreekBriefing =
+            "Η ίδια επιχείρηση, όπως γράφτηκε την πρώτη φορά: η πλευρά του φυλακίου κρίνεται σαν " +
+            "παράταξη, ο περιορισμός του κέντρου διοίκησης δεν είναι περιορισμός, " +
+            "και η προθεσμία της άρνησης πέφτει μετά το τέλος της αποστολής.",
+        Objectives =
+        [
+            PaperclipMission.Objectives[0] with { DeadlineTick = 9_000 },
+            PaperclipMission.Objectives[1] with { Constraint = false },
+        ],
+        Roster = MatchRoster.Declare(
+            new MatchTeam(0, Faction.Soviet, 0),
+            new MatchTeam(2, Faction.Western, 1),
+            new MatchTeam(OutpostTeam, Faction.Chinese, 2)),
+    };
+
+    /// <summary>
+    /// <b>A mission this client can be asked about by name that is not part of the campaign.</b>
+    /// <para>
+    /// The probe's <c>validate</c> resolves an id against <see cref="MissionCatalog"/> first, which is
+    /// the content that ships and has to pass; these are the demonstration missions beside the launch
+    /// flags, which are the content that has to <em>fail</em>, and a check whose refusals cannot be
+    /// reached is a check nobody can watch working. The wrong one is here rather than behind a flag of
+    /// its own because it is never played: what a reader wants is the validator's answer about it, and
+    /// that is a question about a mission rather than about a match.
+    /// </para>
+    /// </summary>
+    /// <returns>The mission, or null when no demonstration has that id.</returns>
+    public static MissionDefinition? FindDemoMission(string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+
+        foreach (MissionDefinition mission in new[] { ObjectiveDemoMission, PaperclipMission, PaperclipDraftMission })
+        {
+            if (string.Equals(mission.Id, id, StringComparison.OrdinalIgnoreCase))
+            {
+                return mission;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// A square of ground <paramref name="radius"/> cells in every direction on which every cell is

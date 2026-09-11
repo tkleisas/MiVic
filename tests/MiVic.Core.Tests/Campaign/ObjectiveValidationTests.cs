@@ -434,6 +434,140 @@ public sealed class ObjectiveValidationTests
         Assert.Contains("can never be failed", problems[1]);
     }
 
+    // ---------------------------------------------------------------- the objective's own clock
+
+    /// <summary>
+    /// <b>The clock objectives that are not constraints, and the one that is.</b>
+    /// <para>
+    /// A survival objective and a command-centre objective are completed by <em>reaching their
+    /// deadline</em> and by nothing else — that is what "reach tick N with your base still standing"
+    /// means — so one without a deadline is an objective that can never be satisfied: a mission that
+    /// requires it can only time out, and one that does not still ships an objective the player can
+    /// never finish. It is the failure this whole validator exists for, wearing the other kind of
+    /// clock, and it is a fact about the mission's data rather than about the world it opens in, so no
+    /// world is asked.
+    /// </para>
+    /// <para>
+    /// <b>The constraint is the other case and stays exempt</b>, which is why the check has to know
+    /// which of the two it is looking at: "your command centre must survive" is never what wins the
+    /// mission, so it needs no clock to be completed by — and m3 ships exactly that shape, with no
+    /// deadline on it, so a check that refused it would refuse the campaign.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AClockObjectiveThatIsNotAConstraintAndHasNoDeadlineIsRefused()
+    {
+        string survival = Joined(TriggerSystem.Validate(Mission(new ObjectiveDefinition(
+            ObjectiveKind.SurviveTicks,
+            "Επιβιώστε με τις δυνάμεις σας.",
+            Team: 0))));
+
+        Assert.Contains("objective 0 is a SurviveTicks that is not a constraint and has no deadline", survival);
+        Assert.Contains("can never be satisfied", survival);
+        Assert.Contains("can only time out", survival);
+
+        string commandCentre = Joined(TriggerSystem.Validate(Mission(new ObjectiveDefinition(
+            ObjectiveKind.ProtectCommandCentre,
+            "Το κέντρο διοίκησής σας πρέπει να επιβιώσει.",
+            Team: 0))));
+
+        Assert.Contains(
+            "objective 0 is a ProtectCommandCentre that is not a constraint and has no deadline",
+            commandCentre);
+
+        // The controls, and they are the same two objectives: with a deadline each is a mission, and
+        // as a constraint the command centre is the exemption m3 ships.
+        Assert.Empty(TriggerSystem.Validate(Mission(new ObjectiveDefinition(
+            ObjectiveKind.SurviveTicks,
+            "Επιβιώστε με τις δυνάμεις σας.",
+            Team: 0,
+            DeadlineTick: 600))));
+
+        Assert.Empty(TriggerSystem.Validate(Mission(new ObjectiveDefinition(
+            ObjectiveKind.ProtectCommandCentre,
+            "Το κέντρο διοίκησής σας πρέπει να επιβιώσει.",
+            Team: 0,
+            Constraint: true))));
+
+        // And the game agrees with the complaint, which is the only thing that makes it worth having:
+        // a required objective nothing can complete is a mission that can only time out, and this one
+        // is lost at its limit with the very thing it asks about still standing.
+        MissionDefinition pointless = Mission(new ObjectiveDefinition(
+            ObjectiveKind.ProtectCommandCentre,
+            "Το κέντρο διοίκησής σας πρέπει να επιβιώσει.",
+            Team: 0))
+            with { TimeLimitTicks = 200 };
+
+        SimWorld world = Build(pointless);
+        world.RunTicks(200 + MissionSystem.CheckInterval);
+
+        Assert.Equal(GameOutcome.Defeat, world.Outcome);
+        Assert.True(
+            MissionSystem.HasCommandCentre(world, 0),
+            "The mission timed out with the command centre it asks about still standing.");
+    }
+
+    /// <summary>
+    /// <b>A deadline later than the mission's own time limit is a moment the mission never
+    /// reaches.</b>
+    /// <para>
+    /// The mission is decided at the limit — the objectives are evaluated on that tick and the limit
+    /// is applied after them — so a deadline past it is a number the author wrote that nothing can
+    /// arrive at. For the kinds whose clock is what completes them the consequence is fatal: the
+    /// objective can never be satisfied and the mission can never be won. For the rest the objective
+    /// is overtaken by the limit instead of decided by its own clock, and the time its author gave it
+    /// is time it never had. Either way it is a static fact about the mission's data, which is why it
+    /// is checked here rather than against a world.
+    /// </para>
+    /// <para>
+    /// <b>m1 is one tick from this.</b> Its first objective asks for 7 200 ticks against a time limit
+    /// of 7 200 — the last deadline that is honest, because the objective is evaluated before the
+    /// limit is applied and so can still be completed on that tick — and 7 201 is refused. The
+    /// shipped mission is asserted clean first, so the pair reads as the boundary rather than as a
+    /// complaint about the campaign.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void ADeadlinePastTheTimeLimitIsRefused()
+    {
+        string overrun = Joined(TriggerSystem.Validate(Mission(new ObjectiveDefinition(
+            ObjectiveKind.SurviveTicks,
+            "Επιβιώστε ως το τέλος.",
+            Team: 0,
+            DeadlineTick: 7_201))
+            with { TimeLimitTicks = 7_200 }));
+
+        Assert.Contains("objective 0 has a deadline of 7201 ticks and the mission's time limit is 7200", overrun);
+        Assert.Contains("can never be reached", overrun);
+        Assert.Contains("can never be satisfied and the mission can never be won", overrun);
+
+        // The other half of the sentence, for a kind the clock does not decide.
+        string late = Joined(TriggerSystem.Validate(Mission(new ObjectiveDefinition(
+            ObjectiveKind.ReachTechTier,
+            "Φτάστε σε τεχνολογικό επίπεδο 3.",
+            Team: 0,
+            TierTarget: 3,
+            DeadlineTick: 7_201))
+            with { TimeLimitTicks = 7_200 }));
+
+        Assert.Contains("the objective is decided at the limit instead", late);
+
+        MissionDefinition m1 = MissionCatalog.Require("m1_bridgehead");
+
+        Assert.Equal(m1.TimeLimitTicks, m1.Objectives[0].DeadlineTick);
+        Assert.Empty(TriggerSystem.Validate(m1));
+
+        MissionDefinition oneTickLate = m1 with
+        {
+            Objectives = [m1.Objectives[0] with { DeadlineTick = m1.TimeLimitTicks + 1 }, m1.Objectives[1]],
+        };
+
+        IReadOnlyList<string> problems = TriggerSystem.Validate(oneTickLate);
+
+        Assert.Single(problems);
+        Assert.Contains("objective 0 has a deadline of 7201 ticks and the mission's time limit is 7200", problems[0]);
+    }
+
     /// <summary>
     /// <b>The four missions this repository ships validate clean, and that is a test rather than a
     /// remark.</b>

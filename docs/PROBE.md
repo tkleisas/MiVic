@@ -41,7 +41,12 @@ fixture at all and is the one launch flag here that starts a *mission*: one whos
 world it opens in has already decided, wrong on purpose, because no mission the campaign ships is one
 and a validator whose refusals nothing can reach is a validator nobody can watch working. It is left
 a mission rather than a fixture deliberately — it has fog, a panel and a banner, and the banner is
-half of what it demonstrates. See `tools/probe/objectives.probe` below.
+half of what it demonstrates. See `tools/probe/objectives.probe` below. A seventh, `--paperclip-demo`,
+is a mission for the same reason and about the other half of the same validator: it is ROADMAP §8's
+Operation Paperclip, staged around a side that holds objectives rather than ground, and it is the
+mission a match could not declare before `MatchTeam.Judged` existed. It validates clean and plays; the
+mission it was first written as, with that declaration missing, is reached by id and refused. See
+`tools/probe/paperclip.probe` below.
 
 **PowerShell does not wait for this executable.** The client is a `WinExe`, so `& $exe …`
 returns immediately and `$LASTEXITCODE` is empty. Use `Start-Process -Wait -PassThru` (as
@@ -141,10 +146,10 @@ like ground somebody walked over. These four commands answer it.
 
 | Command | Answer |
 |---|---|
-| `triggers` | the mission's whole script: every trigger in the order the simulation evaluates it, what it waits for, what it does, whether it has fired and **on which tick** — then the flags it has raised, and a check of the mission's own integrity, which fails the run when a trigger waits on something that can never happen **or when anything in the mission — condition or objective — is already decided by the world it opens in** |
+| `triggers` | the mission's whole script: every trigger in the order the simulation evaluates it, what it waits for, what it does, whether it has fired and **on which tick** — then the flags it has raised, and a check of the mission's own integrity, which fails the run when a trigger waits on something that can never happen **or when anything in the mission — condition, objective or side — is already decided by the world it opens in** |
 | `messages` | what the mission has shown the player, oldest first, with the tick and how long ago |
 | `objectives` | every objective the mission is judged by: kind, status, primary or bonus, the progress behind it, and the numbers it is asking — the same state the state hash folds in |
-| `validate [mission-id]` | the mission's own integrity check on its own, with every complaint printed in the validator's words: with no id, the mission the running match is playing; with one, that mission of the campaign — **is this a mission that can be won** |
+| `validate [mission-id]` | the mission's own integrity check on its own, with every complaint printed in the validator's words: with no id, the mission the running match is playing; with one, that mission of the campaign or one of the demonstration missions this client carries beside its launch flags — **is this a mission that can be won** |
 
 `triggers` answers "did the second act of this mission happen at all", which is the failure a mission
 is most likely to ship: a trigger that exists and never fires. A transcript can read for forty lines
@@ -181,6 +186,36 @@ records the check, so a mission that cannot be won fails the probe's run rather 
 somebody reads past. No mission the campaign ships trips either half, which is the point of the check
 and also the reason its refusals need a fixture to be seen at all: see
 `tools/probe/objectives.probe` below.
+
+**Two facts about an objective's own clock need no world, and they are asked beside the ones that do.**
+A `SurviveTicks` or a `ProtectCommandCentre` is completed by *reaching its deadline* and by nothing
+else, so one that is not a constraint and has no deadline can never be satisfied: a mission that
+requires it can only time out. A **constraint** with no deadline is the other case and stays exempt —
+"your command centre must survive" is never what wins the mission — which is why the check has to know
+which of the two it is looking at, and why m3's third objective, which is exactly that shape, still
+validates. And a deadline later than the mission's own time limit is a moment the match never reaches:
+the mission is decided at the limit, so for the kinds the clock completes the objective can never be
+satisfied at all, and for the rest the time its author gave it is time it never had. Neither half is a
+fact about a map, so neither needs the opening world built to be asked.
+
+**The third question is the one this instrument was missing, and it is about sides rather than about
+anything a mission says.** Three layers read a world and none of them was ever asked about the world a
+mission opens in: the triggers, the objectives, and the victory rule — and the last of the three was
+safe *by construction* rather than by being asked, because the scenario lays a base down for every team
+a match declares, so no declared side could stand in nothing. A mission staged around a **non-player
+force** is the mission that construction cannot express: ROADMAP §8's Operation Paperclip, where
+Δυτικοί agents come for the scientists of a remote outpost, and the scientists are an objective rather
+than an army — no base, no structures, no ground of their own. A declared side standing in nothing is
+exactly what the last-side-standing rule cannot tell from a side that has been destroyed, and where
+such a side is the only one off the player's, the rule calls the match for the player on the check that
+first asks it.
+
+So a match can say that a side is one the rule does not judge — `Judged = false` on the team's
+declaration — and `validate` reports a declared side that stands in nothing *unless* it was declared
+that way. The complaint names the side, the number the world answered with, and what the rule makes of
+it, which is `VictorySystem.Decide`'s own answer about that very world. Without the word it is the
+accident; with it, it is the design. See `tools/probe/paperclip.probe` below, which reads both the
+mission and the mission its author first wrote.
 
 ### What the player would see
 
@@ -1016,7 +1051,10 @@ Four facts, and each of them used to be an assumption:
 - **`match` is the declaration, not an inference**: two teams playing, each with the faction it plays
   and the side it is on, and the two slots that are *not* in this match named as such. It is printed
   from `MatchRoster`, which is the one place the victory check, the AI, the interface and the client's
-  palette and labels all read;
+  palette and labels all read. A team the match declares as one the victory rule does **not** judge is
+  named as that too — `(a side the victory rule does not judge)` — because everything else about such a
+  team reads as a fault without it: no base, no structures, and no ground of its own. See
+  `tools/probe/paperclip.probe` below;
 - **`sides` reads `0+1 hostile`** — teams 0 and 1, which are allied in every other match this game
   ships, and which a predicate over team numbers could never have put at war. There is exactly one
   entry because there is exactly one pair in the match;
@@ -1446,7 +1484,7 @@ cmd: objectives
 query: objectives: 2 objectives in 'm4_pass', outcome victory, at tick 3800
 query:   #0 DenyArea             complete primary progress 0, hold 0
 query:   #1 Scripted             complete primary progress 0, hold 0
-check: PASS 'the mission's script fires when it means to' — every trigger waits on something that can happen, every scripted objective is completed by one, and nothing in the mission — condition or objective — is already decided by the world it opens in
+check: PASS 'the mission's script fires when it means to' — every trigger waits on something that can happen, every scripted objective is completed by one, no objective asks for more time than the mission has, and nothing in the mission — condition, objective or side — is already decided by the world it opens in
 probe: 60 commands, 60 ok, 0 errors, 0 checks failed
 ```
 
@@ -1541,7 +1579,7 @@ ok: shot …\artifacts\probe\objectives-defeat.png — 1280x720, 542.0 kB, 3382 
 cmd: hud off
 cmd: validate m1_bridgehead
 query: validate: 'm1_bridgehead' — 2 objectives, 0 triggers, 3 teams in the match, 0 problems
-check: PASS ''m1_bridgehead' is a mission that can be won' — every trigger waits on something that can happen, and no objective is already decided by the world the mission opens in
+check: PASS ''m1_bridgehead' is a mission that can be won' — every trigger waits on something that can happen, no objective is already decided by the world the mission opens in or asks for more time than the mission has, and no side stands in nothing unless the match says it does not judge it
 cmd: validate m2_ridge
 check: PASS ''m2_ridge' is a mission that can be won' — …
 cmd: validate m3_industry
@@ -1578,11 +1616,14 @@ What the transcript says, one line at a time:
   its sentence would have been a reason that does not apply;
 - **the shot the script takes is that defeat as the player sees it**, and it is worth reading twice.
   The panel in it says sixteen units and four structures on each side and `12/4 εχθρικές μονάδες
-  μέσα` against the denial; the banner across the middle says *Η πλευρά σας διαλύθηκε* — the victory
-  rule's own story, told about an outcome the objectives decided. That is the same defect `teams`
-  had, in the copy a player actually reads, and it is **reported rather than fixed here**: the words
-  a mission's defeat should use are the interface's decision to make, and this transcript is the
-  evidence for it. `artifacts/probe/objectives-defeat.png`;
+  μέσα` against the denial; the banner across the middle used to say *Η πλευρά σας διαλύθηκε* — the
+  victory rule's own story, told about an outcome the objectives decided, over a battle in which
+  nothing had been lost. It now says *Η αποστολή χάθηκε. Η πλευρά σας στέκεται ακόμη.* — "the mission
+  was lost, your side is still standing" — because the line asks the world whether the player's side
+  holds anything before it claims the side was destroyed. That is the same defect `teams` had, in the
+  copy a player actually reads, and it is fixed rather than reported now; the **wording** of the new
+  line is still the interface's decision to make, and what the line may not do is state a destruction
+  that did not happen. `artifacts/probe/objectives-defeat.png`;
 - **the four missions the campaign ships are asked the same question and all four hold.** That is the
   half a validator lives or dies by: it is the first honest run of the check against content that
   exists, and a check that fired on the campaign would be a check nobody keeps. `m4_pass` is the one
@@ -1594,4 +1635,92 @@ two-faction matches made expressible — is not in this transcript: it needs a m
 roster and fought against another, and the proof of it is
 `ObjectiveValidationTests.AnObjectiveAboutATeamTheMatchDoesNotDeclareIsRefused`, which validates one
 mission twice, once under the skirmish it was written for and once under `MatchRoster.Rivals`.
+
+## Worked example: is a side the victory rule does not judge a side at all?
+
+Three layers read a world and none of them was ever asked about the world a mission opens in. The
+triggers were the first (`tools/probe/triggers.probe`), the objectives the second
+(`tools/probe/objectives.probe`), and the victory rule is the third — and the third was safe *by
+construction* rather than by being asked: the scenario lays a base down for every team a match
+declares, so no declared side could stand in nothing, and a rule that asks about ground never met a
+side without any.
+
+**ROADMAP §8's Operation Paperclip is the mission that construction cannot express.** Δυτικοί agents
+come for the scientists of a remote outpost, and the scientists are an objective rather than an army:
+no base, no structures, no ground of their own. A declared side standing in nothing is exactly what the
+last-side-standing rule cannot tell from a side that has been destroyed — and where such a side is the
+only one off the player's, the rule calls the match for the player on the check that first asks it,
+before a shot is fired. So a match says which of its sides the rule does not judge: `Judged = false` on
+the team's declaration, one more fact beside the team, its faction and its side.
+
+`tools/probe/paperclip.probe`, run with `--paperclip-demo`, reads the mission that fix enables and the
+mission its author first wrote — the same cast, without the word — which is reached by id and refused
+(`…` marks lines cut out of the middle):
+
+```
+cmd: validate
+query: validate: 'paperclip' — 2 objectives, 1 trigger, 3 teams in the match, 0 problems
+check: PASS ''paperclip' is a mission that can be won' — every trigger waits on something that can happen, no objective is already decided by the world the mission opens in or asks for more time than the mission has, and no side stands in nothing unless the match says it does not judge it
+cmd: teams
+query:   match      3 teams declared: 0 soviet side 0, 2 western side 1, 3 chinese side 2 (a side the victory rule does not judge); not in the match: team 1 (chinese) — MatchRoster, which is what the victory check and the AI read
+query:   outcome    ongoing; still holding structures: team 0, team 2
+cmd: validate paperclip_draft
+query: validate: 'paperclip_draft' — 2 objectives, 1 trigger, 3 teams in the match, 3 problems
+query:   problem    objective 0 has a deadline of 9000 ticks and the mission's time limit is 7200: the deadline arrives after the match is over, so it can never be reached, and this is a kind the clock decides — so the objective can never be satisfied and the mission can never be won.
+query:   problem    objective 1 is a ProtectCommandCentre that is not a constraint and has no deadline: reaching the deadline is the only thing that completes it, so it can never be satisfied, and a mission that requires it can only time out.
+query:   problem    side 2 of this mission's match stands in no structures in the world the mission opens in — team 3 stands in 0 structures — so the last-side-standing rule reads the side as already beaten on the check that first asks it: a side holding no ground is a side that rule cannot tell from one that has been destroyed. A side that holds objectives rather than ground is a deliberate declaration, and a match says so with Judged = false on its team.
+fail: FAIL ''paperclip_draft' is a mission that can be won' — objective 0 has a deadline of 9000 ticks…
+cmd: tick 1
+cmd: teams
+query:   match      3 teams declared: 0 soviet side 0, 2 western side 1, 3 chinese side 2 (a side the victory rule does not judge); not in the match: team 1 (chinese) — …
+query:   team 0 soviet   24 alive, 4 structures
+query:   team 2 western  18 alive, 4 structures
+query:   team 3 chinese  6 alive, 0 structures
+query:   sides      0+2 hostile, 0+3 hostile, 2+3 hostile — SimWorld.AreAllied, which is what every weapon asks
+query:   outcome    ongoing; still holding structures: team 0, team 2
+cmd: units chinese
+query: units: 48 entities alive (soviet 24, chinese 6, western 18), 48 in the world's own count
+query:   slot   42 chinese Harvester        team 3 at (x 243.0, z 0.0) m heading 0.0° health 300/300 target - building no
+…
+cmd: tick 1000
+cmd: teams
+query:   team 3 chinese  6 alive, 0 structures
+query:   outcome    ongoing; still holding structures: team 0, team 2
+probe: 23 commands, 23 ok, 0 errors, 1 checks failed
+```
+
+What the transcript says:
+
+- **the mission is a mission, and the only thing unusual about it is a word in a declaration.** Two
+  objectives — a denial over the loading point with a deadline inside the time limit, and a
+  command-centre constraint with no deadline, which is the shape that must stay exempt — and one
+  trigger, which is what stands the outpost's people on the map. A definition carries the player's
+  force, the ally's and the enemy's, so a fourth team is a team the mission's own columns cannot
+  describe: nothing is laid out for it, and the script is what puts it there;
+- **`match` is where the declaration is read.** `3 chinese side 2 (a side the victory rule does not
+  judge)` is one fact, printed from `MatchRoster` — and it is the fact that makes everything else
+  about that team readable. Six units alive, nothing built, hostile to both other sides, and the match
+  `ongoing` at tick one, at tick 201 and at tick 1201, which is what it would not be if the word were
+  missing: `VictorySystem.Decide` on the same world without it answers `victory`, which is the
+  landmine, and the Core test `UnjudgedSideTests.TheSameMissionIsOngoingAtTickOneRatherThanDecided`
+  asserts both answers;
+- **the refusal is the same mission with the word taken out**, and it is three complaints because the
+  draft carries three authoring mistakes — the declaration missing, a constraint that lost the word
+  making it a constraint, and a denial asking for 9 000 ticks of a 7 200-tick mission. Each names what
+  it found and what follows from it, which is the whole of what a validator owes an author;
+- **the side is a side in the interface too.** `--paperclip-demo` draws three rows in `Παράταξη` where
+  the campaign's missions draw two or three factions, and the last of them is the outpost's: six units,
+  nothing built. `artifacts/probe/paperclip-sides.png` and `artifacts/probe/paperclip-outpost.png` —
+  the second is the six of them at thumbnails' distance, standing in the outpost they are waiting to be
+  carried out of;
+- **the `units` line asks by faction and not by team, and that is the trap rather than a slip.** The
+  filter takes a faction name or a team number, and it reads the argument as a faction *first* — so
+  `units 3` lists the Δυτικοί and not team 3, because `1`, `2` and `3` are the legacy names of the
+  three factions (see `ProbeLabels.TryFaction`). The outpost's team is named in the `match` line and
+  nowhere else, and the six units are reached by the faction that team plays.
+
+The fixture is a demonstration and not the mission: the agents' own war is the AI's, and nothing here
+makes them attempt the extraction. What it demonstrates is the whole of what the layer needed — a side
+that holds objectives rather than ground, declared as one, validating and playing, and refused when it
+is not.
 

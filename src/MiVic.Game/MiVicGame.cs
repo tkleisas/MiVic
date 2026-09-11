@@ -517,6 +517,16 @@ public sealed partial class MiVicGame : XnaGame
             _camera.Yaw = 0.62f;
             _camera.FocusOn(new Vector3(-180f, 0f, -180f));
         }
+        else if (_options.PaperclipDemo)
+        {
+            // The same framing as the objective demonstration, and for the same reason: the claim is a
+            // distance across the map — the agents arriving at the loading point — so the frame starts
+            // at the player's end of it, where the denial is being fought for.
+            _camera.ZoomTo(620f);
+            _camera.TiltTo(-1.02f);
+            _camera.Yaw = 0.62f;
+            _camera.FocusOn(new Vector3(-180f, 0f, -180f));
+        }
         else if (_options.FireDemo)
         {
             // Looking along the line from behind and above, with the camera on the far
@@ -659,7 +669,9 @@ public sealed partial class MiVicGame : XnaGame
                                                         ? SimBridge.CreateMudDemo(_options.Seed)
                                                         : _options.ObjectiveDemo
                                                             ? SimBridge.CreateObjectiveDemo()
-                                                            : new SimBridge(_options.Seed, _options.IsModelGallery ? ScenarioKind.ModelGallery : _options.Match);
+                                                            : _options.PaperclipDemo
+                                                                ? SimBridge.CreatePaperclipDemo()
+                                                                : new SimBridge(_options.Seed, _options.IsModelGallery ? ScenarioKind.ModelGallery : _options.Match);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);

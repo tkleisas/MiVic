@@ -39,9 +39,14 @@
 #     is `defeat`, which is what "unwinnable" means for a player rather than for a validator.
 #   - the shot is that defeat as the player sees it, and it is worth reading twice: the panel says
 #     sixteen units and four structures on each side and `12/4` enemy units inside the denial, and
-#     the banner over it says the player's side was destroyed. The banner is quoting the victory
-#     rule about an outcome the objectives decided — the same defect `teams` had, in the copy a
-#     player actually reads. It is reported rather than fixed here.
+#     the banner over it says *Η αποστολή χάθηκε. Η πλευρά σας στέκεται ακόμη.* — "the mission was
+#     lost, your side is still standing". It used to say *Η πλευρά σας διαλύθηκε* — that the player's
+#     side had been destroyed — which is the victory rule's own story told about an outcome the
+#     objectives decided: the same defect `teams` had, in the copy a player actually reads. The
+#     banner now asks the world whether the side holds anything before it says the side was
+#     destroyed, so this frame is the two-line fix rather than the report of it. The wording of the
+#     new line is still the interface's to decide; what it may not do is state a destruction that did
+#     not happen.
 #   - the four `validate <id>` lines are the campaign, one mission at a time: each is asked the same
 #     question and each holds, including `m4_pass`, whose denial is on the road out of the valley
 #     rather than on the ground the enemy starts on.

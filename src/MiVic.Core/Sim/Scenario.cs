@@ -282,6 +282,17 @@ public static class Scenario
     /// has nothing to do. Each team's base, its starting force and whether it gets a full base are
     /// the mission's own data, in the same order they have always been spawned.
     /// </para>
+    /// <para>
+    /// <b>A team the mission's columns do not describe is laid out as nothing, and that is the one
+    /// way a declared side can stand in no structures.</b> A mission has three forces in it — the
+    /// player's, the ally's and the enemy's — and a match may declare a fourth team that none of the
+    /// three describes: the non-player force of a mission staged around one, which is a team whose
+    /// side <see cref="MatchTeam.Judged"/> says the victory rule does not judge. Nothing is invented
+    /// for it here. A base placed for a team the mission says nothing about would be a base standing
+    /// at the middle of the map — the one site that belongs to nobody — for a team that may have
+    /// been declared precisely because it holds no ground at all; what such a side starts with, the
+    /// mission's script gives it, which is the same door a gun on a ridge comes through.
+    /// </para>
     /// </summary>
     public static ScenarioSetup BuildMission(SimWorld world, MissionDefinition mission)
     {
@@ -306,7 +317,10 @@ public static class Scenario
                 continue;
             }
 
-            (WorldPos centre, int units, bool fullBase) = MissionForceOf(mission, team);
+            if (!TryMissionForceOf(mission, team, out WorldPos centre, out int units, out bool fullBase))
+            {
+                continue;
+            }
 
             SpawnForce(
                 world, commandCentres, spawned, baseSites,
@@ -324,14 +338,46 @@ public static class Scenario
     /// units it begins with and whether it starts with a design bureau as well as the essentials.
     /// The ally is the team that starts light, which is a fact about the campaign's missions rather
     /// than about team 1.
+    /// <para>
+    /// False for a team the mission has no column for — the player's, the ally's and the enemy's are
+    /// the three a definition carries — so the caller lays nothing out for it rather than inventing a
+    /// base at the origin. See <see cref="BuildMission"/> for why that is the honest answer.
+    /// </para>
     /// </summary>
-    private static (WorldPos Centre, int Units, bool FullBase) MissionForceOf(MissionDefinition mission, int team) => team switch
+    private static bool TryMissionForceOf(
+        MissionDefinition mission,
+        int team,
+        out WorldPos centre,
+        out int units,
+        out bool fullBase)
     {
-        0 => (mission.PlayerBase, mission.PlayerUnits, true),
-        1 => (mission.AllyBase, mission.AllyUnits, false),
-        2 => (mission.EnemyBase, mission.EnemyUnits, true),
-        _ => (default, 0, false),
-    };
+        switch (team)
+        {
+            case 0:
+                centre = mission.PlayerBase;
+                units = mission.PlayerUnits;
+                fullBase = true;
+                return true;
+
+            case 1:
+                centre = mission.AllyBase;
+                units = mission.AllyUnits;
+                fullBase = false;
+                return true;
+
+            case 2:
+                centre = mission.EnemyBase;
+                units = mission.EnemyUnits;
+                fullBase = true;
+                return true;
+
+            default:
+                centre = default;
+                units = 0;
+                fullBase = false;
+                return false;
+        }
+    }
 
     private static void SpawnForce(
         SimWorld world,

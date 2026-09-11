@@ -212,6 +212,24 @@ public sealed record LaunchOptions
     public bool ObjectiveDemo { get; init; }
 
     /// <summary>
+    /// Starts the mission staged around a non-player force: ROADMAP §8's Operation Paperclip, where
+    /// Δυτικοί agents come for the scientists of a remote outpost and the player's Σοβιετικοί must
+    /// keep them out of the loading point. The outpost's side is declared as one the victory rule does
+    /// not judge — <see cref="MatchTeam.Judged"/> false — which is the fact that lets a side own no
+    /// base and no structures and still be a side rather than a defeat. Read with the probe's
+    /// <c>validate</c>, <c>teams</c>, <c>objectives</c> and <c>outcome</c> queries.
+    /// <para>
+    /// <b>The mission rather than the mistake, and the mistake is reachable by name.</b> These two are
+    /// the pair the third layer of the mission validator is watched on: this one validates clean and
+    /// plays, and <c>validate paperclip_draft</c> — the same mission as its author first wrote it, with
+    /// the declaration missing and two clocks wrong — is refused with its reasons printed. Nothing the
+    /// campaign ships trips those checks, so without a pair like this one the refusals could not be read
+    /// anywhere.
+    /// </para>
+    /// </summary>
+    public bool PaperclipDemo { get; init; }
+
+    /// <summary>
     /// Names one surface for the ground fixture to frame instead of the most varied
     /// ground: "Mud", "Sand", "Rock" and so on. A treatment is judged from a frame that
     /// is mostly the surface it belongs to, which the varied frame is not.
@@ -259,6 +277,7 @@ public sealed record LaunchOptions
           --armour-demo         Ίδιο όπλο σε τρία επιτελεία, ένα ανά παράταξη
           --mud-demo            Δύο σχολές στην ίδια λάσπη, με Έλεγχο Καιρού
           --objective-demo      Αποστολή που ο χάρτης έχει ήδη κρίνει (έλεγχος στόχων)
+          --paperclip-demo      Επιχείρηση Paperclip: πλευρά που δεν κρίνει η νίκη
           --flight-demo         Αεροσκάφη σε πτήση, για την κατεύθυνση της πλώρης
           --render-audio <dir>  Εξαγωγή θεμάτων μουσικής σε αρχεία WAV
           --render-sfx <dir>    Εξαγωγή ηχητικών εφέ σε αρχεία WAV
@@ -539,6 +558,14 @@ public sealed record LaunchOptions
                     // for a screenshot, and the demonstration is a transcript of what the map had
                     // already decided before the first tick — plus the banner it raises.
                     options = options with { ObjectiveDemo = true, ShowHelp = false };
+                    break;
+
+                case "--paperclip-demo":
+                    // A mission again, and the same reasoning: what is being read is a side and a
+                    // transcript. It is the mission that could not be built before a match could
+                    // declare a side the victory rule does not judge, so the transcript is the fix
+                    // and not a screenshot of it.
+                    options = options with { PaperclipDemo = true, ShowHelp = false };
                     break;
 
                 case "--render-audio":

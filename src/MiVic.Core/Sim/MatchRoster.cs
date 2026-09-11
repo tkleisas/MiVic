@@ -16,7 +16,26 @@ namespace MiVic.Core.Sim;
 /// Which side the team fights for. Two teams on the same side are allies; a team on its own side has
 /// no ally at all, which is what a one-against-one match is.
 /// </param>
-public readonly record struct MatchTeam(int Team, Faction Faction, int Side);
+/// <param name="Judged">
+/// <b>Whether the last-side-standing rule judges this team, which is the one thing a side can be that
+/// is not a faction.</b> True for everything that plays for the map, which is every team this game
+/// shipped before this field existed — so the default is true and a match that says nothing about it
+/// is the match it always was.
+/// <para>
+/// False declares a <em>non-player force</em>: a side that holds objectives rather than ground. The
+/// scientists of a research outpost waiting to be carried out of it, a remnant that exists to be
+/// reached rather than defeated, a generator that belongs to nobody and is at war with everybody —
+/// each is a side with no base and no structures, and each is a side the rule cannot tell from one
+/// that has been destroyed. See <see cref="VictorySystem.Decide"/>, where that reading is refused.
+/// </para>
+/// <para>
+/// It is not an exemption from being fought: such a side is still hostile to everyone it is not
+/// allied to, still stands on the map and can still be shot at. What it is exempt from is being
+/// <em>won against</em> — the objectives of the mission decide whether it was carried out or
+/// prevented, and the rule has no verdict to give about it either way.
+/// </para>
+/// </param>
+public readonly record struct MatchTeam(int Team, Faction Faction, int Side, bool Judged = true);
 
 /// <summary>
 /// <b>What is playing this match: which teams are in it, what faction each one plays, and who is on
@@ -61,6 +80,17 @@ public readonly record struct MatchTeam(int Team, Faction Faction, int Side);
 /// without a single unit having moved. A roster that disagreed with the scenario it was built for
 /// is refused where the scenario is laid out, which is the check that would otherwise be missing.
 /// </para>
+/// <para>
+/// <b>A side can be declared one the victory rule does not judge, and that is a fact about a side
+/// rather than a new system.</b> <see cref="MatchTeam.Judged"/> is the fourth fact a declaration
+/// carries beside the team, its faction and its side, and it exists for the one kind of side that is
+/// not a faction: a non-player force that holds objectives rather than ground — the scientists of
+/// <c>docs/ROADMAP.md</c> §8's Operation Paperclip, a remnant that exists to be reached, a generator
+/// that belongs to nobody. Such a side owns no base and therefore no structures, and the
+/// last-side-standing rule would otherwise read it as already beaten; <see cref="VictorySystem"/> is
+/// where that reading is refused, and <see cref="Campaign.TriggerSystem.Validate"/> is where a side
+/// that stands in nothing without saying so is refused as the authoring mistake it is.
+/// </para>
 /// </summary>
 public sealed class MatchRoster : IEquatable<MatchRoster>
 {
@@ -79,13 +109,15 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
     private readonly Faction[] _faction;
     private readonly int[] _side;
     private readonly bool[] _inPlay;
+    private readonly bool[] _judged;
     private readonly int _teamsInPlay;
 
-    private MatchRoster(Faction[] faction, int[] side, bool[] inPlay, int teamsInPlay)
+    private MatchRoster(Faction[] faction, int[] side, bool[] inPlay, bool[] judged, int teamsInPlay)
     {
         _faction = faction;
         _side = side;
         _inPlay = inPlay;
+        _judged = judged;
         _teamsInPlay = teamsInPlay;
     }
 
@@ -133,14 +165,18 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
         var faction = new Faction[SimConstants.TeamCount];
         var side = new int[SimConstants.TeamCount];
         var inPlay = new bool[SimConstants.TeamCount];
+        var judged = new bool[SimConstants.TeamCount];
 
         // A slot nobody declared keeps its own number as its faction and as its side. The faction is
         // the convention the game shipped with — slot 3 has none — and the side is only ever read
-        // for a team that is in the match, which this one is not.
+        // for a team that is in the match, which this one is not. Judged is the default of the
+        // declaration itself: a slot nobody declared is not a side the rule asks about at all,
+        // because the rule only ever walks the teams the match declares.
         for (int team = 0; team < SimConstants.TeamCount; team++)
         {
             faction[team] = SlotFaction(team);
             side[team] = team;
+            judged[team] = true;
         }
 
         foreach (MatchTeam declared in teams)
@@ -165,9 +201,10 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
             faction[declared.Team] = declared.Faction;
             side[declared.Team] = declared.Side;
             inPlay[declared.Team] = true;
+            judged[declared.Team] = declared.Judged;
         }
 
-        return new MatchRoster(faction, side, inPlay, teams.Length);
+        return new MatchRoster(faction, side, inPlay, judged, teams.Length);
     }
 
     /// <summary>The roster a scenario is fought under.</summary>
@@ -231,6 +268,25 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
     public bool IsInPlay(int team) => (uint)team < SimConstants.TeamCount && _inPlay[team];
 
     /// <summary>
+    /// <b>True when the last-side-standing rule judges this team — which is what decides whether its
+    /// absence of ground is a defeat.</b>
+    /// <para>
+    /// False for a team declared as a non-player force: a side that holds objectives rather than
+    /// ground, with no base and no structures, which the objectives of its mission decide the fate of
+    /// rather than the rule. <see cref="VictorySystem.Decide"/> skips such a team when it asks which
+    /// sides still hold ground, because a side that never held any is a side the rule cannot tell
+    /// from one that has been destroyed — and reading it as destroyed is what would make the rule
+    /// call a match that has not been fought.
+    /// </para>
+    /// <para>
+    /// An undeclared team answers true, for the same reason it answers everything else about itself:
+    /// a slot nobody declared is not a side in this match, and the only walk that asks this question
+    /// is one that has already skipped it.
+    /// </para>
+    /// </summary>
+    public bool IsJudged(int team) => (uint)team >= SimConstants.TeamCount || _judged[team];
+
+    /// <summary>
     /// Which side a team fights for. Only meaningful for a team that is in the match; an undeclared
     /// team's own number is returned so the answer is total rather than exceptional.
     /// </summary>
@@ -280,7 +336,7 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
         {
             if (_inPlay[team] != other._inPlay[team] ||
                 _faction[team] != other._faction[team] ||
-                (other._inPlay[team] && _side[team] != other._side[team]))
+                (other._inPlay[team] && (_side[team] != other._side[team] || _judged[team] != other._judged[team])))
             {
                 return false;
             }
@@ -299,7 +355,11 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
 
         for (int team = 0; team < SimConstants.TeamCount; team++)
         {
-            hash = (hash * 31) + ((int)_faction[team] << 8 | (int)(_side[team] & 0xFF) << 1 | (_inPlay[team] ? 1 : 0));
+            hash = (hash * 31) +
+                ((int)_faction[team] << 9 |
+                 (int)(_side[team] & 0xFF) << 2 |
+                 (_inPlay[team] ? 1 : 0) << 1 |
+                 (_judged[team] ? 1 : 0));
         }
 
         return hash;

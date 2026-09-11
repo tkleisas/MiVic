@@ -112,6 +112,57 @@ public sealed class MatchRosterTests
         Assert.Equal(1, world.GetRefBySlot(mercenary.Slot).TeamId);
     }
 
+    /// <summary>
+    /// <b>A match also says which of its sides the victory rule judges, which is the one fact a side
+    /// can carry that is not a faction.</b>
+    /// <para>
+    /// True for everything that plays for the map, and false for a non-player force — a side that
+    /// holds objectives rather than ground, with no base and no structures: the scientists of §8's
+    /// Operation Paperclip, which are an objective and not an army. It is not an exemption from being
+    /// fought, which is why the alliance is asserted beside it: such a side is still hostile to
+    /// everyone it is not allied to, still on the map and still shootable. What it is exempt from is
+    /// being <em>won against</em>, and <see cref="VictorySystem.Decide"/> is where that is read.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AMatchDeclaresWhichOfItsSidesTheVictoryRuleJudges()
+    {
+        // Every match this game shipped before the fact existed judges every team in it, which is
+        // what makes the default the old behaviour rather than a new one.
+        foreach (int team in new[] { 0, 1, 2 })
+        {
+            Assert.True(MatchRoster.StandardSkirmish.IsJudged(team));
+            Assert.True(MatchRoster.Duel.IsJudged(team));
+        }
+
+        MatchRoster judged = MatchRoster.Declare(
+            new MatchTeam(0, Faction.Soviet, 0),
+            new MatchTeam(2, Faction.Western, 1));
+
+        MatchRoster unjudged = MatchRoster.Declare(
+            new MatchTeam(0, Faction.Soviet, 0),
+            new MatchTeam(2, Faction.Western, 1, Judged: false));
+
+        Assert.True(judged.IsJudged(2));
+        Assert.False(unjudged.IsJudged(2));
+
+        // The teams that play for the map are judged in both, and a slot nobody declared answers the
+        // default: the rule only ever walks the teams the match declares.
+        Assert.True(unjudged.IsJudged(0));
+        Assert.True(unjudged.IsJudged(1));
+
+        // The word is part of the match and not a remark about it: two rosters that differ only in it
+        // are two different matches, which is what makes a world built for one refuse the other.
+        Assert.False(judged.Equals(unjudged));
+        Assert.NotEqual(judged, unjudged);
+
+        // And nothing else about the declaration moved: the two declared teams are still at war, and
+        // a team the match does not declare is still nobody's ally.
+        Assert.True(unjudged.IsHostile(0, 2));
+        Assert.False(unjudged.AreAllied(0, 2));
+        Assert.False(unjudged.AreAllied(0, 1));
+    }
+
     [Fact]
     public void AMatchRefusesATeamItDoesNotHaveOrOneDeclaredTwice()
     {

@@ -3168,7 +3168,12 @@ public sealed class ProbeRunner
         {
             if (roster.IsInPlay(team))
             {
-                playing.Add($"{team} {roster.FactionOf(team).ToString().ToLowerInvariant()} side {roster.SideOf(team)}");
+                // A side the victory rule does not judge is the one fact a declaration can carry that
+                // is not a faction, and it is printed here because everything else about such a team —
+                // no base, no structures, hostile to everybody — reads as a fault without it.
+                string name = $"{team} {roster.FactionOf(team).ToString().ToLowerInvariant()} side {roster.SideOf(team)}";
+
+                playing.Add(roster.IsJudged(team) ? name : $"{name} (a side the victory rule does not judge)");
             }
             else
             {
@@ -3628,7 +3633,8 @@ public sealed class ProbeRunner
             problems.Count == 0,
             problems.Count == 0
                 ? "every trigger waits on something that can happen, every scripted objective is completed by one, " +
-                  "and nothing in the mission — condition or objective — is already decided by the world it opens in"
+                  "no objective asks for more time than the mission has, and nothing in the mission — condition, " +
+                  "objective or side — is already decided by the world it opens in"
                 : string.Join("; ", problems));
     }
 
@@ -3650,6 +3656,13 @@ public sealed class ProbeRunner
     /// check would be a transcript that hid the reason. The check is recorded, so a mission that
     /// cannot be won fails the run rather than being a paragraph somebody reads past.
     /// </para>
+    /// <para>
+    /// <b>An id is resolved against the campaign first and then against the missions this client
+    /// carries beside its launch flags.</b> Those are the demonstration missions — the ones that are
+    /// wrong on purpose, or that are staged around a side no campaign ships — and they are named by id
+    /// for the same reason the running match's own mission is: the point of a validator is the content
+    /// it refuses, and content nothing ships is content only a name can reach.
+    /// </para>
     /// </summary>
     private void Validate(ProbeCommand command)
     {
@@ -3659,13 +3672,14 @@ public sealed class ProbeRunner
 
         MissionDefinition? mission = id is null
             ? _host.Simulation.World.Mission
-            : MissionCatalog.Find(id);
+            : MissionCatalog.Find(id) ?? SimBridge.FindDemoMission(id);
 
         if (mission is null)
         {
             Emit(id is null
                 ? "query: validate: this match has no mission attached — start one with --mission <id>, or name one to check"
-                : $"query: validate: there is no mission '{id}' — usage: {usage}, and --mission-list prints the campaign");
+                : $"query: validate: there is no mission '{id}' — usage: {usage}; --mission-list prints the campaign, " +
+                  "and the demonstration missions are objective_demo, paperclip and paperclip_draft");
             return;
         }
 
@@ -3686,7 +3700,9 @@ public sealed class ProbeRunner
             $"'{mission.Id}' is a mission that can be won",
             problems.Count == 0,
             problems.Count == 0
-                ? "every trigger waits on something that can happen, and no objective is already decided by the world the mission opens in"
+                ? "every trigger waits on something that can happen, no objective is already decided by the world " +
+                  "the mission opens in or asks for more time than the mission has, and no side stands in " +
+                  "nothing unless the match says it does not judge it"
                 : string.Join("; ", problems));
     }
 

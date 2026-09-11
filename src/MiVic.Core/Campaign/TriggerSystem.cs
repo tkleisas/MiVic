@@ -401,8 +401,10 @@ public static class TriggerSystem
     /// checked statically is checked here — of the script, a flag nothing raises, an objective
     /// nothing completes, a denial with no clock to be decided by, a completion pointing at an
     /// objective that does not exist, a condition counting on a team that is not in the match; and
-    /// of the objectives, a scripted objective no trigger completes and a denial with no deadline,
-    /// which are the two kinds that can never be satisfied by play.
+    /// of the objectives, a scripted objective no trigger completes, a denial with no deadline, a
+    /// survival or command-centre objective that is not a constraint and has no deadline either,
+    /// and a deadline later than the mission's own time limit — the kinds that can never be
+    /// satisfied by play.
     /// </para>
     /// <para>
     /// <b>And the failure from the other end, which is the same bug facing the other way:
@@ -419,6 +421,17 @@ public static class TriggerSystem
     /// has already decided is the mission itself — and if it is decided <em>against</em> the player
     /// the mission cannot be won at all. See <see cref="CheckTheOpeningObjectives"/>, which reports
     /// the two answers separately and acknowledges neither.
+    /// </para>
+    /// <para>
+    /// <b>And so is the victory rule, which is the third layer that reads a world and was never
+    /// asked about the one it opens in.</b> It has been safe by construction rather than by being
+    /// asked — the scenario lays a base down for every team a match declares, so no declared side
+    /// could stand in nothing — and a mission staged around a non-player force is precisely the
+    /// mission that breaks that construction. See <see cref="CheckTheOpeningSides"/>, which reports a
+    /// declared side standing in nothing and passes over one the match declared as a side it does not
+    /// judge. Beside those, two facts about an objective's own clock need no world at all and are
+    /// asked in <see cref="CheckObjectiveClock"/>: an objective that nothing could ever complete, and
+    /// one that asks for more time than the mission has.
     /// </para>
     /// </summary>
     public static IReadOnlyList<string> Validate(MissionDefinition mission)
@@ -555,22 +568,89 @@ public static class TriggerSystem
             {
                 problems.Add($"objective {i} {NothingToMeasure(objective, reads)}");
             }
+
+            CheckObjectiveClock(mission, i, objective, problems);
         }
 
         // The half that needs a world, asked last: what the map the mission opens on has already
-        // decided. Both layers are asked of one world, built once — a condition that is already true
-        // fires on the first tick, and an objective that is already decided is worse than that. A
-        // mission with neither is a mission with nothing to ask, and does not pay for the world.
-        if (mission.Triggers.Count > 0 || mission.Objectives.Count > 0)
-        {
-            SimWorld opening = OpeningWorld(mission);
+        // decided, asked of three layers rather than of one — every condition, every objective, and
+        // the rule that decides a match with no objectives at all. One world is built for all three.
+        // It is built for every mission rather than only for one with a script or an objective: a
+        // match always declares a side, and "does this side stand in anything" is a question about
+        // the layout, so the third layer always has something to ask.
+        SimWorld opening = OpeningWorld(mission);
 
-            CheckTheOpeningWorld(mission, opening, problems);
-            CheckTheOpeningObjectives(mission, opening, problems);
-        }
+        CheckTheOpeningWorld(mission, opening, problems);
+        CheckTheOpeningObjectives(mission, opening, problems);
+        CheckTheOpeningSides(mission, opening, problems);
 
         return problems;
     }
+
+    /// <summary>
+    /// <b>The two facts about an objective's own clock that no world is needed to see: one that can
+    /// never be completed because nothing would complete it, and one that asks for time the mission
+    /// does not have.</b>
+    /// <para>
+    /// The first is the objective half of the failure this whole validator exists for, wearing the
+    /// other kind of clock. A <see cref="ObjectiveKind.SurviveTicks"/> or a
+    /// <see cref="ObjectiveKind.ProtectCommandCentre"/> is <em>completed by reaching its deadline</em>
+    /// and by nothing else — that is what "reach tick N with your base still standing" means — so one
+    /// with no deadline cannot be satisfied at all: a mission that requires it can only lose, and one
+    /// that does not still reads as an objective the player can never finish. A
+    /// <see cref="ObjectiveDefinition.Constraint"/> is the other case and stays exempt: "your command
+    /// centre must survive" is never something the mission is won by, so it needs no clock to be
+    /// completed by and m3 ships exactly that shape.
+    /// </para>
+    /// <para>
+    /// The second is the same accident measured against the mission rather than against the
+    /// objective: the mission is decided at its time limit, so a deadline past that limit is a moment
+    /// the match never reaches. For the kinds the clock decides — this is the third of them, since a
+    /// <see cref="ObjectiveKind.DenyArea"/> is completed by its deadline too — the objective can
+    /// therefore never be satisfied and the mission can never be won; for the rest the extra time is
+    /// simply time the author thought they had, and the objective is overtaken by the limit rather
+    /// than decided by its own clock. m1 ships a deadline of 7 200 against a limit of 7 200, which is
+    /// the last tick that is honest, and a test asserts it.
+    /// </para>
+    /// </summary>
+    private static void CheckObjectiveClock(
+        MissionDefinition mission,
+        int index,
+        ObjectiveDefinition objective,
+        List<string> problems)
+    {
+        if (IsDecidedByItsClock(objective.Kind) && objective.DeadlineTick <= 0 && !objective.Constraint)
+        {
+            problems.Add(
+                $"objective {index} is a {objective.Kind} that is not a constraint and has no deadline: " +
+                "reaching the deadline is the only thing that completes it, so it can never be " +
+                "satisfied, and a mission that requires it can only time out.");
+        }
+
+        if (mission.TimeLimitTicks > 0 && objective.DeadlineTick > mission.TimeLimitTicks)
+        {
+            problems.Add(
+                $"objective {index} has a deadline of {objective.DeadlineTick} ticks and the mission's " +
+                $"time limit is {mission.TimeLimitTicks}: the deadline arrives after the match is over, " +
+                "so it can never be reached" +
+                (IsDecidedByItsClock(objective.Kind)
+                    ? ", and this is a kind the clock decides — so the objective can never be satisfied " +
+                      "and the mission can never be won."
+                    : " — the objective is decided at the limit instead, and the time its author gave " +
+                      "it is time it never had."));
+        }
+    }
+
+    /// <summary>
+    /// True for the three kinds whose own deadline is what completes them, rather than merely the
+    /// moment past which they have failed. The distinction matters to both halves of
+    /// <see cref="CheckObjectiveClock"/>: a deadline these kinds do not have is an objective nothing
+    /// can complete, and a deadline past the time limit is one that can never be satisfied.
+    /// </summary>
+    private static bool IsDecidedByItsClock(ObjectiveKind kind) => kind
+        is ObjectiveKind.SurviveTicks
+        or ObjectiveKind.ProtectCommandCentre
+        or ObjectiveKind.DenyArea;
 
     /// <summary>
     /// <b>The team an objective reasons about: the one whose units, structures or stockpile its own
@@ -863,6 +943,140 @@ public static class TriggerSystem
                     "done, which is an authoring mistake rather than a design.");
             }
         }
+    }
+
+    /// <summary>
+    /// <b>The third layer that reads the world, asked the same question of the same world: what does
+    /// the last-side-standing rule say about the sides this mission opens with?</b>
+    /// <para>
+    /// The trigger layer was the first and the objectives the second, and both were built because
+    /// something in a mission could already be decided on the tick the mission opens: a script that
+    /// fires before its scene, an objective the map has granted or refused. The victory rule is the
+    /// third, and it was safe until now <em>by construction</em> rather than by being asked — the
+    /// scenario laid a base down for every team a match declared, so no declared side could stand in
+    /// nothing, and a rule that asks about ground never met a side without any.
+    /// </para>
+    /// <para>
+    /// <b>That construction is exactly what the non-player force needs to break, so this is a check
+    /// with a declaration rather than a refusal.</b> A mission staged around a side that is not an
+    /// army — the scientists of §8's Operation Paperclip, a remnant that exists to be reached — is a
+    /// mission whose side has no base and no structures on purpose, and
+    /// <see cref="Sim.MatchRoster"/> says so with <see cref="MatchTeam.Judged"/> false on that team.
+    /// Without that word, a declared side standing in nothing is the accident: it is read as already
+    /// beaten by the rule, and a match whose only other side is that one is won on the check that
+    /// first asks it. So the sweep reports a side that stands in nothing and was not declared as such,
+    /// and passes over one that was.
+    /// </para>
+    /// <para>
+    /// The sentence names the side, the number the world answered with, and what the rule makes of
+    /// it — and the verdict it quotes is <see cref="VictorySystem.Decide"/>'s own answer about this
+    /// very world, so the validator cannot disagree with the game about what "already beaten" means.
+    /// </para>
+    /// </summary>
+    private static void CheckTheOpeningSides(MissionDefinition mission, SimWorld opening, List<string> problems)
+    {
+        MatchRoster roster = mission.Roster;
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            // One complaint per side, spoken where the side first appears: two teams on one side are
+            // one answer to this question, and the same sentence twice would read as two mistakes.
+            if (!roster.IsInPlay(team) || !IsFirstOfItsSide(roster, team))
+            {
+                continue;
+            }
+
+            int side = roster.SideOf(team);
+
+            if (VictorySystem.SideHasStructures(opening, side))
+            {
+                continue;
+            }
+
+            // A side the match declares it does not judge is a non-player force: standing in nothing
+            // is the whole of what it is, not a mistake about it.
+            if (TheSidesTeamsAreAllUnjudged(roster, side))
+            {
+                continue;
+            }
+
+            GameOutcome verdict = VictorySystem.Decide(opening);
+
+            problems.Add(
+                $"side {side} of this mission's match stands in no structures in the world the mission " +
+                $"opens in — {WhatTheOpeningWorldAnswered(opening, side)} — so the last-side-standing " +
+                "rule reads the side as already beaten on the check that first asks it: a side holding " +
+                "no ground is a side that rule cannot tell from one that has been destroyed" +
+                (verdict == GameOutcome.Ongoing
+                    ? "."
+                    : $", and its verdict on that world is {verdict.ToString().ToLowerInvariant()} already.") +
+                " A side that holds objectives rather than ground is a deliberate declaration, and a " +
+                "match says so with Judged = false on its team.");
+        }
+    }
+
+    /// <summary>True when no earlier team in the match is on this team's side.</summary>
+    private static bool IsFirstOfItsSide(MatchRoster roster, int team)
+    {
+        for (int earlier = 0; earlier < team; earlier++)
+        {
+            if (roster.IsInPlay(earlier) && roster.SideOf(earlier) == roster.SideOf(team))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// True when every team the match declares on this side is one the victory rule does not judge,
+    /// which is what "a side that holds objectives rather than ground" is written as.
+    /// </summary>
+    private static bool TheSidesTeamsAreAllUnjudged(MatchRoster roster, int side)
+    {
+        int declared = 0;
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (!roster.IsInPlay(team) || roster.SideOf(team) != side)
+            {
+                continue;
+            }
+
+            declared++;
+
+            if (roster.IsJudged(team))
+            {
+                return false;
+            }
+        }
+
+        return declared > 0;
+    }
+
+    /// <summary>
+    /// What the world the mission opens in answers about a side, in the words of the question: which
+    /// teams are on it and how many structures they own between them. The numbers are measured rather
+    /// than repeated, the same way the two sentences above it measure theirs — "stands in nothing" is
+    /// a fact about a map, and the line exists to show which fact it is.
+    /// </summary>
+    private static string WhatTheOpeningWorldAnswered(SimWorld world, int side)
+    {
+        MatchRoster roster = world.Roster;
+        var teams = new List<string>();
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (roster.IsInPlay(team) && roster.SideOf(team) == side)
+            {
+                teams.Add($"team {team} stands in {VictorySystem.CountStructures(world, team)}");
+            }
+        }
+
+        return teams.Count == 1
+            ? $"{teams[0]} structures"
+            : $"{string.Join(" and ", teams)} structures between them";
     }
 
     /// <summary>

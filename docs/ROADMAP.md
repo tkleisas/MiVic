@@ -443,9 +443,17 @@ evaluation the tick loop runs, so a validator cannot disagree with the game abou
 means. The same pass refuses an objective whose own evaluation reads a team the match does not
 declare, which is a case two-faction matches made expressible: a `DestroyStructures` against an
 absent faction can never be completed, and a denial of an absent faction can never be failed — it is
-completed by its own deadline with the player having done nothing at all. None of the four missions
-the campaign ships trips any of it, which is the point of the check and also the reason
-`tools/probe/objectives.probe` runs against a purpose-built mission carried by `--objective-demo`.
+completed by its own deadline with the player having done nothing at all. **Two more static facts are
+refused beside those, and neither needs a world**: a survival or command-centre objective that is not
+a constraint and has no deadline can never be satisfied, and an objective whose deadline is later than
+the mission's own time limit is asking for a moment the match never reaches. **And the third layer that
+reads a world is asked about it too**: the victory rule, which has been safe by construction rather
+than by being asked — the scenario lays a base down for every team a match declares — and which
+therefore reports a declared side that stands in nothing unless the match has declared that it does
+not judge it. None of the four missions the campaign ships trips any of it, which is the point of the
+checks and also the reason `tools/probe/objectives.probe` runs against a purpose-built mission carried
+by `--objective-demo` and `tools/probe/paperclip.probe` against a pair carried by
+`--paperclip-demo`.
 
 ### The objective the vocabulary was missing: denial
 
@@ -479,14 +487,17 @@ must stop it. It exercises a **non-player force** that is neither of the two pla
 escalates, and an **asymmetric pair of objectives**: the West wins by getting the scientists out, the
 Soviets win by preventing it.
 
-**Two thirds of that is now built.** The layer exists and has the vocabulary this needs — the
+**Three quarters of that is now built.** The layer exists and has the vocabulary this needs — the
 extraction is a `DenyArea` over the aircraft's loading point (see below), the escalation is a time
-trigger, and the asymmetric pair is one objective asked of each side. What is still missing is the
-*non-player force*: the scientists are neither of the two player factions and are not an army, which
-is the monster-generator work in §9 (a team in the match that belongs to nobody) rather than mission
-scripting. A **moving objective** — an objective that follows a unit rather than sitting at a place —
-is the other piece, and it needs a way to name an entity in mission data, which is what heroes need
-too.
+trigger, and the asymmetric pair is one objective asked of each side. The *non-player force* is built
+too, and not by the monster-generator work §9 describes: a match can declare a team as one the victory
+rule does not judge (`MatchTeam.Judged`), which is a side that holds objectives rather than ground —
+no base, no structures, and the objectives of its mission decide what became of it. That is what the
+scientists are, and `--paperclip-demo` starts a mission staged around exactly that side (see
+`docs/PROBE.md`). What is still missing is the **moving objective** — an objective that follows a unit
+rather than sitting at a place — which needs a way to name an entity in mission data, and that is what
+heroes need too. §9's *generator* is still unbuilt, and it is the other kind of side this declaration
+suits: a team in the match that belongs to nobody and is at war with everybody.
 
 ### Not every map has three factions
 
@@ -543,7 +554,10 @@ still running inside it — no new fiction required, and the hazard machinery is
 - **Victory conditions that ignore it.** A faction that was never on the map, or one that exists only
   as an obstacle, must not be something the victory check requires destroying. **This is done**: the
   check walks the sides the match declares, so a team the match does not declare is never required of
-  anybody, and a generator would be declared in it only if it were meant to be fought.
+  anybody. A generator's team *is* declared — it has to be, to be hostile to the powers that are
+  playing — and a declared team with no base would otherwise be read as a side that has been beaten, so
+  a match says with `MatchTeam.Judged` that the rule does not judge it. A generator is the second tenant
+  of that declaration; the scientists of the Paperclip test case above are the first.
 - **The AI has to cope.** Its emplacements will engage what comes at them, which is the right
   emergent answer. What it must not do is treat a generator as an objective worth an army, or be
   baited into a war of attrition against something that respawns.
@@ -645,6 +659,46 @@ ledger and the path budget each had to be corrected for this month.
 are still C# today), an edit list that survives load, re-derivation after a terrain edit, an authoring
 UI, and a test-play loop that renders the author's mission and reports the validators to them. The
 test-play half is nearly free already: `--mission <id>`, the probe, and the replay round trip cover it.
+
+## 11. Checkpoints, rewinding, and a map you can read
+
+Two tools for understanding what a match is doing, and they are the same tool from two sides: one moves
+through time cheaply, the other shows space clearly.
+
+**A checkpoint is not a state dump.** The simulation is deterministic and already reconstructible from a
+seed, a mission and a command log — that is what a replay is. So **a checkpoint is those three things
+plus a tick number**: bytes rather than megabytes, restored by replaying forward. The standard technique
+follows: periodic keyframes and a forward replay to the exact tick, with the interval tuned against how
+long a replay takes. This is the *same* mechanism the front end's save system needs — a save is a
+checkpoint a player makes on purpose — so the two should be built as one thing rather than twice.
+
+Rewinding then falls out of it: restore the nearest keyframe, replay to the target tick, step from
+there. That turns the probe from a tool that only runs forward into one that can answer *what happened
+just before that*, which is the question every bug in this project has actually been. Worth having:
+`save`, `restore`, `step`, and a rewind honest about its cost.
+
+**The map should be drawable as a flat picture**, and the important part is that it is produced **from
+simulation data rather than by the renderer** — a plain SVG or PNG writer needing no graphics device, so
+it works from the probe, inside a test, and on a machine with no GPU. Everything it needs already
+exists: positions, headings in brads, the terrain surface grid, the attribute word, the roster and its
+palette.
+
+Units as dots with a heading arrow, structures as squares, in the owning faction's colour over the
+terrain's own. Then the layers that make it a diagnostic rather than a map:
+
+- **who is stuck** — a unit holding a goal with no route, or idle with no target, drawn differently from
+  one that is fighting. Two hundred motionless units in one picture, which took a census of five hundred
+  units to establish;
+- **what can see what** — vision and radar coverage as translucent discs, which is how the sensor chain
+  is actually judged;
+- **the paths** — where a unit is trying to go against where it is;
+- **the script** — objective circles, deadlines, and which trigger has fired;
+- **the events** — shots, hits and deaths as marks, so a fight reads as a diagram rather than a film.
+
+Three bugs from this month would have been obvious in one frame of that picture: a headquarters standing
+in deep water, two hundred units frozen on ordinary grass, and a radar whose coverage did not reach the
+guns it was bought for. It is the instrument for the class of bug that keeps turning up here — spatial,
+and invisible both in a text census and in a 3D photograph.
 
 ## Also outstanding, from the art and rendering work
 

@@ -43,6 +43,20 @@ public enum GameOutcome : byte
 /// any team playing on it still owns a building, and the match is over when at most one side is.
 /// The enemy's identity is never consulted — only whether the player's side still has one.
 /// </para>
+/// <para>
+/// <b>And one kind of side is not judged at all.</b> A match can declare a team as a
+/// <em>non-player force</em> — <see cref="MatchTeam.Judged"/> is false — which is a side that holds
+/// objectives rather than ground: the scientists of an outpost waiting to be carried out of it, a
+/// remnant that exists to be reached rather than defeated. Such a side owns no base and therefore no
+/// structures, and asking this rule about it would be asking a question it cannot answer: a side
+/// that never held ground is indistinguishable, in the only currency this rule has, from a side
+/// that has been destroyed. So those teams are skipped, and when the skipping leaves the rule with
+/// nothing to measure at one end — no judged team on the player's side, or none off it — the rule
+/// gives no verdict and says <see cref="GameOutcome.Ongoing"/>, because the objectives are what
+/// decide a match staged around such a side. A match that declares none of them is walked exactly
+/// as it always was, which is why the three-faction skirmish and the two-faction matches are
+/// unaffected by any of this.
+/// </para>
 /// </summary>
 public static class VictorySystem
 {
@@ -69,6 +83,12 @@ public static class VictorySystem
     /// has just arranged, and so the interface can read the same verdict the simulation reached
     /// rather than a second opinion about it.
     /// </para>
+    /// <para>
+    /// <b>A team the match declares as not judged is not counted at either end</b>, and the rule
+    /// answers <see cref="GameOutcome.Ongoing"/> when that leaves it with nothing to measure: a
+    /// verdict needs a side to be the last one standing <em>of</em>. See the class comment for what
+    /// such a side is and why this rule must not read its missing ground as a defeat.
+    /// </para>
     /// </summary>
     public static GameOutcome Decide(SimWorld world)
     {
@@ -78,6 +98,9 @@ public static class VictorySystem
         int playerSide = roster.PlayerSide;
         bool playerSideAlive = false;
         bool enemySideAlive = false;
+        bool playerSideJudged = false;
+        bool enemySideJudged = false;
+        bool anUnjudgedTeamIsPlaying = false;
 
         // Teams in slot order, so two runs of the same world reach the verdict in the same order
         // and a `||` over the sides cannot depend on which team happened to be scanned first.
@@ -90,16 +113,36 @@ public static class VictorySystem
                 continue;
             }
 
+            if (!roster.IsJudged(team))
+            {
+                // A non-player force: a side that holds objectives rather than ground. It owns no
+                // structures by design, so its emptiness is not a defeat and its survival is not a
+                // victory — the mission's objectives decide what became of it.
+                anUnjudgedTeamIsPlaying = true;
+                continue;
+            }
+
             bool alive = HasStructures(world, team);
 
             if (roster.SideOf(team) == playerSide)
             {
+                playerSideJudged = true;
                 playerSideAlive |= alive;
             }
             else
             {
+                enemySideJudged = true;
                 enemySideAlive |= alive;
             }
+        }
+
+        // Nothing to measure at one end: the match is staged around a side this rule does not judge,
+        // so the rule has no verdict to give and the objectives are what decide. Reachable only
+        // where the match declares such a team, which is what keeps a match that declares none
+        // decided by exactly the lines below.
+        if (anUnjudgedTeamIsPlaying && (!playerSideJudged || !enemySideJudged))
+        {
+            return GameOutcome.Ongoing;
         }
 
         return (playerSideAlive, enemySideAlive) switch
@@ -157,4 +200,42 @@ public static class VictorySystem
 
         return count;
     }
+
+    /// <summary>
+    /// <b>How many structures a side owns between the teams the match declares on it</b> — the number
+    /// the rule's own question is asked with, and asked of a side rather than of a team because a
+    /// side is what it counts.
+    /// <para>
+    /// It sums <see cref="CountStructures"/> over the declared teams on the side, in slot order, so
+    /// it cannot disagree with the verdict about what standing in something means. A side with no
+    /// declared team on it owns nothing, which is the same answer an undeclared team's own count
+    /// gives.
+    /// </para>
+    /// <para>
+    /// Two callers outside the verdict, and both want it for the same reason: the mission validator,
+    /// which reads a side that stands in nothing as the authoring mistake it is unless the match
+    /// declared it a non-player force, and the defeat banner, which may only say the player's side
+    /// was destroyed when it holds nothing — the same fact the rule calls a defeat.
+    /// </para>
+    /// </summary>
+    public static int CountSideStructures(SimWorld world, int side)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        MatchRoster roster = world.Roster;
+        int count = 0;
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (roster.IsInPlay(team) && roster.SideOf(team) == side)
+            {
+                count += CountStructures(world, team);
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>True when any team the match declares on this side still owns a structure.</summary>
+    public static bool SideHasStructures(SimWorld world, int side) => CountSideStructures(world, side) > 0;
 }
