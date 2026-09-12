@@ -1698,6 +1698,16 @@ public sealed class ProbeRunner
     /// radar, so a report that showed only the weapon's range would show a gun that is always
     /// at full reach — which is exactly the thing that is no longer true.
     /// </para>
+    /// <para>
+    /// <b>The eyes line is <see cref="VisionSystem.SensorOf"/>'s answer, which is the question the
+    /// fog pass asks before it stamps.</b> It has to be: a radar the grid has shed would otherwise
+    /// print the role's 260 m here, beside <c>reach 0.0 m</c> and beside a radar line saying nobody
+    /// is covering anything — which is a rim drawn for a dark set, in text, and the same misreading
+    /// the map's coverage layer used to make by re-deriving the refusals by hand. So what a report
+    /// shows for a dark set is that it senses nothing and why, and a lit one shows the 260 m that is
+    /// its coverage as well as its eyes: a radar is one disc, not a coverage figure beside a sight
+    /// figure.
+    /// </para>
     /// </summary>
     private void Range(ProbeCommand command)
     {
@@ -1712,7 +1722,7 @@ public sealed class ProbeRunner
         ref Entity entity = ref world.GetRefBySlot(slot);
         UnitDefinition definition = UnitCatalog.Get(entity.Kind);
 
-        int eyes = VisionSystem.SensorRadiusMm(world, in entity);
+        int eyes = VisionSystem.SensorOf(world, slot, out SensorRefusal refusal);
         int finds = (eyes * VisionSystem.StealthDetectionPermille) / 1_000;
         int reach = CombatSystem.EngagementRadiusMm(world, slot);
         bool covered = world.Radars.Covers(world, entity.TeamId, entity.Position);
@@ -1721,18 +1731,25 @@ public sealed class ProbeRunner
         Emit(
             $"query:   gun        {(definition.IsArmed ? ProbeFormat.Millimetres(definition.AttackRangeMm) : "unarmed")}, " +
             $"{definition.AttackDamage} damage every {ProbeFormat.Count(definition.AttackCooldownTicks, "tick")}");
-        Emit($"query:   eyes       {ProbeFormat.Millimetres(eyes)} — as far as its own sensors reach");
-        Emit($"query:   stealth    {ProbeFormat.Millimetres(finds)} — as far as they find a hidden enemy");
+        Emit($"query:   eyes       {Senses(eyes, refusal)}");
+        Emit($"query:   stealth    {Finds(finds)}");
         Emit($"query:   radar      {(covered ? "under coverage" : "not under coverage")}, team {entity.TeamId} has " +
              $"{ProbeFormat.Count(world.Radars.Count(entity.TeamId), "radar")} on the air");
         Emit($"query:   reach      {ProbeFormat.Millimetres(reach)} — the furthest it can engage anything at");
-
-        if (entity.Kind == UnitKind.RadarStation)
-        {
-            Emit(
-                $"query:   coverage   {(world.IsRadarLit(slot) ? ProbeFormat.Millimetres(VisionSystem.RadarCoverageMm) : "none — the grid cannot run it")}");
-        }
     }
+
+    /// <summary>
+    /// How far this entity senses, or the reason it senses nothing — <see cref="VisionSystem.SensorOf"/>'s
+    /// answer, in the words the rest of the tool is written in.
+    /// </summary>
+    private static string Senses(int radiusMm, SensorRefusal refusal) => radiusMm > 0
+        ? $"{ProbeFormat.Millimetres(radiusMm)} — as far as its own sensors reach"
+        : $"none — {ProbeLabels.Sensor(refusal)}";
+
+    /// <summary>The same disc a fraction of the size, or why there is none to take a fraction of.</summary>
+    private static string Finds(int radiusMm) => radiusMm > 0
+        ? $"{ProbeFormat.Millimetres(radiusMm)} — as far as they find a hidden enemy"
+        : "none — nothing is watching";
 
     /// <summary>
     /// The power ledger for a team: what it generates, what its structures take, and which of

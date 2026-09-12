@@ -62,8 +62,9 @@ public enum SensorRefusal : byte
 /// <para>
 /// <b>This is the only place that decides how far anything can be sensed, and the
 /// only place that writes what a team knows.</b> Fog of war reads the disc each
-/// entity stamps; a weapon reads <see cref="SensorRadiusMm"/> to decide whether it
-/// can shoot at what it is looking at, and the same disc, reduced by
+/// entity stamps; a weapon reads <see cref="SensorRadiusMm"/> for how far it reaches and
+/// <see cref="Covers"/> for whether the ground it is looking at is inside that reach — which is the
+/// same disc, asked the same way, about the same cell — and the same disc, reduced by
 /// <see cref="StealthDetectionPermille"/>, decides whether a stealthed enemy is
 /// found. A radar station is not a special case in any of that: it stamps a large
 /// disc like anything else, and its coverage is the disc. Adding a second answer to
@@ -257,6 +258,62 @@ public static class VisionSystem
         return SensorRadiusMm(world, in entity);
     }
 
+    /// <summary>
+    /// <b>Whether the ground a position stands on is inside the disc one sensor paints — the query
+    /// form of the rule <see cref="Stamp"/> writes into the fog.</b>
+    /// <para>
+    /// It is asked about a <em>cell</em>: the fog marks whole navigation cells, so its answer about
+    /// a position is its answer about the centre of the cell that position stands in, and this is
+    /// the same question asked the same way. Asking about the position itself was the disagreement
+    /// this replaced — a point test beside a cell rasterisation answers about a thing the fog has no
+    /// answer about, and the two parted company over a strip of ground at the rim as wide as the
+    /// lattice, 9.4 m for a 260 m disc. A gun that reads one and a fog that shows the other is a gun
+    /// shooting at ground the player has been told nobody is watching.
+    /// </para>
+    /// <para>
+    /// One disc of its own rather than a call into the rasteriser: the stamp runs once per cell per
+    /// entity and this runs twice per engagement, so the stamp keeps the row fill its inner loop
+    /// needs. The two are held together by comparing them cell by cell across a whole map — see
+    /// <c>CoverageQueryTests</c> — rather than by their both looking right where somebody looked.
+    /// </para>
+    /// </summary>
+    /// <param name="world">The world the ground is in, whose lattice the fog is indexed by.</param>
+    /// <param name="sensor">Where the sensor stands.</param>
+    /// <param name="radiusMm">How far it watches, from <see cref="SensorOf"/> or <see cref="SensorRadiusMm"/>.</param>
+    /// <param name="position">The ground being asked about.</param>
+    public static bool Covers(SimWorld world, WorldPos sensor, int radiusMm, WorldPos position)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        NavGrid nav = world.Navigation;
+
+        return InDisc(sensor, radiusMm, nav.CentreOf(nav.IndexOfWorld(position)));
+    }
+
+    /// <summary>
+    /// Whether a point lies inside the disc a sensor at <paramref name="centre"/> watches to, in the
+    /// horizontal plane — the arithmetic the whole sensor chain is made of.
+    /// <para>
+    /// Private because a point is not a thing the fog knows about: everything outside this class asks
+    /// <see cref="Covers"/>, which reduces a position to the cell the fog has an answer for. A public
+    /// point test beside it would be an invitation to compare a point with a cell again, which is the
+    /// disagreement <see cref="Covers"/> exists to end.
+    /// </para>
+    /// <para>
+    /// Horizontal because that is how a radar reaches: a set on a ridge covers the valley under it,
+    /// and a gun in the valley is under the umbrella whether or not it is standing at the same
+    /// height. <see cref="Stamp"/> implements this same test, cell centre by cell centre, in the
+    /// incremental form its inner loop needs.
+    /// </para>
+    /// </summary>
+    private static bool InDisc(WorldPos centre, int radiusMm, WorldPos point)
+    {
+        long dx = (long)point.X - centre.X;
+        long dz = (long)point.Z - centre.Z;
+
+        return ((dx * dx) + (dz * dz)) <= ((long)radiusMm * radiusMm);
+    }
+
     /// <summary>Stamps this tick's share of the entities.</summary>
     public static void Tick(SimWorld world)
     {
@@ -310,10 +367,20 @@ public static class VisionSystem
     /// <summary>
     /// Marks every navigation cell whose centre lies within the radius.
     /// <para>
+    /// <b>Every cell whose centre, on both axes.</b> The rows below have always gone by their
+    /// centre, but the columns did not: the span was turned into cells by asking where the chord's
+    /// own ends fell, so a cell the chord merely clipped was painted even when its centre was
+    /// outside the disc — up to half a cell, 4.7 m, of ground beyond a radar's reach along x, and a
+    /// fog that claimed it. The column bounds now ask the same question the rows do, which is what
+    /// makes this the rasterisation <see cref="Covers"/> is the query for rather than a second rule
+    /// beside it.
+    /// </para>
+    /// <para>
     /// The loop walks lattice coordinates directly and computes each cell centre
     /// incrementally. Calling <c>CentreOf</c> per cell would do two integer
     /// divisions — index to x and z — and with half a million cells per update
-    /// that alone cost over a hundred milliseconds.
+    /// that alone cost over a hundred milliseconds. Two divisions per <em>row</em>, which is what
+    /// the span needs, is what keeps that loop a straight fill.
     /// </para>
     /// <para>
     /// Internal rather than private because a mission's reveals are stamped through it: a
@@ -332,8 +399,6 @@ public static class VisionSystem
         int size = nav.Size;
         long radiusSquared = (long)radiusMm * radiusMm;
 
-        int minCellX = Math.Max(0, (centre.X - radiusMm - origin) / cell);
-        int maxCellX = Math.Min(size - 1, (centre.X + radiusMm - origin) / cell);
         int minCellZ = Math.Max(0, (centre.Z - radiusMm - origin) / cell);
         int maxCellZ = Math.Min(size - 1, (centre.Z + radiusMm - origin) / cell);
 
@@ -352,8 +417,12 @@ public static class VisionSystem
             // straight fill instead of a distance test per cell.
             int halfSpan = (int)IntMath.SqrtLong(radiusSquared - dzSquared);
 
-            int firstX = Math.Max(0, FloorDiv(centre.X - halfSpan - origin, cell));
-            int lastX = Math.Min(size - 1, FloorDiv(centre.X + halfSpan - origin, cell));
+            // The cells on this row whose centres are inside the span. A centre is inside it when
+            // origin + x*cell + half is between centre.X - halfSpan and centre.X + halfSpan, which
+            // is the two divisions below and not the span's own ends: the span starts at the rim,
+            // the first centre inside it starts half a cell further in.
+            int firstX = Math.Max(0, CeilDiv(centre.X - halfSpan - half - origin, cell));
+            int lastX = Math.Min(size - 1, FloorDiv(centre.X + halfSpan - half - origin, cell));
             int rowBase = z * size;
 
             for (int x = firstX; x <= lastX; x++)
@@ -373,4 +442,7 @@ public static class VisionSystem
     /// <summary>Integer division that rounds towards negative infinity.</summary>
     private static int FloorDiv(int value, int divisor)
         => value >= 0 ? value / divisor : -(((-value) + divisor - 1) / divisor);
+
+    /// <summary>Integer division that rounds towards positive infinity.</summary>
+    private static int CeilDiv(int value, int divisor) => -FloorDiv(-value, divisor);
 }

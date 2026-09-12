@@ -99,6 +99,24 @@ public static class ProbeLabels
     /// <summary>A role's name and the label the build panel gives it.</summary>
     public static string KindName(UnitKind kind) => $"{kind} ({FactionPalette.UnitLabel(kind)})";
 
+    /// <summary>
+    /// Why an entity senses nothing, as the clause a transcript reads.
+    /// <para>
+    /// <see cref="VisionSystem.SensorOf"/> answers with a <see cref="SensorRefusal"/> and a
+    /// transcript needs a sentence, which is the whole of what this adds. It is not a second copy of
+    /// the rule: the reasons are the enum's own cases, and a probe that decided for itself that a
+    /// dark radar is dark would be the interface inventing a brown-out again.
+    /// </para>
+    /// </summary>
+    public static string Sensor(SensorRefusal refusal) => refusal switch
+    {
+        SensorRefusal.NoEntity => "the slot holds nothing alive",
+        SensorRefusal.NoTeam => "it is on no team the simulation has",
+        SensorRefusal.UnderConstruction => "a building site is not watching yet",
+        SensorRefusal.RadarDark => "the grid cannot run it, so the set is dark",
+        _ => "it is watching",
+    };
+
     /// <summary>Reads a faction from a script argument: the name, or the team it fights for.</summary>
     public static bool TryFaction(string text, out Faction faction)
     {

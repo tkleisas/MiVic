@@ -355,7 +355,25 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// Last changed by a goal the mover cannot reach being dropped rather than walked at forever, and
+    /// <b>Last changed by the fog no longer painting ground its own sensor cannot reach.</b> The
+    /// rasteriser filled each row of the disc from the chord's own ends instead of from the cell
+    /// centres inside it, so it marked every cell the chord clipped: on a 260 m radar, 49 of the
+    /// 2 410 cells it painted had centres outside the disc and the ground it claimed ran 4 067 mm
+    /// past the rim. That was the whole of the change that moved this number, established by
+    /// reverting each half of the radar-coverage fix on its own rather than assumed: the query
+    /// being made to answer about the cell the fog answers about moved nothing here, and neither
+    /// did the shooter's own eyes being asked the same way, because this scenario engages nothing
+    /// within half a cell of a rim. What the fog reached was the one reader of it that is not the
+    /// picture — <see cref="AiSystem"/> asks <c>IsInSight</c>, which is
+    /// <see cref="VisibilityGrid.IsVisible"/>, before it will order an attack on a mobile enemy —
+    /// so the AI could order its armour at a tank standing on the strip of ground the old
+    /// rasterisation had wrongly painted, and cannot now. The visibility grid itself is not hashed,
+    /// so nothing here moved because a derived field changed; it moved because a decision did. The
+    /// other reader, <see cref="SimWorld.IsHiddenFrom"/>, is a constant false in this scenario:
+    /// there is nothing stealthed in it.
+    /// </para>
+    /// <para>
+    /// Before that it was a goal the mover cannot reach being dropped rather than walked at forever, and
     /// by the route budget becoming a queue. This field used to leave units reading `waiting for a
     /// route` in the hundreds — at tick six hundred, two hundred of them, forty of which had held a
     /// move goal for more than half the match without moving a millimetre — because the approach loop
@@ -449,7 +467,7 @@ public sealed class DeterminismTests
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(2975277282099602117UL, HashScenario(20250101));
+        => Assert.Equal(14151093428482419793UL, HashScenario(20250101));
 
     /// <summary>
     /// A fixed defensive scene with the whole sensor chain in it: a Σοβιετικοί line of two gun

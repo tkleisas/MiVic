@@ -322,6 +322,59 @@ public sealed class MapSceneTests
     }
 
     [Fact]
+    public void ACoverageRimIsTheDiscTheFogIsStampedFrom()
+    {
+        // Not "the radius is the sensor radius", which the test above pins, but that the ground
+        // inside the circle that was drawn and the ground the fog has painted are the same ground,
+        // cell for cell. A layer drawing a rim from some other number — the catalogue's sight
+        // figure, or a radar's 260 m with no power behind it — would pass that and fail this, and
+        // the reading it would break is the one the layer exists for: whether a ring encloses the
+        // ground the guns can actually be told about.
+        //
+        // A radar on the grid's standby and nothing else on the map, so the only rim and the only
+        // disc are the same sensor's.
+        SimWorld world = TestWorld.NewWorld();
+        WorldPos site = TestWorld.OpenGround(world, MovementClass.None);
+        EntityId radar = world.Spawn(Faction.Soviet, 0, UnitKind.RadarStation, site, Fix32.Zero, 900);
+        int slot = TestWorld.SlotOf(world, radar);
+
+        world.RunTicks(VisionSystem.UpdateInterval * 2);
+
+        Assert.True(world.IsRadarLit(slot), "the set is not on the air, so there is no rim to read");
+
+        MapDrawing drawing = Draw(world, new MapTrails(), MapLayers.Coverage, 2.0);
+        MapDisc rim = Assert.IsType<MapDisc>(Assert.Single(drawing.Scene.Group("coverage")));
+
+        // The rim's own radius, as drawn and read back into the simulation's millimetres: the layer
+        // projects the world, so this is the number the picture is a picture of.
+        long rimMm = (long)Math.Round(rim.R * WorldPos.MmPerMetre / 2.0);
+
+        Assert.Equal(VisionSystem.RadarCoverageMm, rimMm);
+
+        ref Entity entity = ref world.GetRefBySlot(slot);
+        long radiusSquared = rimMm * rimMm;
+        int painted = 0;
+
+        for (int cell = 0; cell < world.Navigation.CellCount; cell++)
+        {
+            WorldPos centre = world.Navigation.CentreOf(cell);
+            long dx = (long)centre.X - entity.Position.X;
+            long dz = (long)centre.Z - entity.Position.Z;
+            bool insideTheRing = ((dx * dx) + (dz * dz)) <= radiusSquared;
+            bool inTheFog = world.Visibility.IsVisible(0, cell);
+
+            Assert.True(
+                insideTheRing == inTheFog,
+                $"cell ({world.Navigation.CellX(cell)},{world.Navigation.CellZ(cell)}) is inside the ring: " +
+                $"{insideTheRing}, in the fog: {inTheFog}");
+
+            painted += inTheFog ? 1 : 0;
+        }
+
+        Assert.True(painted > 0, "the rim was drawn around ground the fog has not painted");
+    }
+
+    [Fact]
     public void AStructureUnderConstructionDrawsNoCoverage()
     {
         SimWorld world = TestWorld.NewWorld();

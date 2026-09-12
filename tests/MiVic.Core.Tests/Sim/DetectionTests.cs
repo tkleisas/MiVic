@@ -483,8 +483,18 @@ public sealed class PowerTests
         Assert.True(world.Radars.Covers(world, 0, new WorldPos(0, 0, Lane)));
         Assert.True(world.Radars.Covers(world, 0, new WorldPos(VisionSystem.RadarCoverageMm - 1, 0, Lane)));
 
-        // Not covered: outside the radius, and not covered by the *other* team either.
-        Assert.False(world.Radars.Covers(world, 0, new WorldPos(VisionSystem.RadarCoverageMm + 1, 0, Lane)));
+        // A millimetre past the radius is covered too, and this assertion is the one that moved when
+        // coverage stopped being a distance test: the fog marks whole cells, so the answer about a
+        // position is the answer about the centre of the cell it stands in, and this position stands
+        // in the last cell the disc paints. One navigation cell is 9.4 m, so the rim is the
+        // lattice's rather than the millimetre's, and the boundary itself is pinned cell by cell in
+        // CoverageQueryTests rather than by a millimetre here.
+        Assert.True(
+            world.Radars.Covers(world, 0, new WorldPos(VisionSystem.RadarCoverageMm + 1, 0, Lane)),
+            "a position inside the last painted cell is covered, whatever the millimetres say");
+
+        // Not covered: well outside the radius, and not covered by the *other* team either.
+        Assert.False(world.Radars.Covers(world, 0, new WorldPos(VisionSystem.RadarCoverageMm + 20_000, 0, Lane)));
         Assert.False(world.Radars.Covers(world, 2, new WorldPos(0, 0, Lane)));
 
         // What takes it away is the load, and the load is shed rather than run at a loss.

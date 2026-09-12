@@ -361,23 +361,39 @@ public static class PowerSystem
         }
 
         /// <summary>
-        /// True when a position is inside the coverage of a lit radar of this team.
+        /// True when the ground a position stands on is inside the coverage of a lit radar of
+        /// this team.
         /// <para>
         /// This is what a radar's coverage <em>is</em>: a disc of
-        /// <see cref="VisionSystem.RadarCoverageMm"/> around each station that has power.
-        /// The vision system stamps the same disc into the fog, so the ground a gun can
-        /// shoot across and the ground the player can see are the same ground by
-        /// construction, not by two rules being kept in step.
+        /// <see cref="VisionSystem.RadarCoverageMm"/> around each station that has power. The
+        /// question is asked of <see cref="VisionSystem.Covers"/>, which is the same disc the
+        /// vision system stamps, asked the same way about the same cell — the fog marks whole
+        /// cells, so the answer about a position is the answer about the centre of the cell it
+        /// stands in. Only lit stations are in the network at all: the coverage a dark radar
+        /// defines is the coverage nobody has.
+        /// </para>
+        /// <para>
+        /// <b>This used to test the distance between the two positions, and the comment that stood
+        /// here claimed the fog and the query agreed "by construction, not by two rules being kept
+        /// in step". That was not true, and it is why the disagreement survived.</b> A point test
+        /// beside a cell rasterisation is two rules: they agreed only where the lattice did not
+        /// matter, and at the rim of a 260 m disc — one navigation cell is 9.4 m — they differed
+        /// over the strip of ground where a target could be shot by this answer and be invisible in
+        /// the fog. <see cref="CombatSystem.CanEngage"/> asks this twice, once for the shooter and
+        /// once for the target, so that strip was a piece of the battlefield where the gun and the
+        /// picture disagreed about whether anything could be seen at all. Nothing was keeping them
+        /// in step, and nothing could have: they were not the same question.
         /// </para>
         /// </summary>
         public bool Covers(SimWorld world, int team, Numerics.WorldPos position)
         {
+            ArgumentNullException.ThrowIfNull(world);
+
             if ((uint)team >= SimConstants.TeamCount)
             {
                 return false;
             }
 
-            long radiusSquared = (long)VisionSystem.RadarCoverageMm * VisionSystem.RadarCoverageMm;
             int count = _count[team];
             int offset = team * _stride;
 
@@ -390,13 +406,9 @@ public static class PowerSystem
                     continue;
                 }
 
-                int dx = world.GetRefBySlot(slot).Position.X - position.X;
-                int dz = world.GetRefBySlot(slot).Position.Z - position.Z;
+                Numerics.WorldPos set = world.GetRefBySlot(slot).Position;
 
-                // Horizontally, like range and like the disc the fog is stamped from: a
-                // radar on a ridge covers the valley under it, and a gun in the valley is
-                // under the umbrella whether or not it is standing at the same height.
-                if (((long)dx * dx) + ((long)dz * dz) <= radiusSquared)
+                if (VisionSystem.Covers(world, set, VisionSystem.RadarCoverageMm, position))
                 {
                     return true;
                 }

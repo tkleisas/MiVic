@@ -512,14 +512,22 @@ public static class CombatSystem
     /// shoot" and "what can this team see" the same question asked twice rather than two
     /// questions that happen to have similar answers.
     /// </para>
+    /// <para>
+    /// <b>The shooter's own eyes are asked of the fog's rule rather than of the two positions.</b>
+    /// They were a distance test of their own here, and that is the same defect the radar query had:
+    /// the fog marks whole cells, so a gun holding its own answer about a point could engage ground
+    /// the player had been shown as unwatched — and, in the other direction, refuse ground the fog
+    /// had painted. One disc test in the engine, about the same cell, is what makes "the gun can
+    /// reach it" and "the team can see it" statements about the same ground. The converse is not
+    /// meant to hold: ground another unit's eyes have painted does not lengthen this gun's arm, and
+    /// the only thing that does is a radar, which is the second half below.
+    /// </para>
     /// </summary>
     private static bool InSensorChain(SimWorld world, ref Entity attacker, WorldPos target)
     {
         int sensor = VisionSystem.SensorRadiusMm(world, in attacker);
-        int dx = attacker.Position.X - target.X;
-        int dz = attacker.Position.Z - target.Z;
 
-        if (((long)dx * dx) + ((long)dz * dz) <= (long)sensor * sensor)
+        if (VisionSystem.Covers(world, attacker.Position, sensor, target))
         {
             return true;
         }

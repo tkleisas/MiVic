@@ -131,7 +131,7 @@ shot out/frame-later.png
 | `structures [team]` | every structure a team has: its role, the cell it stands on, how much of it is up, and its hit points |
 | `block <x> <z>` | what deck stands on one cell: how much is left of it, which team owns it, which way it runs — including whether it is a **junction**, which is a fact about the cell rather than about any crossing — and which crossings pass through it |
 | `blast <x> <z> [radius] [damage] [team]` | drops a blast on the ground, as a salvo or a strike does, and reports how many blocks of deck it knocked out and what is left of the one at the centre |
-| `range <slot>` | the sensor chain for one entity: the weapon's range, its own eyes, the radius those eyes find a hidden enemy at, whether a powered radar is covering it, and **the furthest it can engage anything at** — which is the smaller of the first two until a radar changes the answer |
+| `range <slot>` | the sensor chain for one entity: the weapon's range, its own eyes, the radius those eyes find a hidden enemy at, whether a powered radar is covering it, and **the furthest it can engage anything at** — which is the smaller of the first two until a radar changes the answer. The eyes line is `VisionSystem.SensorOf`'s answer rather than the role's catalogue figure, so **a sensor that is not watching says so and why** — a radar the grid has shed reads `eyes none — the grid cannot run it, so the set is dark` rather than 260 m, and a radar that is on the air reads its 260 m there, because a radar's coverage *is* its eyes and not a second number beside them |
 | `power [team]` | one team's power ledger: energy generated, energy drawn by the structures that are on, the surplus, how many radars are lit and how many the grid had to shed, and the reason the interface gives for a brown-out, in Greek |
 | `capacity [team]` | one team's command capacity: what its finished structures support and what each of them is worth, what its live units cost against it per role, how far over it is, and the words the refusal uses — the ceiling and the army that spends it, from the same functions the production gate asks |
 | `detect <team> <slot>` | whether one team can see one entity, and by which channel: hidden, the cell's sight, the cell's detection, and whether the target has revealed itself by firing |
@@ -1952,11 +1952,11 @@ one pixel a metre the 260 m rim and the 170 m one are inside a single six-hundre
 and the reading is a distance you can see rather than a pair of figures you compare:
 
 ```
-query: range 503 GunEmplacement (Πυροβολείου) (x 0.0, z -70.0) m
+query: range 503 GunEmplacement (Πυροβολείο) (x 0.0, z -70.0) m
 query:   eyes       170.0 m — as far as its own sensors reach
 query:   reach      200.0 m — the furthest it can engage anything at
 query: range 504 RadarStation (Σταθμός Ραντάρ) (x 0.0, z -120.0) m
-query:   coverage   260.0 m
+query:   eyes       260.0 m — as far as its own sensors reach
 ok: map ...\map-radar-rings.svg + ...\map-radar-rings.png — 991x663 px, 1 px/m
 ```
 
@@ -1969,6 +1969,10 @@ centre world ( 240.0,  180.0) m  radius 120 m   the base, 240 m off the column
 centre world ( 240.0,  120.0) m  radius 130 m   ...
 ```
 
+The radar's 260 m is on its `eyes` line, which is `VisionSystem.SensorOf`'s answer rather than
+the role's catalogue figure — a radar is one disc, so the ground it lights for the team is the
+ground it lights for the guns. There is no separate `coverage` line saying the same number again.
+
 The tank is held at 190 m from the gun, so it stands inside the 260 m rim and outside the 170 m
 one: engaged only because the radar is looking, which is the whole of what a Σταθμός Ραντάρ is
 bought for. Then the script builds one more factory than the grid can carry, and the second
@@ -1979,9 +1983,16 @@ query: power team 0
 query:   radars     0 lit, 1 dark, 3 Ε short of running them all
 query:   brown-out  λείπει ισχύς 3 Ε
 query: range 504
-query:   coverage   none — the grid cannot run it
+query:   eyes       none — the grid cannot run it, so the set is dark
+query:   reach      0.0 m — the furthest it can engage anything at
 ok: map ...\map-radar-rings-dark.svg ... — 7 coverage discs
 ```
+
+The set's own answer is the reason its rim is missing, in the same words the interface uses for
+the brown-out: `SensorOf` is the call the fog pass makes before it stamps, so a report that
+printed the role's 260 m here — which is what it did while the eyes line came from
+`SensorRadiusMm`, a function that knows nothing about power — was drawing a rim for a dark radar
+in text.
 
 Seven rims before and seven after, because the **census counts what was drawn**: the factory that
 took the last of the grid adds a 130 m rim of its own, and the radar's 260 m one is simply not
