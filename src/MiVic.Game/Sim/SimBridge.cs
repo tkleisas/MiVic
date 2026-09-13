@@ -615,6 +615,62 @@ public sealed class SimBridge
     }
 
     /// <summary>
+    /// The zone: a derelict factory on the undeclared fourth team, at war with every side in the
+    /// match and played by nobody, emitting its wardens on a fixed cadence until it has spent
+    /// itself. ROADMAP §9's third-party threat, staged small: six wardens every five seconds is
+    /// a demonstration rather than a siege.
+    /// <para>
+    /// <b>Why the fourth team rather than a declared one.</b> An undeclared team is already
+    /// every kind of neutral the match rules know: hostile to everybody (nobody declares it, so
+    /// nobody is its ally), ignored by the victory rule (the check walks the sides the match
+    /// declares) and unplayed by the computer (there is no command centre for its decision
+    /// cycle to anchor on, and its wardens answer for themselves through acquisition). Declaring
+    /// the generator's team in the match — the second tenant of <c>MatchTeam.Judged = false</c>,
+    /// beside the Paperclip outpost — is for missions that want the zone to be <em>part of the
+    /// mission</em>, judged by its objectives; the fixture route is for a zone that is just part
+    /// of the map. Both are the same machinery; this one needs nothing new.
+    /// </para>
+    /// <para>
+    /// The clearing search is the same one every demo uses, and the factory is spawned
+    /// <em>placed</em>, not built: an exclusion zone whose machinery is still rising emits
+    /// nothing, and a zone that spent its first thirty seconds under construction would
+    /// demonstrate a build timer rather than a cadence.
+    /// </para>
+    /// </summary>
+    public static SimBridge CreateGeneratorDemo(ulong seed)
+    {
+        var bridge = new SimBridge(seed, ScenarioKind.Skirmish, mission: null, replay: null);
+
+        SimWorld world = bridge.World;
+        Clear(bridge);
+
+        if (!TryFindClearing(world.TerrainTypes, metres: 90f, out int bestCell, out int bestScore))
+        {
+            return bridge;
+        }
+
+        (int centreX, int centreZ) = CellCentreMetres(world.TerrainTypes, bestCell);
+
+        Console.WriteLine($"generator-demo: open ground at {centreX}, {centreZ} (score {bestScore})");
+
+        EntityId factory = SpawnAbsolute(world, Faction.Chinese, 3, UnitKind.DerelictFactory, centreX, centreZ);
+
+        // Three numbers and a kind, exactly as §9 says them: a Φύλακας every five seconds —
+        // a hundred ticks, because ticks are what the clock is and seconds are what the
+        // comment is for — until it has given six. Zero would mean unlimited, and an
+        // unlimited zone breeds for as long as the match runs.
+        world.Spawner.Configure(factory.Slot, UnitKind.Warden, SimConstants.SecondsToTicks(5), 6);
+
+        // And the thing that makes the zone a question rather than a diorama: a tank of the
+        // player's faction standing eighty metres south of it, inside the wardens' reach and
+        // theirs. It gets shot, the wardens get shot back, and nothing anywhere shoots the
+        // factory — which is the half of the mechanic the invulnerability clause is for.
+        SpawnAbsolute(world, Faction.Soviet, 0, UnitKind.Tank, centreX, centreZ - 80, health: 5_000);
+
+        return bridge;
+    }
+
+    /// <summary>
     /// Three headquarters of the same role, one per power, each with the same gun standing thirty-five
     /// metres off it: the scene in which "the same weapon does measurably less to a Σοβιετικοί
     /// building than to a Κινέζοι one" stops being a table of permille and becomes three numbers on

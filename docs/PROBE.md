@@ -2057,3 +2057,27 @@ The `friendly` line reading none under the new sides is the part that needed the
 shot fired at what was then an enemy is re-read by a ledger after the betrayal unless the shot
 carried its own verdict — which is why `SimEvent.AimedAtAlly` is stamped by the simulation at the
 moment of firing and the probe's ledger reads that.
+
+## Worked example: does a zone breed what it says it will?
+
+`tools/probe/generator.probe`, against `--generator-demo`: a derelict factory on the undeclared
+fourth team, set to emit a Φύλακας every five seconds until it has given six, with a tank south of
+it to be shot at. See ROADMAP §9 for what each decision was. The cadence witness is the factory's
+own memory, read through the `zone` line `unit` prints for a generator:
+
+```
+query:   zone       0 wardens given, next on tick 0 of 6
+ok: ran 100 ticks (5.0 s), simulation now at tick 100
+query:   zone       0 wardens given, next on tick 101 of 6
+ok: ran 1 ticks (0.1 s), simulation now at tick 101
+query:   zone       1 warden given, next on tick 201 of 6
+...
+query:   zone       6 wardens given, next on tick 701 of 6
+```
+
+The census beside it answers a different question — how many are *alive* — and on this fixture the
+answer is zero at the end, because the tank south of the zone kills the wardens as they arrive
+while the factory stands. That is the second half of the reading: the zone gives, the war takes,
+and the factory is untouched by either — `order 508 attack 509` is taken (the factory is at war
+with everybody) and dropped by the next tick, because acquisition may never hold what nothing can
+hurt.

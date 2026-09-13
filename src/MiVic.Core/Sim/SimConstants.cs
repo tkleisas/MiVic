@@ -16,6 +16,17 @@ public static class SimConstants
     public const long TickMicroseconds = 1_000_000L / TickRate;
 
     /// <summary>
+    /// Converts a duration the interface speaks in into the duration the
+    /// simulation stores. The convention the whole project works to is ticks in
+    /// the data and seconds in the comment and the interface, which is the trade
+    /// the fixed clock already makes: a tick is exactly one twentieth of a
+    /// second, it cannot drift the way a wall-clock timer would, and a cadence
+    /// is a multiple of fifty milliseconds — which is a fine trade for something
+    /// nobody will perceive as off by a frame.
+    /// </summary>
+    public static int SecondsToTicks(int seconds) => seconds * TickRate;
+
+    /// <summary>
     /// Upper bound on catch-up ticks per frame. Prevents the classic death
     /// spiral when a frame takes far longer than a tick.
     /// </summary>

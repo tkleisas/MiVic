@@ -47,6 +47,18 @@ public static class HazardSystem
             }
 
             UnitDefinition definition = UnitCatalog.Get(entity.Kind);
+
+            // The one thing even the ground cannot do. Lava is the damage path that asks
+            // nobody's permission and composes no hit — but a zone whose machinery was
+            // built to sit in one is the fiction the generator lives in, and "cannot be
+            // killed" that a hillside could get past would be an attribute with a
+            // footnote. The burn does not exist for the invulnerable, the same answer
+            // DamageRules.Against gives the weapons.
+            if (definition.Invulnerable)
+            {
+                continue;
+            }
+
             int damage = definition.IsBuilding ? Math.Max(1, LavaDamagePerTick / StructureDamageDivisor) : LavaDamagePerTick;
 
             // This is the one damage path that does not go through DamageRules, and deliberately:

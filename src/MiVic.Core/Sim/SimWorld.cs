@@ -153,6 +153,15 @@ public sealed class SimWorld
     /// </summary>
     public PowerSystem.RadarNetwork Radars => _radars;
 
+    /// <summary>
+    /// What the match's generators are set to emit. The configuration is input —
+    /// the same fixture, mission or script that placed the generator sets it, so a
+    /// rebuild re-derives it from the same place the placement came from — while the
+    /// count and the clock the spawner <em>remembers</em> live on the entity and are
+    /// hashed. See <see cref="Systems.SpawnerSystem"/>.
+    /// </summary>
+    public Systems.SpawnerSystem Spawner { get; } = new();
+
     /// <summary>How the battle ended; <see cref="GameOutcome.Ongoing"/> while it lasts.</summary>
     public GameOutcome Outcome { get; private set; }
 
@@ -889,6 +898,7 @@ public sealed class SimWorld
             Profiler.Mark(ref Profiler.Research, ref Profiler.WorstResearch);
             ProductionSystem.Tick(this);
             Profiler.Mark(ref Profiler.Production, ref Profiler.WorstProduction);
+            Spawner.Tick(this);
             PathingSystem.Tick(this);
             Profiler.Mark(ref Profiler.Pathing, ref Profiler.WorstPathing);
             MoraleSystem.Tick(this);

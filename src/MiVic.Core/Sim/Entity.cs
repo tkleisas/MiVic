@@ -122,4 +122,21 @@ public struct Entity
 
     /// <summary>Ticks the structure's construction originally took, for a progress bar.</summary>
     public int ConstructionTicksTotal;
+
+    /// <summary>
+    /// How many the generator in this slot has emitted so far. Zero for everything that is
+    /// not a generator, and for one that has not yet produced anything — which is why the
+    /// state hash folds it in only where the role asks for it: two peers that disagreed
+    /// about a count that exists nowhere else would agree on every number above and diverge
+    /// the tick the cadence moved one of them. See <see cref="Systems.SpawnerSystem"/>.
+    /// </summary>
+    public int SpawnedCount;
+
+    /// <summary>
+    /// Tick the generator in this slot next emits on. Zero when nothing is scheduled — the
+    /// sentinel every "not yet" in this struct uses — and hashed with the same condition,
+    /// because a spawner whose clock two peers disagreed about would breed two different
+    /// wars from the same match.
+    /// </summary>
+    public long NextSpawnTick;
 }

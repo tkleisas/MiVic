@@ -498,6 +498,18 @@ public static class CombatSystem
             return false;
         }
 
+        // The one kind of thing no weapon is for. "Cannot be killed" is an attribute of the
+        // role rather than a rule about damage paths, and this is where it has to be honoured
+        // first — a target nothing can hurt is a target acquisition must never pick, because
+        // a generator a unit spends a minute shooting to no effect is worse than one it
+        // ignores. The damage paths ask the same attribute below, so a blast that lands
+        // without ever acquiring anything is also answered; this is the door the targeting
+        // half of the question comes through.
+        if (UnitCatalog.Get(target.Kind).Invulnerable)
+        {
+            return false;
+        }
+
         return !mustSee || InSensorChain(world, ref attacker, target.Position);
     }
 

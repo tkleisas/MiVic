@@ -236,6 +236,17 @@ public static class StateHash
             Mix(ref hash, e.RevealedUntilTick);
             Mix(ref hash, e.DistanceTravelledMm);
             Mix(ref hash, e.ConstructionTicksRemaining);
+
+            // What a generator remembers: how many it has emitted and when it will
+            // next. The condition reads the role, which is hashed two lines above, so
+            // the choice of what to fold in is itself deterministic — and a match with
+            // no generator mixes not one byte more than it did, which is why no
+            // golden hash in the repository moves for a feature it does not use.
+            if (e.Kind == UnitKind.DerelictFactory)
+            {
+                Mix(ref hash, e.SpawnedCount);
+                Mix(ref hash, e.NextSpawnTick);
+            }
         }
 
         // What every building is making, and how far along it is. None of the entity fields above

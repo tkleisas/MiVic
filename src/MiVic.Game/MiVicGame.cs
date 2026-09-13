@@ -672,7 +672,9 @@ public sealed partial class MiVicGame : XnaGame
                                                     ? SimBridge.CreateArmourDemo(_options.Seed)
                                                     : _options.MudDemo
                                                         ? SimBridge.CreateMudDemo(_options.Seed)
-                                                        : _options.ObjectiveDemo
+                                                        : _options.GeneratorDemo
+                                                            ? SimBridge.CreateGeneratorDemo(_options.Seed)
+                                                            : _options.ObjectiveDemo
                                                             ? SimBridge.CreateObjectiveDemo()
                                                             : _options.PaperclipDemo
                                                                 ? SimBridge.CreatePaperclipDemo()

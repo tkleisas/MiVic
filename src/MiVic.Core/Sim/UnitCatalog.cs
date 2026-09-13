@@ -121,7 +121,9 @@ public readonly record struct UnitDefinition(
     int FootprintRadiusCells = 0,
     bool CanHitGround = true,
     int RoleArmourPermille = 1_000,
-    int SupplyCost = 0)
+    int SupplyCost = 0,
+    bool Invulnerable = false,
+    bool NeverBuilt = false)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -350,6 +352,36 @@ public static class UnitCatalog
         // and can afford neither the wait nor the research.
         new(UnitKind.RadarStation, 240, 40, 220, 900, 0, 1, UnitKind.CommandCentre, true, WaterCost: 70,
             FootprintRadiusCells: 1, RoleArmourPermille: 1_050),
+
+        // Ερειπωμένο Εργοστάσιο: the monster generator — a structure on a team of its own,
+        // at war with every side in the match, that emits its wardens on a fixed cadence.
+        // Nobody builds it and nobody can kill it: what silencing a zone would cost is a
+        // decision a mission can make, not a rule the roster owns, and this one is the
+        // permanent kind — an exclusion zone with something still running inside it. The
+        // invulnerability is honoured where targets are chosen, so no gun ever spends a
+        // minute shooting at a wall nothing happens to; see CombatSystem.CanEngage.
+        //
+        // The cadence and the output live with the instance, not with the role: the
+        // parameters are three numbers and a kind — what it emits, how often, and how many
+        // it will ever emit, with zero meaning unlimited, which is the same sentinel
+        // MaxAlive already uses. See SpawnerSystem, which is where both are carried.
+        new(UnitKind.DerelictFactory, 600, 0, 400, 6_000, 0, 1, UnitKind.CommandCentre, true,
+            FootprintRadiusCells: 1, Invulnerable: true),
+
+        // Φύλακας: what the derelict factory emits. An automaton — no crews, no morale —
+        // with a short reach and a rate of fire that makes a group of them a threat rather
+        // than a decoration. Nobody may build it: the OnlyFor clause no faction satisfies,
+        // because the zone is where wardens come from, and the queue path is the only door
+        // that clause is read at. Its supply is four, the same as an armoured vehicle,
+        // which is the only one of its figures a player's side ever pays attention to:
+        // the ceiling the capacity ledger reads counts the places an army takes, and a
+        // horde of wardens takes places like anything else — but only for a team that
+        // owns a ceiling at all, which the neutral team the generator belongs to does
+        // not. See SpawnerSystem, where the two bounds are said apart.
+        new(UnitKind.Warden, 140, 30, 100, 220, 340, 1, UnitKind.Factory, false,
+            28, 110_000, 22, false, 0,
+            Movement: MovementClass.Tracked, GroundPressurePermille: 1_000,
+            IsAutomaton: true, NeverBuilt: true, SupplyCost: 4),
     ];
 
     /// <summary>Every defined role.</summary>
@@ -575,6 +607,14 @@ public static class UnitCatalog
             return false;
         }
 
+        if (definition.NeverBuilt)
+        {
+            // Some things exist only because something else put them there: the
+            // zone's wardens come from the zone, and a queue that took an order
+            // for one would be selling what nobody can make.
+            return false;
+        }
+
         if (definition.OnlyFor != Faction.None && definition.OnlyFor != faction)
         {
             return false;
@@ -638,6 +678,8 @@ public static class UnitCatalog
         UnitKind.GunEmplacement => "Πυροβολείο",
         UnitKind.AntiAirEmplacement => "Αντιαεροπορικό Πυροβολείο",
         UnitKind.RadarStation => "Σταθμός Ραντάρ",
+        UnitKind.DerelictFactory => "Ερειπωμένο Εργοστάσιο",
+        UnitKind.Warden => "Φύλακας",
         _ => "Άγνωστο",
     };
 

@@ -1,0 +1,52 @@
+# Q: does a zone breed what it says it will, at the cadence it says, and does anything anywhere
+# Q: shoot at a wall nothing can happen to?
+#
+#   MiVic.Game.exe --generator-demo --probe tools/probe/generator.probe --probe-out artifacts/probe/generator.txt
+#
+# The fixture: a derelict factory on the undeclared fourth team — hostile to every side, ignored by
+# the victory rule, played by nobody — set to emit a Φύλακας every five seconds until it has given
+# six, with a player's tank standing eighty metres south of it to be shot at. See ROADMAP §9 and
+# the fixture's own comment for why the zone belongs to nobody.
+#
+# What to read:
+#
+#   - `zone` on the factory's own reading is the cadence witness: how many the zone has given and
+#     when the next one is due. The census answers "how many are alive", which the fighting keeps
+#     changing — the tank south of the zone kills wardens as they arrive — and `zone` answers "how
+#     many has the zone emitted", which only the cadence moves. Ticks are what the clock is, so
+#     "every five seconds" is exact, and after the sixth the count stops: a count is how many it
+#     will *ever* emit, and a zone that has given everything it had is a place with a history.
+#   - `order 508 attack 509` is the targeting half of "cannot be killed": the order is taken —
+#     hostility and invulnerability are different questions and the factory IS at war with
+#     everybody — and the tank drops it on the first tick, because acquisition may never hold a
+#     target nothing can hurt. The damage half is pinned in the core tests, where a blast on the
+#     factory's own square moves no health; no shipped ability is reachable at the tier a fixture
+#     runs at, so the transcript asks the question the client can answer.
+#   - the factory's slot is the fixture's own: the Clear below it takes the pool's tail, so the
+#     factory lands on 509 for this fixture at this capacity, and the probe says so rather than
+#     pretending the number is portable.
+
+# --- the zone, before it has given anything -------------------------------------------------------
+unit 509
+
+# --- first emission: exact on the tick, not a frame either side -----------------------------------
+tick 100
+unit 509
+tick 1
+unit 509
+
+# --- three more cadences, the tank south of the zone shooting the wardens while they land ---------
+tick 300
+unit 509
+
+# --- the targeting half: an order taken, and dropped by the next tick -----------------------------
+order 508 attack 509
+tick 1
+unit 508
+
+# --- the spent zone: after the sixth, the clock stops for good ------------------------------------
+tick 400
+unit 509
+tick 200
+unit 509
+count Warden

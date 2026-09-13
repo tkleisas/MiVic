@@ -109,7 +109,7 @@ public sealed record LaunchOptions
     /// thing the fixture exists to show.
     /// </para>
     /// </summary>
-    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || EmplacementDemo || DetectionDemo || AllianceDemo || ArmourDemo || MudDemo || IsProbe;
+    public bool IsFixture => Viewer || IsModelGallery || ParticleDemo || NukeDemo || FireDemo || CombatDemo || LavaDemo || ForestDemo || GroundDemo || TurretDemo || FlightDemo || EmplacementDemo || DetectionDemo || AllianceDemo || ArmourDemo || MudDemo || GeneratorDemo || IsProbe;
 
     /// <summary>
     /// When set, run the probe script in this file and exit.
@@ -178,6 +178,9 @@ public sealed record LaunchOptions
     /// <c>teams</c> and <c>unit</c> queries.
     /// </summary>
     public bool AllianceDemo { get; init; }
+
+    /// <summary>The monster-generator fixture: a derelict factory and its wardens. See ROADMAP §9.</summary>
+    public bool GeneratorDemo { get; init; }
 
     /// <summary>
     /// Three headquarters of one role, one per power, each with the same gun thirty-five metres off
@@ -276,6 +279,7 @@ public sealed record LaunchOptions
           --alliance-demo       Δύο σύμμαχοι σε εμβέλεια, με εχθρό πιο πέρα
           --armour-demo         Ίδιο όπλο σε τρία επιτελεία, ένα ανά παράταξη
           --mud-demo            Δύο σχολές στην ίδια λάσπη, με Έλεγχο Καιρού
+          --generator-demo      Ερειπωμένο εργοστάσιο και οι Φύλακές του (ρόulos τρίτου)
           --objective-demo      Αποστολή που ο χάρτης έχει ήδη κρίνει (έλεγχος στόχων)
           --paperclip-demo      Επιχείρηση Paperclip: πλευρά που δεν κρίνει η νίκη
           --flight-demo         Αεροσκάφη σε πτήση, για την κατεύθυνση της πλώρης
@@ -537,6 +541,13 @@ public sealed record LaunchOptions
                     // Two seconds in, which is long enough for every weapon in the line-up to
                     // have acquired and fired at least once: a tank's reload is 24 ticks.
                     options = options with { AllianceDemo = true, ShowHelp = false, ScreenshotFrame = 60 };
+                    break;
+
+                case "--generator-demo":
+                    // Thirty seconds, which is six emissions of five seconds each: the whole of
+                    // what the zone will ever do, from first warden to the spent silence after
+                    // its count runs out.
+                    options = options with { GeneratorDemo = true, ShowHelp = false, ScreenshotFrame = 600 };
                     break;
 
                 case "--armour-demo":

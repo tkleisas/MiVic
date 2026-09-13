@@ -79,6 +79,17 @@ public static class DamageRules
         ref Entity target = ref world.GetRefBySlot(slot);
         UnitDefinition definition = UnitCatalog.Get(target.Kind);
 
+        // The damage half of "cannot be killed": the same attribute the targeting half
+        // honours in CanEngage. Every damage path that names a slot comes through here —
+        // direct fire, a splash, an off-map strike — so one answer covers all three, and
+        // the zero means the hit does not exist rather than that it did nothing: health
+        // is not touched, so a blast that would have killed the target beside it cannot
+        // spend its damage twice.
+        if (definition.Invulnerable)
+        {
+            return 0;
+        }
+
         int cover = world.TerrainTypes.CoverAt(
             world.TerrainTypes.IndexOfWorld(target.Position.X, target.Position.Z),
             definition.Movement);

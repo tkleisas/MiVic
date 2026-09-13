@@ -90,6 +90,20 @@ public enum UnitKind : byte
     /// structure whose weapon is everybody else's.
     /// </summary>
     RadarStation = 21,
+
+    /// <summary>
+    /// Ερειπωμένο Εργοστάσιο — a derelict factory: the monster generator. A structure on
+    /// a team of its own, at war with every side in the match, that emits its wardens on
+    /// a fixed cadence and makes a patch of the map a place rather than a space.
+    /// </summary>
+    DerelictFactory = 22,
+
+    /// <summary>
+    /// Φύλακας — what a derelict factory emits. An automaton that answers to nobody:
+    /// no crews, no morale, and a standing war against everybody. Nobody builds it;
+    /// the zone is where it comes from.
+    /// </summary>
+    Warden = 23,
 }
 
 /// <summary>

@@ -998,6 +998,18 @@ public static class AiSystem
             return false;
         }
 
+        // A side the victory rule does not judge is a side destroying which wins
+        // nothing, and the machine that runs this team must not be baited into a war
+        // of attrition against something that keeps coming back. The zone is on the
+        // map to be avoided, gone around, or paid for on purpose — those are a
+        // player's decisions. The wardens themselves are still shot at when they come
+        // into reach, because whatever is shooting at you is answered whatever it
+        // answers to; this clause is about the strategic target, which chooses.
+        if (UnitCatalog.Get(target.Kind).IsBuilding && !world.Roster.IsJudged(target.TeamId))
+        {
+            return false;
+        }
+
         return UnitCatalog.Get(target.Kind).IsBuilding || IsInSight(world, team, target.Position);
     }
 

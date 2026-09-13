@@ -653,6 +653,45 @@ capped role will quietly stop once the team hits the cap, which is correct but i
 generator on the neutral team is subject to no cap at all, which is how a zone ends up breeding. Say
 which of the two bounds a reader should expect to bite first, in the comment where the spawn happens.
 
+**Built: the zone, and the wardens it gives.** Two kinds on the roster — the **Ερειπωμένο
+Εργοστάσιο** (a derelict factory: a structure on a team of its own, at war with every side, played by
+nobody) and the **Φύλακας** it emits (an automaton: no crews, no morale, a standing war against
+everybody, and `NeverBuilt`, which closes the queue door because the zone is where wardens come
+from). `SpawnerSystem` carries the three parameters and a kind per instance — **output**, **interval**
+in ticks and **count** with zero meaning unlimited — set by whoever placed the generator, with the
+emitted count and the next-emission tick living on the entity and hashed where the role asks for
+them, so a match with no zone mixes not one byte more than it did.
+
+**The two bounds resolved the way the notes above wanted said, and one of them answered in the
+other direction than the draft above guessed.** The zone's own **count** is the bound that bites —
+it is a fact about the zone's history. The emitted role's **MaxAlive** does not bite at all,
+because that cap is enforced on the queue path (`CanBuild`) and the spawner does not go through
+the queue — so **a generator on the neutral team is subject to no cap at all**, which is how a
+zone ends up breeding, and it is said where the spawn happens rather than discovered. The neutral
+team in the fixture is the *undeclared* fourth team, which already answers every question the
+§8 roster work taught the engine to ask: hostile to everybody, invisible to the victory rule,
+unplayed by the computer. Declaring the zone's team in the match — the second tenant of
+`MatchTeam.Judged = false` — is for missions that want the zone judged by their objectives; the
+fixture route needs nothing new.
+
+**Destructible is an attribute, not a rule, and the attribute is `Invulnerable`** — honoured in
+both places it has to be: `CanEngage`, so no gun ever holds a target nothing can hurt ("a generator
+a unit spends a minute shooting to no effect is worse than one it ignores"), and
+`DamageRules.Against`, where every damage path that names a slot already converges, plus the one
+path that does not — lava — which burns the invulnerable not at all, because a zone whose
+machinery was built to sit in one is the fiction the generator lives in. The AI's strategic
+targeting skips an unjudged team's structures for the same sentence the victory rule lives by — a
+side destroying which wins nothing is not worth an army — while the wardens themselves are shot at
+when they come into reach, because whatever is shooting at you is answered whatever it answers to.
+
+**No escalation, as decided.** Constant cadence, written so the door stays open in the shape of
+the rule rather than with a field. `--generator-demo` stages one: a zone set to six wardens every
+five seconds — a hundred ticks, because ticks are what the clock is — with a tank south of it to
+be shot at, and `tools/probe/generator.probe` is the transcript: the cadence exact on the tick, the
+`zone` reading on the factory's own memory as the count climbs and then stops, the order taken and
+dropped in one tick because acquisition may never hold what nothing can hurt, and the wardens
+dying to the tank while the factory stands.
+
 ## 10. A terrain and mission editor
 
 **What a map should be: a seed plus a list of edits.** Not an authored height field, not a binary blob.

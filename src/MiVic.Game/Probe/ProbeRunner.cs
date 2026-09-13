@@ -1710,6 +1710,20 @@ public sealed class ProbeRunner
                 : $", against {ProbeFormat.Metres(entity.SpeedMmPerTick.ToFloat() * SimConstants.TickRate / WorldPos.MmPerMetre)} per second " +
                   $"({ProbeFormat.Metres(entity.SpeedMmPerTick.ToFloat() / WorldPos.MmPerMetre)} per tick) on clear ground"));
         Emit($"query:   structure  building {(definition.IsBuilding ? "yes" : "no")}, queued {ProbeFormat.Count(entity.QueueLength, "job")}, construction {DescribeConstruction(ref entity)}");
+
+        if (entity.Kind == UnitKind.DerelictFactory)
+        {
+            // The generator's own memory, which is the state the hash folds in: how many
+            // it has given and when the next one is due. This is the exact cadence witness
+            // — the census answers "how many are alive", which combat keeps changing, and
+            // this answers "how many has the zone emitted", which only the cadence moves.
+            Emit(
+                $"query:   zone       {ProbeFormat.Count(entity.SpawnedCount, "warden")} given, next on tick {entity.NextSpawnTick}" +
+                (world.Spawner.ConfigOf(slot).Count > 0
+                    ? $" of {world.Spawner.ConfigOf(slot).Count}"
+                    : ", unlimited"));
+        }
+
         Emit($"query:   render     {(visible ? "drawn" : "not drawn (fog or stealth)")}, camera at {ProbeFormat.Metres(Vector3.Distance(camera.Position, SimBridge.ToMetres(entity.Position)))}");
     }
 

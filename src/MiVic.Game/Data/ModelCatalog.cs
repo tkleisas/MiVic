@@ -338,6 +338,15 @@ public sealed class ModelCatalog : IDisposable
         // thing on the ridge turns has no way to tell a radar that is working from one whose
         // power has been cut, and the sweep is the whole of that signal.
         UnitKind.RadarStation => MeshBuilder.Cylinder(2.2f, 8f),
+
+        // The zone's machinery, until their models arrive: a low square hall for the
+        // factory, and a small tracked wedge for what comes out of it. Two different
+        // shapes on purpose, for the same reason the emplacements got two — a fallback
+        // that made a factory and a warden look alike would hide which one the picture
+        // was showing.
+        UnitKind.DerelictFactory => MeshBuilder.Box(14f, 6f, 11f),
+        UnitKind.Warden => MeshBuilder.Box(2.6f, 1.5f, 4.2f),
+
         _ => MeshBuilder.Box(1f, 1f, 1f),
     };
 

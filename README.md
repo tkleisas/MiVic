@@ -138,6 +138,7 @@ self-contained portable archives for linux-x64 and win-x64
 | `--victory-demo` | knock out the rival structures so the victory banner appears |
 | `--objective-demo` | start the demonstration mission whose objectives the opening world has decided |
 | `--paperclip-demo` | start the Operation Paperclip demonstration: a side the victory rule does not judge |
+| `--generator-demo` | a derelict factory on neutral ground emitting its wardens on a fixed cadence (ROADMAP §9) |
 | `--record <file>` | log every external command and save the match as a replay |
 | `--replay <file>` | verify a replay headlessly and exit (0 = the match was reproduced) |
 | `--watch <file>` | play a recorded match back in the client |
