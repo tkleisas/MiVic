@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using MiVic.Core.Campaign;
 using MiVic.Core.Numerics;
 using MiVic.Core.Pathfinding;
+using MiVic.Core.Replay;
 using MiVic.Core.Sim;
 using MiVic.Core.Terrain;using MiVic.Game.Data;
 using MiVic.Game.Sim;
@@ -37,6 +39,12 @@ public sealed class ProbeRunner
 
     /// <summary>Ticks one <c>tick</c> command may ask for: 5000 seconds of game time.</summary>
     private const int MaxTicksPerCommand = 100_000;
+
+    /// <summary>
+    /// Ticks one <c>rewind</c> may ask to go back: 5000 seconds of game time,
+    /// the same ceiling a <c>tick</c> command carries.
+    /// </summary>
+    private const int MaxRewindTick = 100_000;
 
     /// <summary>Largest slot index a script may name, so a stale transcript cannot index off the end.</summary>
     private const int MaxSlot = 8191;
@@ -384,6 +392,18 @@ public sealed class ProbeRunner
             case "map":
                 DrawMap(command);
                 break;
+            case "save":
+                SaveCheckpoint(command);
+                break;
+            case "restore":
+                RestoreCheckpoint(command);
+                break;
+            case "rewind":
+                Rewind(command);
+                break;
+            case "checkpoints":
+                ListCheckpoints(command);
+                break;
             case "expect":
                 Expect(command);
                 break;
@@ -393,7 +413,8 @@ public sealed class ProbeRunner
                     "surfaces, attributes, units, unit, count, routes, parts, model, visible, events, teams, bridge, " +
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
-                    "triggers, messages, objectives, map, expect, validate");
+                    "triggers, messages, objectives, map, save, restore, rewind, checkpoints, " +
+                    "expect, validate");
         }
     }
 
@@ -4192,6 +4213,144 @@ public sealed class ProbeRunner
         Emit($"fail: FAIL '{label}' — {detail}");
     }
 
+    // ------------------------------------------------------------ checkpoints
+
+    /// <summary>
+    /// Captures the live world as a named save: a replay trimmed to the tick
+    /// it was taken on, which is what a checkpoint is — bytes, not a state
+    /// dump. The size is reported, because a checkpoint that had quietly become
+    /// a state dump would show itself in that number.
+    /// </summary>
+    private void SaveCheckpoint(ProbeCommand command)
+    {
+        const string Usage = "save <name>";
+
+        string name = command.Argument(0, "a name", Usage);
+        SimBridge bridge = _host.Simulation;
+
+        ReplayFile checkpoint = _host.Checkpoints.Save(bridge.World, bridge.Scenario, name);
+
+        using var measure = new MemoryStream();
+        checkpoint.Save(measure);
+
+        Emit(
+            $"ok: saved '{name}' at tick {checkpoint.FinalTick}, hash 0x{checkpoint.FinalHash:X16}, " +
+            $"{ProbeFormat.Count(checkpoint.Commands.Count, "command")} in the log, " +
+            $"{measure.Length} bytes");
+    }
+
+    /// <summary>
+    /// Puts the world a named save was taken from where the live world was. The restore is
+    /// verified before the client is handed it: the hash the save recorded must be the hash
+    /// the rebuild reaches, or the command records the failure and the running match keeps
+    /// standing — a restore that went through with a different world would look like a
+    /// rewind that worked.
+    /// </summary>
+    private void RestoreCheckpoint(ProbeCommand command)
+    {
+        const string Usage = "restore <name>";
+
+        string name = command.Argument(0, "a saved name", Usage);
+
+        if (!_host.Checkpoints.Named.TryGetValue(name, out ReplayFile? checkpoint))
+        {
+            string known = _host.Checkpoints.Named.Count == 0
+                ? "nothing has been saved yet"
+                : $"saves held: {string.Join(", ", _host.Checkpoints.Named.Keys)}";
+            throw new ProbeException($"no save named '{name}' — {known}; usage: {Usage}");
+        }
+
+        try
+        {
+            RebuiltMatch match = Checkpoint.Restore(checkpoint);
+            _host.SwapSimulation(new SimBridge(match, _host.Simulation.Scenario));
+
+            Emit(
+                $"ok: restored '{name}' — world at tick {match.World.Tick}, hash verified, " +
+                $"{ProbeFormat.Ticks(match.World.Tick)} replayed, {ProbeFormat.Count(match.CommandsApplied, "command")} re-issued");
+
+            RecordCheck(
+                $"'{name}' restores to the tick it was taken on",
+                match.World.Tick == checkpoint.FinalTick,
+                $"tick {checkpoint.FinalTick} == {match.World.Tick}");
+        }
+        catch (InvalidDataException failure)
+        {
+            RecordCheck(
+                $"'{name}' restores to the world it was taken from",
+                held: false,
+                failure.Message + " — the running match is untouched.");
+        }
+    }
+
+    /// <summary>
+    /// Puts the live world back on an earlier tick: from the newest keyframe at or before it,
+    /// carrying the commands the live world issued since, verified the complete way — the
+    /// same position rebuilt from the very beginning of the match must carry the same hash.
+    /// The transcript states the cost in ticks and in milliseconds, because the difference
+    /// between those two numbers and the match's length is what the keyframes were for.
+    /// </summary>
+    private void Rewind(ProbeCommand command)
+    {
+        const string Usage = "rewind <tick>";
+
+        long target = command.Whole(0, "a tick number", Usage, 0, MaxRewindTick);
+        SimBridge bridge = _host.Simulation;
+
+        if (target >= bridge.World.Tick)
+        {
+            throw new ProbeException(
+                $"cannot rewind to tick {target}: the world stands on tick {bridge.World.Tick}, " +
+                $"and a rewind goes backwards — usage: {Usage}");
+        }
+
+        try
+        {
+            long start = Stopwatch.GetTimestamp();
+            CheckpointRestore restore = _host.Checkpoints.Restore(bridge.World, bridge.Scenario, target);
+            long elapsedMs = (Stopwatch.GetTimestamp() - start) * 1000 / Stopwatch.Frequency;
+
+            _host.SwapSimulation(new SimBridge(restore.Match, bridge.Scenario));
+
+            Emit(
+                $"ok: rewound to tick {restore.Tick} — {ProbeFormat.Ticks(restore.TicksReplayed)} replayed from the " +
+                $"keyframe, {elapsedMs} ms, {ProbeFormat.Count(restore.Match.CommandsApplied, "command")} re-issued");
+
+            RecordCheck(
+                "the rewound world is the world it rewound from",
+                restore.HashVerified,
+                $"tick {restore.Tick} rebuilt and hashed" +
+                (restore.VerifiedFromBeginning ? ", verified against a rebuild from tick zero" : string.Empty));
+        }
+        catch (InvalidDataException failure)
+        {
+            RecordCheck(
+                "the rewound world is the world it rewound from",
+                held: false,
+                failure.Message + " — the running match is untouched.");
+        }
+    }
+
+    /// <summary>What the store holds: the named saves and the keyframes beside them.</summary>
+    private void ListCheckpoints(ProbeCommand command)
+    {
+        Emit("cmd: checkpoints");
+
+        CheckpointStore store = _host.Checkpoints;
+
+        if (store.Named.Count == 0 && store.Keyframes.Count == 0)
+        {
+            Emit("query: no checkpoints — nothing saved and no keyframe taken yet");
+            return;
+        }
+
+        foreach (KeyValuePair<string, ReplayFile> save in store.Named)
+        {
+            Emit($"query: save '{save.Key}' at tick {save.Value.FinalTick}, hash 0x{save.Value.FinalHash:X16}, {ProbeFormat.Count(save.Value.Commands.Count, "command")}");
+        }
+
+        Emit($"query: keyframes at ticks {string.Join(", ", store.Keyframes.Select(k => k.FinalTick))}");
+    }
     private static bool Matches(string actual, string expected, float? tolerance)
     {
         if (float.TryParse(actual, NumberStyles.Float, CultureInfo.InvariantCulture, out float left) &&

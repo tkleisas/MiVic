@@ -756,9 +756,29 @@ route and standing still exits non-zero rather than printing it and claiming suc
 standard skirmish at tick 600 it finds none, which is the honest answer and the one that says the
 starvation bug is behind us.
 
-The checkpoint half of this section is still open, and the map turned out not to need it: the trail
-is sampled by the tool as the world steps forward, so a picture of the last half minute costs the
-ticks it takes to run them and no state at all.
+**Built, and the checkpoint half with it.** A checkpoint is a replay trimmed to a tick —
+`MiVic.Core/Replay/Checkpoint.cs` — which is the claim the section opened with: bytes rather than
+megabytes, restored by replaying forward, and self-verifying, because the hash the checkpoint
+records must be the hash the rebuild reaches or the restore refuses. The store holds two kinds:
+named saves, which are checkpoints a player or a script makes on purpose, and **keyframes**, taken
+every 600 ticks by whatever steps the world, which is what a rewind replays from — a rewind to a
+tick between keyframes carries the live command log forward from the newest one and verifies the
+complete way, the same position rebuilt from tick zero agreeing with the keyframe path, and both
+costs are reported so the trade the keyframes exist to win is a number in the transcript rather
+than a hope. A restored world goes on living and keeps its log complete, so a checkpoint of it,
+later, is as self-contained as the first one was; the one thing it does not carry is the client's
+own wander-order randomness, which is documented where the bridge that issues it is written.
+
+**And restoring found a hole in the replay itself.** A command recorded *on* a replay's final
+tick — a wander order handed out in the closing half of the tick — was never re-issued by the old
+rebuild loop, which stopped at the tick it was asked to reach without flushing what that tick had
+left pending. The queue is hashed state, so any replay recorded at a tick where the wander interval
+fired would have failed verification; the one driver now flushes the final tick's commands, and
+the rebuild, the checkpoint and the rewind all go through it.
+
+The probe gained the vocabulary: `save <name>`, `restore <name>`, `rewind <tick>` and
+`checkpoints`, each with its own check, and `tools/probe/checkpoints.probe` is the transcript of
+the round trip.
 
 ## Also outstanding, from the art and rendering work
 

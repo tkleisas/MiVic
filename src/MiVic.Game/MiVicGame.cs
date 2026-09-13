@@ -874,9 +874,12 @@ public sealed partial class MiVicGame : XnaGame
 
         // Recording has to start before the first tick, otherwise the wander
         // orders of the opening seconds are missing from the log and the replay
-        // cannot reproduce the match. A playback is not recorded: its own
-        // commands come from the log it is replaying.
-        if ((_options.IsSelfTest || _options.RecordPath is not null) && !_simulation.IsPlayback)
+        // cannot reproduce the match. A probe records for the same reason a
+        // self-test does: a checkpoint is a replay prefix, so the probe's world
+        // keeps its log complete for the save/restore/rewind commands. A
+        // playback is not recorded: its own commands come from the log it is
+        // replaying.
+        if ((_options.IsSelfTest || _options.RecordPath is not null || _options.IsProbe) && !_simulation.IsPlayback)
         {
             _simulation.World.StartRecording();
         }

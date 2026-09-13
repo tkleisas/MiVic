@@ -274,6 +274,48 @@ public sealed class ReplayFile
     {
         ArgumentNullException.ThrowIfNull(replay);
 
+        RebuiltMatch match = Rebuild(replay, replay.FinalTick);
+        ulong actual = StateHash.Compute(match.World);
+
+        return new ReplayResult(replay.FinalTick, replay.FinalHash, actual, match.World.Tick, match.CommandsApplied);
+    }
+
+    /// <summary>
+    /// Rebuilds a world by replaying a command log forward: the one driver
+    /// every restore goes through. A replay stops at its final tick; a
+    /// checkpoint stops at the tick it is being restored to, and carries
+    /// <paramref name="continuation"/> — the commands a recorded live world
+    /// issued after this log ends — so a keyframe and the rest of the match's
+    /// history compose into one position instead of two.
+    /// <para>
+    /// Commands are re-issued before the step that takes the world off the
+    /// tick they were issued on, which is the same position in the tick they
+    /// occupied in the original run.
+    /// </para>
+    /// <para>
+    /// <paramref name="keepRecording"/> rebuilds a world that goes on living:
+    /// the commands re-issued on the way are logged as they arrive, so the
+    /// world's own record of its history is complete from tick zero and a
+    /// later checkpoint of the restored world is self-contained. A rebuild
+    /// that is only being verified leaves it off — a replay that logs its own
+    /// log is memory spent on nothing.
+    /// </para>
+    /// </summary>
+    public static RebuiltMatch Rebuild(
+        ReplayFile replay,
+        long targetTick,
+        IReadOnlyList<SimCommandRecord>? continuation = null,
+        bool keepRecording = false)
+    {
+        ArgumentNullException.ThrowIfNull(replay);
+
+        if (targetTick > replay.FinalTick && continuation is null)
+        {
+            throw new ArgumentException(
+                $"Cannot rebuild to tick {targetTick}: the log ends at tick {replay.FinalTick} " +
+                "and no continuation was given, so the ticks between are unreconstructible.");
+        }
+
         // The match is rebuilt with the world rather than after it: which teams are playing is
         // part of what the scenario lays out — a two-faction match has two bases on the map — and
         // the scenario refuses to lay anything out in a world whose sides disagree with it.
@@ -282,27 +324,59 @@ public sealed class ReplayFile
 
         var world = new SimWorld(replay.Seed, replay.Capacity, MatchRoster.For(replay.Scenario, mission));
 
-        if (mission is not null)
+        ScenarioSetup setup = mission is not null
+            ? MiVic.Core.Sim.Scenario.BuildMission(world, mission)
+            : MiVic.Core.Sim.Scenario.Build(world, replay.Scenario);
+
+        // The rebuild re-issues the log, and a rebuilt world that goes on
+        // recording would log its own log twice unless it is meant to: a
+        // restored world keeps recording precisely so its log stays complete,
+        // and the re-issued commands are what fills it back up.
+        world.StopRecording();
+
+        if (keepRecording)
         {
-            // Fully qualified: inside this class, "Scenario" binds to the
-            // property of the same name rather than to the builder type.
-            MiVic.Core.Sim.Scenario.BuildMission(world, mission);
-        }
-        else
-        {
-            MiVic.Core.Sim.Scenario.Build(world, replay.Scenario);
+            world.StartRecording();
         }
 
+        long stop = Math.Min(targetTick, replay.FinalTick);
+        int applied = ReplayForward(world, replay.Commands, stop);
+
+        if (targetTick > replay.FinalTick)
+        {
+            applied += ReplayForward(world, continuation!, targetTick);
+        }
+
+        return new RebuiltMatch(world, setup, applied);
+    }
+
+    /// <summary>
+    /// Steps a world to <paramref name="targetTick"/>, enqueuing the log's
+    /// commands on the ticks they were issued on. Assumes the world starts on
+    /// the tick the log's first command was issued at.
+    /// <para>
+    /// A command recorded <em>on</em> the target tick was issued after the step
+    /// that produced it — a wander order handed out in the closing half of the
+    /// tick, a player's order between two steps — and it is still pending: the
+    /// original world carried it in its queue at exactly this position, the
+    /// queue is state the hash counts, and a rebuild that dropped it would
+    /// arrive one order short of the world it was rebuilding. So the flush at
+    /// the end re-issues those rather than letting them fall between two
+    /// replays, which is precisely where a checkpoint split drops them: the
+    /// keyframe stops at its own tick and the continuation starts at the next.
+    /// </para>
+    /// </summary>
+    private static int ReplayForward(
+        SimWorld world,
+        IReadOnlyList<SimCommandRecord> commands,
+        long targetTick)
+    {
         int applied = 0;
         int next = 0;
-        IReadOnlyList<SimCommandRecord> commands = replay.Commands;
 
-        // Commands are re-issued before the step that takes the world off the
-        // tick they were issued on, which is the same position in the tick they
-        // occupied in the original run.
-        for (long tick = 0; tick < replay.FinalTick; tick++)
+        while (world.Tick < targetTick)
         {
-            while (next < commands.Count && commands[next].Tick == tick)
+            while (next < commands.Count && commands[next].Tick == world.Tick)
             {
                 world.Enqueue(commands[next].Command);
                 next++;
@@ -312,11 +386,25 @@ public sealed class ReplayFile
             world.Step();
         }
 
-        ulong actual = StateHash.Compute(world);
+        while (next < commands.Count && commands[next].Tick == targetTick)
+        {
+            world.Enqueue(commands[next].Command);
+            next++;
+            applied++;
+        }
 
-        return new ReplayResult(replay.FinalTick, replay.FinalHash, actual, world.Tick, applied);
+        return applied;
     }
 }
+
+/// <summary>
+/// What a rebuild produced: the world, the scenario metadata the client hangs
+/// off the setup rather than off the world, and what the rebuild cost.
+/// </summary>
+/// <param name="World">The rebuilt world, standing on the tick the rebuild stopped at.</param>
+/// <param name="Setup">Command centres and spawn requests, as the scenario build reported them.</param>
+/// <param name="CommandsApplied">Commands re-issued along the way.</param>
+public sealed record RebuiltMatch(SimWorld World, ScenarioSetup Setup, int CommandsApplied);
 
 /// <summary>Outcome of replaying a recorded match.</summary>
 /// <param name="ExpectedTick">Tick the recording ended on.</param>

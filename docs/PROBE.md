@@ -97,6 +97,10 @@ lives with the repository.
 | `zoom <metres>` | set the camera distance (clamped by the camera, and it says so when it clamps) |
 | `pitch <rad>` | set the downward tilt; negative looks down |
 | `yaw <rad>` | set the rotation about the vertical |
+| `save <name>` | capture the live world as a named checkpoint: a replay trimmed to its tick, with the size and hash reported |
+| `restore <name>` | put the saved world back where the live world was, hash verified against the save's own record; on a mismatch the failure is recorded and the running match is untouched |
+| `rewind <tick>` | put the live world back on an earlier tick: from the nearest keyframe, carrying the command log forward, verified against a rebuild from tick zero, with both costs reported |
+| `checkpoints` | what the store holds: the named saves and the ticks the keyframes stand on |
 
 `tick` and `settle` are separate on purpose. The simulation changes only from a tick and
 effects change only from a frame, so a script can ask what the world looked like between
@@ -2001,3 +2005,31 @@ off the air as still watching — which is the one combination that would make a
 incoherent, and the reason the fog pass skips a radar that is not lit.
 
 
+
+## Worked example: can a match be put back the way it was?
+
+A checkpoint is a replay trimmed to a tick, and the commands around it are the tool that makes
+the question answerable — see ROADMAP §11. `tools/probe/checkpoints.probe` runs the round trip
+on the standard skirmish:
+
+```
+cmd: save base
+ok: saved 'base' at tick 70, hash 0x298167A0FFDEE0DA, 126 commands in the log, 6472 bytes
+cmd: tick 130
+ok: ran 130 ticks (6.5 s), simulation now at tick 200
+cmd: rewind 70
+ok: rewound to tick 70 — 69 ticks replayed from the keyframe, 3 ms, 130 commands re-issued
+check: PASS 'the rewound world is the world it rewound from' — tick 70 rebuilt and hashed,
+       verified against a rebuild from tick zero
+cmd: restore base
+ok: restored 'base' — world at tick 70, hash verified, 70 ticks (3.5 s) replayed, 126 commands
+    re-issued
+check: PASS ''base' restores to the tick it was taken on' — tick 70 == 70
+```
+
+The two numbers a rewind reports — the ticks it replayed from the keyframe and the milliseconds
+it took — are the trade the keyframe interval exists to win, and the hash check is the complete
+one: the keyframe path and a rebuild from the very beginning must agree on the world they
+describe, or the rewind records the failure and the running match keeps standing. A world whose
+history is not all in its command log fails here by design; that is the fixture-shaped case, and
+the failure names it.

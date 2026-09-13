@@ -1,0 +1,46 @@
+# Q: does a checkpoint restore the world it was taken from — verified, and honestly priced?
+#
+#   MiVic.Game.exe --probe tools/probe/checkpoints.probe --probe-out artifacts/probe/checkpoints.txt
+#
+# The standard skirmish, nothing placed and nothing cleared: a world whose external inputs are
+# all in its command log, which is the precondition a restore stands on. Orders go through the
+# player's path so the log carries them, the match runs on, and then the same position is
+# rebuilt two ways and asked to be the same world.
+#
+# What each command answers:
+#
+#   - `save` takes a named checkpoint and reports its size, because a checkpoint that had
+#     quietly become a state dump would show itself in that number;
+#   - `rewind` restores from the nearest keyframe with the live command log carried forward,
+#     verified the complete way — the same position rebuilt from tick zero must carry the same
+#     hash — and reports the cost in ticks replayed and in milliseconds, which is the trade
+#     the keyframes exist to win;
+#   - `restore` puts the saved world back where it was, its hash compared against the hash
+#     the save recorded;
+#   - `checkpoints` is the inventory: what has been saved and which ticks the keyframes stand
+#     on.
+#
+# A world whose history is not all in its command log — a fixture that spawned or cleared
+# entities directly, for one — fails the hash check here, by design: a checkpoint that restores
+# a different world silently would be worse than no checkpoint at all.
+
+# --- run the opening, and put a few orders in the log -------------------------------------------
+tick 30
+order 259 move -40 120
+order 260 move 60 140
+tick 40
+
+# --- a checkpoint worth coming back to -----------------------------------------------------------
+save base
+
+# --- run on, so the keyframes accumulate and the log grows past the save ------------------------
+tick 130
+
+# --- the rewind: back to the saved tick, from the keyframe beneath it ---------------------------
+rewind 70
+
+# --- and the save, independently: the same tick, from its own handle ----------------------------
+restore base
+
+# --- what the store ended up holding --------------------------------------------------------------
+checkpoints

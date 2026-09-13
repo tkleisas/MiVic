@@ -1403,6 +1403,54 @@ public sealed class SimBridge
     {
     }
 
+    /// <summary>
+    /// A world restored from a checkpoint, which <see cref="MiVic.Core.Replay.ReplayFile.Rebuild"/>
+    /// has already replayed to the tick the restore was asked for. The bridge is not a playback
+    /// and holds no recording: it is a live match that starts where the restore left it, and
+    /// everything a live match does — the client's wander orders among them — it does from here.
+    /// <para>
+    /// One honest limit: the wander-order stream is this bridge's own randomness, seeded here
+    /// rather than carried by the checkpoint, so the orders the restored match issues <em>after</em>
+    /// the restore point are not the ones the original run issued from there. The world itself is
+    /// the world it was — verified by hash — and everything issued afterwards is recorded as
+    /// usual; only the ambient wander is a fresh telling of the same match. If a save ever needs
+    /// to continue a match identically, the stream's state is the fourth thing a checkpoint
+    /// carries; today it does not.
+    /// </para>
+    /// </summary>
+    /// <param name="match">The rebuilt world and the scenario metadata that hangs beside it.</param>
+    /// <param name="scenario">Which scenario the rebuilt world plays, as the checkpoint recorded it.</param>
+    public SimBridge(RebuiltMatch match, ScenarioKind scenario)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+
+        int capacity = match.World.Capacity;
+
+        _previousPositions = new WorldPos[capacity];
+        _homePositions = new WorldPos[capacity];
+        _wasAlive = new bool[capacity];
+        _previousHealth = new int[capacity];
+        _previousCooldown = new int[capacity];
+        _previousTarget = new int[capacity];
+        _orderRng = new Pcg32(match.World.Seed ^ 0x5DEE_CE66_D1CE_F00DUL);
+
+        World = match.World;
+        Scenario = scenario;
+        IsGallery = scenario == ScenarioKind.ModelGallery;
+
+        _commandCentres.AddRange(match.Setup.CommandCentres);
+
+        foreach (SpawnedEntity spawned in match.Setup.Spawned)
+        {
+            if (World.TryGetRef(spawned.Id, out _, out int slot))
+            {
+                _homePositions[slot] = spawned.RequestedPosition;
+            }
+        }
+
+        CaptureBaseline();
+    }
+
     private SimBridge(ulong seed, ScenarioKind scenario, MissionDefinition? mission, ReplayFile? replay)
     {
         int capacity = replay?.Capacity ?? Capacity;

@@ -1,4 +1,5 @@
 using MiVic.Core.Numerics;
+using MiVic.Core.Replay;
 using MiVic.Core.Sim;
 using MiVic.Game.Data;
 using MiVic.Game.Probe;
@@ -76,6 +77,8 @@ public sealed partial class MiVicGame : IProbeHost
 
     ModelCatalog IProbeHost.Catalog => _catalog!;
 
+    CheckpointStore IProbeHost.Checkpoints { get; } = new();
+
     int IProbeHost.ViewerTeam => PlayerTeam;
 
     /// <summary>
@@ -90,9 +93,31 @@ public sealed partial class MiVicGame : IProbeHost
 
     /// <summary>
     /// One tick, through the same call the frame loop makes, so a probe world is the world a
-    /// played match would have had.
+    /// played match would have had. When the tick lands on a keyframe interval, the world is
+    /// captured as one: a rewind later replays from it rather than from the beginning.
     /// </summary>
-    void IProbeHost.AdvanceTick() => _simulation!.Update(SimConstants.TickMicroseconds);
+    void IProbeHost.AdvanceTick()
+    {
+        SimBridge bridge = _simulation!;
+        bridge.Update(SimConstants.TickMicroseconds);
+
+        // A keyframe is a copy of the command log, so the capture is cheap when
+        // the interval declines it and cheap when it takes it; the store asks
+        // the world's own tick, which is where the log stands.
+        ((IProbeHost)this).Checkpoints.Keyframe(bridge.World, bridge.Scenario);
+    }
+
+    /// <summary>
+    /// Puts a restored world where the rest of the client looks for it. The renderer reads
+    /// <see cref="_simulation"/> every frame and sizes nothing by the world's identity that
+    /// a restore of the same match changes, so the swap is an assignment: the world after it
+    /// is the one a replay of the checkpoint rebuilt, standing on the tick the restore
+    /// reached.
+    /// </summary>
+    void IProbeHost.SwapSimulation(SimBridge bridge)
+    {
+        _simulation = bridge ?? throw new ArgumentNullException(nameof(bridge));
+    }
 
     /// <summary>
     /// One frame of presentation work, of a fixed length rather than a measured one: a

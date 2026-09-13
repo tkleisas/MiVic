@@ -1,3 +1,4 @@
+using MiVic.Core.Replay;
 using MiVic.Core.Sim;
 using MiVic.Game.Data;
 using MiVic.Game.Sim;
@@ -22,6 +23,19 @@ public interface IProbeHost
 
     /// <summary>The model catalogue, which is what <c>model</c> and <c>parts</c> describe.</summary>
     ModelCatalog Catalog { get; }
+
+    /// <summary>
+    /// This run's checkpoints: the named saves a <c>save</c> took and the keyframes the tick
+    /// path captured, which is what a <c>rewind</c> replays from.
+    /// </summary>
+    CheckpointStore Checkpoints { get; }
+
+    /// <summary>
+    /// Puts a restored world where the client looks for it. Only ever handed a bridge built
+    /// from a restore of this same match, so everything the client sized against the world
+    /// when it opened still fits what it is asked to draw.
+    /// </summary>
+    void SwapSimulation(SimBridge bridge);
 
     /// <summary>
     /// The team the client draws for. Fog is answered from this team's point of view, so a
