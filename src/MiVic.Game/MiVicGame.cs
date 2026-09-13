@@ -393,7 +393,10 @@ public sealed partial class MiVicGame : XnaGame
             PreferredBackBufferWidth = options.WindowWidth,
             PreferredBackBufferHeight = options.WindowHeight,
             PreferredDepthStencilFormat = DepthFormat.Depth24,
-            PreferMultiSampling = true,
+            // Multisampling fails to produce a context on Linux/Mesa — the device
+            // never comes up and MonoGame dies inside GL.GetString. Windows keeps
+            // it; the answer there was never tested against Mesa.
+            PreferMultiSampling = !OperatingSystem.IsLinux(),
             // Vertical sync would cap the self-test at the display refresh rate.
             SynchronizeWithVerticalRetrace = !options.IsSelfTest,
             IsFullScreen = options.FullScreen,

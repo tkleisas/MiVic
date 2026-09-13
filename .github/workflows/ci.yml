@@ -51,6 +51,9 @@ jobs:
             # so only the SDK line is rewritten.
             bash <(sed 's#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/system32/"#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/"#g' /tmp/mgfxc_setup.sh)
           fi
+          # The build steps run in fresh shells that do not read ~/.profile,
+          # where the setup script leaves its export.
+          echo "MGFXC_WINE_PATH=$HOME/.winemonogame" >> "$GITHUB_ENV"
 
       - name: Save MonoGame Wine prefix
         if: always()
