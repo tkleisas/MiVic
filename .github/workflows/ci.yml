@@ -65,5 +65,40 @@ jobs:
       - name: Build
         run: dotnet build MiVic.sln -c Release
 
+      - name: Install xvfb
+        run: sudo apt-get install -y --no-install-recommends xvfb
+
+      - name: Probe smoke-test
+        # Every probe in the repository, driven through a virtual display with
+        # Mesa's software rasterizer — no GPU needed. A red probe is a red
+        # build: the probes step the real world, render real frames and hold
+        # their checks, so this is the client regression gate, not a census.
+        #
+        # objectives.probe and paperclip.probe are excluded: each one is a
+        # demonstration of the mission validator's refusals, whose subject
+        # mission is broken on purpose, so they exit non-zero by design on
+        # every platform.
+        run: |
+          mkdir -p artifacts/probe
+          for p in tools/probe/*.probe; do
+            name=$(basename "$p" .probe)
+            case "$name" in objectives|paperclip) continue ;; esac
+            flag=$(grep -o -- "--[a-z-]*-demo\|--victory-demo\|--select-hq" "$p" | head -1 || true)
+            echo "--- probe: $name ${flag}"
+            LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
+              dotnet run --project src/MiVic.Game -c Release --no-build -- \
+              $flag --probe "$p" --probe-out "artifacts/probe/$name.txt" || {
+                echo "::error file=$p::probe $name failed"
+                exit 1
+              }
+          done
+
+      - name: Upload probe reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-reports
+          path: artifacts/probe/
+
       - name: Test
         run: dotnet test MiVic.sln -c Release --no-build --nologo
