@@ -28,6 +28,35 @@ public static class StateHash
         Mix(ref hash, world.PendingCommandCount);
         Mix(ref hash, (byte)world.Outcome);
 
+        // The sides a match is playing are state the moment a mission's script
+        // can change them — a betrayal that two peers hashed differently would
+        // be a betrayal one of them never heard of. But the sides are also the
+        // match's own declaration on every tick nobody has changed them, and a
+        // declaration needs no hash: mixing it would put one fact in twice and
+        // move every golden hash in the repository for no information. So the
+        // walk asks the live sides against the declaration, and only a match
+        // whose sides have actually moved carries them — a match that uses no
+        // ChangeSide mixes not one byte more than it did.
+        bool sidesMoved = false;
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (world.Roster.IsInPlay(team) && world.SideOfTeam(team) != world.Roster.SideOf(team))
+            {
+                sidesMoved = true;
+                break;
+            }
+        }
+
+        if (sidesMoved)
+        {
+            for (int team = 0; team < SimConstants.TeamCount; team++)
+            {
+                Mix(ref hash, team);
+                Mix(ref hash, world.SideOfTeam(team));
+            }
+        }
+
         // Terrain used to be a pure function of the seed and therefore needed no
         // hashing. Weather control can now write to it, so the surface is state.
         ReadOnlySpan<byte> terrain = world.TerrainTypes.RawTypes;

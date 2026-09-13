@@ -30,6 +30,7 @@ public sealed class SimWorld
     private readonly List<SimCommand> _commandQueue = new();
     private readonly List<SimCommandRecord> _recordedCommands = [];
     private readonly List<MissionMessage> _missionMessages = [];
+    private readonly int[] _teamSides;
     private ObjectiveState[] _objectives = [];
     private TriggerState[] _triggers = [];
     private uint[] _missionFlags = [];
@@ -73,6 +74,17 @@ public sealed class SimWorld
         _freeSlots = new int[capacity];
         _freeCount = capacity;
 
+        // The sides start as the match declares them and are state from the
+        // first tick a mission may change them: everything that asks who is on
+        // whose side asks this array, live, and the declaration in the roster
+        // is the shape the array starts from. See AreAllied and SetTeamSide.
+        _teamSides = new int[SimConstants.TeamCount];
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            _teamSides[team] = roster.SideOf(team);
+        }
+
         // Reverse order so the first spawn lands in slot 0.
         for (int i = 0; i < capacity; i++)
         {
@@ -89,7 +101,7 @@ public sealed class SimWorld
 
         // The deck tables are sized by the lattice the bridges are built on, so they are made here
         // rather than in a field initialiser that would run before the grid exists.
-        Bridgeworks = new Bridgeworks(Navigation.CellCount, roster);
+        Bridgeworks = new Bridgeworks(Navigation.CellCount, this);
         _pathFinder = new PathFinder(Navigation.CellCount);
         _pathCells = new int[capacity * SimConstants.MaxPathCells];
         _jobs = new ProductionJob[capacity * SimConstants.MaxQueueLength];
@@ -949,6 +961,13 @@ public sealed class SimWorld
             return TryBuildStructure(command.UnitKind, command.Destination, command.IssuerTeam);
         }
 
+        // Nor is a side: the mover is the issuer, and the side it is moving to rides in the
+        // destination's X — the one spare integer a command that is not about a place has.
+        if (command.Kind == SimCommandKind.ChangeSide)
+        {
+            return SetTeamSide(command.IssuerTeam, command.Destination.X, out _);
+        }
+
         if (!TryResolve(command.Target, out int slot))
         {
             return false;
@@ -1025,14 +1044,105 @@ public sealed class SimWorld
     /// <summary>True when a team is playing this match.</summary>
     public bool IsTeamInPlay(int team) => Roster.IsInPlay(team);
 
-    /// <summary>True when two teams are on the same side, as this match declares the sides.</summary>
+    /// <summary>Which side a team is on <em>now</em>, which is not always the side the match declared.</summary>
+    /// <para>
+    /// The declaration is the starting position, not the law: a mission's script may move a team
+    /// from one side to another — the betrayal, the pact, the coalition of convenience — and from
+    /// that tick the live answer is what everything asks. The declaration itself is still read
+    /// from <see cref="Roster"/> wherever the match's opening shape is the question rather than
+    /// the current one, and <see cref="StateHash"/> mixes the two only when they disagree, which
+    /// is what keeps a match that never changes sides hashing as it always did.
+    /// </para>
+    /// </summary>
+    public int SideOfTeam(int team)
+        => (uint)team < SimConstants.TeamCount ? _teamSides[team] : team;
+
+    /// <summary>
+    /// Moves a team to a side, mid-match. The one call the change goes through — the trigger
+    /// system calls it from a mission's script, and the <c>ChangeSide</c> command calls it from
+    /// outside — so that the question every weapon asks and the state hash agree from the same
+    /// tick.
+    /// <para>
+    /// The new side must be a side somebody holds: a coalition joins an existing side rather
+    /// than founding one, and a side number nobody declared is a typo in the mission data
+    /// rather than a diplomacy move. Moving a team to the side it is already on changes nothing
+    /// and is refused, because an action that did nothing would read in a transcript as a
+    /// betrayal that did not happen.
+    /// </para>
+    /// <para>
+    /// The refusal is an answer rather than an exception, because a live match must not die of
+    /// a mission's redundant trigger: the script validator reports both cases at authoring time,
+    /// and at run time the refusal is simply nothing happening — which a transcript that shows
+    /// the sides after the trigger can read.
+    /// </para>
+    /// </summary>
+    /// <returns>False when nothing changed, with the reason written to <paramref name="reason"/>.</returns>
+    public bool SetTeamSide(int team, int side, out string reason)
+    {
+        if (!IsTeamInPlay(team))
+        {
+            reason = $"the match does not declare team {team}";
+            return false;
+        }
+
+        bool sideHeld = false;
+
+        for (int other = 0; other < SimConstants.TeamCount; other++)
+        {
+            if (Roster.IsInPlay(other) && _teamSides[other] == side)
+            {
+                sideHeld = true;
+                break;
+            }
+        }
+
+        if (!sideHeld)
+        {
+            reason = $"no team in this match holds side {side}";
+            return false;
+        }
+
+        if (_teamSides[team] == side)
+        {
+            reason = $"team {team} is already on side {side}";
+            return false;
+        }
+
+        _teamSides[team] = side;
+        reason = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// True when two teams are on the same side <em>now</em> — asked, never cached.
     /// <remarks>
     /// The rule is written once, in <see cref="MatchRoster.AreAllied"/>; this is the world's own
     /// answer to it, which is the question every caller should be asking. It used to be a static
     /// function of two team ids — <c>0 and 1 against the rest</c> — which is a statement about a
     /// particular match written as though it were a law of the engine.
+    /// <para>
+    /// It reads the live sides rather than the declaration, which is what makes an alliance
+    /// something that can move: a team whose script has changed its side is on the new side from
+    /// the tick the change landed, and every acquisition, every held target and every bridge
+    /// owner asks this at the moment it acts. There is no cache to go stale — a betrayal cannot
+    /// leave a gun firing at somebody it stopped being at war with, because nothing ever stored
+    /// the answer.
+    /// </para>
     /// </remarks>
-    public bool AreAllied(int a, int b) => Roster.AreAllied(a, b);
+    public bool AreAllied(int a, int b)
+    {
+        if (a == b)
+        {
+            return true;
+        }
+
+        if ((uint)a >= SimConstants.TeamCount || (uint)b >= SimConstants.TeamCount)
+        {
+            return false;
+        }
+
+        return Roster.IsInPlay(a) && Roster.IsInPlay(b) && _teamSides[a] == _teamSides[b];
+    }
 
     /// <summary>
     /// <b>The one question every damage path asks: may a thing owned by

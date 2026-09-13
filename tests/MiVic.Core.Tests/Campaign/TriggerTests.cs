@@ -23,6 +23,7 @@ namespace MiVic.Core.Tests.Campaign;
 public sealed class TriggerTests
 {
     private const int Capacity = 1024;
+    private const ulong Seed = 20250101;
 
     /// <summary>
     /// A world playing a mission of this repository's own layout with a script written for the
@@ -1436,5 +1437,112 @@ public sealed class TriggerTests
         Assert.Equal(0, world.CountUnitsInArea(2, road.X, road.Z, 45_000));
 
         return world;
+    }
+
+    /// <summary>
+    /// <b>The action that makes an alliance something that can move.</b> A script names a team
+    /// and a side, the tick arrives, and from that tick on the question every weapon asks has a
+    /// different answer — the former enemy is on the player's side, and the hash says so, because
+    /// a betrayal two peers hashed identically would be a betrayal one of them never heard of.
+    /// </summary>
+    [Fact]
+    public void ATriggerCanMoveATeamToAnotherSide()
+    {
+        SimWorld world = Scripted(new TriggerDefinition(
+            "defection",
+            new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 30),
+            [new TriggerAction(TriggerActionKind.ChangeSide, Team: 2, Side: 0)],
+            Note: "the demonstration: the enemy commander takes the deal"));
+
+        Assert.True(world.IsHostile(0, 2));
+        Assert.True(world.IsHostile(1, 2));
+
+        ulong before = StateHash.Compute(world);
+        Assert.Equal(world.Roster.SideOf(2), world.SideOfTeam(2));
+
+        world.RunTicks(30);
+
+        Assert.Equal(30, Fired(world, "defection"));
+        Assert.False(world.IsHostile(0, 2), "The defector is still at war with the side it joined.");
+        Assert.NotEqual(before, StateHash.Compute(world));
+
+        // And the mirror: nothing else on the map changed sides. The declaration in the roster
+        // is untouched — the live answer moved, the opening shape did not.
+        Assert.Equal(1, world.Roster.SideOf(2));
+        Assert.Equal(0, world.SideOfTeam(2));
+    }
+
+    /// <summary>
+    /// <b>The betrayal is part of the match's history, and the history replays.</b> A side change
+    /// issued from the outside is a command like any other — recorded, replayed, hashed — so a
+    /// rebuild of the match betrays at the same tick the original did and reaches the same hash.
+    /// </summary>
+    [Fact]
+    public void AFlipSurvivesReplayVerification()
+    {
+        // A plain skirmish rather than a mission: a replay names its mission by id, so a
+        // mission whose script is a variant of a shipped one rebuilds from the catalog's own
+        // version of it — and the two are different missions with different histories. The
+        // scripted-flip path is covered by the trigger tests above; this is the external one.
+        var world = new SimWorld(Seed, Capacity);
+        Scenario.Build(world, ScenarioKind.Skirmish);
+        world.StartRecording();
+
+        world.RunTicks(40);
+
+        Assert.True(world.IsHostile(0, 2));
+
+        world.Enqueue(SimCommand.ChangeSide(2, 0, world.Tick + 1, 2));
+        world.RunTicks(50);
+
+        Assert.False(world.IsHostile(0, 2), "The flip never happened, so the replay verifies nothing about it.");
+
+        ReplayFile replay = ReplayFile.Capture(world, ScenarioKind.Skirmish);
+
+        Assert.True(replay.Verify().Matches);
+    }
+
+    /// <summary>
+    /// A coalition joins a side somebody holds, and the script is told when it does not: a side
+    /// number nothing in the match declares is a typo in the data, and a team moved to the side
+    /// it is already on is a betrayal that did not happen. Both are refused at authoring time,
+    /// which is where they are cheap.
+    /// </summary>
+    [Fact]
+    public void TheScriptRefusesAChangeSideThatJoinsNothingOrChangesNothing()
+    {
+        MissionDefinition founded = Scripted(new TriggerDefinition(
+            "pact",
+            new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 30),
+            [new TriggerAction(TriggerActionKind.ChangeSide, Team: 0, Side: 9)],
+            Note: "typo: side 9 is nobody's")).Mission!;
+
+        string foundedProblems = Joined(TriggerSystem.Validate(founded));
+        Assert.Contains("'pact'", foundedProblems);
+        Assert.Contains("no team of this match declares", foundedProblems);
+
+        MissionDefinition noop = Scripted(new TriggerDefinition(
+            "pact",
+            new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 30),
+            [new TriggerAction(TriggerActionKind.ChangeSide, Team: 0, Side: 0)],
+            Note: "already there")).Mission!;
+
+        string noopProblems = Joined(TriggerSystem.Validate(noop));
+        Assert.Contains("'pact'", noopProblems);
+        Assert.Contains("it would change nothing", noopProblems);
+
+        // The honest version validates clean: a real move — an enemy onto the allied side —
+        // names a team the match declares and a side somebody holds, and it completes the
+        // mission's scripted objective, because a betrayal that wins the war is an ending.
+        MissionDefinition honest = Scripted(new TriggerDefinition(
+            "defection",
+            new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 30),
+            [
+                new TriggerAction(TriggerActionKind.ChangeSide, Team: 2, Side: 0),
+                new TriggerAction(TriggerActionKind.CompleteObjective, Objective: 0),
+            ],
+            Note: "the real thing")).Mission!;
+
+        Assert.Empty(TriggerSystem.Validate(honest));
     }
 }

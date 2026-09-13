@@ -377,6 +377,9 @@ public sealed class ProbeRunner
             case "ability":
                 Ability(command);
                 break;
+            case "flip":
+                Flip(command);
+                break;
             case "triggers":
                 Triggers(command);
                 break;
@@ -413,7 +416,7 @@ public sealed class ProbeRunner
                     "surfaces, attributes, units, unit, count, routes, parts, model, visible, events, teams, bridge, " +
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
-                    "triggers, messages, objectives, map, save, restore, rewind, checkpoints, " +
+                    "triggers, messages, objectives, map, save, restore, rewind, checkpoints, flip, " +
                     "expect, validate");
         }
     }
@@ -2260,6 +2263,48 @@ public sealed class ProbeRunner
     }
 
     /// <summary>
+    /// Moves a team to a side, mid-match, through the <c>ChangeSide</c> command — the same
+    /// door a player-driven diplomacy move would go through, and a recorded one: a flip issued
+    /// here is part of the match's history, and a rebuild of it betrays at the same tick. The
+    /// refusal is an answer rather than an error, because "no side like that" is a fact the
+    /// transcript should carry.
+    /// </summary>
+    private void Flip(ProbeCommand command)
+    {
+        const string Usage = "flip <team> <side>";
+
+        int team = (int)command.Whole(0, "a team number", Usage, 0, SimConstants.TeamCount - 1);
+        int side = (int)command.Whole(1, "a side number", Usage, 0, SimConstants.TeamCount);
+
+        SimWorld world = _host.Simulation.World;
+
+        Emit($"cmd: flip {team} {side}");
+        Emit(
+            $"query: sides before " +
+            $"{DescribeSides(world)}");
+
+        world.Enqueue(SimCommand.ChangeSide(team, side, world.Tick + 1, team));
+
+        Emit($"ok: team {team} moves to side {side}, executing on tick {world.Tick + 1} — `teams` reads what the world answers afterwards");
+    }
+
+    /// <summary>Every playing team with the side it is on now, in one line.</summary>
+    private static string DescribeSides(SimWorld world)
+    {
+        var sides = new List<string>();
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (world.IsTeamInPlay(team))
+            {
+                sides.Add($"team {team} side {world.SideOfTeam(team)}");
+            }
+        }
+
+        return string.Join(", ", sides);
+    }
+
+    /// <summary>
     /// One entity's armour, written the way the rule reads: the class it belongs to, the role's own
     /// figure, its owner's, and the product — which is the share of every hit that lands on it.
     /// </summary>
@@ -3434,6 +3479,16 @@ public sealed class ProbeRunner
             _tickEvents.Add(probeEvent);
             _events.Add(probeEvent);
 
+            if (probeEvent.Type == SimEventType.ShotFired && probeEvent.AimedAtAlly)
+            {
+                // The verdict is the shot's own, stamped by the simulation on the tick it was
+                // fired — see SimEvent.AimedAtAlly for why it is carried rather than re-derived
+                // here: a ledger read after a side change cannot tell a friendly shot from a
+                // shot history has re-labelled, and the cooldown watch beside this loop cannot
+                // tell a shot from the search-retry wait a gun that just lost its enemy enters.
+                _shotsAtAllies++;
+            }
+
             if (_events.Count > EventHistory)
             {
                 _events.RemoveAt(0);
@@ -3522,11 +3577,6 @@ public sealed class ProbeRunner
                     if ((uint)entity.TeamId < SimConstants.TeamCount && (uint)aimTeam < SimConstants.TeamCount)
                     {
                         _shotsBetweenTeams[(entity.TeamId * SimConstants.TeamCount) + aimTeam]++;
-
-                        if (!world.IsHostile(entity.TeamId, aimTeam))
-                        {
-                            _shotsAtAllies++;
-                        }
                     }
                 }
             }
@@ -4388,7 +4438,8 @@ public sealed class ProbeRunner
         string Target,
         Vector3 Direction,
         bool HasDirection,
-        float RangeMetres)
+        float RangeMetres,
+        bool AimedAtAlly)
     {
         /// <summary>Reads an event, resolving the shot's direction while the target's position is still on hand.</summary>
         public static ProbeEvent From(SimEvent simEvent, long tick, SimWorld world)
@@ -4435,7 +4486,8 @@ public sealed class ProbeRunner
                 target,
                 direction,
                 hasDirection,
-                range);
+                range,
+                simEvent.AimedAtAlly);
         }
 
         /// <summary>One line: what happened, where, and for a shot which way it went.</summary>

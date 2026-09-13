@@ -354,12 +354,33 @@ public static class VisionSystem
             int stealth = (sensor * StealthDetectionPermille) / 1_000;
 
             // The same disc again, a third of the size, into the channel that decides
-            // whether a stealthed enemy is found. It is stamped by the same loop from the
-            // same number so that "what can team 0 see" and "can team 0 see the stalker"
+            // whether a stealthed enemy is found. It is stamped by the same loop from
+            // the same number so that "what can team 0 see" and "can team 0 see the stalker"
             // cannot drift apart: a radar lights both, because a radar lights both.
             if (stealth > 0)
             {
                 Stamp(world, entity.TeamId, entity.Position, stealth, true);
+            }
+
+            // Allies share what they can see, and the sharing is the same stamp rather than a
+            // second system: each ally's grid receives the disc through the same call the owner's
+            // does, so an ally's radar lights your guns and an ally's scouting lights your map by
+            // exactly the machinery a team's own eyes work through. Nothing is stored — the disc
+            // is re-stamped every update — which is also why a betrayal costs nothing to unwind:
+            // the next tick after the sides change, the stamps stop arriving, and the ground the
+            // former ally lit fades out through the same visibility window everything else fades
+            // through. An alliance asked and not cached is an alliance that can be broken.
+            for (int other = 0; other < SimConstants.TeamCount; other++)
+            {
+                if (other != entity.TeamId && world.AreAllied(entity.TeamId, other))
+                {
+                    Stamp(world, other, entity.Position, sensor, false);
+
+                    if (stealth > 0)
+                    {
+                        Stamp(world, other, entity.Position, stealth, true);
+                    }
+                }
             }
         }
     }

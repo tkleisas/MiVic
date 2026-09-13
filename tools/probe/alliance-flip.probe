@@ -1,0 +1,51 @@
+# Q: can an alliance actually move — and when it does, does everything follow?
+#
+#   MiVic.Game.exe --probe tools/probe/alliance-flip.probe --probe-out artifacts/probe/alliance-flip.txt
+#
+# The standard skirmish on the default seed, nobody playing: teams 0 and 1 allied against team 2,
+# which is what `teams` prints from SimWorld.AreAllied — the question every weapon, salvo, attack
+# order, bridge and off-map strike asks live. Then the script moves team 2 onto the allied side,
+# through the `ChangeSide` command — the same door a player-driven move would go through, and a
+# recorded one: a rebuild of this match betrays at the same tick.
+#
+# What to read:
+#
+#   - `sides before` and the `teams` pair around the flip: 0+2 hostile, then 0+2 allied, with the
+#     Roster's own declaration untouched — the live answer moved, the opening shape did not.
+#   - `friendly` is the witness that the fighting follows the new sides: after the flip, every
+#     weapon that aims, fires or damages reads the same question again, so damage between the
+#     former enemies is friendly fire the moment it happens, and the command records it as a
+#     failure rather than printing it.
+#   - the rewind is the demonstration the checkpoint work exists for: back before the flip, the
+#     sides are the sides the match declared, because the betrayal is in the command log and the
+#     log up to that tick does not carry it yet. A war undone by going back through its history.
+#   - and the hash: a flip moves the state hash, so two peers that disagree about the betrayal
+#     disagree about the match from that tick on — pinned in the core tests, read here as the
+#     sides themselves.
+
+# --- the war as declared ---------------------------------------------------------------------------
+teams
+tick 200
+teams
+
+# --- a checkpoint worth betraying from -------------------------------------------------------------
+tick 150
+
+# (the save stands on tick 350 of the match, past the meeting of the armies)
+save before-the-deal
+
+# --- the betrayal, from outside: a recorded command, executing next tick ---------------------------
+flip 2 0
+tick 1
+teams
+
+# --- twenty seconds under the new sides: nobody may shoot a former enemy now ----------------------
+tick 400
+teams
+
+# --- and back: the sides return to the declaration, because the log up to the save does not carry --
+# --- the flip yet. The rewind's own hash check says the rebuilt world is the world it rewound to. --
+rewind 340
+teams
+tick 1
+teams

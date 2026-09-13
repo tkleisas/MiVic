@@ -190,6 +190,14 @@ public static class TriggerSystem
                 world.CompleteObjective(action.Objective);
                 break;
 
+            case TriggerActionKind.ChangeSide:
+                // The refusal is tolerated rather than thrown: a script whose
+                // redundant flip fires should not end the match, and the script
+                // validator has already told the author about both cases that
+                // refuse.
+                world.SetTeamSide(action.Team, action.Side, out _);
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action.Kind, "Unknown trigger action.");
         }
@@ -488,7 +496,8 @@ public static class TriggerSystem
                 bool namesATeam = action.Kind is TriggerActionKind.Spawn
                     or TriggerActionKind.AdjustResources
                     or TriggerActionKind.OrderGroup
-                    or TriggerActionKind.Reveal;
+                    or TriggerActionKind.Reveal
+                    or TriggerActionKind.ChangeSide;
 
                 if (namesATeam && !mission.Roster.IsInPlay(action.Team))
                 {
@@ -540,6 +549,45 @@ public static class TriggerSystem
                         }
 
                         break;
+
+                    case TriggerActionKind.ChangeSide:
+                    {
+                        // A coalition joins a side somebody holds: a side number
+                        // nothing in the match declares is a typo in the data
+                        // rather than a diplomacy move, and a team moved to the
+                        // side it is already on changes nothing.
+                        bool sideHeld = false;
+                        bool alreadyOnIt = false;
+
+                        for (int team = 0; team < SimConstants.TeamCount; team++)
+                        {
+                            if (!mission.Roster.IsInPlay(team))
+                            {
+                                continue;
+                            }
+
+                            if (mission.Roster.SideOf(team) == action.Side)
+                            {
+                                sideHeld = true;
+                            }
+
+                            if (team == action.Team && mission.Roster.SideOf(team) == action.Side)
+                            {
+                                alreadyOnIt = true;
+                            }
+                        }
+
+                        if (!sideHeld)
+                        {
+                            problems.Add($"{at} moves team {action.Team} to side {action.Side}, which no team of this match declares: a coalition joins a side, it does not found one.");
+                        }
+                        else if (alreadyOnIt)
+                        {
+                            problems.Add($"{at} moves team {action.Team} to side {action.Side}, the side it is already on: it would change nothing.");
+                        }
+
+                        break;
+                    }
                 }
             }
         }

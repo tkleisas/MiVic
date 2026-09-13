@@ -333,6 +333,38 @@ its own. The AI's own ally-marching bug and the combat system's missing alliance
 found this week, which is a decent sign that the plumbing is worth getting right before the mechanic
 is built on top of it.
 
+**Built: the sides move, and everything asks.** The sides are no longer a table the match was built
+with: they are state (`SimWorld.SetTeamSide`), started from the declaration and changed by a
+`ChangeSide` trigger action from a mission's script, or from outside by a `ChangeSide` *command* —
+which is the recorded, replayable door a player-driven move will go through when diplomacy exists,
+and the door the probe's `flip` uses. Every asker already asked the live question, because that was
+the plumbing this section asked for first — acquisition, held targets, morale, the bridges — and
+`Bridgeworks` now does too, where it had been asking the roster it was built with. Nothing is cached,
+so a betrayal costs nothing to unwind and takes effect in the middle of a tick's fighting.
+
+**Three decisions that came with it.** *The hash mixes the sides only when they have moved* — a
+match that never changes a side hashes byte-for-byte as it always did, because a declaration is not
+state, and mixing it would have moved every golden hash in the repository for one redundant fact.
+*Allies share what they can see* — an ally's disc is stamped through the same call a team's own
+eyes write, so an ally's radar lights your guns and an ally's scouting lights your map with one
+mechanic rather than a second one; and because nothing is stored, the ground a former ally lit
+fades out through the same window everything else fades through. *A shot knows, on the tick it was
+fired, whether it was a shot at an ally* — `SimEvent.AimedAtAlly` is stamped by the simulation at
+the moment of firing, because a ledger read after a side change cannot tell a friendly shot from a
+shot history has re-labelled; the probe's friendly-fire ledger reads that stamp, which is why its
+zero after a flip is evidence rather than a coincidence.
+
+**The change is refused where it would mean nothing.** A coalition joins a side somebody holds, so
+a side number nobody declares is refused as a typo in the mission data; a team moved to the side it
+is already on is refused as an action that would change nothing — both by the script validator at
+authoring time, and both answered rather than thrown at run time, because a live match must not die
+of a mission's redundant trigger.
+
+`tools/probe/alliance-flip.probe` is the transcript of the round trip: the war, the flip, twenty
+seconds under the new sides with the friendly-fire witness reading zero, and the checkpoint work
+closing the circle — rewind to before the flip and the sides are the sides the match declared,
+because the betrayal is in the command log and the log up to that tick does not carry it yet.
+
 ## 8. Mission scripting, and maps that do not have three factions
 
 A mission today is a seed, three base positions, unit counts, a time limit and a list of objectives.

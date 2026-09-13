@@ -43,6 +43,13 @@ public enum SimCommandKind : byte
 
     /// <summary>Raise a structure at a ground position the player chose.</summary>
     BuildStructure = 11,
+
+    /// <summary>
+    /// Move <see cref="SimCommand.IssuerTeam"/> to a side, mid-match. The side rides in
+    /// <see cref="SimCommand.Destination.X"/>, which is the one spare integer a command that
+    /// is not about a place has. See <see cref="SimCommand.ChangeSide"/> for what may issue it.
+    /// </summary>
+    ChangeSide = 12,
 }
 
 /// <summary>
@@ -145,6 +152,22 @@ public readonly record struct SimCommand(
     /// </summary>
     public static SimCommand Structure(UnitKind kind, WorldPos site, long executeTick, int issuerTeam)
         => new(SimCommandKind.BuildStructure, EntityId.None, site, executeTick, issuerTeam, kind);
+
+    /// <summary>
+    /// Moves <paramref name="team"/> to <paramref name="side"/>, mid-match — the one command by
+    /// which the outside may change who is at war with whom. Because it is a command, it is
+    /// recorded and replayed like every other external input: a betrayal is part of the match's
+    /// history, and a rebuild of it betrays at the same tick.
+    /// <para>
+    /// The side rides in <see cref="Destination"/>.X, which is the one spare integer a command
+    /// that is not about a place has; the issuer is the mover, because a side is changed by the
+    /// team that is changing it — a script that flips somebody else is an authoring act, and
+    /// that one goes through <see cref="SimWorld.SetTeamSide"/> from the trigger system
+    /// directly, where it is derived state rather than recorded input.
+    /// </para>
+    /// </summary>
+    public static SimCommand ChangeSide(int team, int side, long executeTick, int issuerTeam)
+        => new(SimCommandKind.ChangeSide, EntityId.None, new WorldPos(side, 0, 0), executeTick, issuerTeam);
 }
 
 /// <summary>

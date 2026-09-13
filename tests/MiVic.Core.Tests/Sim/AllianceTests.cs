@@ -321,6 +321,148 @@ public sealed class AllianceTests
     }
 
     /// <summary>
+    /// <b>The same answer, through the door a mission actually opens.</b> The test above flips
+    /// a unit's team id by hand, which is what a test could do when no flip existed; the flip
+    /// exists now, and this is it asked of the same held target: the target's team is untouched,
+    /// the <em>side</em> it fights for moves, and the gun stops on the next tick for exactly the
+    /// same reason — the question is asked live and nothing anywhere remembered the answer.
+    /// </summary>
+    [Fact]
+    public void AWeaponStopsShootingWhenItsTargetsTeamChangesSides()
+    {
+        SimWorld world = new(seed: 20250101, capacity: 64);
+        WorldPos centre = Clearing(world);
+
+        EntityId shooter = Spawn(world, Faction.Soviet, 0, UnitKind.Tank, centre);
+        EntityId target = Spawn(world, Faction.Western, 2, UnitKind.Tank, Offset(centre, 60_000), health: 5_000);
+
+        world.RunTicks(60);
+
+        Assert.Equal(target.Slot, world.GetRefBySlot(shooter.Slot).TargetSlot);
+        Assert.True(world.IsHostile(0, 2));
+
+        int targetTeamId = world.GetRefBySlot(target.Slot).TeamId;
+        Assert.Equal(2, targetTeamId);
+
+        // The betrayal: team 2 joins the side the allied pair holds. The entity keeps its
+        // faction, its team id and its history — what changed is who it is at war with.
+        Assert.True(world.SetTeamSide(2, world.SideOfTeam(0), out _));
+        int healthAtTheFlip = world.GetRefBySlot(target.Slot).Health;
+
+        Assert.False(world.IsHostile(0, 2));
+        Assert.False(world.IsHostile(1, 2));
+
+        world.Step();
+
+        Assert.Equal(-1, world.GetRefBySlot(shooter.Slot).TargetSlot);
+
+        world.RunTicks(60);
+
+        Assert.Equal(healthAtTheFlip, world.GetRefBySlot(target.Slot).Health);
+        Assert.Equal(targetTeamId, world.GetRefBySlot(target.Slot).TeamId);
+    }
+
+    /// <summary>
+    /// <b>The sides are state, and the hash says so only when it has to.</b> A match that never
+    /// changes a side must hash exactly as it always did — the declaration is not state, and
+    /// mixing it would move every golden hash in the repository for one redundant fact. A match
+    /// that has changed one must hash differently from the same match that has not, because a
+    /// betrayal two peers hashed identically would be a betrayal one of them never heard of.
+    /// </summary>
+    [Fact]
+    public void AChangedSideMovesTheHashAndAnUnchangedOneDoesNot()
+    {
+        SimWorld world = new(seed: 20250101, capacity: 64);
+        WorldPos centre = Clearing(world);
+
+        Spawn(world, Faction.Soviet, 0, UnitKind.Tank, centre);
+        Spawn(world, Faction.Western, 2, UnitKind.Tank, Offset(centre, 60_000));
+
+        world.RunTicks(40);
+
+        ulong before = StateHash.Compute(world);
+        Assert.Equal(0, world.SideOfTeam(2) == world.Roster.SideOf(2) ? 0 : 1);
+
+        Assert.True(world.SetTeamSide(2, world.SideOfTeam(0), out _));
+
+        Assert.NotEqual(before, StateHash.Compute(world));
+
+        // A fresh world from the same seed that has not flipped hashes as the declaration
+        // always hashed — which is the whole of why the golden hashes did not move.
+        SimWorld untouched = new(seed: 20250101, capacity: 64);
+        Spawn(untouched, Faction.Soviet, 0, UnitKind.Tank, centre);
+        Spawn(untouched, Faction.Western, 2, UnitKind.Tank, Offset(centre, 60_000));
+        untouched.RunTicks(40);
+
+        Assert.Equal(before, StateHash.Compute(untouched));
+    }
+
+    /// <summary>
+    /// The change refuses what would change nothing or join nothing, because an action that
+    /// did nothing would read in a transcript as a betrayal that did not happen, and a side
+    /// number nobody declared is a typo in the mission data rather than a diplomacy move.
+    /// </summary>
+    [Fact]
+    public void SetTeamSideRefusesAFoundingSideAndANoop()
+    {
+        SimWorld world = new(seed: 20250101, capacity: 64);
+
+        // The fourth slot is not in this match: there is no side it could be moved to.
+        Assert.False(world.SetTeamSide(3, 0, out string undeclared), undeclared);
+        Assert.Contains("does not declare", undeclared);
+
+        // Side 9 is held by nobody: founding a side is not what changing one is for.
+        Assert.False(world.SetTeamSide(0, 9, out string founded), founded);
+        Assert.Contains("no team", founded);
+
+        // Teams 0 and 1 already share a side.
+        Assert.False(world.SetTeamSide(1, world.SideOfTeam(0), out string noop), noop);
+        Assert.Contains("already", noop);
+
+        // And the real thing succeeds.
+        Assert.True(world.SetTeamSide(2, world.SideOfTeam(0), out _));
+    }
+
+    /// <summary>
+    /// <b>Allied vision is a decision, and the decision is that they share.</b> A tank of the
+    /// allied team lights the player's fog through the same stamp a team's own eyes write —
+    /// which is what makes an ally's radar light your guns and an ally's scouting light your
+    /// map one mechanic rather than two.
+    /// <para>
+    /// The betrayal half is the part that must not be cached: after team 1 changes sides, the
+    /// stamps stop arriving, and the ground it used to light fades from the player's map
+    /// through the same visibility window everything else fades through. A cached ally set
+    /// would keep the old ally's eyes on the map forever.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AnAllysEyesLightTheMapAndStopLightingItAfterABetrayal()
+    {
+        SimWorld world = new(seed: 20250101, capacity: 64);
+        WorldPos site = Clearing(world);
+
+        // The ally is the only watcher in the fixture: whatever team 0's grid says about the
+        // ground under it, it says because the sharing put it there.
+        EntityId ally = Spawn(world, Faction.Chinese, 1, UnitKind.Tank, site);
+        int cell = world.Navigation.IndexOfWorld(world.GetRefBySlot(ally.Slot).Position);
+
+        // The stamp runs every tenth tick per entity, so a full interval is the shortest
+        // window in which the disc is guaranteed to have been written.
+        world.RunTicks(20);
+        Assert.True(world.Visibility.IsVisible(0, cell), "The allied tank's eyes never lit the player's map.");
+
+        // The betrayal. Team 2 holds the other side, so the move is legal.
+        Assert.True(world.SetTeamSide(1, world.SideOfTeam(2), out _));
+
+        // One window past the last stamp the old ally's disc must be gone: the ground is
+        // still lit on the traitor's own grid, and dark on the betrayed one.
+        world.RunTicks(VisibilityGrid.VisibleWindowTicks + VisionSystem.UpdateInterval + 20);
+
+        Assert.False(world.Visibility.IsVisible(0, cell), "The former ally's eyes are still on the player's map.");
+        Assert.True(world.Visibility.IsVisible(1, cell), "The traitor lost its own eyes too.");
+    }
+
+    /// <summary>
     /// <b>The test that would have caught this.</b> The standard skirmish, nobody playing, four
     /// hundred ticks of it — teams 0 and 1 allied, team 2 against them, which is the match every
     /// player actually starts.

@@ -98,6 +98,21 @@ public enum TriggerActionKind : byte
 
     /// <summary>Bring objective <see cref="TriggerAction.Objective"/> to complete.</summary>
     CompleteObjective = 6,
+
+    /// <summary>
+    /// Move <see cref="TriggerAction.Team"/> to <see cref="TriggerAction.Side"/>, mid-match. The
+    /// betrayal, the pact, the coalition of convenience — the one action that changes what
+    /// "is this an enemy" answers from here on.
+    /// <para>
+    /// Nothing is cached and nothing is re-pointed: every acquisition, every held target, every
+    /// bridge owner and every blast asks the world the live question at the moment it acts, so
+    /// the change takes effect in the middle of a tick's fighting without a single gun knowing
+    /// that anything happened. The new side has to be one somebody already holds — a coalition
+    /// joins a side rather than founding one — and moving a team to the side it is already on is
+    /// refused as an action that would change nothing.
+    /// </para>
+    /// </summary>
+    ChangeSide = 7,
 }
 
 /// <summary>What a group order asks for.</summary>
@@ -174,6 +189,7 @@ public readonly record struct TriggerCondition(
 /// Index into <see cref="MissionDefinition.Objectives"/>, for
 /// <see cref="TriggerActionKind.CompleteObjective"/>.
 /// </param>
+/// <param name="Side">The side a team is moved to, for <see cref="TriggerActionKind.ChangeSide"/>.</param>
 public readonly record struct TriggerAction(
     TriggerActionKind Kind,
     int Team = 0,
@@ -191,7 +207,8 @@ public readonly record struct TriggerAction(
     int TargetZ = 0,
     string GreekText = "",
     int Flag = 0,
-    int Objective = 0);
+    int Objective = 0,
+    int Side = 0);
 
 /// <summary>
 /// One line of a mission's script: a condition, the actions it carries out, and the note that

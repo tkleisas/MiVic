@@ -289,6 +289,7 @@ sides are hostile, and a refusal in the words the player is shown rather than a 
 | `order <slot> attack <slot>` | issues an attack order, and says whether the two are hostile — an order that is not is thrown away rather than obeyed |
 | `queue <slot> <role>` | puts a role on a building's production pad through the simulation's own command queue, and prints the verdict the player would be given — accepted with its cost and its time on the pad, or refused in the same words the build panel uses beside a greyed-out row (`λείπει δυναμικότητα 174`, `λείπουν 120 Π`, `όριο 2`) |
 | `ability <name> <x> <z> [team]` | calls in an off-map ability at a point: what it costs, what it does, and the world's own verdict, in the words the player would be shown when it is refused |
+| `flip <team> <side>` | moves a team to a side, mid-match, through the recorded `ChangeSide` command — the same door a player-driven move would go through, and a rebuild of the match betrays at the same tick. A refusal is an answer: "no team holds side 9" is a fact about the match, not an error |
 
 `block` exists because a junction cannot be found in the `bridges` list. Two crossings may share a
 cell — the simulation allows it, and thousands of pairs of sites on this map do — and the deck
@@ -2033,3 +2034,26 @@ one: the keyframe path and a rebuild from the very beginning must agree on the w
 describe, or the rewind records the failure and the running match keeps standing. A world whose
 history is not all in its command log fails here by design; that is the fixture-shaped case, and
 the failure names it.
+
+## Worked example: can an alliance actually move?
+
+`tools/probe/alliance-flip.probe` runs the whole of ROADMAP §7 in one script — see the built
+paragraph there for what each decision was. The short version of the transcript:
+
+```
+cmd: flip 2 0
+query: sides before team 0 side 0, team 1 side 0, team 2 side 1
+ok: team 2 moves to side 0, executing on tick 351 — `teams` reads what the world answers afterwards
+cmd: tick 1
+query:   sides      0+1 allied, 0+2 allied, 1+2 allied — SimWorld.AreAllied, which is what every weapon asks
+check: PASS 'no weapon aimed, fired or damaged an ally' — 0 shots at an ally, 0 damage events unexplained
+cmd: rewind 340
+check: PASS 'the rewound world is the world it rewound from' — tick 340 rebuilt and hashed,
+       verified against a rebuild from tick zero
+query:   sides      0+1 allied, 0+2 hostile, 1+2 hostile
+```
+
+The `friendly` line reading none under the new sides is the part that needed the past tense: a
+shot fired at what was then an enemy is re-read by a ledger after the betrayal unless the shot
+carried its own verdict — which is why `SimEvent.AimedAtAlly` is stamped by the simulation at the
+moment of firing and the probe's ledger reads that.

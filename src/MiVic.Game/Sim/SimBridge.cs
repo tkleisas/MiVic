@@ -33,6 +33,15 @@ public enum SimEventType : byte
 /// <param name="Scale">Suggested effect size in metres.</param>
 /// <param name="Damage">Damage taken, for hits; zero otherwise.</param>
 /// <param name="TargetSlot">For a shot, the slot being shot at; -1 otherwise.</param>
+/// <param name="AimedAtAlly">
+/// For a shot, whether the target's team was the shooter's ally <em>on the tick the shot was
+/// fired</em> — decided by the simulation at the moment of firing and carried by the event,
+/// because the question has to be answered in the past tense. A probe reads its ledger from a
+/// queue that survives the frame it was collected in, and sides can move between the tick a
+/// shot happened and the tick a script reads it: a shot at what was then an enemy, re-read
+/// after a betrayal, would be a friendly fire that never was. The answer is stamped once,
+/// where the sides were current, instead of re-derived later by whoever asks.
+/// </param>
 public readonly record struct SimEvent(
     SimEventType Type,
     int Slot,
@@ -43,7 +52,8 @@ public readonly record struct SimEvent(
     UnitKind Kind,
     float Scale,
     int Damage = 0,
-    int TargetSlot = -1);
+    int TargetSlot = -1,
+    bool AimedAtAlly = false);
 
 /// <summary>
 /// Drives the headless simulation from the client and exposes interpolated
@@ -1634,7 +1644,8 @@ public sealed class SimBridge
                         entity.Kind,
                         ExplosionScale(entity.Kind),
                         Damage: 0,
-                        TargetSlot: entity.TargetSlot));
+                        TargetSlot: entity.TargetSlot,
+                        AimedAtAlly: !World.IsHostile(entity.TeamId, World.GetRefBySlot(entity.TargetSlot).TeamId)));
                 }
 
                 _previousCooldown[slot] = entity.AttackCooldown;

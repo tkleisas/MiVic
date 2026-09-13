@@ -151,26 +151,29 @@ public sealed class Bridgeworks
     private readonly BridgeAxis[] _direction;
 
     /// <summary>
-    /// The sides the deck belongs to, so that "an ally's crossing is not a target" is asked of the
-    /// same match the units standing on it are asked about. Held rather than passed in, because the
+    /// The world the deck belongs to, so that "an ally's crossing is not a target" is asked of the
+    /// same live question the units standing on it are asked. Held rather than passed in, because the
     /// deck is asked the friend-or-foe question from two systems and a fixture, and a caller that
-    /// forgot to hand the match over would answer it with a default.
+    /// forgot to hand the world over would answer it with a default. It is the world rather than
+    /// the roster it was built from because the sides can move now: a bridge whose owner's team
+    /// changed sides mid-match is asked about the side it is on today, not the side its builder
+    /// declared on the day it was laid.
     /// </summary>
-    private readonly MatchRoster _roster;
+    private readonly SimWorld _world;
 
     private int _count;
 
     /// <summary>Creates the deck tables for a lattice of this many cells.</summary>
     /// <param name="cells">Cells in the navigation lattice.</param>
-    /// <param name="roster">The match whose sides own the deck.</param>
-    public Bridgeworks(int cells, MatchRoster roster)
+    /// <param name="world">The world whose live sides own the deck.</param>
+    public Bridgeworks(int cells, SimWorld world)
     {
         if (cells <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(cells), cells, "The lattice must have cells.");
         }
 
-        _roster = roster ?? throw new ArgumentNullException(nameof(roster));
+        _world = world ?? throw new ArgumentNullException(nameof(world));
 
         _health = new int[cells];
         _original = new byte[cells];
@@ -435,7 +438,7 @@ public sealed class Bridgeworks
                     continue;
                 }
 
-                if (sparesFriends && !_roster.IsHostile(attackerTeam, _owner[cell]))
+                if (sparesFriends && !_world.IsHostile(attackerTeam, _owner[cell]))
                 {
                     continue;
                 }
@@ -471,7 +474,7 @@ public sealed class Bridgeworks
         // differently: the two used to be written separately, one of them as an alliance and the
         // other as a comparison of team ids, and that is exactly how an artillery salvo came to
         // spare the crossing and kill the unit on it.
-        if (!_roster.IsHostile(attackerTeam, _owner[cell]))
+        if (!_world.IsHostile(attackerTeam, _owner[cell]))
         {
             return false;
         }
