@@ -9,13 +9,13 @@ A 3D real-time strategy game in MonoGame, with a Greek-language interface. Set i
 an alternate future where the Soviet Union still exists and is allied with China;
 the goal is the defeat of the Western empire.
 
-**Release `v0.01`** — the first playable cut: three asymmetric factions, a full 3D
+**Release `v0.0.1`** — the first playable cut: three asymmetric factions, a full 3D
 battlefield with mutable terrain, and shooting you can watch happen.
 
 ![The Soviet base, with the status and production panels](docs/images/skirmish.png)
 
-*Η σοβιετική βάση. Το πάνελ δείχνει την έκδοση της κατασκευής — `v0.01`, και ό,τι
-ακολουθεί το τελευταίο tag (π.χ. `v0.01-3-g1a2b3c4` για μια κατασκευή τρεις
+*Η σοβιετική βάση. Το πάνελ δείχνει την έκδοση της κατασκευής — `v0.0.1`, και ό,τι
+ακολουθεί το τελευταίο tag (π.χ. `v0.0.1-3-g1a2b3c4` για μια κατασκευή τρεις
 commits μετά την έκδοση).*
 
 ## Versioning / Εκδόσεις
@@ -23,14 +23,14 @@ commits μετά την έκδοση).*
 The version is the **git tag**, not a number in a file:
 
 ```pwsh
-git tag -a v0.02 -m "MiVic v0.02"
-dotnet build MiVic.sln          # the build now calls itself v0.02
+git tag -a v0.0.2 -m "MiVic v0.0.2"
+dotnet build MiVic.sln          # the build now calls itself v0.0.2
 ```
 
 `Directory.Build.props` asks git for the nearest tag at build time and stamps it into
 the assembly, which the window title and the status panel read back. A build that is
-past a tag says so (`v0.01-3-g1a2b3c4`); a build from a tree with uncommitted changes
-says that too (`v0.01-dirty`). A checkout with no tags at all is `v0.0.0` rather than
+past a tag says so (`v0.0.1-3-g1a2b3c4`); a build from a tree with uncommitted changes
+says that too (`v0.0.1-dirty`). A checkout with no tags at all is `v0.0.0` rather than
 the SDK's default, which would look like a release.
 
 ## Screenshots
