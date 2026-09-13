@@ -1,0 +1,104 @@
+# A v* tag publishes a versioned GitHub release with a portable archive
+# per platform. The version comes from the tag itself, through the
+# VersionFromGit target in Directory.Build.props — the workflows do not
+# carry a version of their own.
+#
+# The archives are self-contained: players unzip and run, with no .NET
+# install and no Wine. Wine is only a build-time tool for the shader
+# compiler.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: linux-x64
+            archive: tar.gz
+          - runtime: win-x64
+            archive: zip
+    steps:
+      - name: Checkout (full, for git-describe versioning)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install Wine and 7zip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine64 wine32 p7zip-full
+
+      - name: Restore MonoGame Wine prefix
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.winemonogame
+          key: winemonogame-${{ runner.os }}-v1
+
+      - name: Setup MonoGame shader-compiler Wine environment
+        run: |
+          if [ ! -d ~/.winemonogame ]; then
+            wget -qO- https://monogame.net/downloads/net9_mgfxc_wine_setup.sh > /tmp/mgfxc_setup.sh
+            # Wine >= 9 refuses to launch dotnet.exe from system32; the Windows
+            # SDK goes into drive_c/windows/ instead (wine's PATH includes it).
+            # The d3dcompiler_47.dll extraction must stay in system32, so only
+            # the SDK line is rewritten.
+            bash <(sed 's#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/system32/"#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/"#g' /tmp/mgfxc_setup.sh)
+          fi
+
+      - name: Save MonoGame Wine prefix
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.winemonogame
+          key: winemonogame-${{ runner.os }}-v1
+
+      - name: Publish
+        run: dotnet publish src/MiVic.Game -c Release -r ${{ matrix.runtime }} --self-contained true -p:PublishSingleFile=false -o publish/${{ matrix.runtime }}
+
+      - name: Archive
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
+          NAME="MiVic-${VERSION}-${{ matrix.runtime }}"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            (cd publish/${{ matrix.runtime }} && zip -qr "../${NAME}.zip" .)
+          else
+            (cd publish/${{ matrix.runtime }} && tar -czf "../${NAME}.tar.gz" .)
+          fi
+          mkdir -p dist
+          mv publish/*.${{ matrix.archive }} dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiVic-${{ matrix.runtime }}
+          path: dist/*
+
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MiVic-*/MiVic-*
+          generate_release_notes: true

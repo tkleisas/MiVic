@@ -79,8 +79,22 @@ catch (Exception exception)
     return 1;
 }
 
-[DllImport("kernel32.dll", SetLastError = true)]
-static extern bool AttachConsole(int processId);
+// Windows API. A windowed executable is attached to no console, so this attaches
+// the console of a parent that launched it, which is how the headless diagnostics
+// are read. It is asked for nowhere else, and on Linux it does not exist to ask:
+// the answer there is simply "no console was attached".
+[DllImport("kernel32.dll", SetLastError = true, EntryPoint = "AttachConsole")]
+static extern bool AttachConsoleWindows(int processId);
+
+static bool AttachConsole(int processId)
+{
+    if (!OperatingSystem.IsWindows())
+    {
+        return false;
+    }
+
+    return AttachConsoleWindows(processId);
+}
 
 /// <summary>
 /// Makes the console able to print Greek.
