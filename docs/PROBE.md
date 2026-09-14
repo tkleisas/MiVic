@@ -2130,3 +2130,20 @@ ok: Αποθηκεύτηκε: maps/authored-probe.map.json
 
 The save that was refused was refused by the editor, not by the loader: a file the loader would
 turn away is a file the editor does not write. See ROADMAP §10 for the report and the doors.
+
+## Worked example: does the editor refuse to save a mission the validator refuses?
+
+The `editor mission limit` verb sets the mission's time limit, and the validator is asked on the
+commit — the same questions the file loader asks. The transcript pins the loop the placements
+already run:
+
+```
+query: mission refused — objective 0 has a deadline of 7200 ticks and the mission's time limit is
+       2400: the deadline arrives after the match is over, so it can never be reached —
+query: save refused — Δεν αποθηκεύτηκε — η αποστολή αρνείται: objective 0 has a deadline of 7200
+       ticks and the mission's time limit is 2400...
+ok: Αποθηκεύτηκε: maps/authored-probe.map.json
+```
+
+The save that was refused was refused by the editor: the validator's sentence is the report's
+content, and the file that leaves is one the loader will open.

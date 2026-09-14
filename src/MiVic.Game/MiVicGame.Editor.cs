@@ -77,7 +77,7 @@ public partial class MiVicGame
             return;
         }
 
-        EditorCommand? raised = _editor.Draw();
+        EditorCommand? raised = _editor.Draw() ?? _editor.DrawMission();
 
         if (raised is { } command)
         {

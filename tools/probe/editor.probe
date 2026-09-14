@@ -42,3 +42,10 @@ editor report
 editor tool none
 editor name authored-probe
 editor save
+
+# The mission half: a limit the objective's deadline outruns is refused by the validator,
+# in the validator's own sentence, and the honest value saves.
+editor mission limit 2
+editor save
+editor mission limit 7
+editor save

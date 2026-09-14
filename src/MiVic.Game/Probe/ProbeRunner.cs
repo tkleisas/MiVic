@@ -2318,7 +2318,7 @@ public sealed class ProbeRunner
         const string Usage =
             "editor tool none|raise|lower|paint|structure|delete | editor brush <radius> <strength-m> | " +
             "editor paint <surface> | editor place <Kind> <x> <z> [team] | editor apply <x> <z> | " +
-            "editor undo | editor name <file> | editor save | editor report";
+            "editor undo | editor name <file> | editor save | editor report | editor mission limit <min>";
 
         MapEditor editor = _host.EnsureEditor();
         string what = command.Argument(0, "an editor verb", Usage);
@@ -2411,6 +2411,26 @@ public sealed class ProbeRunner
                 editor.SetFileName(command.Argument(1, "a file name", Usage));
                 Emit($"ok: file name: {editor.MapFileName}");
                 break;
+
+            case "mission":
+            {
+                string field = command.Argument(1, "a mission field", Usage);
+
+                if (field != "limit")
+                {
+                    throw new ProbeException($"'{field}' is not a mission field — {Usage}");
+                }
+
+                int minutes = (int)command.Whole(2, "a limit in minutes", Usage, 0, 720);
+                editor.ReplaceMission(
+                    editor.Mission with { TimeLimitTicks = minutes * SimConstants.TickRate * 60 },
+                    relayout: false);
+
+                Emit(editor.MissionProblems.Count > 0
+                    ? $"query: mission refused — {string.Join("; ", editor.MissionProblems)}"
+                    : $"ok: limit {minutes} min, clean");
+                break;
+            }
 
             case "save":
             {

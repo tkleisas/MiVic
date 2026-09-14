@@ -818,9 +818,20 @@ resolves, or undoes, or moves the placement, and the file that leaves is one the
 methods the panels call, without a cursor — and it pins the loop in CI: a stroke, a placement, the
 deepened basin, the refused save, and the honest one after the undo.
 
-**What the editor does not do, and says so:** the mission body — objectives, triggers, the roster —
-is edited as data in the file, because that part has no cursor. The editor authors the ground, the
-surfaces and the placements.
+**And the mission body is authored in the same panels now.** The editor's second panel carries the
+file's mission as forms: the identity words (id, title, briefing), the match declared as the list
+of teams the roster's own `Declare` builds it from — which slots play, what faction each plays,
+which side each is on, and whether the victory rule judges it — the starting forces, the objectives
+with the fields their kind reads, and the script as triggers with their conditions and actions,
+every one of them a combo over the vocabulary the trigger layer ships. A roster row or a unit count
+re-lays the world, because the layout is a function of them; a text change does not, because the
+layout is not. The validator is asked on every committed change, and its report is the mission
+panel's own content: the script that can never fire, the objective the opening world has already
+decided, the deadline the mission's time limit outruns. **The save refuses while the mission
+refuses**, which is the same loop the placements close, over the same principle — a file the
+loader would turn away is a file the editor does not write. `tools/probe/editor.probe` pins it: a
+limit the objective's deadline outruns is refused in the validator's sentence, and the honest
+value saves.
 
 **Where the catalog stands, deliberately unchanged.** The campaign still ships as C#: the four
 missions' definitions are reviewed code, and moving them would be a migration of content rather

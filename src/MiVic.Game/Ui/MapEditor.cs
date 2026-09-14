@@ -74,7 +74,7 @@ public readonly record struct EditorCommand(EditorCommandKind Kind);
 /// placements — the part a cursor is for.
 /// </para>
 /// </summary>
-public sealed class MapEditor
+public sealed partial class MapEditor
 {
     /// <summary>Default seed for a new map: the campaign's own, shaped from there.</summary>
     private const ulong NewMapSeed = 20250101;
@@ -170,6 +170,12 @@ public sealed class MapEditor
         if (_invalid.Count > 0)
         {
             Notice = $"Δεν αποθηκεύτηκε — {_invalid.Count} τοποθέτηση(σεις) δεν γίνονται δεκτές από το έδαφος.";
+            return;
+        }
+
+        if (_missionProblems.Count > 0)
+        {
+            Notice = $"Δεν αποθηκεύτηκε — η αποστολή αρνείται: {_missionProblems[0]}";
             return;
         }
 
