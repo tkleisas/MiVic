@@ -1,0 +1,24 @@
+# Q: does the editor's camera take input — the wheel zoom, WASD walk, Q/E turn — or is the
+# Q: view the editor opens with the only view there is?
+#
+#   MiVic.Game.exe --probe tools/probe/editor-camera.probe --probe-out artifacts/probe/editor-camera.txt
+#
+# The bindings, driven one synthetic frame at a time through the same RtsCamera.Update the
+# editor's own update feeds: a probe has no hand on the mouse, so the states are built, and
+# what is asked is whether the wiring reaches the camera. The checks are invariants — a key
+# held must move the camera — recorded with the numbers measured.
+#
+#   - `editor wheel <notches> [frames]` rolls the wheel: positive is closer, and the camera
+#     eases to it over the frames given.
+#   - `editor key <Q|E|W|A|S|D|arrows> [frames]` holds a key: Q/E turn, WASD and the arrows
+#     walk the target in the camera's own ground basis.
+#
+# The failure this pins: the editor's update never fed the camera, so the wheel did nothing
+# and the keys did nothing — the screen had exactly one view and no way out of it.
+
+editor key w 30
+editor key q 30
+editor wheel 6 30
+editor wheel -6 30
+editor key d 30
+editor key a 30

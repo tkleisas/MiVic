@@ -11,6 +11,7 @@ using MiVic.Game.Sim;
 using MiVic.Game.Ui;
 using MiVic.Map;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
 
 namespace MiVic.Game.Probe;
 
@@ -2347,7 +2348,8 @@ public sealed class ProbeRunner
         const string Usage =
             "editor tool none|raise|lower|paint|structure|delete | editor brush <radius> <strength-m> | " +
             "editor paint <surface> | editor place <Kind> <x> <z> [team] | editor apply <x> <z> | " +
-            "editor undo | editor name <file> | editor save | editor report | editor mission limit <min>";
+            "editor undo | editor key <Q|E|W|A|S|D|arrows> [frames] | editor wheel <notches> [frames] | " +
+            "editor name <file> | editor save | editor report | editor mission limit <min>";
 
         MapEditor editor = _host.EnsureEditor();
         string what = command.Argument(0, "an editor verb", Usage);
@@ -2436,6 +2438,76 @@ public sealed class ProbeRunner
                 editor.Undo();
                 Emit($"ok: undone — {ProbeFormat.Count(editor.EditCount, "edit")} in the list");
                 break;
+
+            case "key":
+            {
+                string name = command.Argument(1, "a key name", Usage);
+
+                Enum.TryParse(name, ignoreCase: true, out Keys key);
+                bool isCameraKey = key is Keys.Q or Keys.E or Keys.W or Keys.A or Keys.S or Keys.D or
+                    Keys.Up or Keys.Down or Keys.Left or Keys.Right;
+
+                if (!isCameraKey)
+                {
+                    throw new ProbeException($"'{name}' is not a camera key — Q, E, W, A, S, D or the arrows — {Usage}");
+                }
+
+                int frames = (int)command.Whole(2, "a frame count", Usage, 0, 600);
+                ProbeCamera before = _host.ReadCamera();
+                ProbeCamera after = before;
+
+                for (int i = 0; i < frames; i++)
+                {
+                    after = _host.DriveEditorCamera(1f / 60f, [key], 0);
+                }
+
+                bool rotated = key is Keys.Q or Keys.E;
+                float turned = after.Yaw - before.Yaw;
+                Vector3 walked = after.Target - before.Target;
+                bool moved = rotated ? MathF.Abs(turned) > 0.0001f : walked.LengthSquared() > 0.0001f;
+
+                RecordCheck(
+                    $"{key} reaches the editor camera",
+                    moved,
+                    rotated
+                        ? $"yaw turned {ProbeFormat.Angle(turned)} over {ProbeFormat.Count(frames, "frame")}"
+                        : $"target walked {ProbeFormat.Metres(walked.Length())} over {ProbeFormat.Count(frames, "frame")}");
+
+                Emit(
+                    $"ok: key {key} held {ProbeFormat.Count(frames, "frame")} — " +
+                    $"yaw {ProbeFormat.Angle(after.Yaw)}, distance {ProbeFormat.Metres(after.Distance)}, " +
+                    $"target {ProbeFormat.Point(after.Target)}");
+                break;
+            }
+
+            case "wheel":
+            {
+                float notches = command.Number(1, "wheel notches, positive rolls closer", Usage);
+                int frames = (int)command.Whole(2, "a frame count", Usage, 0, 600);
+                ProbeCamera before = _host.ReadCamera();
+                ProbeCamera after = before;
+
+                for (int i = 0; i < frames; i++)
+                {
+                    after = _host.DriveEditorCamera(1f / 60f, [], (int)(notches * 120f));
+                }
+
+                bool zoomed = notches > 0f
+                    ? after.Distance < before.Distance - 0.01f
+                    : after.Distance > before.Distance + 0.01f;
+
+                RecordCheck(
+                    "the wheel reaches the editor camera",
+                    zoomed && MathF.Abs(after.Distance - before.Distance) > 0.01f,
+                    $"distance {ProbeFormat.Metres(before.Distance)} to {ProbeFormat.Metres(after.Distance)} " +
+                    $"over {ProbeFormat.Count(frames, "frame")} of {ProbeFormat.Metres(notches)} notches");
+
+                Emit(
+                    $"ok: wheel {notches:0.##} notches over {ProbeFormat.Count(frames, "frame")} — " +
+                    $"distance {ProbeFormat.Metres(before.Distance)} to {ProbeFormat.Metres(after.Distance)}, " +
+                    $"yaw {ProbeFormat.Angle(after.Yaw)}, target {ProbeFormat.Point(after.Target)}");
+                break;
+            }
 
             case "name":
                 editor.SetFileName(command.Argument(1, "a file name", Usage));

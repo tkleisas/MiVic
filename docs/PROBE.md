@@ -2131,6 +2131,23 @@ ok: Αποθηκεύτηκε: maps/authored-probe.map.json
 The save that was refused was refused by the editor, not by the loader: a file the loader would
 turn away is a file the editor does not write. See ROADMAP §10 for the report and the doors.
 
+## Worked example: does the editor's camera take input?
+
+`tools/probe/editor-camera.probe` drives the camera the way the editor's own update does — one
+synthetic frame at a time through the same `RtsCamera.Update`, because a probe has no hand on the
+mouse and the question is whether the wiring reaches the camera at all:
+
+```
+check: PASS 'W reaches the editor camera' — target walked 75.4 m over 30 frames
+check: PASS 'Q reaches the editor camera' — yaw turned -0.900 rad (-51.6°) over 30 frames
+check: PASS 'the wheel reaches the editor camera' — distance 180.0 m to 25.3 m over 30 frames of 6.0 m notches
+```
+
+The failure this pins: the editor's update never fed the camera, so the wheel did nothing and the
+keys did nothing — the screen had exactly one view and no way out of it. The same update also
+refreshed the previous input only on the battle path, so the editor saw every held frame as a
+fresh press; that repair is what the probe's one-frame-at-a-time drive exercises.
+
 ## Worked example: does the editor refuse to save a mission the validator refuses?
 
 The `editor mission limit` verb sets the mission's time limit, and the validator is asked on the

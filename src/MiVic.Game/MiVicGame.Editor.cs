@@ -60,15 +60,19 @@ public partial class MiVicGame
             ToggleFullScreen();
         }
 
-        // Undo on Z, when the panels are not taking the keyboard. The stroke is not undone
+        // Undo on Z, when the author is not typing. The stroke is not undone
         // mid-drag: the edit list holds the stroke whole, so undo after a stroke takes the
-        // stroke off in one piece.
-        if (Pressed(keyboard, Keys.Z) && !_imgui.WantsKeyboard && _brushStroke.Count == 0)
+        // stroke off in one piece. The gate is the text flag, not the keyboard flag —
+        // a window that was clicked once holds keyboard focus and keeps reporting it,
+        // and an undo gated on that flag dies the moment a panel has been touched.
+        if (Pressed(keyboard, Keys.Z) && !_imgui.WantsTextInput && _brushStroke.Count == 0)
         {
             _editor.Undo();
         }
 
-        if (Pressed(keyboard, Keys.Escape))
+        // Escape leaves for the menu — but not while a caret is open: a question mark
+        // typed into a briefing field is not a session the author meant to end.
+        if (Pressed(keyboard, Keys.Escape) && !_imgui.WantsTextInput)
         {
             _screen = GameScreen.Menu;
             _editor = null;
@@ -99,11 +103,39 @@ public partial class MiVicGame
             }
         }
 
+        // The author flies the same camera the player does: the wheel zooms, WASD and the
+        // arrows walk the view across the map, Q/E or a middle-drag turns it — which is
+        // the rotation the screen was missing, and the reason every zoom and pan was dead
+        // before. The camera is fed before the cursor is resolved, because the cursor is
+        // a ray through the camera and a stale camera would answer last frame's question.
+        // The panels keep their own input: a wheel over a window scrolls the window, a
+        // key while a caret is open types into the field, and neither moves the ground.
+        if (!_imgui.WantsMouse && !_imgui.WantsTextInput)
+        {
+            int scroll = mouse.ScrollWheelValue - _previousScrollWheel;
+            _camera!.Update(
+                (float)gameTime.ElapsedGameTime.TotalSeconds,
+                keyboard,
+                _previousKeyboard,
+                mouse,
+                _previousMouse,
+                scroll);
+        }
+
         // The ghost of the armed structure, standing where the ground is: the same promise
         // a player's build panel makes, drawn in the colour of the side it will belong to.
         UpdateEditorPreview();
 
         HandleEditorTool(mouse);
+
+        // The previous input is refreshed here, at the end of the editor's own frame —
+        // it used to be refreshed only on the battle path, and the editor saw every
+        // held frame as a fresh press: the delete tool stripped one structure per
+        // frame, the undo popped one edit per keystroke, and the placements refused
+        // with a lying notice on the second frame of a held click.
+        _previousScrollWheel = mouse.ScrollWheelValue;
+        _previousKeyboard = keyboard;
+        _previousMouse = mouse;
 
         base.Update(gameTime);
     }

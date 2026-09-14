@@ -1128,7 +1128,13 @@ public sealed partial class MiVicGame : XnaGame
         // from distance, pitch and target on update. Its own pitch easing and WASD
         // handling are then overwritten below: a reviewer must not be able to fly the
         // camera away from the model, and a fixed angle is the point of the fixture.
-        if (!uiWantsMouse && !uiWantsKeyboard)
+        // The gate is mouse and text, not the keyboard flag: with keyboard navigation
+        // enabled, any focused HUD window reports WantCaptureKeyboard and keeps
+        // reporting it after the click that focused it — and from then on the player
+        // could not turn or walk the camera, which is why the map seemed locked
+        // facing one way. A caret open in a text field is the honest gate: those are
+        // exactly the frames in which WASD means letters rather than movement.
+        if (!uiWantsMouse && !_imgui.WantsTextInput)
         {
             int scroll = mouse.ScrollWheelValue - _previousScrollWheel;
             _camera!.Update(

@@ -7,6 +7,7 @@ using MiVic.Game.Sim;
 using MiVic.Game.Ui;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 
 namespace MiVic.Game;
 
@@ -264,6 +265,25 @@ public sealed partial class MiVicGame : IProbeHost
         }
 
         _camera!.FocusOn(new Vector3(x, 0f, z));
+    }
+
+    /// <summary>
+    /// One synthetic frame of camera input, driven through the same
+    /// <see cref="Camera.RtsCamera.Update"/> the screens' own updates call. The states are
+    /// built rather than polled because a probe has no hand on the mouse: what is being
+    /// asked is whether the bindings reach the camera, and the answer is the camera's own.
+    /// </summary>
+    ProbeCamera IProbeHost.DriveEditorCamera(float deltaSeconds, Keys[] keys, int scrollWheelDelta)
+    {
+        _camera!.Update(
+            deltaSeconds,
+            new KeyboardState(keys),
+            default,
+            new MouseState(0, 0, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released),
+            default,
+            scrollWheelDelta);
+
+        return ((IProbeHost)this).ReadCamera();
     }
 
     /// <summary>

@@ -4,6 +4,7 @@ using MiVic.Game.Data;
 using MiVic.Game.Sim;
 using MiVic.Game.Ui;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
 
 namespace MiVic.Game.Probe;
 
@@ -103,6 +104,13 @@ public interface IProbeHost
 
     /// <summary>Aims the camera at a world position. A null height aims at the ground plane.</summary>
     void SetFocus(float x, float z, float? y);
+
+    /// <summary>
+    /// Drives one synthetic frame of camera input through the same <see cref="Camera.RtsCamera.Update"/>
+    /// the screens' own updates feed, so a probe asks the wiring rather than the camera in
+    /// isolation: a key held, a wheel turned, and the state that comes out the other end.
+    /// </summary>
+    ProbeCamera DriveEditorCamera(float deltaSeconds, Keys[] keys, int scrollWheelDelta);
 
     /// <summary>
     /// Everything the renderer knows about one entity's parts, animated by the renderer's

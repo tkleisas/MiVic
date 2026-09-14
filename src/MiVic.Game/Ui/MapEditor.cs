@@ -555,6 +555,10 @@ public sealed partial class MapEditor
                 }
             }
 
+            // The bindings, written where the tools are — a binding a player has to
+            // discover is a binding they will report as missing.
+            ImGui.TextDisabled("Τροχός: ζουμ · WASD ή βέλη: μετακίνηση · Q/E ή μεσαίο κλικ: περιστροφή");
+
             if (ImGui.Button("Αναίρεση", new NVec2(-1f, 0f)))
             {
                 Undo();

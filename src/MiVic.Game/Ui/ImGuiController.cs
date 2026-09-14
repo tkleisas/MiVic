@@ -123,6 +123,18 @@ public sealed unsafe class ImGuiController : IDisposable
     /// <summary>True when ImGui wants the keyboard.</summary>
     public bool WantsKeyboard => ImGui.GetIO().WantCaptureKeyboard;
 
+    /// <summary>
+    /// True when ImGui is taking typed text, so the game's keys must wait.
+    /// <para>
+    /// <see cref="WantsKeyboard"/> sticks: with keyboard navigation enabled, a window that
+    /// was clicked once holds keyboard focus and reports it every frame, and a camera
+    /// gated on that flag goes dead the moment the player has touched a panel. The text
+    /// flag is the honest one — true only while a caret is open, exactly the frames in
+    /// which WASD means letters rather than movement.
+    /// </para>
+    /// </summary>
+    public bool WantsTextInput => ImGui.GetIO().WantTextInput;
+
     /// <summary>Current mouse position in screen pixels, as ImGui sees it.</summary>
     public System.Numerics.Vector2 MousePosition => ImGui.GetIO().MousePos;
 

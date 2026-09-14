@@ -844,7 +844,13 @@ on the painted cells, and the authored mission validated under the campaign's ow
 the map being authored: a brush for **raise and lower** (radius and step, a stroke applied once per
 cell it crosses, the whole stroke one undo), **paint** with a surface choice, **structure
 placement** with the ghost drawn in the faction it will belong to and tinted by whether the rules
-accept it, and a **delete** that removes the placement and the entity together. The file row saves
+accept it, and a **delete** that removes the placement and the entity together. The bindings are
+written where the tools are — the wheel zooms, WASD and the arrows walk the view, Q/E or a
+middle-drag turns it — because a binding a player has to discover is a binding they will report as
+missing. The camera is fed before the cursor is resolved, since the cursor is a ray through it;
+and the gates are mouse and text rather than the keyboard flag, which any clicked panel keeps
+reporting and which had made the camera dead the moment the player touched the HUD — in the
+editor and in the match both. The file row saves
 into `maps/` under a name the author types or the hour writes; **Δοκιμή παιχνιδιού** hands the map
 as it stands to a live match, and Πίσω στο μενού leaves the session where it was.
 
