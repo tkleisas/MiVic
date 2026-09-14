@@ -51,6 +51,23 @@ public sealed class HeightMap
     public int HeightAtIndex(int index) => _heights[index];
 
     /// <summary>
+    /// Moves a lattice sample up or down, in millimetres, by an author's edit. Clamped to
+    /// the map's own range, because the ground has one: below zero is under the world and
+    /// above the maximum is a cliff the movement system would refuse to read. The pass
+    /// re-derivation that follows the edit is the caller's business — the height field is
+    /// the input, and what it feeds is where the guarantees live.
+    /// </summary>
+    public void AdjustHeight(int index, int deltaMm)
+    {
+        if ((uint)index >= (uint)_heights.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index, "No such sample.");
+        }
+
+        _heights[index] = IntMath.Clamp(_heights[index] + deltaMm, 0, MaxHeightMm);
+    }
+
+    /// <summary>
     /// Every height, row major. The attribute generator reads a neighbourhood around each
     /// cell, and a span it can index is what lets that walk be eight lookups rather than
     /// eight calls that clamp a coordinate each.

@@ -779,6 +779,32 @@ two-faction ambush on the lava field with a scripted objective and a flag — as
 and `tools/probe/mission-file.probe` is its transcript: validated clean, the trigger firing on the
 tick the file says, the message shown, and the objectives the mission hangs on its own sentence.
 
+**Built: the edit list, and the application — the second missing piece.** A map is a file
+too (`MapFile`): the seed, a list of edits over the ground the seed generates, and the mission the
+ground is shaped for. The edit list is deliberately small and deliberately ordered: **raise and
+lower** (deltas over generated ground, because the author is shaping terrain, not authoring a height
+field), **paint a surface**, and **place a structure** — the mission's roster, objectives and
+triggers come from the mission body it carries, which the mission format now provides.
+
+**The application runs in the order the world resolves in, as the section settled.** The height
+edits move the ground; the derived passes are re-run from it — *the same builders the world was
+constructed with, run again*, because the guarantees live in what they produce, and an editor that
+answered placement questions itself would eventually disagree with this, which is the precise
+failure §10 warns about; the paints go on the re-derived ground, because the bands are what the
+author started from; and *then* the mission layout searches the edited land for its bases and the
+placements are asked `CanPlaceStructure` and the site rules — the same questions, and the same
+Greek sentences, a player's construction is asked, with the refusal an InvalidDataException at
+load. A placement legal on generated ground can be refused on the shaped ground, which is the
+whole point of shaping it first. `--map-file <path>` plays one, with
+`maps/demo-isthmus.map.json` — a basin dug into the map's centre with ore painted on its floor
+and a gun emplacement on the road to it — as the demonstration, and
+`tools/probe/map-file.probe` reads the shaped ground itself: the surfaces census, the attributes
+on the painted cells, and the authored mission validated under the campaign's own check.
+
+**Still open here, and it is the part an interactive editor owes:** showing the author *what
+changed* — which placements an edit just invalidated, and why. The machinery to ask exists
+everywhere; the screen that asks it while the author works does not yet.
+
 **Where the catalog stands, deliberately unchanged.** The campaign still ships as C#: the four
 missions' definitions are reviewed code, and moving them would be a migration of content rather
 than of capability — the format is proven able to carry them, and the editor (§10's remaining

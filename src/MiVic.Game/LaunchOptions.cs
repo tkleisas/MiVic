@@ -102,6 +102,14 @@ public sealed record LaunchOptions
     public string? MissionFilePath { get; init; }
 
     /// <summary>
+    /// A map from a file — the format ROADMAP §10 describes: a seed, the edits over the
+    /// ground it generates, and the mission the ground is shaped for. The application
+    /// re-derives the terrain passes from the edited ground and asks the author's
+    /// placements the same questions a player's construction is asked.
+    /// </summary>
+    public string? MapFilePath { get; init; }
+
+    /// <summary>
     /// Which match to lay out: the standard three-faction skirmish unless the command line asks for
     /// one of the two-faction ones. The match decides the sides the simulation plays by as well as
     /// the bases on the map — see <c>MatchRoster</c> — so this is the only place the client chooses
@@ -599,6 +607,10 @@ public sealed record LaunchOptions
                     options = options with { PaperclipDemo = true, ShowHelp = false };
                     break;
 
+                case "--map-file":
+                    options = options with { MapFilePath = NextValue(args, ref i, arg) };
+                    break;
+
                 case "--mission-file":
                     options = options with { MissionFilePath = NextValue(args, ref i, arg) };
                     break;
@@ -692,6 +704,7 @@ public sealed record LaunchOptions
                    options.ReplayPath is null &&
                    options.MissionId is null &&
                    options.MissionFilePath is null &&
+                   options.MapFilePath is null &&
                    options.RenderAudioPath is null &&
                    options.RenderSfxPath is null &&
                    !options.IsSelfTest &&

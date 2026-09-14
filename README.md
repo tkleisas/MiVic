@@ -148,6 +148,7 @@ self-contained portable archives for linux-x64 and win-x64
 | `--probe-out <file>` | where a probe writes its transcript (default `probe-report.txt`) |
 | `--mission <id>` | start a campaign mission |
 | `--mission-file <path>` | play a mission authored as a file (the `MissionFile` format; the loader runs the script validator and refuses one that cannot be won) |
+| `--map-file <path>` | play an authored map: a seed, edits over the ground it generates, and the mission the ground is shaped for (`MapFile`; the passes are re-derived and the placements asked the placement rules) |
 | `--mission-list` | list the campaign |
 | `--render-audio <dir>` | export one WAV per faction theme and exit |
 | `--render-sfx <dir>` | export one WAV per sound effect and exit |

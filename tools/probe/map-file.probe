@@ -1,0 +1,21 @@
+# Q: is the ground a map file shaped, and does the battle stand on it?
+#
+#   MiVic.Game.exe --map-file maps/demo-isthmus.map.json --probe tools/probe/map-file.probe --probe-out artifacts/probe/map-file.txt
+#
+# The format §10 describes, applied: the height edits lower the map's centre into a basin and
+# paint the ore on its floor, the derived passes are re-run from the edited ground — the bands,
+# the fords, the connectivity — and the mission is laid out on the land that now exists. The
+# loader has already refused what the placement rules refuse, so what is read here is the
+# shaped ground itself.
+#
+#   - `surfaces` is the census of what the edits made: the ore is where the author painted it,
+#     and the basin reads as what it now is.
+#   - `attributes` on the painted cells says the same thing per cell, in the words the ground
+#     itself uses.
+#   - `validate` sits the authored mission under the same check the campaign sits under.
+
+validate
+surfaces
+attributes 30 30
+attributes 31 31
+tick 120

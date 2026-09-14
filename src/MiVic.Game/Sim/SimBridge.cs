@@ -1455,6 +1455,23 @@ public sealed class SimBridge
     }
 
     /// <summary>
+    /// Creates a match from an authored map: the ground is built from the map's own seed,
+    /// the author's edits are applied and the passes re-derived before the mission layout
+    /// searches the land it shaped. The refusals the application raises are the placement
+    /// rules' own sentences — a map that cannot be placed on is a file this build refuses
+    /// where the author is looking.
+    /// </summary>
+    public SimBridge(MapDefinition map)
+        : this(
+            (map ?? throw new ArgumentNullException(nameof(map))).Seed,
+            ScenarioKind.Mission,
+            mission: null,
+            replay: null,
+            map)
+    {
+    }
+
+    /// <summary>
     /// Plays back a recorded match instead of a live one: the world is rebuilt
     /// from the replay's seed and scenario, and the recorded commands are
     /// re-issued at the ticks they were issued on. Nothing else may enqueue, or
@@ -1517,14 +1534,15 @@ public sealed class SimBridge
         CaptureBaseline();
     }
 
-    private SimBridge(ulong seed, ScenarioKind scenario, MissionDefinition? mission, ReplayFile? replay)
+    private SimBridge(ulong seed, ScenarioKind scenario, MissionDefinition? mission, ReplayFile? replay, MapDefinition? map = null)
     {
         int capacity = replay?.Capacity ?? Capacity;
 
         // The match is declared before the world is built rather than after: which teams are
         // playing, what faction each one plays and who is on whose side is what the layout is a
         // function of, and the scenario builder refuses a world whose sides disagree with it.
-        World = new SimWorld(seed, capacity, MatchRoster.For(scenario, mission));
+        // A map's declaration is the mission it carries.
+        World = new SimWorld(seed, capacity, MatchRoster.For(scenario, mission ?? map?.Mission));
         _previousPositions = new WorldPos[World.Capacity];
         _homePositions = new WorldPos[World.Capacity];
         _wasAlive = new bool[World.Capacity];
@@ -1542,10 +1560,13 @@ public sealed class SimBridge
         IsGallery = scenario == ScenarioKind.ModelGallery;
 
         // The starting world is built by the simulation, not here, so a replay
-        // can rebuild it with no client involved.
-        ScenarioSetup setup = mission is not null
-            ? MiVic.Core.Sim.Scenario.BuildMission(World, mission)
-            : MiVic.Core.Sim.Scenario.Build(World, scenario);
+        // can rebuild it with no client involved. A map's ground is edited and
+        // re-derived before the layout that stands on it is searched for.
+        ScenarioSetup setup = map is not null
+            ? MiVic.Core.Sim.Scenario.BuildMap(World, map)
+            : mission is not null
+                ? MiVic.Core.Sim.Scenario.BuildMission(World, mission)
+                : MiVic.Core.Sim.Scenario.Build(World, scenario);
 
         _commandCentres.AddRange(setup.CommandCentres);
 

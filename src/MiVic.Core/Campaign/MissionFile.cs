@@ -127,7 +127,7 @@ public static class MissionFile
     }
 
     /// <summary>The validator's verdict, in its own words, at the place the mission is authored.</summary>
-    private static void Validate(MissionDefinition mission, string path)
+    internal static void Validate(MissionDefinition mission, string path)
     {
         if (string.IsNullOrWhiteSpace(mission.Id))
         {

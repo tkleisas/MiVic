@@ -120,18 +120,43 @@ public sealed class SimWorld
         }
     }
 
+    /// <summary>
+    /// Re-runs the derived terrain passes over the height field as it now stands: the
+    /// navigation grid, then the surface layer. An author's height edits are the caller
+    /// that brings you here.
+    /// <para>
+    /// <b>This is not a second implementation of the passes — it is the passes.</b> The
+    /// same builders the world was constructed with, run again over the edited ground,
+    /// because the guarantees live in what they produce: the bands, the fords, and the
+    /// connectivity the pathfinder relies on. A map editor that answered placement or
+    /// walkability questions itself would eventually disagree with this, which is
+    /// precisely the failure the section warns about, and re-deriving is why it cannot:
+    /// the world's opinion of its ground is the only one there is.
+    /// </para>
+    /// <para>
+    /// Everything sized by the lattice keeps its size — the lattice is a fact of the
+    /// map's extent, not of its shape — so the tables built at construction stay good.
+    /// </para>
+    /// </summary>
+    public void RebuildDerivedTerrain()
+    {
+        Navigation = NavGrid.Build(Terrain, SimConstants.MaxSlopePermille, SimConstants.NavGridStride);
+        TerrainTypes = TerrainLayer.Build(Terrain, Navigation, Seed);
+    }
+
     /// <summary>The battlefield height field.</summary>
     public HeightMap Terrain { get; }
 
-    /// <summary>Walkability and cost derived from <see cref="Terrain"/>.</summary>
-    public NavGrid Navigation { get; }
+    /// <summary>Walkability and cost derived from <see cref="Terrain"/>. Replaced when an author's edits re-derive the passes from edited ground.</summary>
+    public NavGrid Navigation { get; private set; }
 
     /// <summary>
     /// Surface types and their movement costs, on the same lattice as
-    /// <see cref="Navigation"/>. Like the height field it is a pure function of the
-    /// seed, so it is reproducible without being hashed every tick.
+    /// <see cref="Navigation"/>. Derived from the ground, and re-derived with it: an
+    /// author's height edits re-run the passes, because that is where the guarantees —
+    /// the bands, the fords, the connectivity the pathfinder relies on — live.
     /// </summary>
-    public TerrainLayer TerrainTypes { get; }
+    public TerrainLayer TerrainTypes { get; private set; }
 
     /// <summary>
     /// The crossings a team has built, block by block, with the work still going into them. The

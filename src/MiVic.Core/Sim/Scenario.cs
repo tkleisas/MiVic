@@ -546,4 +546,121 @@ public static class Scenario
         spawned.Add(new SpawnedEntity(id, position));
         return id;
     }
+
+    /// <summary>
+    /// Lays out a map: the ground first, then the mission the ground was shaped for.
+    /// <para>
+    /// <b>The order is the world's own.</b> The height edits move the ground, the derived
+    /// passes are re-run from it — the bands, the fords, the connectivity the pathfinder
+    /// relies on live in those passes, and they are the reason re-derivation is the honest
+    /// default rather than a choice — the surface paints go on the re-derived ground, and
+    /// <em>then</em> the mission layout searches the edited land for its bases and the
+    /// author's placements are asked the questions a player's construction is asked. An
+    /// island is drawn before anything is put on the island, because the island is what
+    /// makes the placement legal.
+    /// </para>
+    /// <para>
+    /// The setup returns the same metadata a mission build does, because the client hangs
+    /// what it draws off the setup as well as off the world. The placements are checked
+    /// with <see cref="SimWorld.CanPlaceStructure"/> and the site rules — the same questions,
+    /// and the same reasons, a player's order gets — and a refusal is an
+    /// <see cref="InvalidDataException"/> carrying the sentence, because a map the author
+    /// cannot place things on is a file this build refuses where the author is looking.
+    /// </para>
+    /// </summary>
+    public static ScenarioSetup BuildMap(SimWorld world, MapDefinition map)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(map);
+
+        if (map.Seed == 0)
+        {
+            // The seed is the ground's identity, and zero is no seed at all — the same
+            // refusal a replay gives a seedless recording, because a map that regenerates
+            // differently on the next machine is a map that lies.
+            throw new InvalidDataException("A map carries its terrain seed.");
+        }
+
+        if (!world.Seed.Equals(map.Seed))
+        {
+            throw new InvalidOperationException(
+                $"The map's ground is seed {map.Seed}; this world was generated from {world.Seed}. " +
+                "Build it with the map's own seed.");
+        }
+
+        // 1. Shape the ground. Each edit resolves to a lattice sample; the height field is
+        //    clamped to its own range, and the passes below are what decide what the shape
+        //    means.
+        foreach (TerrainEdit edit in map.TerrainEdits)
+        {
+            switch (edit.Kind)
+            {
+                case TerrainEditKind.AdjustHeight:
+                {
+                    int sample = edit.ResolveSample(world.Terrain);
+
+                    if (sample < 0)
+                    {
+                        throw new InvalidDataException(
+                            $"A height edit at ({edit.CellX}, {edit.CellZ}) cells / ({edit.X}, {edit.Z}) mm falls outside the map.");
+                    }
+
+                    world.Terrain.AdjustHeight(sample, edit.DeltaMm);
+                    break;
+                }
+            }
+        }
+
+        // 2. Re-derive. The same builders the world was constructed with, run over the
+        //    edited ground: this is not a second implementation of the passes, it is the
+        //    passes.
+        world.RebuildDerivedTerrain();
+
+        // 3. Paint. After the derivation, because the bands are the ground the author
+        //    started from and a paint is a decision over them.
+        foreach (TerrainEdit edit in map.TerrainEdits)
+        {
+            if (edit.Kind == TerrainEditKind.Paint)
+            {
+                int layerCell = edit.ResolveLayerCell(world.TerrainTypes);
+
+                if (layerCell < 0)
+                {
+                    throw new InvalidDataException(
+                        $"A paint edit at ({edit.CellX}, {edit.CellZ}) cells / ({edit.X}, {edit.Z}) mm falls outside the map.");
+                }
+
+                world.TerrainTypes.SetType(layerCell, edit.Type);
+            }
+        }
+
+        // 4. The mission, laid out on the edited land: the same layout a campaign mission
+        //    gets, searched for on the ground that now exists rather than the one the seed
+        //    used to generate.
+        ScenarioSetup setup = BuildMission(world, map.EffectiveMission);
+
+        // 5. The author's placements, asked the same questions the player's construction
+        //    is asked — the ground under them is the edited ground, which is the point of
+        //    shaping it first.
+        foreach (StructurePlacement placement in map.Structures)
+        {
+            var site = new WorldPos(placement.X, 0, placement.Z);
+
+            if (!world.CanPlaceStructure(placement.Kind, site, out string reason))
+            {
+                throw new InvalidDataException(
+                    $"A placed {placement.Kind} at ({placement.X}, {placement.Z}) is refused: {reason}.");
+            }
+
+            if (!world.IsSiteClear(placement.Kind, site, out string clearReason))
+            {
+                throw new InvalidDataException(
+                    $"A placed {placement.Kind} at ({placement.X}, {placement.Z}) has no room: {clearReason}.");
+            }
+
+            SpawnStructure(world, world.FactionOfTeam(placement.Team), placement.Team, placement.Kind, site, health: 0, spawned: []);
+        }
+
+        return setup;
+    }
 }

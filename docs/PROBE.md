@@ -2099,3 +2099,18 @@ query:       then       tell the player "Πυρβολή από το πέρασμ
 The loader has already refused anything the validator would, so what the transcript reads is the
 mission playing: the trigger the clock fires, the message shown, and the scripted objective the
 mission completes by its own sentence.
+
+## Worked example: is the ground a map file shaped?
+
+`tools/probe/map-file.probe`, against `--map-file maps/demo-isthmus.map.json`: a basin dug into
+the map's centre with ore painted on its floor, the derived passes re-run from the edited ground,
+and the mission laid out on the land that now exists. See ROADMAP §10 for the order the
+application runs in.
+
+```
+query: validate: 'm_map_passage' — 1 objective, 0 triggers, 2 teams in the match, 0 problems
+query:   Mine            122 cells    2,8%  Κοίτασμα
+```
+
+The loader refused what the placement rules refuse before the probe ever ran; the transcript
+reads the shaped ground itself.

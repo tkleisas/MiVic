@@ -1,0 +1,119 @@
+{
+  "map": "MiVicMap",
+  "version": 1,
+  "id": "map_demo_isthmus",
+  "body": {
+    "seed": 20250111,
+    "terrainEdits": [
+      {
+        "kind": "AdjustHeight",
+        "cellX": 30,
+        "cellZ": 30,
+        "deltaMm": -12000
+      },
+      {
+        "kind": "AdjustHeight",
+        "cellX": 30,
+        "cellZ": 31,
+        "deltaMm": -12000
+      },
+      {
+        "kind": "AdjustHeight",
+        "cellX": 31,
+        "cellZ": 30,
+        "deltaMm": -12000
+      },
+      {
+        "kind": "AdjustHeight",
+        "cellX": 31,
+        "cellZ": 31,
+        "deltaMm": -12000
+      },
+      {
+        "kind": "AdjustHeight",
+        "cellX": 30,
+        "cellZ": 32,
+        "deltaMm": 14000
+      },
+      {
+        "kind": "AdjustHeight",
+        "cellX": 31,
+        "cellZ": 32,
+        "deltaMm": 14000
+      },
+      {
+        "kind": "Paint",
+        "cellX": 30,
+        "cellZ": 30,
+        "type": "Mine"
+      },
+      {
+        "kind": "Paint",
+        "cellX": 31,
+        "cellZ": 31,
+        "type": "Mine"
+      }
+    ],
+    "structures": [
+      {
+        "kind": "GunEmplacement",
+        "x": 100000,
+        "z": 100000,
+        "team": 0
+      }
+    ],
+    "mission": {
+      "id": "m_map_passage",
+      "greekTitle": "Ο Ισθμός",
+      "greekBriefing": "Ένα υψίπεδο που σκάψαμε μόνοι μας: το έδαφος κατεβαίνει στο κέντρο του χάρτη και τα μεταλλεία είναι εκεί. Οι Δυτικοί θέλουν τα μεταλλεία. Το πυροβολείο στέκει στον δρόμο τους — ο συγγραφέας του το τοποθέτησε πριν από το παιχνίδι, και ο χάρτης του είπε ναι.",
+      "playerBase": [
+        -180000,
+        0,
+        -180000
+      ],
+      "allyBase": [
+        0,
+        0,
+        0
+      ],
+      "enemyBase": [
+        180000,
+        0,
+        180000
+      ],
+      "playerUnits": 12,
+      "allyUnits": 0,
+      "enemyUnits": 12,
+      "timeLimitTicks": 7200,
+      "roster": {
+        "teams": [
+          {
+            "team": 0,
+            "faction": "Soviet",
+            "side": 0,
+            "judged": true
+          },
+          {
+            "team": 2,
+            "faction": "Western",
+            "side": 1,
+            "judged": true
+          }
+        ]
+      },
+      "objectives": [
+        {
+          "kind": "DestroyStructures",
+          "greekDescription": "Καταστρέψτε μία δυτική θέση.",
+          "team": 0,
+          "targetTeam": 2,
+          "targetCount": 1,
+          "deadlineTick": 7200,
+          "isPrimary": true,
+          "constraint": false
+        }
+      ],
+      "triggers": []
+    }
+  }
+}

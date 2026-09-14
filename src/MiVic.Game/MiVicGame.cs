@@ -654,7 +654,9 @@ public sealed partial class MiVicGame : XnaGame
                 ? new SimBridge(MissionCatalog.Require(missionId))
                 : _options.MissionFilePath is { } missionPath
                     ? new SimBridge(MissionFile.Load(missionPath))
-                    : _options.Viewer
+                    : _options.MapFilePath is { } mapPath
+                        ? new SimBridge(MapFile.Load(mapPath))
+                        : _options.Viewer
                         ? new SimBridge(_options.Seed, ViewerFaction, ViewerKind)
                         : _options.FireDemo
                             ? SimBridge.CreateFiringRange(_options.Seed)
