@@ -53,6 +53,13 @@ try
         return MiVic.Game.Audio.AudioExporter.RunSfx(args[1]);
     }
 
+    // Score export, also headless: the faction scores render to WAVs the same way the game
+    // plays them, which is what makes the arrangement reviewable.
+    if (args.Length >= 2 && args[0] is "--render-scores")
+    {
+        return MiVic.Game.Audio.AudioExporter.RunScores(args[1]);
+    }
+
     LaunchOptions options = LaunchOptions.Parse(args);
     using MiVicGame game = new(options);
     game.Run();

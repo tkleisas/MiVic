@@ -1,0 +1,349 @@
+{
+  "tempo": 128,
+  "grid": 16,
+  "root": 40,
+  "scale": [
+    0,
+    3,
+    5,
+    6,
+    7,
+    10
+  ],
+  "patterns": {
+    "groove": {
+      "bassdrum": "X.......x...X...",
+      "snare": "....X.......X...",
+      "hihat": "x.x.x.x.x.x.x.x.",
+      "tambourine": "........x.......",
+      "bass": [
+        {
+          "step": 0,
+          "degrees": 0,
+          "octave": 0,
+          "length": 2
+        },
+        {
+          "step": 3,
+          "degrees": 0,
+          "octave": 0,
+          "length": 2
+        },
+        {
+          "step": 6,
+          "degrees": 5,
+          "octave": 0,
+          "length": 2
+        },
+        {
+          "step": 10,
+          "degrees": 2,
+          "octave": 0,
+          "length": 2
+        },
+        {
+          "step": 14,
+          "degrees": 4,
+          "octave": 0,
+          "length": 2
+        }
+      ],
+      "strings": [
+        {
+          "step": 0,
+          "degrees": [
+            0,
+            2,
+            4
+          ],
+          "octave": 2,
+          "length": 8
+        },
+        {
+          "step": 8,
+          "degrees": [
+            3,
+            5,
+            0
+          ],
+          "octave": 2,
+          "length": 8
+        }
+      ]
+    },
+    "standingby": {
+      "bassdrum": "X.......x.......",
+      "hihat": "x.x.x.x.x.x.x.x.",
+      "hihat-open": "..........x.....",
+      "tambourine": "............x...",
+      "bass": [
+        {
+          "step": 0,
+          "degrees": 0,
+          "octave": 0,
+          "length": 4
+        },
+        {
+          "step": 8,
+          "degrees": 3,
+          "octave": 0,
+          "length": 4
+        }
+      ],
+      "strings": [
+        {
+          "step": 0,
+          "degrees": [
+            0,
+            4
+          ],
+          "octave": 2,
+          "length": 16
+        }
+      ]
+    },
+    "riff": {
+      "bassdrum": "X..X..X.X..X..X.",
+      "snare": "....X...x...X..x",
+      "hihat": "x.x.x.x.x.x.x.x.",
+      "hihat-open": "......x.....x...",
+      "tambourine": "....x.......x.x.",
+      "bass": [
+        {
+          "step": 0,
+          "degrees": 0,
+          "octave": 1,
+          "length": 2
+        },
+        {
+          "step": 2,
+          "degrees": 0,
+          "octave": 1,
+          "length": 1
+        },
+        {
+          "step": 4,
+          "degrees": 3,
+          "octave": 1,
+          "length": 2
+        },
+        {
+          "step": 6,
+          "degrees": 4,
+          "octave": 1,
+          "length": 2
+        },
+        {
+          "step": 8,
+          "degrees": 0,
+          "octave": 1,
+          "length": 2
+        },
+        {
+          "step": 11,
+          "degrees": 5,
+          "octave": 1,
+          "length": 1
+        },
+        {
+          "step": 12,
+          "degrees": 4,
+          "octave": 1,
+          "length": 2
+        },
+        {
+          "step": 14,
+          "degrees": 3,
+          "octave": 1,
+          "length": 2
+        }
+      ],
+      "strings": [
+        {
+          "step": 0,
+          "degrees": [
+            0,
+            2
+          ],
+          "octave": 2,
+          "length": 4
+        },
+        {
+          "step": 6,
+          "degrees": [
+            3,
+            0
+          ],
+          "octave": 2,
+          "length": 4
+        },
+        {
+          "step": 12,
+          "degrees": [
+            4,
+            1
+          ],
+          "octave": 2,
+          "length": 4
+        }
+      ],
+      "horns": [
+        {
+          "step": 0,
+          "degrees": [
+            0,
+            4
+          ],
+          "octave": 2,
+          "length": 2
+        },
+        {
+          "step": 8,
+          "degrees": [
+            3,
+            0
+          ],
+          "octave": 2,
+          "length": 2
+        }
+      ]
+    },
+    "encore": {
+      "bassdrum": "X...X...X...X..x",
+      "snare": "....X.......X..x",
+      "tom1": "..............x.",
+      "tom2": "...............x",
+      "hihat": "x.x.x.x.x.x.x.x.",
+      "tambourine": "x.x.x.x.x.x.x.x.",
+      "bass": [
+        {
+          "step": 0,
+          "degrees": 0,
+          "octave": 0,
+          "length": 8
+        },
+        {
+          "step": 8,
+          "degrees": 4,
+          "octave": 0,
+          "length": 8
+        }
+      ],
+      "strings": [
+        {
+          "step": 0,
+          "degrees": [
+            0,
+            2,
+            4
+          ],
+          "octave": 2,
+          "length": 16
+        }
+      ],
+      "horns": [
+        {
+          "step": 0,
+          "degrees": [
+            0,
+            2,
+            4
+          ],
+          "octave": 3,
+          "length": 8
+        },
+        {
+          "step": 8,
+          "degrees": [
+            4,
+            5,
+            0
+          ],
+          "octave": 3,
+          "length": 8
+        }
+      ]
+    },
+    "blues": {
+      "bassdrum": "X...............",
+      "hihat": "....x.......x...",
+      "tambourine": "................",
+      "bass": [
+        {
+          "step": 0,
+          "degrees": 0,
+          "octave": -1,
+          "length": 12
+        }
+      ],
+      "strings": [
+        {
+          "step": 0,
+          "degrees": [
+            0,
+            4
+          ],
+          "octave": 1,
+          "length": 16
+        }
+      ]
+    }
+  },
+  "leitmotivs": {
+    "groove": {
+      "bars": 4,
+      "patterns": [
+        "groove"
+      ]
+    },
+    "standingby": {
+      "bars": 2,
+      "patterns": [
+        "standingby"
+      ]
+    },
+    "riff": {
+      "bars": 4,
+      "patterns": [
+        "riff"
+      ]
+    },
+    "encore": {
+      "bars": 4,
+      "patterns": [
+        "encore"
+      ]
+    },
+    "blues": {
+      "bars": 2,
+      "patterns": [
+        "blues"
+      ]
+    }
+  },
+  "fills": {
+    "to-riff": {
+      "snare": "x.x.xxx.x.xXXXX.",
+      "bassdrum": "X...X...X...X...",
+      "hihat-open": "............x..."
+    },
+    "to-groove": {
+      "snare": "....X.......X.x.",
+      "bassdrum": "X.......X.......",
+      "tambourine": "..x...x...x....."
+    },
+    "to-standingby": {
+      "hihat-open": "x.x.x.x.x.x.x.x.",
+      "bassdrum": "X.......X......."
+    }
+  },
+  "cues": {
+    "victory": "encore",
+    "defeat": "blues",
+    "combat": "riff",
+    "alert": "standingby",
+    "calm": "groove",
+    "up-bars": 2,
+    "down-bars": 4
+  }
+}

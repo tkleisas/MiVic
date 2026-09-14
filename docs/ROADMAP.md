@@ -130,6 +130,28 @@ their own firing sounds and hits play an impact.
 
 ---
 
+**Built: the score is a file.** The soundtrack is growing a second engine beside the bytebeat:
+a **pattern score**, one JSON file per faction under `scores/`, loaded and validated by
+`src/MiVic.Audio/Score.cs` and rendered by the sequencer to PCM at the sound bank's rate. The
+instruments are shared — a kit of seven (bass drum, snare, two toms, closed and open hi-hat,
+tambourine), a synth bass, strings, horns — and are pure synthesis: no samples, no seed, a kick
+is a membrane that falls in pitch and a snare is a shell under a stream of wires. What separates
+the factions is what they write for them: a pattern is one bar — the kit voices as step strings
+(`X..x`, accent, hit, rest) and the pitched voices as note rows in the faction's own scale — and
+a **leitmotiv** is a list of patterns and a bar count, rendered as a whole multiple of the bar
+with every tail wrapped into the loop's own start, so the loop is seamless by construction.
+
+The loader refuses in the author's language: a step string of the wrong length, a leitmotiv
+naming a pattern that does not exist, a cue naming a leitmotiv that does not exist — each refused
+with the sentence that says which line said what, because a score that plays half of what it
+says is worse than one that refuses to play at all. `--render-scores <dir>` writes every
+leitmotiv and fill of every faction as a WAV, through the same sequencer the game will play;
+`tools/probe` has no music verb yet — the report is the review.
+
+Still to come on top of the engine: the **cue ladder** the director reads (outcome, a mission
+trigger's pin, and the live combat/alert/calm rungs with hysteresis), the transition fills
+between leitmotivs, and the `music` trigger action that lets a mission score its own sections.
+
 ## 4. Limits on what a faction can field
 
 Two constraints, both asked for, and they interact — worth designing together rather than

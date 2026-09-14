@@ -65,7 +65,82 @@ public static class AudioExporter
         string text = report.ToString();
         File.WriteAllText(Path.Combine(AppContext.BaseDirectory, ReportName), text);
 
-        if (AttachConsole(-1))
+        // Attaching to the parent console is a Windows courtesy; on Linux the process is
+        // already attached, and asking kernel32 about it would end the export with an
+        // exception after every file was written.
+        if (OperatingSystem.IsWindows() && AttachConsole(-1))
+        {
+            Console.WriteLine();
+            Console.Write(text);
+        }
+
+        return 0;
+    }
+
+    /// <summary>Writes one WAV per leitmotiv and fill of every faction's score.</summary>
+    public static int RunScores(string directory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+
+        Directory.CreateDirectory(directory);
+
+        StringBuilder report = new();
+        report.AppendLine("MiVic score report");
+        report.AppendLine("==================");
+        report.AppendLine($"sample rate          : {SoundBank.SampleRate} Hz, mono 16-bit");
+
+                string[] factions = ["soviet", "chinese", "western"];
+
+        foreach (string faction in factions)
+        {
+            Score score = Score.Load(Score.PathFor(faction));
+
+            report.AppendLine();
+            report.AppendLine($"  {faction} — {score.Tempo} bpm, root {score.Root}, {score.Grid} βήματα/μέτρο");
+
+            foreach (Leitmotiv leitmotiv in score.Leitmotivs)
+            {
+                short[] pcm = Sequencer.RenderLeitmotiv(score, leitmotiv);
+                string name = $"{faction}-{leitmotiv.Name}.wav";
+                string path = Path.Combine(directory, name);
+
+                WavWriter.Write(path, pcm, SoundBank.SampleRate);
+
+                int peak = 0;
+                double sumSquares = 0d;
+
+                foreach (short sample in pcm)
+                {
+                    peak = Math.Max(peak, Math.Abs((int)sample));
+                    sumSquares += (double)sample * sample;
+                }
+
+                double rms = Math.Sqrt(sumSquares / Math.Max(1, pcm.Length));
+
+                report.AppendLine(
+                    $"    {name,-28} {pcm.Length / (double)SoundBank.SampleRate:0.00} s " +
+                    $"({leitmotiv.Bars} μέτρα)  peak {peak / 32767d:P0}  rms {rms:0}");
+            }
+
+            foreach (ScoreFill fill in score.Fills)
+            {
+                short[] pcm = Sequencer.RenderFill(score, fill);
+                string name = $"{faction}-fill-{fill.Name}.wav";
+
+                WavWriter.Write(Path.Combine(directory, name), pcm, SoundBank.SampleRate);
+
+                report.AppendLine(
+                    $"    {name,-28} {pcm.Length / (double)SoundBank.SampleRate:0.00} s (γέμισμα)");
+            }
+        }
+
+        string text = report.ToString();
+        File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "score-report.txt"), text);
+
+        // Attaching to the parent console is a Windows courtesy; on Linux the process is
+        // already attached, and asking kernel32 about it would end the export with an
+        // exception after every file was written.
+        if (OperatingSystem.IsWindows() && AttachConsole(-1))
         {
             Console.WriteLine();
             Console.Write(text);
@@ -119,7 +194,10 @@ public static class AudioExporter
         string text = report.ToString();
         File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "sfx-report.txt"), text);
 
-        if (AttachConsole(-1))
+        // Attaching to the parent console is a Windows courtesy; on Linux the process is
+        // already attached, and asking kernel32 about it would end the export with an
+        // exception after every file was written.
+        if (OperatingSystem.IsWindows() && AttachConsole(-1))
         {
             Console.WriteLine();
             Console.Write(text);
