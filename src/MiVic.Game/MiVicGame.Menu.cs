@@ -190,6 +190,11 @@ public partial class MiVicGame
         {
             _audio?.Stop();
             (_scoreDirector ??= new ScoreDirector()).Play(StyleOf(bridge.World.FactionOfTeam(PlayerTeam)));
+
+            // The cue ledger belongs to the match it was raised in, and so does the reading of
+            // it: a stale index from the last match would skip this one's first cues.
+            _musicCuesRead = 0;
+            _pinned = null;
         }
     }
 

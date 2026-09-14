@@ -50,7 +50,6 @@ public sealed class ScoreDirector : IDisposable
     private readonly List<SoundEffectInstance> _retired = [];
 
     private SoundEffectInstance? _current;
-    private SoundEffectInstance? _fill;
     private Score? _score;
     private FactionStyle? _style;
 
@@ -296,9 +295,6 @@ public sealed class ScoreDirector : IDisposable
         _current?.Stop();
         _current?.Dispose();
         _current = null;
-        _fill?.Stop();
-        _fill?.Dispose();
-        _fill = null;
         _style = null;
         _score = null;
         _currentLeitmotiv = null;
