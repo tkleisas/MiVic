@@ -997,6 +997,23 @@ The probe gained the vocabulary: `save <name>`, `restore <name>`, `rewind <tick>
 `checkpoints`, each with its own check, and `tools/probe/checkpoints.probe` is the transcript of
 the round trip.
 
+**Built: the soundtrack is bit-music.** The soundtrack is a **bytebeat** composition now: a
+counter <c>t</c> advanced one step per sample at the composition's own 8 kHz, three voices OR-ed
+from the counter — a melody that is a scale slot multiplied by <c>t</c> and masked, a second voice
+windowed by <c>t</c>'s upper bits, and the bass that is <c>t</c>'s lower half read aloud. The
+composition is written in the faction's own scale: the Σοβιετικοί in a harmonic-minor subset, the
+Κινέζοι in the major pentatonic the user's own chain («τσίνα γουίντοους») was written in, the
+Δυτικοί in the blues. The additive constants and the shifts are jittered from the seed within
+ranges the compositions are calibrated for, so every play composes a different theme in the same
+idiom.
+
+The render length is a whole multiple of the composition's **macro-period** — five melodic slots
+across the largest shift's sweep — so the loop the soundtrack plays is the composition's own
+boundary rather than an arbitrary cut. And the sound is corrected in the 8-bit domain where it
+belongs: the OR of three unsigned voices leans upward, and a soundtrack with a DC lean is a
+speaker pushed permanently out of its centre — the lean removed first, then the wave stretched by
+what the corrected range spans.
+
 ## Also outstanding, from the art and rendering work
 
 Not on the list above, but open:

@@ -13,8 +13,9 @@ namespace MiVic.Game.Audio;
 /// </summary>
 public static class AudioExporter
 {
-    /// <summary>Length of each exported theme, in seconds.</summary>
-    public const double ThemeSeconds = 30d;
+    /// <summary>Length of each exported theme, in seconds. The bytebeat's own loop
+    /// length is 30.72 seconds (327 680 samples at 8 kHz), rounded in the report.</summary>
+    public const double ThemeSeconds = 30.72d;
 
     /// <summary>File the report is written to, next to the executable.</summary>
     public const string ReportName = "audio-report.txt";
@@ -29,16 +30,16 @@ public static class AudioExporter
         StringBuilder report = new();
         report.AppendLine("MiVic audio report");
         report.AppendLine("==================");
-        report.AppendLine($"sample rate          : {MusicGenerator.SampleRate} Hz, mono 16-bit");
-        report.AppendLine($"theme length         : {ThemeSeconds:0} s");
+        report.AppendLine($"sample rate          : {Bytebeat.SampleRate} Hz, mono 16-bit");
+        report.AppendLine($"theme length         : {ThemeSeconds:0.##} s");
 
         foreach (FactionStyle style in Enum.GetValues<FactionStyle>())
         {
-            short[] pcm = MusicGenerator.GeneratePcm16(style, seed, ThemeSeconds, out MusicInfo info);
+            short[] pcm = Bytebeat.GeneratePcm16(style, seed, out BytebeatInfo info);
             string name = $"{style.ToString().ToLowerInvariant()}.wav";
             string path = Path.Combine(directory, name);
 
-            WavWriter.Write(path, pcm, MusicGenerator.SampleRate);
+            WavWriter.Write(path, pcm, Bytebeat.SampleRate);
 
             int peak = 0;
             double sumSquares = 0d;
@@ -54,10 +55,9 @@ public static class AudioExporter
             report.AppendLine();
             report.AppendLine($"  {name}");
             report.AppendLine($"    idiom            : {Describe(style)}");
-            report.AppendLine($"    scale            : {info.Scale} (root MIDI {info.RootNote})");
-            report.AppendLine($"    tempo            : {info.BeatsPerMinute} BPM");
-            report.AppendLine($"    notes            : {info.NoteCount}");
-            report.AppendLine($"    samples          : {pcm.Length} ({pcm.Length / (double)MusicGenerator.SampleRate:0.0} s)");
+            report.AppendLine($"    scale            : {info.Scale}");
+            report.AppendLine($"    counter rate     : {info.SampleRate} Hz, macro period {info.MacroPeriod} samples");
+            report.AppendLine($"    samples          : {pcm.Length} ({pcm.Length / (double)Bytebeat.SampleRate:0.0} s)");
             report.AppendLine($"    peak             : {peak} / 32767 ({peak / 32767d:P0})");
             report.AppendLine($"    rms              : {rms:0}");
         }

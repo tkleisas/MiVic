@@ -27,8 +27,6 @@ public sealed class AudioDirector : IDisposable
     }
 
     /// <summary>Length of a generated theme, in seconds.</summary>
-    public const double ThemeSeconds = 30d;
-
     /// <summary>True when the soundtrack is muted.</summary>
     public bool IsMuted { get; private set; }
 
@@ -58,12 +56,12 @@ public sealed class AudioDirector : IDisposable
         {
             if (!_effects.TryGetValue(style, out SoundEffect? effect))
             {
-                short[] pcm = MusicGenerator.GeneratePcm16(style, _seed, ThemeSeconds, out _);
+                short[] pcm = Bytebeat.GeneratePcm16(style, _seed, out _);
 
                 byte[] bytes = new byte[pcm.Length * sizeof(short)];
                 Buffer.BlockCopy(pcm, 0, bytes, 0, bytes.Length);
 
-                effect = new SoundEffect(bytes, MusicGenerator.SampleRate, AudioChannels.Mono);
+                effect = new SoundEffect(bytes, Bytebeat.SampleRate, AudioChannels.Mono);
                 _effects[style] = effect;
             }
 

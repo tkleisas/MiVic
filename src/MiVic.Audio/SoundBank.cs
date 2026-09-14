@@ -50,7 +50,9 @@ public enum SoundEffectKind : byte
 public static class SoundBank
 {
     /// <summary>Sample rate of generated effects.</summary>
-    public const int SampleRate = MusicGenerator.SampleRate;
+    // The sound bank's own rate: 22 kHz, the era's sample rate, kept independently of the
+// soundtrack — the soundtrack is bit-music now and runs at its own 8 kHz.
+public const int SampleRate = 22050;
 
     /// <summary>Renders one effect as a mono float buffer in [-1, 1].</summary>
     public static float[] Generate(SoundEffectKind kind, ulong seed)
