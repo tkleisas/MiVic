@@ -191,6 +191,13 @@ somebody reads past. No mission the campaign ships trips either half, which is t
 and also the reason its refusals need a fixture to be seen at all: see
 `tools/probe/objectives.probe` below.
 
+**And the script can score the music now.** A trigger's action list carries `music <leitmotiv>`
+and `music release` — the cue is raised through the world with the tick it was raised on, like a
+message, so the trigger tests in `MiVic.Core.Tests` pin the ledger the same way they pin the
+flags: one cue at the tick the ambush springs, one release, and no cue every tick the condition
+still holds. The mission panel lists both actions, and the validator refuses a pin that names
+nothing — an empty pin is the release written the wrong way.
+
 **Two facts about an objective's own clock need no world, and they are asked beside the ones that do.**
 A `SurviveTicks` or a `ProtectCommandCentre` is completed by *reaching its deadline* and by nothing
 else, so one that is not a constraint and has no deadline can never be satisfied: a mission that

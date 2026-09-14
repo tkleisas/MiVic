@@ -4,6 +4,7 @@ using MiVic.Audio;
 using MiVic.Core.Campaign;
 using MiVic.Core.Replay;
 using MiVic.Core.Sim;
+using MiVic.Game.Audio;
 using MiVic.Game.Data;
 using MiVic.Game.Sim;
 using MiVic.Game.Ui;
@@ -181,13 +182,14 @@ public partial class MiVicGame
             _camera!.FocusOn(new Vector3(centre.X, 0f, centre.Z));
         }
 
-        // The theme belongs to the match, not to the process: a menu session with no
-        // battle playing has no soundtrack, and starting one starts its own. The player
-        // is the Σοβιετικοί in every match this front end can hand over, and the theme
-        // follows them.
-        if (!_options.NoAudio && _audio is not null)
+        // The score belongs to the match, not to the process: a menu session with no
+        // battle playing has no score, and starting one starts its own. The bytebeat that
+        // sat behind the menu is stopped for it — the front end's texture and the match's
+        // arrangement are different instruments, and the match has the say while it plays.
+        if (!_options.NoAudio)
         {
-            _audio.Play(FactionStyle.Soviet);
+            _audio?.Stop();
+            (_scoreDirector ??= new ScoreDirector()).Play(StyleOf(bridge.World.FactionOfTeam(PlayerTeam)));
         }
     }
 
@@ -265,7 +267,10 @@ public partial class MiVicGame
             {
                 _paused = false;
                 _screen = GameScreen.Menu;
-                _audio?.Stop();
+                _scoreDirector?.Stop();
+                _musicCuesRead = 0;
+                _pinned = null;
+                _audio?.Play(FactionStyle.Soviet);
             }
 
             if (ImGui.Button("Έξοδος", new Vector2(-1f, 0f)))

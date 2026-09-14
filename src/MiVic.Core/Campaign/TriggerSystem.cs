@@ -198,6 +198,14 @@ public static class TriggerSystem
                 world.SetTeamSide(action.Team, action.Side, out _);
                 break;
 
+            case TriggerActionKind.Music:
+                world.RaiseMusicCue(action.Leitmotiv);
+                break;
+
+            case TriggerActionKind.MusicRelease:
+                world.RaiseMusicCue(string.Empty);
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action.Kind, "Unknown trigger action.");
         }
@@ -502,6 +510,15 @@ public static class TriggerSystem
                 if (namesATeam && !mission.Roster.IsInPlay(action.Team))
                 {
                     problems.Add($"{at} names team {action.Team}, which this mission's match does not declare: the action would do nothing.");
+                }
+
+                // The score's own word, carried by the action: a pin that names nothing is a
+                // cue that says nothing, and the ladder it would hand the music back to is the
+                // same ladder an empty pin hands it to — so the empty pin is the release
+                // written the wrong way.
+                if (action.Kind == TriggerActionKind.Music && string.IsNullOrWhiteSpace(action.Leitmotiv))
+                {
+                    problems.Add($"{at} pins no leitmotiv: the music action carries the leitmotiv's name, from the acting team's faction's score.");
                 }
 
                 switch (action.Kind)

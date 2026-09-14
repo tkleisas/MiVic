@@ -148,9 +148,25 @@ says is worse than one that refuses to play at all. `--render-scores <dir>` writ
 leitmotiv and fill of every faction as a WAV, through the same sequencer the game will play;
 `tools/probe` has no music verb yet — the report is the review.
 
-Still to come on top of the engine: the **cue ladder** the director reads (outcome, a mission
-trigger's pin, and the live combat/alert/calm rungs with hysteresis), the transition fills
-between leitmotivs, and the `music` trigger action that lets a mission score its own sections.
+**Built: the score answers the match.** The director reads a ladder, and the ladder has three
+voices in it. The **outcome** is the one cue that cannot be demoted: a decided battle's music is
+the score's last word, and the ladder yields to it forever after. A **mission trigger** — the
+`music` action, one leitmotiv, carried as a cue with the tick it was raised on — pins the score:
+the mission scores its own sections, and the pin holds until the next trigger or the release,
+because the mission author decides tempo and the ladder only fills silence. The **live rungs**
+fill the silence: `combat` while the player's own side is firing or being fired on, `alert` while
+their own structures take hits, `calm` otherwise — read off the same event stream the effects
+drain, own-side facts only, because a rung that listened to shots the player cannot see would
+leak the fog of war through the soundtrack. Hysteresis keeps the rungs from chattering: a higher
+rung must hold two bars before the music climbs, a lower one four before it comes down.
+
+The switch is musical, and it is scheduled: a change waits for the current bar's edge, plays the
+fill the score names for the pair (`to-battle`, `to-march` — with a direct switch when the pair
+has none), and enters the next leitmotiv on its first bar. The bytebeat keeps the front end — a
+menu wants a texture, not an arrangement — and the editor keeps it too: a texture to work over,
+not a ladder nothing is climbing. The mission panel's action list carries the music action; the
+`music` cue is a fact of the tick, raised through the world like a message, so a replay replays
+the same film.
 
 ## 4. Limits on what a faction can field
 

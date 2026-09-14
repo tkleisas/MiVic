@@ -129,7 +129,57 @@ public sealed partial class MiVicGame : XnaGame
     private ParticleSystem? _particles;
     private ProjectileSystem? _projectiles;
     private AudioDirector? _audio;
+    private ScoreDirector? _scoreDirector;
     private SfxDirector? _sfx;
+
+    /// <summary>
+    /// The music's own ear. The events the effects drain are the same ones the score's ladder
+    /// listens through: a shot the player's own side fired, or a hit one of its units took,
+    /// raises combat for a moment; a hit one of its structures took raises alert for longer.
+    /// <see cref="UpdateParticles"/> counts them; the rung is what the windows say now.
+    /// </summary>
+    private double _battleSeconds;
+    private double _combatUntil;
+    private double _alertUntil;
+
+    /// <summary>How long a firefight keeps the ladder at combat, in seconds of battle time.</summary>
+    private const double CombatWindowSeconds = 1.6d;
+
+    /// <summary>How long a structure hit keeps the ladder at alert — the rung the score's own hysteresis smooths.</summary>
+    private const double AlertWindowSeconds = 10d;
+
+    /// <summary>The index in the world's cue list the client has already read.</summary>
+    private int _musicCuesRead;
+
+    /// <summary>
+    /// The leitmotiv the mission's script has pinned, or null when the ladder is free. The
+    /// cues arrive as facts of the tick — a trigger's action raised them — so the drain reads
+    /// everything not yet read and the newest line wins.
+    /// </summary>
+    private string? PinnedLeitmotiv
+    {
+        get
+        {
+            if (_simulation is null)
+            {
+                return _pinned;
+            }
+
+            IReadOnlyList<MissionMessage> cues = _simulation.World.MusicCues;
+
+            for (int i = _musicCuesRead; i < cues.Count; i++)
+            {
+                _pinned = cues[i].GreekText.Length > 0 ? cues[i].GreekText : null;
+            }
+
+            _musicCuesRead = cues.Count;
+
+            return _pinned;
+        }
+    }
+
+    private string? _pinned;
+
     private float[] _smokeTimers = [];
     private RenderTarget2D? _screenshotTarget;
     private SpriteFont? _uiFont;
@@ -879,7 +929,19 @@ public sealed partial class MiVicGame : XnaGame
         if (!_options.NoAudio && !_options.IsSelfTest && _options.ScreenshotPath is null &&
             !_options.IsProbe && !_options.Menu)
         {
-            _audio.Play(FactionStyle.Soviet);
+            if (_options.Editor)
+            {
+                // The authoring screen keeps the bytebeat: a texture to work over, not an
+                // arrangement that answers to a ladder nothing is climbing.
+                _audio.Play(FactionStyle.Soviet);
+            }
+            else
+            {
+                // A match the process was launched into plays its score: the pattern engine,
+                // at the calm rung, until the ladder says otherwise.
+                _scoreDirector = new ScoreDirector();
+                _scoreDirector.Play(StyleOf(_simulation!.World.FactionOfTeam(PlayerTeam)));
+            }
         }
 
         // Recording has to start before the first tick, otherwise the wander
@@ -1035,10 +1097,11 @@ public sealed partial class MiVicGame : XnaGame
         if (Pressed(keyboard, Keys.M))
         {
             _audio?.ToggleMute();
+            _scoreDirector?.ToggleMute();
 
             if (_sfx is not null)
             {
-                _sfx.IsMuted = _audio?.IsMuted ?? false;
+                _sfx.IsMuted = (_audio?.IsMuted ?? false) || (_scoreDirector?.IsMuted ?? false);
             }
         }
 
@@ -1177,6 +1240,23 @@ public sealed partial class MiVicGame : XnaGame
         // top of the frame instead — a script has to be able to read it — and this is the half
         // that has to happen before the HUD is drawn.
         UpdateCoverageRing();
+
+        // The score answers the frame's own state: the rung the windows say, the outcome the
+        // victory system has decided, and whatever a mission trigger has pinned. The director
+        // schedules its switches on bar edges, so the answer is a request, not a cut.
+        if (_scoreDirector is not null)
+        {
+            ScoreRung rung = _battleSeconds < _combatUntil
+                ? ScoreRung.Combat
+                : _battleSeconds < _alertUntil
+                    ? ScoreRung.Alert
+                    : ScoreRung.Calm;
+
+            _scoreDirector.Update((float)gameTime.ElapsedGameTime.TotalSeconds, new ScoreCue(
+                _simulation!.World.Outcome,
+                rung,
+                PinnedLeitmotiv));
+        }
 
         _previousScrollWheel = mouse.ScrollWheelValue;
         _previousKeyboard = keyboard;
@@ -3884,6 +3964,14 @@ public sealed partial class MiVicGame : XnaGame
     private static bool IsBuilding(UnitKind kind)
         => kind is UnitKind.CommandCentre or UnitKind.PowerPlant or UnitKind.Factory or UnitKind.DesignBureau;
 
+    /// <summary>The score a faction plays: the files are named for the factions that write them.</summary>
+    private static FactionStyle StyleOf(Faction faction) => faction switch
+    {
+        Faction.Chinese => FactionStyle.Chinese,
+        Faction.Western => FactionStyle.Western,
+        _ => FactionStyle.Soviet,
+    };
+
     /// <summary>
     /// Turns a HUD button press into a simulation command.
     /// <para>
@@ -5266,6 +5354,7 @@ public sealed partial class MiVicGame : XnaGame
         SimWorld world = _simulation.World;
         Vector3 listener = _camera!.Target;
         _sfx?.BeginFrame();
+        _battleSeconds += elapsedSeconds;
 
         if (_sfx is not null)
         {
@@ -5289,6 +5378,31 @@ public sealed partial class MiVicGame : XnaGame
             if (!visible)
             {
                 continue;
+            }
+
+            // The ladder's ear, asked of the same drain the effects read. Own-side facts only:
+            // a shot at somebody the player cannot see is an information leak through music if
+            // the rung listens to it, so the window counts only what the player's own side does
+            // and takes. Everything here is known to the player by definition.
+            if (simEvent.TeamId == PlayerTeam)
+            {
+                switch (simEvent.Type)
+                {
+                    case SimEventType.ShotFired:
+                        _combatUntil = _battleSeconds + CombatWindowSeconds;
+                        break;
+
+                    case SimEventType.UnitHit when simEvent.Kind == UnitKind.CommandCentre ||
+                        simEvent.Kind == UnitKind.PowerPlant ||
+                        simEvent.Kind == UnitKind.Factory ||
+                        simEvent.Kind == UnitKind.DesignBureau:
+                        _alertUntil = _battleSeconds + AlertWindowSeconds;
+                        break;
+
+                    case SimEventType.UnitHit:
+                        _combatUntil = _battleSeconds + CombatWindowSeconds;
+                        break;
+                }
             }
 
             if (simEvent.Type == SimEventType.ShotFired)

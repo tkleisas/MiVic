@@ -31,6 +31,62 @@ public sealed class TriggerTests
     /// no time limit can end: a test about a trigger must not have the mission deciding its own
     /// outcome in the middle of it.
     /// </summary>
+
+    /// <summary>
+    /// <b>The action that scores a mission.</b> A trigger pins a leitmotiv, the cue arrives with
+    /// the tick it was raised on, and a later release hands the music back — and a pin that
+    /// names nothing is refused by the validator, because a cue that says nothing is the
+    /// release written the wrong way.
+    /// </summary>
+    [Fact]
+    public void ATriggerCanScoreTheMusic()
+    {
+        SimWorld world = Scripted(
+            new TriggerDefinition(
+                "the-ambush-springs",
+                new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 30),
+                [new TriggerAction(TriggerActionKind.Music, Leitmotiv: "battle")],
+                Note: "the demonstration: the score takes the battle theme"),
+            new TriggerDefinition(
+                "the-ambush-survived",
+                new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 90),
+                [new TriggerAction(TriggerActionKind.MusicRelease)],
+                Note: "the demonstration: the ladder takes it back"));
+
+        Assert.Empty(world.MusicCues);
+
+        world.RunTicks(31);
+
+        Assert.Single(world.MusicCues);
+        Assert.Equal("battle", world.MusicCues[0].GreekText);
+        Assert.Equal(30, world.MusicCues[0].Tick);
+
+        world.RunTicks(60);
+
+        Assert.Equal(2, world.MusicCues.Count);
+        Assert.Equal(string.Empty, world.MusicCues[1].GreekText);
+
+        // A trigger fires at most once: the score takes the theme once, and the release is
+        // one release, not a release every tick the condition still holds.
+        world.RunTicks(10);
+
+        Assert.Equal(2, world.MusicCues.Count);
+    }
+
+    [Fact]
+    public void APinThatNamesNothingIsRefused()
+    {
+        MissionDefinition mission = ScriptedMission(new TriggerDefinition(
+            "nameless",
+            new TriggerCondition(TriggerConditionKind.TimeElapsed, Tick: 10),
+            [new TriggerAction(TriggerActionKind.Music, Leitmotiv: "")],
+            DependsOnOpeningWorld: false));
+
+        IReadOnlyList<string> problems = TriggerSystem.Validate(mission);
+
+        Assert.Contains(problems, problem => problem.Contains("δεν καλεί") || problem.Contains("pins no leitmotiv"));
+    }
+
     private static SimWorld Scripted(params TriggerDefinition[] triggers)
         => Build(MissionCatalog.Require("m1_bridgehead") with
         {

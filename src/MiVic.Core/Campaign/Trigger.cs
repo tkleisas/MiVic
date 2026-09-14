@@ -113,6 +113,18 @@ public enum TriggerActionKind : byte
     /// </para>
     /// </summary>
     ChangeSide = 7,
+
+    /// <summary>
+    /// Pin the score's leitmotiv <see cref="TriggerAction.Leitmotiv"/>, until the next
+    /// <see cref="TriggerActionKind.Music"/> or <see cref="TriggerActionKind.MusicRelease"/>
+    /// changes it. The mission scoring its own sections: the march at the briefing, the battle
+    /// theme when the ambush springs — the music answers the mission's writing instead of the
+    /// ladder's guess.
+    /// </summary>
+    Music = 8,
+
+    /// <summary>Hand the music back to the live ladder: the pin ends, the rungs speak again.</summary>
+    MusicRelease = 9,
 }
 
 /// <summary>What a group order asks for.</summary>
@@ -189,7 +201,13 @@ public readonly record struct TriggerCondition(
 /// Index into <see cref="MissionDefinition.Objectives"/>, for
 /// <see cref="TriggerActionKind.CompleteObjective"/>.
 /// </param>
-/// <param name="Side">The side a team is moved to, for <see cref="TriggerActionKind.ChangeSide"/>.</param>
+    /// <param name="Side">The side a team is moved to, for <see cref="TriggerActionKind.ChangeSide"/>.</param>
+    /// <param name="Leitmotiv">
+    /// Which leitmotiv the score takes, for <see cref="TriggerActionKind.Music"/>. A name from
+    /// the acting team's faction's score file; a name the score does not carry is a mission the
+    /// editor refuses to save, and a name the playing director does not know is ignored in
+    /// favour of the ladder.
+    /// </param>
 public readonly record struct TriggerAction(
     TriggerActionKind Kind,
     int Team = 0,
@@ -208,7 +226,8 @@ public readonly record struct TriggerAction(
     string GreekText = "",
     int Flag = 0,
     int Objective = 0,
-    int Side = 0);
+    int Side = 0,
+    string Leitmotiv = "");
 
 /// <summary>
 /// One line of a mission's script: a condition, the actions it carries out, and the note that

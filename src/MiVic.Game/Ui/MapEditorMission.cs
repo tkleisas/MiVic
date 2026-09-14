@@ -566,6 +566,16 @@ public sealed partial class MapEditor
                     Commit(ActionAt(i, a, action with { Side = newSide }), relayout: false);
                 }
 
+                if (action.Kind == TriggerActionKind.Music)
+                {
+                    string leitmotiv = action.Leitmotiv;
+
+                    if (InputText("Θέμα", ref leitmotiv, 40))
+                    {
+                        Commit(ActionAt(i, a, action with { Leitmotiv = leitmotiv.Trim() }), relayout: false);
+                    }
+                }
+
                 if (ImGui.SmallButton("Διαγραφή"))
                 {
                     var actions = trigger.Actions.ToList();
@@ -742,6 +752,8 @@ public sealed partial class MapEditor
         TriggerActionKind.OrderGroup => "Διαταγή",
         TriggerActionKind.CompleteObjective => "Ολοκλήρωση",
         TriggerActionKind.ChangeSide => "Αλλαγή πλευράς",
+        TriggerActionKind.Music => "Μουσική",
+        TriggerActionKind.MusicRelease => "Μουσική: ελεύθερη",
         _ => kind.ToString(),
     };
 }

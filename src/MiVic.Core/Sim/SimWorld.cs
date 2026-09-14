@@ -30,6 +30,7 @@ public sealed class SimWorld
     private readonly List<SimCommand> _commandQueue = new();
     private readonly List<SimCommandRecord> _recordedCommands = [];
     private readonly List<MissionMessage> _missionMessages = [];
+    private readonly List<MissionMessage> _musicCues = [];
     private readonly int[] _teamSides;
     private ObjectiveState[] _objectives = [];
     private TriggerState[] _triggers = [];
@@ -306,6 +307,29 @@ public sealed class SimWorld
 
         _missionMessages.Add(new MissionMessage(Tick, greekText));
     }
+
+    /// <summary>
+    /// Records a music cue a mission trigger raised: the leitmotiv the score takes, or the
+    /// empty string for the release that hands the music back to the ladder. Called by
+    /// <see cref="TriggerSystem"/>.
+    /// <para>
+    /// The cue is a fact of the tick, not of the frame: the client reads the list and pins
+    /// whatever the newest line says, so a replay re-raises the same cues on the same ticks
+    /// and the soundtrack follows the same match twice.
+    /// </para>
+    /// </summary>
+    internal void RaiseMusicCue(string leitmotiv)
+    {
+        if (_musicCues.Count >= MaxMissionMessages)
+        {
+            _musicCues.RemoveAt(0);
+        }
+
+        _musicCues.Add(new MissionMessage(Tick, leitmotiv));
+    }
+
+    /// <summary>The music cues the script has raised, oldest first, with the tick each arrived on.</summary>
+    public IReadOnlyList<MissionMessage> MusicCues => _musicCues;
 
     /// <summary>
     /// Attaches a mission and resets its objective state. Called once, when the
