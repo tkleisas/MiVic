@@ -103,6 +103,21 @@ focus -257 -210 4
 settle
 shot artifacts/probe/bridge-close-away.png
 
+# And the point of the deck: whoever walks it walks ON it. A cell that carries a block answers
+# the height question with the deck — the water line plus the lift the model was built with —
+# and not with the basin metres the height field still holds under the water, which is what
+# sent every crossing to the lake bed: units walked the span metres under the opaque water
+# mesh, which reads as drowned. `unit` records the check any probe that meets a unit on deck
+# asks; the tank below spends ticks 90-odd of this order in the middle of the span.
+yaw 0.785
+order 102 move -258 -190
+tick 150
+order 102 move -258 -270
+tick 110
+unit 102
+tick 150
+unit 102
+
 yaw 0.785
 zoom 170
 pitch -0.90

@@ -1036,3 +1036,30 @@ Not on the list above, but open:
   where a call was put rather than a decision taken.
 - **The shoreline is a staircase.** The sea's edge follows the coarse terrain cells;
   meshing the water from the height field instead would give it a finer edge.
+
+**Built, since the list was written: the borders blend.** The surface colour used to be
+baked per vertex from the *exact* cell the vertex stood in, and the surface layer runs at
+navigation pitch — twice the mesh's vertex spacing — so every transition between two surfaces was
+an axis-aligned staircase at cell width: mud ending in a square cliff against grass, a shore that
+was a checker's edge. Now each vertex takes the four cells around it, each with its own slope and
+altitude treatment, blended with smoothstep weights over a ramp centred on the border — flat at a
+cell's centre, S-curved across the boundary, and the corner between four surfaces rounds diagonally
+instead of stepping square. The picture stopped being a picture of the lattice; the simulation still
+reads the exact cell, because the ground a unit walks is what the layer says and a colour is not a
+rule.
+
+**And the water follows the bed, not the band.** The liquid quads took their hue from the
+classified cell, so a lake's shallows were a pale plateau with lattice edges and the deck a span
+laid over deep water showed as a pale stripe under it. Water now shades by the bed's own depth at
+each quad corner — the classifier's deep-water threshold applied continuously — so the pale
+shallows hug the shore the way the terrain rises, and a corner of one quad is the same colour in
+the quad beside it, because they compute the same cells there. Lava has no depth to read and takes
+the same-liquid average instead.
+
+**Built: the deck carries whoever is on it.** A bridge cell was a ford to the pathfinder and a
+deck to the renderer, but its height-field sample is the basin floor metres under the water — so a
+unit ordered across walked the span metres beneath the opaque water mesh, out of sight, which reads
+as drowned. A cell with a block standing on it now answers the height question with the deck: the
+water line plus the lift the model was built with, the one number Core owns so the simulation and
+the mesh cannot drift apart. `tools/probe/bridge.probe` walks a tank across the span and records
+the check any probe that meets a unit on a bridge asks: the unit stands at deck height.

@@ -48,7 +48,100 @@ public static class TerrainMeshBuilder
     };
 
     /// <summary>
-    /// Builds a mesh from a height map, in metres.
+    /// One cell's hue with the vertex's own slope and altitude treatment applied: the
+    /// treatment is asked of the cell, the blend is asked of the picture.
+    /// </summary>
+    private static Color TreatedSurfaceColor(TerrainType type, float slopeFraction, float heightFraction)
+    {
+        Color color = SurfaceColor(type);
+
+        if (type is TerrainType.Grass or TerrainType.Rock)
+        {
+            color = Color.Lerp(color, Rock, Math.Clamp(slopeFraction * 1.15f, 0f, 1f));
+            color = Color.Lerp(color, Snow, Math.Clamp((heightFraction - 0.70f) / 0.30f, 0f, 1f));
+        }
+
+        return color;
+    }
+
+    /// <summary>
+    /// The hue a vertex takes: its four surrounding surface cells' own treated colours,
+    /// blended with smoothstep bilinear weights.
+    /// <para>
+    /// The weights come from the vertex's fractional position inside the cell it stands in,
+    /// run through smoothstep so the blend is flat at a cell's centre and steep across its
+    /// border — a ramp that keeps each cell reading as itself in the middle and hands the
+    /// transition over across the third of the cell nearest the edge. Without the curve the
+    /// blend is a linear smear that reaches every cell's centre and the surfaces stop
+    /// reading as fields at all.
+    /// </para>
+    /// <para>
+    /// Water is not blended away: a vertex that stands in a water cell flattens to the water
+    /// line as before, and its hue blends into the shore beside it — which is what a beach
+    /// is. A null layer (the pre-surface fallback) answers the plain grass.
+    /// </para>
+    /// </summary>
+    private static Color BlendedSurfaceColor(
+        TerrainLayer? terrain,
+        float fractionX,
+        float fractionZ,
+        int cellX,
+        int cellZ,
+        float slopeFraction,
+        float heightFraction)
+    {
+        if (terrain is null)
+        {
+            return TreatedSurfaceColor(TerrainType.Grass, slopeFraction, heightFraction);
+        }
+
+        int nextX = Math.Min(cellX + 1, terrain.Size - 1);
+        int nextZ = Math.Min(cellZ + 1, terrain.Size - 1);
+
+        // The ramp is centred on the border between the cells, and the smoothstep curve
+        // gives it flat shoulders: a vertex in the leading half of its cell takes its own
+        // cell's colour pure, the transition happens across the quarter either side of the
+        // border, and the corner between four cells rounds diagonally instead of stepping
+        // square. Run through plain and the blend is a linear smear that reaches every
+        // cell's centre, and the surfaces stop reading as fields.
+        const float RampHalfWidth = 0.25f;
+        float weightX = Smoothstep((fractionX - (0.5f - RampHalfWidth)) / (2f * RampHalfWidth));
+        float weightZ = Smoothstep((fractionZ - (0.5f - RampHalfWidth)) / (2f * RampHalfWidth));
+
+        Color xz = TreatedSurfaceColor(terrain.TypeAtCell(cellX, cellZ), slopeFraction, heightFraction);
+        Color x1z = TreatedSurfaceColor(terrain.TypeAtCell(nextX, cellZ), slopeFraction, heightFraction);
+        Color xz1 = TreatedSurfaceColor(terrain.TypeAtCell(cellX, nextZ), slopeFraction, heightFraction);
+        Color x1z1 = TreatedSurfaceColor(terrain.TypeAtCell(nextX, nextZ), slopeFraction, heightFraction);
+
+        Color xRow = Color.Lerp(xz, x1z, weightX);
+        Color nextRow = Color.Lerp(xz1, x1z1, weightX);
+
+        return Color.Lerp(xRow, nextRow, weightZ);
+    }
+
+    /// <summary>
+    /// The water's hue at one corner, read off the bed the corner stands over: shallows at
+    /// the water line, the deep blue at the classifier's own depth threshold, and a linear
+    /// hand-over between the two. The height field is smooth, so the contour the gradient
+    /// follows is the bed's — the same reason the lake's edge against the land is organic
+    /// while the band's inner edge was a lattice line.
+    /// </summary>
+    private static Color WaterColorByDepth(HeightMap map, TerrainLayer terrain, int worldX, int worldZ)
+    {
+        int depth = Math.Max(0, terrain.WaterLevelMm - map.SampleHeightMm(worldX, worldZ));
+        float weight = Math.Clamp(depth / (float)TerrainLayer.DeepWaterDepthMm, 0f, 1f);
+
+        return Color.Lerp(SurfaceColor(TerrainType.ShallowWater), SurfaceColor(TerrainType.DeepWater), weight);
+    }
+
+    /// <summary>Hermite's smoothstep, clamped: the S-curve the ramp is drawn with.</summary>
+    private static float Smoothstep(float t)
+    {
+        float clamped = Math.Clamp(t, 0f, 1f);
+
+        return (clamped * clamped) * (3f - (2f * clamped));
+    }
+
     /// <summary>
     /// Builds the two animated liquid surfaces: water and lava.
     /// <para>
@@ -115,12 +208,39 @@ public static class TerrainMeshBuilder
                 float x0 = (terrain.OriginMm + (x * terrain.CellSizeMm)) / (float)WorldPos.MmPerMetre;
                 float z0 = (terrain.OriginMm + (z * terrain.CellSizeMm)) / (float)WorldPos.MmPerMetre;
 
-                Color color = SurfaceColor(surface);
+                // The quad's corners take the blended hue at their own lattice corner, so
+                // two quads that share a corner agree about the colour there. Water takes
+                // its hue from the bed's own depth at the corner — the classifier's
+                // threshold, applied continuously — so the pale shallows follow the
+                // terrain's contours instead of the band's edges, and the deck a span lays
+                // over deep water stops reading as a pale stripe under it. Lava has no
+                // depth to read, and takes the same-liquid average.
+                Color c00, c10, c11, c01;
+
+                int x0Mm = terrain.OriginMm + (x * terrain.CellSizeMm);
+                int z0Mm = terrain.OriginMm + (z * terrain.CellSizeMm);
+                int x1Mm = x0Mm + terrain.CellSizeMm;
+                int z1Mm = z0Mm + terrain.CellSizeMm;
+
+                if (isWater)
+                {
+                    c00 = WaterColorByDepth(map, terrain, x0Mm, z0Mm);
+                    c10 = WaterColorByDepth(map, terrain, x1Mm, z0Mm);
+                    c11 = WaterColorByDepth(map, terrain, x1Mm, z1Mm);
+                    c01 = WaterColorByDepth(map, terrain, x0Mm, z1Mm);
+                }
+                else
+                {
+                    c00 = LiquidCornerColor(terrain, x, z, surface);
+                    c10 = LiquidCornerColor(terrain, x + 1, z, surface);
+                    c11 = LiquidCornerColor(terrain, x + 1, z + 1, surface);
+                    c01 = LiquidCornerColor(terrain, x, z + 1, surface);
+                }
 
                 List<VertexPositionNormal> vertices = isWater ? waterVertices : lavaVertices;
                 List<ushort> indices = isWater ? waterIndices : lavaIndices;
 
-                AppendLiquidQuad(vertices, indices, x0, z0, cell, y, color);
+                AppendLiquidQuad(vertices, indices, x0, z0, cell, y, c00, c10, c11, c01);
             }
         }
 
@@ -143,6 +263,11 @@ public static class TerrainMeshBuilder
     /// exactly why a culled surface went unnoticed: what was missing was the movement, the
     /// grazing reflection and the sun glint, and a flat blue lake is not obviously wrong.
     /// </para>
+    /// <para>
+    /// The four colours are the blend at each corner, not one flat hue: one colour per quad
+    /// is what made every shallow patch a pale square with a hard edge, once the bed under
+    /// it began to blend.
+    /// </para>
     /// </summary>
     private static void AppendLiquidQuad(
         List<VertexPositionNormal> vertices,
@@ -151,14 +276,17 @@ public static class TerrainMeshBuilder
         float z0,
         float cell,
         float y,
-        Color color)
+        Color c00,
+        Color c10,
+        Color c11,
+        Color c01)
     {
         var index = (ushort)vertices.Count;
 
-        vertices.Add(new VertexPositionNormal(new Vector3(x0, y, z0), Vector3.Up, color));
-        vertices.Add(new VertexPositionNormal(new Vector3(x0 + cell, y, z0), Vector3.Up, color));
-        vertices.Add(new VertexPositionNormal(new Vector3(x0 + cell, y, z0 + cell), Vector3.Up, color));
-        vertices.Add(new VertexPositionNormal(new Vector3(x0, y, z0 + cell), Vector3.Up, color));
+        vertices.Add(new VertexPositionNormal(new Vector3(x0, y, z0), Vector3.Up, c00));
+        vertices.Add(new VertexPositionNormal(new Vector3(x0 + cell, y, z0), Vector3.Up, c10));
+        vertices.Add(new VertexPositionNormal(new Vector3(x0 + cell, y, z0 + cell), Vector3.Up, c11));
+        vertices.Add(new VertexPositionNormal(new Vector3(x0, y, z0 + cell), Vector3.Up, c01));
 
         indices.Add(index);
         indices.Add((ushort)(index + 2));
@@ -170,10 +298,84 @@ public static class TerrainMeshBuilder
     }
 
     /// <summary>
+    /// The blended hue at one lattice corner of the liquid mesh: the four cells that touch
+    /// the corner, averaged. A corner is the mid-point between four cell centres in the
+    /// blend's own parameterisation, so the weights are quarters — and because two quads
+    /// that share a corner compute the same four cells there, the colour is continuous
+    /// across the mesh and no seam can show.
+    /// </summary>
+    /// <summary>
+    /// The blended hue at one lattice corner of the liquid mesh: the liquid cells that
+    /// touch the corner, averaged. A corner is the mid-point between four cell centres in
+    /// the blend's own parameterisation, so the touching cells weigh equally — and because
+    /// two quads that share a corner compute the same set there, the colour is continuous
+    /// across the mesh and no seam can show.
+    /// <para>
+    /// Only cells of the quad's own liquid count: land hues averaged into a water corner
+    /// turned every shoreline milky, a pale wash that reads as fog rather than as shallows.
+    /// The beach the eye expects at a water's edge is the bed's own blend showing at the
+    /// places the liquid does not cover, not the water painted sand.
+    /// </para>
+    /// </summary>
+    private static Color LiquidCornerColor(TerrainLayer terrain, int cornerX, int cornerZ, TerrainType liquid)
+    {
+        int fromX = Math.Max(0, cornerX - 1);
+        int fromZ = Math.Max(0, cornerZ - 1);
+        int toX = Math.Min(cornerX, terrain.Size - 1);
+        int toZ = Math.Min(cornerZ, terrain.Size - 1);
+
+        int r = 0;
+        int g = 0;
+        int b = 0;
+        int count = 0;
+
+        for (int cz = fromZ; cz <= toZ; cz++)
+        {
+            for (int cx = fromX; cx <= toX; cx++)
+            {
+                TerrainType type = terrain.TypeAtCell(cx, cz);
+
+                bool sameLiquid = liquid == TerrainType.Lava
+                    ? type == TerrainType.Lava
+                    : type is TerrainType.ShallowWater or TerrainType.DeepWater;
+
+                if (!sameLiquid)
+                {
+                    continue;
+                }
+
+                Color color = SurfaceColor(type);
+                r += color.R;
+                g += color.G;
+                b += color.B;
+                count++;
+            }
+        }
+
+        if (count == 0)
+        {
+            return SurfaceColor(liquid);
+        }
+
+        return new Color(r / count, g / count, b / count);
+    }
+
+    /// <summary>
     /// A surface layer colours the ground and flattens water to the water line, so
     /// lakes read as lakes instead of as dark pits. Without one the mesh falls back
     /// to relief shading alone, which is what the terrain looked like before
     /// surfaces existed.
+    /// <para>
+    /// The surface hue is <b>blended, not taken</b>. Each vertex sits at a fractional
+    /// position inside the surface lattice — the layer runs at navigation pitch, twice
+    /// the mesh's vertex spacing — and the exact-cell read gave every transition an
+    /// axis-aligned staircase: mud ending in a square cliff against grass, a shore
+    /// that was a checker's edge. The four cells around a vertex are blended with
+    /// smoothstep weights instead, which turns each border into an S-curved ramp about
+    /// half a cell wide and lets the line between two surfaces bend diagonally
+    /// wherever the lattice allows it. The simulation still reads the exact cell — this
+    /// is a colour, and the ground a unit walks is what the layer says — but the picture
+    /// of it is no longer a picture of the lattice.
     /// </para>
     /// </summary>
     public static MeshData FromHeightMap(HeightMap map, TerrainLayer? terrain = null)
@@ -192,11 +394,13 @@ public static class TerrainMeshBuilder
                 int height = map.HeightAt(x, z);
                 TerrainType surface = TerrainType.Grass;
                 int terrainCell = -1;
+                int cellX = 0;
+                int cellZ = 0;
 
                 if (terrain is not null)
                 {
-                    int cellX = Math.Min(x / stride, terrain.Size - 1);
-                    int cellZ = Math.Min(z / stride, terrain.Size - 1);
+                    cellX = Math.Min(x / stride, terrain.Size - 1);
+                    cellZ = Math.Min(z / stride, terrain.Size - 1);
                     surface = terrain.TypeAtCell(cellX, cellZ);
                     terrainCell = (cellZ * terrain.Size) + cellX;
 
@@ -222,17 +426,20 @@ public static class TerrainMeshBuilder
                 float slopeFraction = Math.Clamp(map.SlopePermille(x, z) / 900f, 0f, 1f);
                 float heightFraction = height / (float)Math.Max(1, map.MaxHeightMm);
 
+                // The blended hue of the four cells around the vertex, weighted by the
+                // vertex's own fractional position inside the lattice.
+                Color color = BlendedSurfaceColor(
+                    terrain,
+                    stride <= 1 ? 0f : (x % stride) / (float)stride,
+                    stride <= 1 ? 0f : (z % stride) / (float)stride,
+                    cellX,
+                    cellZ,
+                    slopeFraction,
+                    heightFraction);
+
                 // The surface decides the hue; slope and altitude decide the shade,
                 // so the ground still reads as terrain rather than as flat colour
                 // swatches.
-                Color color = SurfaceColor(surface);
-
-                if (surface is TerrainType.Grass or TerrainType.Rock)
-                {
-                    color = Color.Lerp(color, Rock, Math.Clamp(slopeFraction * 1.15f, 0f, 1f));
-                    color = Color.Lerp(color, Snow, Math.Clamp((heightFraction - 0.70f) / 0.30f, 0f, 1f));
-                }
-
                 float shade = 1f - (slopeFraction * 0.22f);
 
                 color = new Color(

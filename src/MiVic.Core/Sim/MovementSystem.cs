@@ -263,6 +263,20 @@ public static class MovementSystem
     private static void SnapToTerrain(SimWorld world, ref Entity e)
     {
         int ground = world.Terrain.SampleHeightMm(e.Position.X, e.Position.Z);
+
+        // The deck carries whoever stands on it. A bridge cell is a ford to the pathfinder
+        // and a deck to the renderer, but its height field sample is the basin floor metres
+        // under the water — so a unit that walked onto a bridge sank out of sight under the
+        // opaque water mesh, which is exactly what "crossing the bridge drowned my column"
+        // looks like from the player's side. A cell with a block on it is ground at deck
+        // height: the water line plus the lift the model was built with.
+        int cell = world.Navigation.IndexOfWorld(e.Position);
+
+        if (cell >= 0 && world.Bridgeworks.BlockHealthAt(cell) > 0)
+        {
+            ground = world.Bridgeworks.DeckHeightMm(world.TerrainTypes);
+        }
+
         int targetY = ground + e.AltitudeMm;
 
         if (e.Position.Y != targetY)

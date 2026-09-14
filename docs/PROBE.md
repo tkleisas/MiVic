@@ -717,6 +717,37 @@ command that answers "is anything happening", and it exists because for a while 
 a crossing used to be a surface change applied in one tick, with no deck on screen and no
 progress anywhere.
 
+## Worked example: does the deck carry whoever walks it?
+
+The report was "I send units over the bridge and they vanish into the water and die", and the
+transcript settles whose fault it is in one reading. The deck was a fact of the renderer and of
+the pathfinder — the cell becomes a ford, the block is drawn above the water — but the height
+question still answered with the height field, and under a bridge that answer is the lake bed:
+
+```
+cmd: order 102 move -258 -270
+cmd: tick 110
+cmd: unit 102
+query:   position   (-261.1, 4.4, -204.9) m, cell 4,10 on ShallowWater (Νερό)
+check: PASS 'unit 102 stands at deck height' — cell carries a block of 200/200, the unit is at 4.4 m, the deck answers 4.4 m
+cmd: tick 150
+cmd: unit 102
+query:   position   (-257.8, 3.5, -264.6) m, cell 4,3 on Sand (Άμμος)
+```
+
+The tank walks the span at 4.4 m — the water line plus the 0.90 m lift the model was built
+with — steps off onto the far bank, and arrives alive. Before the fix the same tank crossed at
+the basin floor: 0.4 m in the middle of the span, three metres under the water line, invisible
+under the opaque water mesh, which is what "submerged and died" looked like from the player's
+side. The check is recorded by `unit` itself, so any probe that looks at a unit standing on a
+bridge pins the arithmetic without a verb of its own. The `attributes` verb carries the same
+answer for an empty cell:
+
+```
+query:   height     0.2 m on the navigation lattice, 0.4 m on the height field, against a water line of 3.5 m — below that line is water
+query:   deck       200 of 200 left, standing at 4.4 m — the deck carries whoever is on it
+```
+
 ## Worked example: where does the building I ordered go?
 
 A structure used to be produced by another structure and to appear at a fixed offset from whatever

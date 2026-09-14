@@ -626,6 +626,20 @@ public sealed class ProbeRunner
             $"query:   height     {ProbeFormat.Millimetres(world.Navigation.HeightAt(index))} on the navigation lattice, " +
             $"{ProbeFormat.Millimetres(world.Terrain.SampleHeightMm((int)(x * WorldPos.MmPerMetre), (int)(z * WorldPos.MmPerMetre)))} on the height field, " +
             $"against a water line of {ProbeFormat.Millimetres(terrain.WaterLevelMm)} — below that line is water");
+
+        // The deck answers the height question where it stands, so the probe reads the same
+        // arithmetic a walking unit is answered with: a block under this cell lifts the ground
+        // to the deck, and the basin's metres stop being the answer.
+        int navCell = world.Navigation.IndexOfWorld(new WorldPos(
+            (int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre)));
+        int deck = world.Bridgeworks.BlockHealthAt(navCell);
+
+        if (deck > 0)
+        {
+            Emit(
+                $"query:   deck       {deck} of {Bridgeworks.BlockHealth} left, " +
+                $"standing at {ProbeFormat.Millimetres(world.Bridgeworks.DeckHeightMm(terrain))} — the deck carries whoever is on it");
+        }
         Emit(
             $"query:   ground     vegetation {attributes.Vegetation}/255, moisture {attributes.Moisture}/{TerrainAttributes.MaxMoisture}, " +
             $"aspect {ProbeLabels.Aspect(attributes.Aspect)} ({attributes.Aspect}), landform {ProbeLabels.Landform(attributes.Landform)} ({attributes.Landform}), " +
@@ -1711,6 +1725,25 @@ public sealed class ProbeRunner
         Emit($"query:   health     {entity.Health}/{definition.Health} ({(definition.Health > 0 ? entity.Health * 100 / definition.Health : 0)}%)");
         Emit($"query:   {DescribeArmour(world, ref entity, definition)}");
         Emit($"query:   {DescribeGround(world, cell, ref entity, definition, step)}");
+
+        // The deck's own promise, asked of whoever stands on it: a cell that carries a block
+        // answers the height question with the deck, and a unit whose Y is anything else —
+        // the basin metres the height field still holds under the water — is the bug that
+        // sent crossings to the lake bed. Asked here so any probe that looks at a unit on a
+        // bridge pins the arithmetic without a verb of its own.
+        int deck = world.Bridgeworks.BlockHealthAt(cell);
+
+        if (deck > 0)
+        {
+            int deckY = world.Bridgeworks.DeckHeightMm(world.TerrainTypes) + entity.AltitudeMm;
+
+            RecordCheck(
+                $"unit {slot} stands at deck height",
+                entity.Position.Y == deckY,
+                $"cell carries a block of {deck}/{Bridgeworks.BlockHealth}, the unit is at {ProbeFormat.Millimetres(entity.Position.Y)}, " +
+                $"the deck answers {ProbeFormat.Millimetres(deckY)}");
+        }
+
         Emit($"query:   morale     {entity.Morale.ToFloat():0.000}{(entity.Routed ? ", routing" : ", steady")}");
         Emit(
             $"query:   move       {(entity.HasMoveGoal ? $"goal {ProbeFormat.Ground(entity.MoveGoal)}, {ProbeFormat.Metres(entity.Position.HorizontalDistanceTo(entity.MoveGoal) / (float)WorldPos.MmPerMetre)} to go" : "none")}, " +

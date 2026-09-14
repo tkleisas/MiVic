@@ -26,6 +26,15 @@ public sealed class TerrainLayer
     /// <summary>Slope, in millimetres per metre, above which ground becomes bare rock.</summary>
     public const int RockSlopePermille = 700;
 
+    /// <summary>
+    /// How far a water cell's bed sits below the water line before the band calls it deep,
+    /// in millimetres. The classifier's own threshold, published so a renderer can shade the
+    /// water by the same depth the classification used: a lake whose colour follows the bed's
+    /// own contours reads as a lake, while one coloured by the band reads as a lake with the
+    /// band's edges drawn on it.
+    /// </summary>
+    public const int DeepWaterDepthMm = 1_200;
+
     private readonly byte[] _types;
     private readonly byte[] _original;
     private readonly int[] _weatherExpiry;
@@ -671,7 +680,7 @@ public sealed class TerrainLayer
         int sandLine,
         int snowLine)
     {
-        if (height <= waterLevel - 1_200)
+        if (height <= waterLevel - DeepWaterDepthMm)
         {
             return TerrainType.DeepWater;
         }

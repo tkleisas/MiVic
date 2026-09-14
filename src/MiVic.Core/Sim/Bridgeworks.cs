@@ -132,6 +132,32 @@ public sealed class Bridgeworks
     /// <summary>Water per cell.</summary>
     public const int WaterPerCell = 3;
 
+    /// <summary>
+    /// How far the deck's walking surface stands above the water line, in millimetres.
+    /// <para>
+    /// This is the model's number, not one Core invented: the block mesh is built with a
+    /// 0.56 m clearance over the water and a 0.34 m deck on top of it
+    /// (<c>tools/blender/build_bridge.py</c>'s CLEARANCE and DECK_THICKNESS), so the board a
+    /// man's boot meets is 0.90 m up. Core owns the sum so the simulation and the mesh cannot
+    /// drift apart — a unit standing at a height the renderer's deck does not share is a unit
+    /// standing on air, or under the lake, and both read as a bug.
+    /// </para>
+    /// </summary>
+    public const int DeckLiftMm = 900;
+
+    /// <summary>
+    /// The height the ground answers on a cell that carries a block: the water line plus the
+    /// deck's lift. Only ever asked of a cell with deck on it, and a span is only ever built
+    /// over water — the scan that plans one stops at the first bank — so the water line is
+    /// always the datum the deck was laid on.
+    /// </summary>
+    public int DeckHeightMm(TerrainLayer terrain)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+
+        return terrain.WaterLevelMm + DeckLiftMm;
+    }
+
     /// <summary>Owner recorded for a cell with no deck on it.</summary>
     private const byte NoTeam = 255;
 
