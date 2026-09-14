@@ -139,6 +139,8 @@ self-contained portable archives for linux-x64 and win-x64
 | `--objective-demo` | start the demonstration mission whose objectives the opening world has decided |
 | `--paperclip-demo` | start the Operation Paperclip demonstration: a side the victory rule does not judge |
 | `--generator-demo` | a derelict factory on neutral ground emitting its wardens on a fixed cadence (ROADMAP §9) |
+| `--menu` | open the front-end menu even when another option drives the client, for screenshots of it |
+| `--profile <dir>` | where the campaign's progress and saved matches live, instead of the platform default |
 | `--record <file>` | log every external command and save the match as a replay |
 | `--replay <file>` | verify a replay headlessly and exit (0 = the match was reproduced) |
 | `--watch <file>` | play a recorded match back in the client |
@@ -150,6 +152,16 @@ self-contained portable archives for linux-x64 and win-x64
 | `--render-sfx <dir>` | export one WAV per sound effect and exit |
 | `--no-audio` | no music or sound effects |
 | `--help` | usage |
+
+### The menu, saving and loading
+
+A plain launch opens the menu: **Συνέχεια** continues the campaign (the first mission not
+yet won), **Νέα εκστρατεία** starts over, **Αποστολές** offers the missions the campaign has
+decided, **Μάχη** is the skirmish, and **Φόρτωση** restores a saved match. Esc pauses, and
+the pause panel carries **Αποθήκευση** — a save is a checkpoint a player makes on purpose:
+the match's seed, scenario and command log up to the tick, restored by replaying forward.
+Progress and saves live in the user's profile (`--profile <dir>` moves it; a probe or test
+should always say so).
 
 ### Controls / Χειριστήρια
 

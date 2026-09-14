@@ -27,6 +27,37 @@ save a match in progress.
 it reproduces, and `--record` / `--replay` / `--watch` around it. A replay is not a
 save — it can only replay a match from its start, and cannot be resumed part-way.
 
+**Built, with the exception of the two items marked future.** A plain launch opens on
+the menu — **Συνέχεια** (the first mission the player has not won; the campaign's whole
+order is walked, and a campaign that is finished says so), **Νέα εκστρατεία** (which clears
+the record and writes the empty one immediately, so a crash the second later leaves an
+empty campaign rather than a half-decided one), **Αποστολές** (the next un-won mission is
+playable; the ones behind it are locked; a won one stays playable for ever), **Μάχη** (the
+skirmish), and **Φόρτωση** (the saved matches, newest first, each one listed with the
+mission it was playing and the tick it was taken on). The map editor and multiplayer are
+marked future rather than drawn as buttons that do nothing, because a button that does
+nothing is a lie with a border around it.
+
+**What is campaign progress is answered the way the section asked it to be**: a file
+(`CampaignProgress`), a format, a version — plain line-oriented text, a missing file is a
+fresh campaign rather than an error, and a file from another version is a refusal rather
+than a guess. It lives in the user's own profile (`MiVicPaths`, overridable with
+`--profile`, because a probe or a test must never write into a real player's campaign), and
+a victory writes the moment the rule reaches it, not when the match is left — a crash after
+the banner must not cost a player their mission. Esc pauses instead of leaving, and the
+pause panel carries the save: **a save is a checkpoint a player makes on purpose** — a replay
+trimmed to a tick, bytes rather than megabytes, written by the same `ReplayFile.Capture`
+the probe's save command uses — and loading one rebuilds the world from its seed, its
+scenario and its command log, verifies by the same throw the checkpoint machinery raises,
+and hands the bridge over as a live match. The mechanism is the §11 checkpoint work and
+nothing new.
+
+**Recording is on for the whole of every live match now**, because a save needs its log
+from tick zero: the cost is memory proportional to the orders a player has given, which is
+what the checkpoint work already spends. The two items that are still open here are the two
+the menu lists as future — the editor waits on §10's mission file format, and multiplayer
+waits on being a game.
+
 **The interesting problems**, none of which are the screen itself:
 
 - *What is campaign progress?* Missions are currently defined in code with fixed

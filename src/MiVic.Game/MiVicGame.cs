@@ -869,21 +869,32 @@ public sealed partial class MiVicGame : XnaGame
         _audio = new AudioDirector(_options.Seed);
         _sfx = new SfxDirector(_options.Seed) { IsMuted = _options.NoAudio };
 
-        if (!_options.NoAudio && !_options.IsSelfTest && _options.ScreenshotPath is null && !_options.IsProbe)
+        // The soundtrack belongs to the match. A menu launch has no battle playing
+        // yet, so its theme waits for the one the menu starts; a headless run does
+        // not need thirty seconds of music synthesised before it can measure a frame.
+        if (!_options.NoAudio && !_options.IsSelfTest && _options.ScreenshotPath is null &&
+            !_options.IsProbe && !_options.Menu)
         {
             _audio.Play(FactionStyle.Soviet);
         }
 
         // Recording has to start before the first tick, otherwise the wander
         // orders of the opening seconds are missing from the log and the replay
-        // cannot reproduce the match. A probe records for the same reason a
-        // self-test does: a checkpoint is a replay prefix, so the probe's world
-        // keeps its log complete for the save/restore/rewind commands. A
-        // playback is not recorded: its own commands come from the log it is
-        // replaying.
-        if ((_options.IsSelfTest || _options.RecordPath is not null || _options.IsProbe) && !_simulation.IsPlayback)
+        // cannot reproduce the match. It is on for the whole of every live match
+        // now, because the front end's save is a checkpoint — a replay prefix —
+        // and a log that started halfway down the match saves a position that
+        // cannot be restored. A playback is not recorded: its own commands come
+        // from the log it is replaying.
+        if (!_simulation.IsPlayback)
         {
             _simulation.World.StartRecording();
+        }
+
+        // A menu launch opens on the front end, over the battle the constructor built
+        // as a backdrop, frozen until the menu answers.
+        if (_options.Menu)
+        {
+            _screen = GameScreen.Menu;
         }
 
         if (_options.VictoryDemo)
@@ -943,6 +954,24 @@ public sealed partial class MiVicGame : XnaGame
             {
                 Exit();
             }
+
+            base.Update(gameTime);
+            return;
+        }
+
+        // The pause panel stops the clock rather than the world: a paused match is a
+        // still image the player can look at, and the frame's presentation work stops
+        // with it, because smoke that keeps rising while the battle does not is a
+        // picture of two different moments.
+        if (_paused)
+        {
+            _frameStopwatch.Stop();
+            double pausedFrameMilliseconds = _frameStopwatch.Elapsed.TotalMilliseconds;
+            _frameStopwatch.Restart();
+            _frameCount++;
+
+            _imgui?.Update(gameTime);
+            DrawPausePanel();
 
             base.Update(gameTime);
             return;
@@ -1012,15 +1041,41 @@ public sealed partial class MiVicGame : XnaGame
                 _pendingStructure = UnitKind.None;
                 _hud.Notify("Ακυρώθηκε.");
             }
+            else if (_options.Menu && Screen == GameScreen.Battle)
+            {
+                // In a menu launch Esc pauses rather than leaves: the exit belongs to
+                // the pause panel, where it sits beside the save it goes with, and a
+                // key that ends a session by accident is a session that ends by
+                // accident. The headless modes keep the old behaviour — they are asks,
+                // not sittings-down, and a self-test that opened a panel would wait
+                // for a player who is not there.
+                _paused = !_paused;
+            }
             else
             {
                 Exit();
             }
         }
 
+        // The front end owns the frame while it is showing. The battle behind it stays
+        // on the map frozen — a menu over a battle nobody is watching is not a battle —
+        // and the menu's answer, when one comes, replaces the battle wholesale. The
+        // frame accounting above still runs, because a screenshot of the menu is a
+        // screenshot of a frame like any other.
+        if (Screen == GameScreen.Menu)
+        {
+            _imgui?.Update(gameTime);
+            PumpMenu();
+
+            base.Update(gameTime);
+            return;
+        }
+
         long elapsedMicroseconds = gameTime.ElapsedGameTime.Ticks / 10L;
         _simulation!.Update(elapsedMicroseconds);
         UpdateParticles((float)gameTime.ElapsedGameTime.TotalSeconds);
+
+        RecordCampaignVictory();
 
         // Mouse actions are blocked only when ImGui actually wants the mouse.
         // Gating them on the keyboard flag too was a bug: with keyboard navigation

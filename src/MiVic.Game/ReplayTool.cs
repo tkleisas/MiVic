@@ -18,8 +18,14 @@ public static class ReplayTool
     /// <summary>File the verdict is written to, next to the executable.</summary>
     public const string ReportName = "replay-report.txt";
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool AttachConsole(int processId);
+    // Windows API: a windowed executable is attached to no console, so this attaches a
+    // parent's. Asked for nowhere else, and on Linux there is no console to attach — the
+    // answer there is simply "no".
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "AttachConsole")]
+    private static extern bool AttachConsoleWindows(int processId);
+
+    private static bool AttachConsole(int processId)
+        => OperatingSystem.IsWindows() && AttachConsoleWindows(processId);
 
     /// <summary>Loads, replays and verifies <paramref name="path"/>.</summary>
     public static int Run(string path)

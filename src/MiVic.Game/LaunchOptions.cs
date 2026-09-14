@@ -242,6 +242,18 @@ public sealed record LaunchOptions
     /// <summary>When set, export one WAV per faction theme and exit.</summary>
     public string? RenderAudioPath { get; init; }
 
+    /// <summary>
+    /// The front end: the menu an interactive launch opens on. Computed after parsing —
+    /// every channel that drives the client from outside bypasses it.
+    /// </summary>
+    public bool Menu { get; init; }
+
+    /// <summary>Asks for the menu explicitly, even when another channel is driving the client.</summary>
+    private bool ForceMenu { get; init; }
+
+    /// <summary>Directory the campaign's progress and saves live in, instead of the platform default.</summary>
+    public string? ProfilePath { get; init; }
+
     /// <summary>When set, export one WAV per sound effect and exit.</summary>
     public string? RenderSfxPath { get; init; }
 
@@ -579,6 +591,14 @@ public sealed record LaunchOptions
                     options = options with { PaperclipDemo = true, ShowHelp = false };
                     break;
 
+                case "--menu":
+                    options = options with { ForceMenu = true };
+                    break;
+
+                case "--profile":
+                    options = options with { ProfilePath = NextValue(args, ref i, arg) };
+                    break;
+
                 case "--render-audio":
                     options = options with { RenderAudioPath = NextValue(args, ref i, arg) };
                     break;
@@ -643,6 +663,34 @@ public sealed record LaunchOptions
                 default:
                     throw new ArgumentException($"Unknown option '{arg}'.\n\n{Usage}", nameof(args));
             }
+        }
+
+        // The menu is what an interactive launch opens on, and every channel that drives
+        // the client from outside — a fixture, a screenshot, a probe, a replay, a
+        // self-test — bypasses it, because those are asks for a specific match rather
+        // than a player sitting down. A mission named on the command line bypasses it
+        // for the same reason: the asker has already chosen.
+        options = options with
+        {
+            Menu = options.ForceMenu ||
+                   !options.IsFixture &&
+                   options.ScreenshotPath is null &&
+                   options.WatchPath is null &&
+                   options.RecordPath is null &&
+                   options.ReplayPath is null &&
+                   options.MissionId is null &&
+                   options.RenderAudioPath is null &&
+                   options.RenderSfxPath is null &&
+                   !options.IsSelfTest &&
+                   !options.SelectHeadquarters &&
+                   !options.FontSample,
+        };
+
+        if (options.ProfilePath is not null)
+        {
+            // Before anything reads the profile: the client constructor runs later, and
+            // the menu is the first reader.
+            MiVic.Game.Data.MiVicPaths.UseProfile(options.ProfilePath);
         }
 
         return options;
