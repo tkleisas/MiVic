@@ -1597,7 +1597,7 @@ public sealed class SimBridge
     /// fixtures all clear the field, so they all say so through <see cref="Clear"/>.
     /// </para>
     /// </summary>
-    private void CaptureBaseline()
+    public void CaptureBaseline()
     {
         CapturePreviousPositions();
 

@@ -909,7 +909,11 @@ public sealed partial class MiVicGame : XnaGame
         if (_options.VictoryDemo)
         {
             // Knock out every rival structure so the victory system decides the
-            // battle within a second, purely so the banner can be seen.
+            // battle within a second, purely so the banner can be seen. The fixture's
+            // hand of god is not a weapon, and the deaths it causes are not casualties:
+            // the baseline is recaptured, which is what every other fixture does when it
+            // rearranges the world — a probe that reads the event stream would otherwise
+            // count eight buildings as damage no firer could explain.
             SimWorld world = _simulation.World;
 
             for (int slot = 0; slot < world.Capacity; slot++)
@@ -926,6 +930,8 @@ public sealed partial class MiVicGame : XnaGame
                     world.Despawn(new EntityId(slot, entity.Generation));
                 }
             }
+
+            _simulation.CaptureBaseline();
         }
 
         if (_options.SelectHeadquarters)
