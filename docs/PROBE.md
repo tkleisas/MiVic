@@ -2147,3 +2147,21 @@ ok: Αποθηκεύτηκε: maps/authored-probe.map.json
 
 The save that was refused was refused by the editor: the validator's sentence is the report's
 content, and the file that leaves is one the loader will open.
+
+## Worked example: what does a brown-out do, rank by rank?
+
+`tools/probe/power.probe`, against `--detection-demo`: the fixture's base loses its plant, the
+bank is emptied, and the readings show the shed landing in the order ROADMAP §4 documents.
+
+```
+query:   bank       0 Ε in the stockpile, -7 Ε per tick of rate
+query:   radars     0 lit, 1 dark, 11 Ε short of running them all
+query:   brown-out  λείπει ισχύς 11 Ε
+query:   shed       the guns are silenced; production is at half speed
+query: range 504 ...
+query:   reach      0.0 m — the furthest it can engage anything at
+```
+
+The bank above it, still full, is the other half of the mechanic: a base running short on a full
+bank is a base that runs — the drain is what the buffer was always for, and the shed is what waits
+for it.

@@ -97,12 +97,17 @@ public static class EconomySystem
             switch (entity.Kind)
             {
                 case UnitKind.CommandCentre:
-                    // A headquarters is energy neutral on purpose. If it drew
-                    // power, a team with nothing but a headquarters would sit at
-                    // zero energy, and production halts at zero energy — the base
-                    // could never build the power plant that would fix it.
+                    // The standby set banks energy like the capacity ledger says it
+                    // provides it: seven units a tick into the stockpile, unscaled — a
+                    // standby set runs the lights, it is not an economic output, and a
+                    // headquarters that exported power at a faction's wealth rate would
+                    // be an accident of the wealth table rather than a decision. This is
+                    // the death-spiral rule the brown-out stands on: a base whose
+                    // generation was bombed flat still banks its standby rate, and can
+                    // still raise the plant that fixes it.
                     state.MaterialsPerTick += Scale(CommandCentreMaterials, income);
                     state.WaterPerTick += Scale(CommandCentreWater, income);
+                    state.EnergyPerTick += PowerSystem.CommandCentreStandby;
                     break;
 
                 case UnitKind.PowerPlant:
@@ -121,6 +126,15 @@ public static class EconomySystem
 
                 case UnitKind.DesignBureau:
                     state.EnergyPerTick -= 3;
+                    break;
+
+                case UnitKind.GunEmplacement:
+                case UnitKind.AntiAirEmplacement:
+                    // The same two units the capacity ledger counts, paid from the
+                    // stockpile: a defensive line's draw is both a load on the grid and
+                    // an upkeep, which is what makes a defensive line a power decision
+                    // twice over.
+                    state.EnergyPerTick -= PowerSystem.GunEmplacementDraw;
                     break;
             }
         }

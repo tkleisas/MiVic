@@ -527,6 +527,10 @@ public sealed class AiDefenceTests
 
         Assert.Equal(0, CountKind(world, 1, UnitKind.PowerPlant));
 
+        // The bank the base accrued is the buffer: the shed lands when the bank can no
+        // longer pay a tick's deficit, so the fixture empties it and asks the ledger.
+        world.TeamRef(1).Energy = 0;
+
         world.RunTicks(1);
         Assert.True(world.Team(1).RadarsDark > 0, "the radar is still lit with no generation, so the ledger is wrong");
 

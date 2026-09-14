@@ -41,17 +41,30 @@ public sealed class AiTests
     {
         SimWorld world = World();
         Spawn(world, Faction.Western, 2, UnitKind.CommandCentre, 0, 0);
+        Spawn(world, Faction.Western, 2, UnitKind.Factory, 60_000, 0);
+        Spawn(world, Faction.Western, 2, UnitKind.DesignBureau, 0, 60_000);
+        EntityId radar = Spawn(world, Faction.Western, 2, UnitKind.RadarStation, 0, 60_000);
 
         ref TeamState state = ref world.TeamRef(2);
         state.Materials = 5_000;
         state.Water = 5_000;
 
-        // A headquarters alone draws more energy than it makes.
-        Assert.True(world.Team(2).EnergyPerTick <= 0);
+        // The grid cannot carry the base's own industry and its watcher: the standby set
+        // runs a factory (four) and its bureau (three), and the radar is the first thing
+        // shed — which is the reading the ledger reports and the AI exists to fix. (It
+        // used to be a rate question, but the standby now banks its own rate: a bare
+        // headquarters runs the lights, and the deficit that remains is a load the grid
+        // cannot carry.)
+        world.RunTicks(2);
+        Assert.True(world.IsRadarLit(radar.Slot) == false, "The fixture's grid was not short; there was nothing for the AI to fix.");
 
-        world.RunTicks(300);
+        // Half speed under the brown-out: the plant that fixes the deficit takes twice its
+        // catalogue time, and the test waits out both halves, watching the queue drain.
+        world.RunTicks(650);
 
-        Assert.True(CountKind(world, 2, UnitKind.PowerPlant) > 0, "The AI never built a power plant.");
+        Assert.True(CountKind(world, 2, UnitKind.PowerPlant) > 0,
+            "The AI never built the plant that fixes the grid — the brown-out's half speed " +
+            "must slow production, never stop it.");
     }
 
     [Fact]

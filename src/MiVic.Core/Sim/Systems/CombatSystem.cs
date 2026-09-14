@@ -71,6 +71,16 @@ public static class CombatSystem
             return 0;
         }
 
+        // A silenced gun has no reach at all: the brown-out's second step is a weapon
+        // switched off, and a report that drew its rim for a gun the grid cannot run
+        // would be a promise the guns cannot keep — the same answer the dark radar's
+        // coverage gives. The distance is asked where the firing decision is made
+        // because that is the one place the two cannot answer differently.
+        if (weapon.IsBuilding && world.Team(entity.TeamId).WeaponsShed)
+        {
+            return 0;
+        }
+
         int eyes = VisionSystem.SensorRadiusMm(world, in entity);
 
         return world.Radars.Covers(world, entity.TeamId, entity.Position)
@@ -494,6 +504,18 @@ public static class CombatSystem
         }
 
         if (!InRange(ref attacker, ref target, reachMm))
+        {
+            return false;
+        }
+
+        // The brown-out's second step: a silenced gun. Defensive emplacements draw power,
+        // and a grid that cannot run them switches them off — after the radars, before
+        // production. A silenced gun still sees (its own eyes are its own optics, which is
+        // why the silence lives here rather than in the sensor chain) but cannot fire, and
+        // a weapon that cannot fire must never hold a target either: the answer is refused
+        // where acquisition and the firing decision both ask. See PowerSystem, where the
+        // shed order is written and the flag is derived.
+        if (UnitCatalog.Get(attacker.Kind).IsBuilding && world.Team(attacker.TeamId).WeaponsShed)
         {
             return false;
         }

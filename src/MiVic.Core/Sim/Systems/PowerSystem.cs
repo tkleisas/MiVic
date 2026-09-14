@@ -22,13 +22,19 @@ namespace MiVic.Core.Sim;
 /// same reason.
 /// </para>
 /// <para>
-/// <b>Detection is shed first, and that is the whole point.</b> A deficit does not slow
-/// a factory and does not silence a gun — those are later brown-out steps and are
-/// deliberately not built. What it does is take radars off the air, lowest slot first,
-/// which is to say oldest first. A strike on a base's generation therefore does not
-/// merely slow its factories: it collapses the reach of every gun in the line, because
-/// a gun can only shoot as far as something can see for it. That is the loop this
-/// system exists to close.
+/// <b>The brown-out is an order, and the order is now whole.</b> When the ledger is short,
+/// the stockpile is the first line of defence: the deficit drains it, and a base with a
+/// healthy bank runs its dish and its guns while it drains — the grace period is what
+/// keeps a strike from flickering the base off the moment it lands. When the bank is
+/// empty, the base browns out in a documented order, each step shedding as much as the
+/// step above it left short:
+/// <b>detection first</b> (the radars, oldest slot last off the air), <b>then the defensive
+/// weapons</b> (a silenced emplacement still sees — its own eyes are its own optics — but
+/// cannot fire), <b>then production</b> (half speed, never stopped: a base that has lost
+/// its generation still has a headquarters and still raises the plant that fixes it).
+/// A strike on a base's generation therefore does not merely slow its factories: it
+/// collapses the reach of every gun in the line, because a gun can only shoot as far as
+/// something can see for it. That is the loop this system exists to close.
 /// </para>
 /// </summary>
 public static class PowerSystem
@@ -75,6 +81,16 @@ public static class PowerSystem
         UnitKind.Factory => 4,
         UnitKind.DesignBureau => 3,
         UnitKind.RadarStation => RadarDraw,
+
+        // The brown-out's second step needed a load to shed: a gun emplacement is
+        // powered machinery — a hoist, a trainer, a fire-control set — and two units of
+        // it is what a defensive line costs the grid. That is the decision the old
+        // table deliberately deferred ("a defensive line as a power problem, before the
+        // radar ever reached the field") — the radar has reached the field, and a
+        // defensive line that runs on nothing is a line whose silencing is a mechanic
+        // with nothing behind it.
+        UnitKind.GunEmplacement => 2,
+        UnitKind.AntiAirEmplacement => 2,
         _ => 0,
     };
 
@@ -88,13 +104,21 @@ public static class PowerSystem
 
     /// <summary>
     /// Recomputes every team's power position: how much it generates, how much it draws,
-    /// and which of its radars are lit.
+    /// which of its structures are on the air, and whether the base is browned out.
     /// <para>
     /// Runs before <see cref="VisionSystem"/> in the tick, because the vision system stamps
-    /// a radar's disc and a dark radar stamps nothing. Radars are lit in ascending slot
-    /// order — oldest first — while generation remains, so the answer is a function of the
-    /// world and not of the order a container happened to hand things over in: two peers
-    /// that built the same three buildings run the same one of them.
+    /// a radar's disc and a dark radar stamps nothing. The shed is in priority order, and
+    /// within a rank in ascending slot order — oldest last off the air — so the answer is a
+    /// function of the world and not of the order a container happened to hand things over
+    /// in: two peers that built the same three buildings run the same one of them.
+    /// </para>
+    /// <para>
+    /// <b>The stockpile is the buffer.</b> A shortfall does not shed anything while the
+    /// bank holds: it drains the bank, one tick at a time, and a base that runs at a
+    /// deficit for a hundred ticks with a full bank is a base that ran for a hundred
+    /// ticks. The shed applies when the bank is empty — and the shed is derived, not
+    /// remembered: a bank that refills un-sheds the base the same tick, which is why
+    /// nothing here is hashed.
     /// </para>
     /// </summary>
     public static void Tick(SimWorld world)
@@ -109,12 +133,10 @@ public static class PowerSystem
             ref TeamState state = ref world.TeamRef(team);
 
             int generation = 0;
-            int load = 0;
+            int productionLoad = 0;
+            int weapons = 0;
             int radarCount = 0;
 
-            // First pass: everything that is not a radar. The load a radar must fit
-            // inside is what the rest of the base has already taken, which is what makes
-            // detection the first thing shed rather than the last.
             for (int slot = 0; slot < capacity; slot++)
             {
                 if (!IsPoweredStructure(world, slot, team, out UnitKind kind))
@@ -130,45 +152,102 @@ public static class PowerSystem
                     continue;
                 }
 
-                load += DrawOf(kind);
+                if (UnitCatalog.Get(kind).IsBuilding &&
+                    UnitCatalog.Get(kind).AttackDamage > 0)
+                {
+                    // The defensive emplacements, counted for the shed rank they sit in:
+                    // after the radars, before production. They are drawn from the same
+                    // table as everything else, so the ledger, the buyer's question and
+                    // the shed stay one answer.
+                    weapons++;
+                    continue;
+                }
+
+                productionLoad += DrawOf(kind);
             }
 
             generation += CommandCentreStandby;
 
-            // Second pass: the radars, in ascending slot order, while there is room for
-            // them. A radar that does not fit draws nothing, which is both true — it is
-            // off — and necessary: a dark radar that still counted against the ledger
-            // would keep itself dark for ever, and one that flickered on would flicker.
-            int remaining = generation - load;
-            int lit = 0;
+            int required = productionLoad + (weapons * GunEmplacementDraw) + (radarCount * RadarDraw);
+            int deficit = Math.Max(0, required - generation);
 
-            radars.BeginTeam(team, radarCount, generation, load);
+            // The bank is the buffer: the shortfall drains it, and a base running at a
+            // deficit on a full bank runs everything while it lasts.
+            if (deficit > 0 && state.Energy > 0)
+            {
+                state.Energy = Math.Max(0, state.Energy - deficit);
+            }
+
+            bool brownedOut = deficit > 0 && state.Energy <= 0;
+
+            radars.BeginTeam(team, radarCount, generation, required);
+
+            int litWeapons = 0;
+            int litRadars = 0;
+            int darkWeapons = 0;
+            int darkRadars = 0;
+
+            // The shed is rank-ordered: the production loads never shed below the last
+            // step, so the capacity they leave is what the lower ranks fit into. The
+            // emplacements are lit before the radars because detection is the first thing
+            // shed — a dish loses the air before a gun loses its crew. And the shed only
+            // lands when the bank is empty: a base running short on a full bank is lit
+            // whole, because the bank is what pays the difference.
+            int remaining = brownedOut ? generation - productionLoad : generation;
 
             for (int slot = 0; slot < capacity; slot++)
             {
-                if (!IsPoweredStructure(world, slot, team, out UnitKind kind) || kind != UnitKind.RadarStation)
+                if (!IsPoweredStructure(world, slot, team, out UnitKind kind))
                 {
                     continue;
                 }
 
-                if (remaining >= RadarDraw)
+                bool isRadar = kind == UnitKind.RadarStation;
+                bool isWeapon = !isRadar && UnitCatalog.Get(kind).IsBuilding && UnitCatalog.Get(kind).AttackDamage > 0;
+
+                if (!isRadar && !isWeapon)
                 {
-                    remaining -= RadarDraw;
-                    load += RadarDraw;
-                    lit++;
-                    radars.AddLit(team, slot);
+                    continue;
+                }
+
+                int draw = isRadar ? RadarDraw : GunEmplacementDraw;
+
+                if (remaining >= draw)
+                {
+                    remaining -= draw;
+
+                    if (isRadar)
+                    {
+                        litRadars++;
+                        radars.AddLit(team, slot);
+                    }
+                    else
+                    {
+                        litWeapons++;
+                    }
+                }
+                else if (isRadar)
+                {
+                    darkRadars++;
+                }
+                else
+                {
+                    darkWeapons++;
                 }
             }
 
             state.PowerGeneration = generation;
-            state.PowerDraw = load;
-            state.RadarsLit = lit;
-            state.RadarsDark = radarCount - lit;
-            state.PowerShortfall = state.RadarsDark == 0
-                ? 0
-                : ((state.RadarsDark * RadarDraw) - Math.Max(0, remaining));
+            state.PowerDraw = productionLoad + (litWeapons * GunEmplacementDraw) + (litRadars * RadarDraw);
+            state.RadarsLit = litRadars;
+            state.RadarsDark = darkRadars;
+            state.WeaponsShed = darkWeapons > 0;
+            state.PowerBrowned = brownedOut && generation < productionLoad;
+            state.PowerShortfall = Math.Max(0, required - generation);
         }
     }
+
+    /// <summary>Draw of one defensive emplacement, in energy per tick it occupies while powered.</summary>
+    public const int GunEmplacementDraw = 2;
 
     /// <summary>
     /// Why a team's radars are dark, in the game's own Greek, or an empty string when they
@@ -178,9 +257,24 @@ public static class PowerSystem
     /// language that no test could reach.
     /// </summary>
     public static string DimmedReason(in TeamState state)
-        => state.RadarsDark == 0
-            ? string.Empty
-            : $"λείπει ισχύς {state.PowerShortfall} Ε";
+    {
+        if (state.RadarsDark > 0)
+        {
+            return $"λείπει ισχύς {state.PowerShortfall} Ε";
+        }
+
+        if (state.WeaponsShed)
+        {
+            return "τα πυροβολεία δεν τρέχουν";
+        }
+
+        if (state.PowerBrowned)
+        {
+            return "η παραγωγή μισή ταχύτητα";
+        }
+
+        return string.Empty;
+    }
 
     /// <summary>
     /// True when a team could add one more radar station to what it has and still run it.

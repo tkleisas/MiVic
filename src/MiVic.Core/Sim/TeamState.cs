@@ -148,9 +148,27 @@ public struct TeamState
 
     /// <summary>
     /// True when this team wanted more power than it generates. Detection is the first
-    /// thing shed, so this is true exactly when at least one radar is dark.
+    /// thing shed, so this is true exactly when at least one radar is dark — or when the
+    /// bank is draining and the shed has not landed yet, which the deficit says.
     /// </summary>
     public readonly bool IsDimmed => RadarsDark > 0;
+
+    /// <summary>
+    /// True when the brown-out has reached the base's guns: the emplacements the grid
+    /// cannot run are silenced — they still see, their own eyes are their own optics, but
+    /// they cannot fire. Derived from the buildings standing and the bank, so it is not
+    /// part of the state hash, the same reason <see cref="RadarsLit"/> is not. See
+    /// <see cref="PowerSystem"/>, where the shed order is written.
+    /// </summary>
+    public bool WeaponsShed;
+
+    /// <summary>
+    /// True when the brown-out has reached production — the last step: the base's industry
+    /// alone outruns its generation, so the factories run at half speed until the bank
+    /// refills or a plant comes up. Derived like <see cref="WeaponsShed"/>, and never
+    /// hashed for the same reason.
+    /// </summary>
+    public bool PowerBrowned;
 
     /// <summary>Generation left over after this team's structures have taken their share.</summary>
     public readonly int PowerSurplus => PowerGeneration - PowerDraw;

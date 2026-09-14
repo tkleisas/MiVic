@@ -684,6 +684,32 @@ capped role will quietly stop once the team hits the cap, which is correct but i
 generator on the neutral team is subject to no cap at all, which is how a zone ends up breeding. Say
 which of the two bounds a reader should expect to bite first, in the comment where the spawn happens.
 
+**Built, and the order is whole.** The system had stopped at the first rank deliberately — the
+comment said so — and the other two ranks are built now. The stockpile is the **buffer**: a
+shortfall drains the bank, one tick at a time, and a base running short on a full bank is a base
+that runs — the dish stays on the air, the guns stay powered, and the drain is what the bank was
+always for. The shed lands only when the bank cannot cover one tick's deficit, and it lands in
+order: **detection** (a dish loses the air before a gun loses its crew), then **the defensive
+weapons** (an emplacement draws two — the load the old table deferred until the radar reached the
+field — and a grid that cannot run it silences it: it still sees, its own eyes are its own optics,
+but it cannot fire, and its reach reads as zero wherever the game reports a distance), then
+**production at half speed**, never stopped — the plant that fixes the deficit is in the queue the
+old halt used to stop, and the halt is gone: the spiral was the rule, not the deficit. The bank
+refilling un-sheds the base, because the shed is derived from the buildings standing and the bank,
+and nothing is stored that a replay could disagree about.
+
+`tools/probe/power.probe` is the transcript, rank by rank: the strike, the emptied bank, the dish
+dark, the gun's reach reading zero, the shed line saying what the brown-out has taken. The probe's
+`power drain` verb empties a team's stockpile, which is how a script asks the shed to land without
+waiting out the drain its own deficit would take — and `strike` takes a structure off the map the
+way a raid's shell would.
+
+**Rebalancing happened where the note asked it to.** The standby set now banks its rate into the
+stockpile as well as providing it as capacity — a headquarters alone runs the lights and accrues,
+which is the death-spiral rule stated as a number — and the emplacements pay the same two units as
+upkeep that they occupy as load, which makes a defensive line a power decision twice over. The AI
+buys generation at every rank of the shed now, not only at the dark-dish one.
+
 **Built: the zone, and the wardens it gives.** Two kinds on the roster — the **Ερειπωμένο
 Εργοστάσιο** (a derelict factory: a structure on a team of its own, at war with every side, played by
 nobody) and the **Φύλακας** it emits (an automaton: no crews, no morale, a standing war against

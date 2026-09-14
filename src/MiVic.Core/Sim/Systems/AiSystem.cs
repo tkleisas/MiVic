@@ -188,11 +188,14 @@ public static class AiSystem
         // A dark radar is a power problem too, and it is the one the ledger reports
         // directly: generation that cannot cover the load takes the dishes off the air before
         // it touches anything else, so a team whose radar is dark rebuilds its generation
-        // rather than carrying on with a line whose guns have lost 30 m of reach.
+        // rather than carrying on with a line whose guns have lost 30 m of reach. And a
+        // brown-out below the radars is the same problem a rank further down: silenced guns
+        // are a line that answers at half its reach, and production at half speed is an
+        // economy that stalls — each rank is the ledger telling the team to buy generation.
         bool hasPower = state.EnergyPerTick > 0 || HasBuilding(world, team, UnitKind.PowerPlant);
         bool plantQueued = IsQueued(world, team, UnitKind.PowerPlant);
 
-        if ((!hasPower || state.RadarsDark > 0) && !plantQueued &&
+        if ((!hasPower || state.RadarsDark > 0 || state.WeaponsShed || state.PowerBrowned) && !plantQueued &&
             TryFindBuilding(world, team, UnitKind.CommandCentre, out EntityId powerBuilder, out _))
         {
             if (TryQueue(world, powerBuilder, faction, UnitKind.PowerPlant, team))

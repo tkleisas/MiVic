@@ -120,6 +120,10 @@ public sealed class ProbeRunner
     private int[] _previousCooldown = [];
     private int[] _previousTarget = [];
 
+    /// <summary>The world the run-wide ledgers were last seeded from: a restore or a
+    /// rewind hands the client a rebuilt one, and the ledgers follow the world.</summary>
+    private SimWorld? _ledgerWorld;
+
     private int _next;
     private int _eventsSeen;
     private int _ok;
@@ -384,6 +388,9 @@ public sealed class ProbeRunner
             case "editor":
                 EditorCommand(command);
                 break;
+            case "strike":
+                StrikeStructure(command);
+                break;
             case "triggers":
                 Triggers(command);
                 break;
@@ -421,7 +428,7 @@ public sealed class ProbeRunner
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
                     "triggers, messages, objectives, map, save, restore, rewind, checkpoints, flip, " +
-                    "editor, expect, validate");
+                    "editor, strike, expect, validate");
         }
     }
 
@@ -1799,6 +1806,23 @@ public sealed class ProbeRunner
     /// </summary>
     private void Power(ProbeCommand command)
     {
+        // `power drain [team]` empties the stockpile: a scripted strike is two commands,
+        // and the second is the bank, which is how a script asks the shed to land without
+        // waiting out the drain its own deficit would take.
+        if (command.ArgumentCount > 0 && command.Argument(0, "a reading or 'drain'", "power [team] | power drain [team]") == "drain")
+        {
+            int drained = (int)command.OptionalNumber(1, 0f, "a team", "power drain [team]");
+
+            if ((uint)drained >= SimConstants.TeamCount)
+            {
+                throw new ProbeException($"team {drained} is not one of the {SimConstants.TeamCount} — power drain [team]");
+            }
+
+            _host.Simulation.World.TeamRef(drained).Energy = 0;
+            Emit($"ok: team {drained}'s bank emptied — the next tick's deficit decides what sheds");
+            return;
+        }
+
         int team = (int)command.OptionalNumber(0, 0f, "a team number", "power [team]");
 
         if ((uint)team >= SimConstants.TeamCount)
@@ -1812,8 +1836,10 @@ public sealed class ProbeRunner
         Emit($"query:   generation {state.PowerGeneration} Ε per tick, from the structures standing");
         Emit($"query:   draw       {state.PowerDraw} Ε per tick, including the radars that are on");
         Emit($"query:   surplus    {state.PowerSurplus} Ε per tick");
+        Emit($"query:   bank       {state.Energy} Ε in the stockpile, {state.EnergyPerTick} Ε per tick of rate");
         Emit($"query:   radars     {state.RadarsLit} lit, {state.RadarsDark} dark, {state.PowerShortfall} Ε short of running them all");
-        Emit($"query:   brown-out  {(state.IsDimmed ? PowerSystem.DimmedReason(state) : "none")}");
+        Emit($"query:   brown-out  {(state.IsDimmed || state.WeaponsShed || state.PowerBrowned ? PowerSystem.DimmedReason(state) : "none")}");
+        Emit($"query:   shed       {(state.WeaponsShed ? "the guns are silenced" : "none")}{(state.PowerBrowned ? "; production is at half speed" : string.Empty)}");
     }
 
     /// <summary>
@@ -2458,6 +2484,47 @@ public sealed class ProbeRunner
 
     /// <summary>World position from metres, for the editor's cursor-free scripted clicks.</summary>
     private static WorldPos GroundMm(float x, float z) => new((int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre));
+
+    /// <summary>
+    /// Takes a structure off the map, the way a raid's shell would: the raid's effect
+    /// without the raid. The brown-out's readings are asked of a base that has just lost
+    /// its generation, and the verb is how a script takes it — one command, in the tick,
+    /// deterministic like everything else.
+    /// </summary>
+    private void StrikeStructure(ProbeCommand command)
+    {
+        const string Usage = "strike <Kind> [team]";
+
+        string name = command.Argument(0, "a structure role", Usage);
+        int team = (int)command.OptionalNumber(1, 0f, "a team", Usage);
+
+        if (!Enum.TryParse(name, ignoreCase: true, out UnitKind kind) || !UnitCatalog.TryGet(kind, out _))
+        {
+            throw new ProbeException($"'{name}' is not a structure — {Usage}");
+        }
+
+        SimWorld world = _host.Simulation.World;
+        int capacity = world.Capacity;
+
+        for (int slot = 0; slot < capacity; slot++)
+        {
+            if (!world.IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref world.GetRefBySlot(slot);
+
+            if (entity.TeamId == team && entity.Kind == kind)
+            {
+                world.Despawn(new EntityId(slot, entity.Generation));
+                Emit($"ok: {UnitCatalog.GreekName(kind)} of team {team} struck at {ProbeFormat.Point(SimBridge.ToMetres(entity.Position))}");
+                return;
+            }
+        }
+
+        throw new ProbeException($"team {team} has no {kind} standing — {Usage}");
+    }
 
     /// <summary>Every playing team with the side it is on now, in one line.</summary>
     private static string DescribeSides(SimWorld world)
@@ -3695,6 +3762,33 @@ public sealed class ProbeRunner
     private void AccountForTick(SimWorld world)
     {
         int capacity = world.Capacity;
+
+        if (!ReferenceEquals(_ledgerWorld, world))
+        {
+            // The world under this transcript changed identity — a restore or a rewind
+            // handed the client a rebuilt one. The ledgers are run-wide readings of a
+            // match that no longer exists, and a shot counted in a tick the rebuilt world
+            // never played would be a hole in the accounting: re-seed the watch from the
+            // world as it stands and start the ledger again from here. A rewound
+            // transcript is a new telling from that tick, and its ledgers say so.
+            _ledgerWorld = world;
+            _previousCooldown = new int[capacity];
+            _previousTarget = new int[capacity];
+            _teamsThatFired.Clear();
+            _eventsSeen = 0;
+
+            for (int slot = 0; slot < capacity; slot++)
+            {
+                // Zero, not the cooldown the world now carries: the reseed reads the
+                // world AFTER its first tick has already run, so a unit that fired in
+                // that tick would be missed by the watch and the hit it caused would be
+                // damage no firer could explain. A reseeded watch reads every slot as
+                // having just fired, which overcounts the shot ledger for one tick and
+                // never hides a hit — the direction that keeps the check conservative.
+                _previousCooldown[slot] = 0;
+                _previousTarget[slot] = -1;
+            }
+        }
 
         if (_previousCooldown.Length < capacity)
         {

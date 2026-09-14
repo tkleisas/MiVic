@@ -309,7 +309,9 @@ public sealed class PowerTests
     /// A command centre on its own has six units of standby and a load of nothing, so a radar
     /// (four) is lit. A factory and a radar together are more than the standby set provides,
     /// and something has to give — and the something is the radar, because detection is the
-    /// first thing shed.
+    /// first thing shed. The bank is drained first, because the stockpile is the buffer: a
+    /// base running short on a full bank is a base that runs, and the shed lands when the
+    /// bank is empty.
     /// </para>
     /// </summary>
     [Fact]
@@ -326,18 +328,31 @@ public sealed class PowerTests
         Assert.True(bare.IsRadarLit(radar.Slot), "a headquarters with nothing else on it could not run one radar");
         Assert.Equal(0, bare.Team(0).RadarsDark);
 
-        // And the load the standby set cannot carry is shed rather than run at a loss.
+        // And the load the standby set cannot carry is shed rather than run at a loss —
+        // after the bank that covers it has drained, which is the buffer's whole point.
         SimWorld loaded = World();
         At(loaded, 0, UnitKind.CommandCentre, 0);
         At(loaded, 0, UnitKind.Factory, 60_000);
         EntityId dark = At(loaded, 0, UnitKind.RadarStation, 120_000);
 
+        ref TeamState bank = ref loaded.TeamRef(0);
+        bank.Energy = 50;
+
+        loaded.RunTicks(2);
+
+        // The deficit is two a tick and the bank pays it: lit while the bank can cover
+        // the tick, which is what a buffer is for. Fifty units of bank run twenty-five
+        // ticks of shortfall, and two have passed.
+        Assert.True(loaded.IsRadarLit(dark.Slot), "the shed landed while the bank was still paying the difference");
+
+        // And when the bank cannot cover one tick's deficit, the shed lands.
+        bank.Energy = 1;
         loaded.RunTicks(2);
 
         Assert.Equal(2, loaded.Team(0).PowerGeneration - loaded.Team(0).PowerDraw);
         Assert.False(loaded.IsRadarLit(dark.Slot), "the radar ran on a grid that had already spent the power");
         Assert.Equal(1, loaded.Team(0).RadarsDark);
-        Assert.Equal(PowerSystem.RadarDraw - 2, loaded.Team(0).PowerShortfall);
+        Assert.Equal(2, loaded.Team(0).PowerShortfall);
     }
 
     /// <summary>
@@ -497,8 +512,14 @@ public sealed class PowerTests
         Assert.False(world.Radars.Covers(world, 0, new WorldPos(VisionSystem.RadarCoverageMm + 20_000, 0, Lane)));
         Assert.False(world.Radars.Covers(world, 2, new WorldPos(0, 0, Lane)));
 
-        // What takes it away is the load, and the load is shed rather than run at a loss.
+        // What takes it away is the load, and the load is shed rather than run at a
+        // loss — after the bank that covers it has drained, which is the buffer's whole
+        // point. The standby accrues six a tick into the bank while the world runs, so
+        // the fixture empties it and asks the shed to land.
         At(world, 0, UnitKind.Factory, 60_000);
+
+        ref TeamState bank = ref world.TeamRef(0);
+        bank.Energy = 0;
         world.RunTicks(2);
 
         Assert.False(world.IsRadarLit(radar.Slot));

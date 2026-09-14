@@ -42,12 +42,16 @@ public static class ProductionSystem
                 continue;
             }
 
-            // A team actually in energy deficit has no power to build with. A team
-            // merely at zero, but not running a deficit, still can — otherwise a
-            // base with no power plant could never build one.
             ref TeamState team = ref world.TeamRef(building.TeamId);
 
-            if (team.EnergyPerTick < 0 && team.Energy <= 0)
+            // The brown-out's last step, and the death spiral it exists to close: a
+            // base short of power used to halt its production outright, and the plant
+            // that would have fixed the deficit was sitting in the queue the halt had
+            // just stopped. Production is therefore slowed, never stopped — half speed
+            // while the brown-out lasts, the plant still buildable on the ticks that
+            // remain. See PowerSystem, where the shed order is written and where the
+            // flag is derived from the buildings standing and the bank.
+            if (team.PowerBrowned && (world.Tick & 1) == 0)
             {
                 continue;
             }

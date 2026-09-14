@@ -364,6 +364,70 @@ public sealed class SimWorld
     public ReadOnlySpan<ProductionJob> JobsOf(int slot)
         => _jobs.AsSpan(slot * SimConstants.MaxQueueLength, _entities[slot].QueueLength);
 
+    /// <summary>Diagnostic dump of one team's first queue: kinds and remaining ticks.</summary>
+    public string DebugQueue(int team, int index)
+    {
+        for (int slot = 0; slot < Capacity; slot++)
+        {
+            if (!IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref GetRefBySlot(slot);
+
+            if (entity.TeamId != team)
+            {
+                continue;
+            }
+
+            var jobs = new List<string>();
+
+            foreach (ProductionJob job in JobsOf(slot))
+            {
+                jobs.Add($"{job.Kind}:{job.RemainingTicks}");
+            }
+
+            if (index == 0)
+            {
+                return string.Join(",", jobs);
+            }
+
+            index--;
+        }
+
+        return "(none)";
+    }
+
+    /// <summary>Test-and-probe read of one team's queues, by role. Diagnostic only.</summary>
+    public bool IsQueuedProbe(int team, UnitKind kind)
+    {
+        for (int slot = 0; slot < Capacity; slot++)
+        {
+            if (!IsAliveSlot(slot))
+            {
+                continue;
+            }
+
+            ref Entity entity = ref GetRefBySlot(slot);
+
+            if (entity.TeamId != team)
+            {
+                continue;
+            }
+
+            foreach (ProductionJob job in JobsOf(slot))
+            {
+                if (job.Kind == kind)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Mutable reference to one job in an entity's queue.</summary>
     public ref ProductionJob JobRef(int slot, int index)
         => ref _jobs[(slot * SimConstants.MaxQueueLength) + index];

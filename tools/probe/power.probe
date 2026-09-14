@@ -1,0 +1,24 @@
+# Q: what does a brown-out actually do, rank by rank — and does the bank buy the base time?
+#
+#   MiVic.Game.exe --detection-demo --probe tools/probe/power.probe --probe-out artifacts/probe/power.txt
+#
+# The detection fixture's base, whose ledger the radar and the emplacement work was built
+# against. The brown-out is §4's third leg: a shortfall drains the stockpile first, the bank
+# pays, and only when the bank cannot cover a tick's deficit does the shed land — detection
+# first, then the guns, then production.
+#
+#   - the healthy line: everything on.
+#   - the strike: the plant off the map, the bank emptied (`power drain`), and the
+#     readings show the shed landing rank by rank — the dish dark, the gun silenced.
+#   - `range` on the emplacement says zero while it is silenced — the same answer the
+#     dark radar's coverage gives.
+
+power 0
+range 504
+
+# --- the strike: the plant off the map, the bank emptied -------------------------------
+strike PowerPlant
+power drain
+tick 2
+power 0
+range 504
