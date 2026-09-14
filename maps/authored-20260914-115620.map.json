@@ -1,0 +1,202 @@
+{
+  "map": "MiVicMap",
+  "version": 1,
+  "body": {
+    "seed": 20250101,
+    "terrainEdits": [
+      {
+        "kind": "AdjustHeight",
+        "cellX": 53,
+        "cellZ": 53,
+        "x": 0,
+        "z": 0,
+        "deltaMm": 8000,
+        "type": "Mud",
+        "radiusCells": 2
+      },
+      {
+        "kind": "AdjustHeight",
+        "cellX": 70,
+        "cellZ": 70,
+        "x": 0,
+        "z": 0,
+        "deltaMm": -20000,
+        "type": "Mud",
+        "radiusCells": 3
+      }
+    ],
+    "structures": [],
+    "mission": {
+      "id": "m_authored",
+      "greekTitle": "\u0391\u03C0\u03BF\u03C3\u03C4\u03BF\u03BB\u03AE 1 \u2014 \u03A4\u03BF \u03A0\u03C1\u03BF\u03B3\u03B5\u03C6\u03CD\u03C1\u03C9\u03BC\u03B1",
+      "greekBriefing": "\u039F\u03B9 \u0394\u03C5\u03C4\u03B9\u03BA\u03BF\u03AF \u03AD\u03C7\u03BF\u03C5\u03BD \u03C3\u03C4\u03AE\u03C3\u03B5\u03B9 \u03C6\u03C5\u03BB\u03AC\u03BA\u03B9\u03BF \u03B2\u03CC\u03C1\u03B5\u03B9\u03B1 \u03C4\u03B7\u03C2 \u03B3\u03C1\u03B1\u03BC\u03BC\u03AE\u03C2. \u0394\u03B9\u03B1\u03C3\u03C0\u03AC\u03C3\u03C4\u03B5 \u03C4\u03B7\u03BD \u03AC\u03BC\u03C5\u03BD\u03B1 \u03BA\u03B1\u03B9 \u03BA\u03B1\u03C4\u03B1\u03C3\u03C4\u03C1\u03AD\u03C8\u03C4\u03B5 \u03C4\u03BF \u03BA\u03AD\u03BD\u03C4\u03C1\u03BF \u03B4\u03B9\u03BF\u03AF\u03BA\u03B7\u03C3\u03AE\u03C2 \u03C4\u03BF\u03C5\u03C2. \u039F\u03B9 \u039A\u03B9\u03BD\u03AD\u03B6\u03BF\u03B9 \u03C3\u03CD\u03BC\u03BC\u03B1\u03C7\u03BF\u03B9 \u03BA\u03B1\u03BB\u03CD\u03C0\u03C4\u03BF\u03C5\u03BD \u03C4\u03B7\u03BD \u03B1\u03BD\u03B1\u03C4\u03BF\u03BB\u03B9\u03BA\u03AE \u03C0\u03BB\u03B5\u03C5\u03C1\u03AC.",
+      "seed": 20250101,
+      "playerBase": [
+        -180000,
+        0,
+        -180000
+      ],
+      "allyBase": [
+        180000,
+        0,
+        -180000
+      ],
+      "enemyBase": [
+        0,
+        0,
+        200000
+      ],
+      "playerUnits": 18,
+      "allyUnits": 10,
+      "enemyUnits": 26,
+      "objectives": [
+        {
+          "kind": "DestroyStructures",
+          "greekDescription": "\u039A\u03B1\u03C4\u03B1\u03C3\u03C4\u03C1\u03AD\u03C8\u03C4\u03B5 \u03BC\u03AF\u03B1 \u03B5\u03C7\u03B8\u03C1\u03B9\u03BA\u03AE \u03B8\u03AD\u03C3\u03B7.",
+          "team": 0,
+          "targetTeam": 2,
+          "targetCount": 1,
+          "holdTicks": 0,
+          "centreX": 0,
+          "centreZ": 0,
+          "radiusMm": 0,
+          "materialsTarget": 0,
+          "tierTarget": 0,
+          "deadlineTick": 7200,
+          "isPrimary": true,
+          "constraint": false
+        }
+      ],
+      "timeLimitTicks": 7200,
+      "primaryObjectives": [
+        {
+          "kind": "DestroyStructures",
+          "greekDescription": "\u039A\u03B1\u03C4\u03B1\u03C3\u03C4\u03C1\u03AD\u03C8\u03C4\u03B5 \u03BC\u03AF\u03B1 \u03B5\u03C7\u03B8\u03C1\u03B9\u03BA\u03AE \u03B8\u03AD\u03C3\u03B7.",
+          "team": 0,
+          "targetTeam": 2,
+          "targetCount": 1,
+          "holdTicks": 0,
+          "centreX": 0,
+          "centreZ": 0,
+          "radiusMm": 0,
+          "materialsTarget": 0,
+          "tierTarget": 0,
+          "deadlineTick": 7200,
+          "isPrimary": true,
+          "constraint": false
+        }
+      ],
+      "triggers": [],
+      "hasTriggers": false,
+      "declaredFlagCount": 0,
+      "roster": {
+        "teams": [
+          {
+            "team": 0,
+            "faction": "Soviet",
+            "side": 0,
+            "judged": true
+          },
+          {
+            "team": 1,
+            "faction": "Chinese",
+            "side": 0,
+            "judged": true
+          },
+          {
+            "team": 2,
+            "faction": "Western",
+            "side": 1,
+            "judged": true
+          }
+        ]
+      }
+    },
+    "effectiveMission": {
+      "id": "m_authored",
+      "greekTitle": "\u0391\u03C0\u03BF\u03C3\u03C4\u03BF\u03BB\u03AE 1 \u2014 \u03A4\u03BF \u03A0\u03C1\u03BF\u03B3\u03B5\u03C6\u03CD\u03C1\u03C9\u03BC\u03B1",
+      "greekBriefing": "\u039F\u03B9 \u0394\u03C5\u03C4\u03B9\u03BA\u03BF\u03AF \u03AD\u03C7\u03BF\u03C5\u03BD \u03C3\u03C4\u03AE\u03C3\u03B5\u03B9 \u03C6\u03C5\u03BB\u03AC\u03BA\u03B9\u03BF \u03B2\u03CC\u03C1\u03B5\u03B9\u03B1 \u03C4\u03B7\u03C2 \u03B3\u03C1\u03B1\u03BC\u03BC\u03AE\u03C2. \u0394\u03B9\u03B1\u03C3\u03C0\u03AC\u03C3\u03C4\u03B5 \u03C4\u03B7\u03BD \u03AC\u03BC\u03C5\u03BD\u03B1 \u03BA\u03B1\u03B9 \u03BA\u03B1\u03C4\u03B1\u03C3\u03C4\u03C1\u03AD\u03C8\u03C4\u03B5 \u03C4\u03BF \u03BA\u03AD\u03BD\u03C4\u03C1\u03BF \u03B4\u03B9\u03BF\u03AF\u03BA\u03B7\u03C3\u03AE\u03C2 \u03C4\u03BF\u03C5\u03C2. \u039F\u03B9 \u039A\u03B9\u03BD\u03AD\u03B6\u03BF\u03B9 \u03C3\u03CD\u03BC\u03BC\u03B1\u03C7\u03BF\u03B9 \u03BA\u03B1\u03BB\u03CD\u03C0\u03C4\u03BF\u03C5\u03BD \u03C4\u03B7\u03BD \u03B1\u03BD\u03B1\u03C4\u03BF\u03BB\u03B9\u03BA\u03AE \u03C0\u03BB\u03B5\u03C5\u03C1\u03AC.",
+      "seed": 20250101,
+      "playerBase": [
+        -180000,
+        0,
+        -180000
+      ],
+      "allyBase": [
+        180000,
+        0,
+        -180000
+      ],
+      "enemyBase": [
+        0,
+        0,
+        200000
+      ],
+      "playerUnits": 18,
+      "allyUnits": 10,
+      "enemyUnits": 26,
+      "objectives": [
+        {
+          "kind": "DestroyStructures",
+          "greekDescription": "\u039A\u03B1\u03C4\u03B1\u03C3\u03C4\u03C1\u03AD\u03C8\u03C4\u03B5 \u03BC\u03AF\u03B1 \u03B5\u03C7\u03B8\u03C1\u03B9\u03BA\u03AE \u03B8\u03AD\u03C3\u03B7.",
+          "team": 0,
+          "targetTeam": 2,
+          "targetCount": 1,
+          "holdTicks": 0,
+          "centreX": 0,
+          "centreZ": 0,
+          "radiusMm": 0,
+          "materialsTarget": 0,
+          "tierTarget": 0,
+          "deadlineTick": 7200,
+          "isPrimary": true,
+          "constraint": false
+        }
+      ],
+      "timeLimitTicks": 7200,
+      "primaryObjectives": [
+        {
+          "kind": "DestroyStructures",
+          "greekDescription": "\u039A\u03B1\u03C4\u03B1\u03C3\u03C4\u03C1\u03AD\u03C8\u03C4\u03B5 \u03BC\u03AF\u03B1 \u03B5\u03C7\u03B8\u03C1\u03B9\u03BA\u03AE \u03B8\u03AD\u03C3\u03B7.",
+          "team": 0,
+          "targetTeam": 2,
+          "targetCount": 1,
+          "holdTicks": 0,
+          "centreX": 0,
+          "centreZ": 0,
+          "radiusMm": 0,
+          "materialsTarget": 0,
+          "tierTarget": 0,
+          "deadlineTick": 7200,
+          "isPrimary": true,
+          "constraint": false
+        }
+      ],
+      "triggers": [],
+      "hasTriggers": false,
+      "declaredFlagCount": 0,
+      "roster": {
+        "teams": [
+          {
+            "team": 0,
+            "faction": "Soviet",
+            "side": 0,
+            "judged": true
+          },
+          {
+            "team": 1,
+            "faction": "Chinese",
+            "side": 0,
+            "judged": true
+          },
+          {
+            "team": 2,
+            "faction": "Western",
+            "side": 1,
+            "judged": true
+          }
+        ]
+      }
+    }
+  }
+}

@@ -267,6 +267,12 @@ public sealed record LaunchOptions
     /// <summary>Asks for the menu explicitly, even when another channel is driving the client.</summary>
     private bool ForceMenu { get; init; }
 
+    /// <summary>
+    /// The map editor: a new map, shaped live. An existing file comes through the editor's
+    /// own panel once it is open, so one flag is the whole of the door.
+    /// </summary>
+    public bool Editor { get; init; }
+
     /// <summary>Directory the campaign's progress and saves live in, instead of the platform default.</summary>
     public string? ProfilePath { get; init; }
 
@@ -615,6 +621,10 @@ public sealed record LaunchOptions
                     options = options with { MissionFilePath = NextValue(args, ref i, arg) };
                     break;
 
+                case "--editor":
+                    options = options with { Editor = true, ShowHelp = false };
+                    break;
+
                 case "--menu":
                     options = options with { ForceMenu = true };
                     break;
@@ -709,7 +719,8 @@ public sealed record LaunchOptions
                    options.RenderSfxPath is null &&
                    !options.IsSelfTest &&
                    !options.SelectHeadquarters &&
-                   !options.FontSample,
+                   !options.FontSample &&
+                   !options.Editor,
         };
 
         if (options.ProfilePath is not null)

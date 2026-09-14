@@ -75,6 +75,26 @@ public sealed partial class MiVicGame : IProbeHost
 
     SimBridge IProbeHost.Simulation => _simulation!;
 
+    MapEditor? IProbeHost.Editor => _editor;
+
+    MapEditor IProbeHost.EnsureEditor()
+    {
+        _editor ??= new MapEditor();
+
+        // The screen follows the session: a probe that drives the editor is asking about
+        // the map being authored, and the renderer draws the world the questions are about.
+        _screen = GameScreen.Editor;
+
+        if (!ReferenceEquals(_simulation, _editor.World))
+        {
+            _simulation = _editor.World;
+            _terrainRevision = -1;
+            _churnRevision = -1;
+        }
+
+        return _editor;
+    }
+
     ModelCatalog IProbeHost.Catalog => _catalog!;
 
     CheckpointStore IProbeHost.Checkpoints { get; } = new();

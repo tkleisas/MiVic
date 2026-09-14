@@ -93,7 +93,7 @@ public sealed class MapFileTests
     }
 
     [Fact]
-    public void AHeightEditOutsideTheMapIsRefused()
+    public void AnEditWhollyOutsideTheMapContributesNothing()
     {
         MapDefinition map = new(
             MissionCatalog.Require("m1_bridgehead").Seed,
@@ -106,7 +106,19 @@ public sealed class MapFileTests
 
         SimWorld world = new(map.Seed, Capacity, map.Mission.Roster);
 
-        Assert.Throws<InvalidDataException>(() => Scenario.BuildMap(world, map));
+        // The edit's centre is off the map, so its coverage is empty: an empty edit
+        // contributes nothing rather than crashing the build. The file loads, the
+        // application runs, and the world is the ground the seed generates — an edit that
+        // says nothing is the one case the loader tolerates, and the test pins which case
+        // that is.
+        Scenario.BuildMap(world, map);
+
+        SimWorld plain = new(map.Seed, Capacity, map.Mission.Roster);
+        Scenario.BuildMap(plain, MapFrom(map.Mission));
+
+        Assert.Equal(
+            world.TerrainTypes.RawTypes.ToArray(),
+            plain.TerrainTypes.RawTypes.ToArray());
     }
 
     [Fact]

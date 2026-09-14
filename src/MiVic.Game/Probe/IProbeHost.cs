@@ -2,6 +2,7 @@ using MiVic.Core.Replay;
 using MiVic.Core.Sim;
 using MiVic.Game.Data;
 using MiVic.Game.Sim;
+using MiVic.Game.Ui;
 using Microsoft.Xna.Framework;
 
 namespace MiVic.Game.Probe;
@@ -20,6 +21,16 @@ public interface IProbeHost
 {
     /// <summary>The running simulation.</summary>
     SimBridge Simulation { get; }
+
+    /// <summary>
+    /// The editor session, created on first ask — and the screen switched to it, because a
+    /// probe that drives the editor is asking about the map being authored, and the panels'
+    /// world is what the questions are about.
+    /// </summary>
+    MapEditor EnsureEditor();
+
+    /// <summary>The editor session, or null when none has been asked for.</summary>
+    MapEditor? Editor { get; }
 
     /// <summary>The model catalogue, which is what <c>model</c> and <c>parts</c> describe.</summary>
     ModelCatalog Catalog { get; }

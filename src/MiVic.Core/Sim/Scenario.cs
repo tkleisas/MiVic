@@ -568,7 +568,94 @@ public static class Scenario
     /// cannot place things on is a file this build refuses where the author is looking.
     /// </para>
     /// </summary>
-    public static ScenarioSetup BuildMap(SimWorld world, MapDefinition map)
+    /// <summary>
+    /// Applies a map's ground edits: the heights, then the re-derived passes, then the
+    /// paints. The first three steps of <see cref="BuildMap"/>, public because the editor's
+    /// live world applies them one edit at a time while the author works.
+    /// </summary>
+    public static void ApplyMapGround(SimWorld world, IReadOnlyList<TerrainEdit> edits)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        // 1. Shape the ground. Each edit resolves to a lattice sample; the height field is
+        //    clamped to its own range, and the passes below are what decide what the shape
+        //    means.
+        foreach (TerrainEdit edit in edits)
+        {
+            if (edit.Kind != TerrainEditKind.AdjustHeight)
+            {
+                continue;
+            }
+
+            foreach (int sample in edit.ResolveCoverage(world.Terrain))
+            {
+                world.Terrain.AdjustHeight(sample, edit.DeltaMm);
+            }
+        }
+
+        // 2. Re-derive. The same builders the world was constructed with, run over the
+        //    edited ground: this is not a second implementation of the passes, it is the
+        //    passes.
+        world.RebuildDerivedTerrain();
+
+        // 3. Paint. After the derivation, because the bands are the ground the author
+        //    started from and a paint is a decision over them.
+        foreach (TerrainEdit edit in edits)
+        {
+            if (edit.Kind != TerrainEditKind.Paint)
+            {
+                continue;
+            }
+
+            int layerCell = edit.ResolveLayerCell(world.TerrainTypes);
+
+            if (layerCell < 0)
+            {
+                throw new InvalidDataException(
+                    $"A paint edit at ({edit.CellX}, {edit.CellZ}) cells / ({edit.X}, {edit.Z}) mm falls outside the map.");
+            }
+
+            if (edit.RadiusCells <= 0)
+            {
+                world.TerrainTypes.SetType(layerCell, edit.Type);
+                continue;
+            }
+
+            int cx = layerCell % world.TerrainTypes.Size;
+            int cz = layerCell / world.TerrainTypes.Size;
+
+            for (int dz = -edit.RadiusCells; dz <= edit.RadiusCells; dz++)
+            {
+                for (int dx = -edit.RadiusCells; dx <= edit.RadiusCells; dx++)
+                {
+                    int x = cx + dx;
+                    int z = cz + dz;
+
+                    if ((uint)x < (uint)world.TerrainTypes.Size && (uint)z < (uint)world.TerrainTypes.Size)
+                    {
+                        world.TerrainTypes.SetType((z * world.TerrainTypes.Size) + x, edit.Type);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lays out a map: the ground first, then the mission the ground was shaped for.
+    /// <para>
+    /// <b>The order is the world's own.</b> See the class comment on
+    /// <see cref="MapDefinition"/> and the ground application above. The refusals the
+    /// author's placements earn are the environment's own — when <paramref name="refusals"/>
+    /// is null a refusal is an exception, which is what a file load wants; when a list is
+    /// given, an invalid placement is reported into it and skipped, which is what an
+    /// editor's live world does, because the author is working and the next edit may make
+    /// the placement legal again.
+    /// </para>
+    /// </summary>
+    public static ScenarioSetup BuildMap(
+        SimWorld world,
+        MapDefinition map,
+        List<(StructurePlacement Placement, string Reason)>? refusals = null)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(map);
@@ -588,51 +675,7 @@ public static class Scenario
                 "Build it with the map's own seed.");
         }
 
-        // 1. Shape the ground. Each edit resolves to a lattice sample; the height field is
-        //    clamped to its own range, and the passes below are what decide what the shape
-        //    means.
-        foreach (TerrainEdit edit in map.TerrainEdits)
-        {
-            switch (edit.Kind)
-            {
-                case TerrainEditKind.AdjustHeight:
-                {
-                    int sample = edit.ResolveSample(world.Terrain);
-
-                    if (sample < 0)
-                    {
-                        throw new InvalidDataException(
-                            $"A height edit at ({edit.CellX}, {edit.CellZ}) cells / ({edit.X}, {edit.Z}) mm falls outside the map.");
-                    }
-
-                    world.Terrain.AdjustHeight(sample, edit.DeltaMm);
-                    break;
-                }
-            }
-        }
-
-        // 2. Re-derive. The same builders the world was constructed with, run over the
-        //    edited ground: this is not a second implementation of the passes, it is the
-        //    passes.
-        world.RebuildDerivedTerrain();
-
-        // 3. Paint. After the derivation, because the bands are the ground the author
-        //    started from and a paint is a decision over them.
-        foreach (TerrainEdit edit in map.TerrainEdits)
-        {
-            if (edit.Kind == TerrainEditKind.Paint)
-            {
-                int layerCell = edit.ResolveLayerCell(world.TerrainTypes);
-
-                if (layerCell < 0)
-                {
-                    throw new InvalidDataException(
-                        $"A paint edit at ({edit.CellX}, {edit.CellZ}) cells / ({edit.X}, {edit.Z}) mm falls outside the map.");
-                }
-
-                world.TerrainTypes.SetType(layerCell, edit.Type);
-            }
-        }
+        ApplyMapGround(world, map.TerrainEdits);
 
         // 4. The mission, laid out on the edited land: the same layout a campaign mission
         //    gets, searched for on the ground that now exists rather than the one the seed
@@ -646,16 +689,17 @@ public static class Scenario
         {
             var site = new WorldPos(placement.X, 0, placement.Z);
 
-            if (!world.CanPlaceStructure(placement.Kind, site, out string reason))
+            if (!world.CanPlaceStructure(placement.Kind, site, out string reason) ||
+                !world.IsSiteClear(placement.Kind, site, out reason))
             {
-                throw new InvalidDataException(
-                    $"A placed {placement.Kind} at ({placement.X}, {placement.Z}) is refused: {reason}.");
-            }
+                if (refusals is null)
+                {
+                    throw new InvalidDataException(
+                        $"A placed {placement.Kind} at ({placement.X}, {placement.Z}) is refused: {reason}.");
+                }
 
-            if (!world.IsSiteClear(placement.Kind, site, out string clearReason))
-            {
-                throw new InvalidDataException(
-                    $"A placed {placement.Kind} at ({placement.X}, {placement.Z}) has no room: {clearReason}.");
+                refusals.Add((placement, reason));
+                continue;
             }
 
             SpawnStructure(world, world.FactionOfTeam(placement.Team), placement.Team, placement.Kind, site, health: 0, spawned: []);

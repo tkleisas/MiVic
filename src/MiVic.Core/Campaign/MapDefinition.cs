@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using MiVic.Core.Terrain;
 using MiVic.Core.Sim;
 
@@ -32,6 +33,12 @@ public enum TerrainEditKind : byte
 /// height, because the author is shaping generated ground, not authoring a height field.
 /// </param>
 /// <param name="Type">The surface to paint, for <see cref="TerrainEditKind.Paint"/>.</param>
+/// <param name="RadiusCells">
+/// How many lattice cells around the resolved one the edit covers, in a square: zero is the
+/// single cell, which is what a file author writes and what the default says. The editor's
+/// brush writes the radius it worked with, so the file carries the stroke rather than fifty
+/// single-cell copies of it.
+/// </param>
 public readonly record struct TerrainEdit(
     TerrainEditKind Kind,
     int CellX = -1,
@@ -39,7 +46,8 @@ public readonly record struct TerrainEdit(
     int X = 0,
     int Z = 0,
     int DeltaMm = 0,
-    TerrainType Type = TerrainType.Grass)
+    TerrainType Type = TerrainType.Grass,
+    int RadiusCells = 0)
 {
     /// <summary>Resolves a height edit to a height-field sample. Metres or lattice alike; -1 when it falls outside the map.</summary>
     public int ResolveSample(HeightMap terrain)
@@ -68,6 +76,46 @@ public readonly record struct TerrainEdit(
 
     private static int IndexIn(int size, int x, int z)
         => (uint)x < (uint)size && (uint)z < (uint)size ? (z * size) + x : -1;
+
+    /// <summary>
+    /// Every lattice index the edit covers, its centre and its radius as a square — the
+    /// shape a footprint already has in this engine, and the shape a brush paints with.
+    /// Off-map cells are clamped out rather than refused: a brush whose centre sits at the
+    /// map's edge covers what it covers, and the caller's own bounds checks refuse what
+    /// fell entirely outside.
+    /// </summary>
+    public IEnumerable<int> ResolveCoverage(HeightMap terrain)
+    {
+        int centre = ResolveSample(terrain);
+
+        if (centre < 0)
+        {
+            yield break;
+        }
+
+        if (RadiusCells <= 0)
+        {
+            yield return centre;
+            yield break;
+        }
+
+        int cx = centre % terrain.Size;
+        int cz = centre / terrain.Size;
+
+        for (int dz = -RadiusCells; dz <= RadiusCells; dz++)
+        {
+            for (int dx = -RadiusCells; dx <= RadiusCells; dx++)
+            {
+                int x = cx + dx;
+                int z = cz + dz;
+
+                if ((uint)x < (uint)terrain.Size && (uint)z < (uint)terrain.Size)
+                {
+                    yield return (z * terrain.Size) + x;
+                }
+            }
+        }
+    }
 }
 
 /// <summary>One structure the author placed on the edited ground.</summary>
@@ -103,6 +151,15 @@ public sealed record MapDefinition(
     IReadOnlyList<StructurePlacement> Structures,
     MissionDefinition Mission)
 {
+    /// <summary>
+    /// Where a tolerant build reports its refused placements, or null to refuse by
+    /// exception — the file load's choice. The editor's live world sets this before it
+    /// builds, because the author is working and an invalid placement is a report rather
+    /// than a refusal: the next edit may make it legal again.
+    /// </summary>
+    [JsonIgnore]
+    public List<(StructurePlacement Placement, string Reason)>? RefusalsSink { get; set; }
+
     /// <summary>
     /// The mission this map plays, with the map's own seed — the ground and the battle are
     /// one world, and the file carries the seed once. The mission body inside a map may

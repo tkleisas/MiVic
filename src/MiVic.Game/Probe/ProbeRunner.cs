@@ -8,6 +8,7 @@ using MiVic.Core.Replay;
 using MiVic.Core.Sim;
 using MiVic.Core.Terrain;using MiVic.Game.Data;
 using MiVic.Game.Sim;
+using MiVic.Game.Ui;
 using MiVic.Map;
 using Microsoft.Xna.Framework;
 
@@ -380,6 +381,9 @@ public sealed class ProbeRunner
             case "flip":
                 Flip(command);
                 break;
+            case "editor":
+                EditorCommand(command);
+                break;
             case "triggers":
                 Triggers(command);
                 break;
@@ -417,7 +421,7 @@ public sealed class ProbeRunner
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
                     "triggers, messages, objectives, map, save, restore, rewind, checkpoints, flip, " +
-                    "expect, validate");
+                    "editor, expect, validate");
         }
     }
 
@@ -2301,6 +2305,139 @@ public sealed class ProbeRunner
 
         Emit($"ok: team {team} moves to side {side}, executing on tick {world.Tick + 1} — `teams` reads what the world answers afterwards");
     }
+
+    /// <summary>
+    /// Drives the editor session: the same methods the panels call, scripted. The probe
+    /// that asks for the editor is asking about the map being authored — the session is
+    /// created on first ask, the screen follows it, and the answers come from the live
+    /// world and the report it keeps. A save the editor refuses while the ground refuses a
+    /// placement is recorded here as the refusal it is, rather than as an error.
+    /// </summary>
+    private void EditorCommand(ProbeCommand command)
+    {
+        const string Usage =
+            "editor tool none|raise|lower|paint|structure|delete | editor brush <radius> <strength-m> | " +
+            "editor paint <surface> | editor place <Kind> <x> <z> [team] | editor apply <x> <z> | " +
+            "editor undo | editor name <file> | editor save | editor report";
+
+        MapEditor editor = _host.EnsureEditor();
+        string what = command.Argument(0, "an editor verb", Usage);
+
+        switch (what)
+        {
+            case "tool":
+            {
+                string name = command.Argument(1, "a tool name", Usage);
+
+                if (!Enum.TryParse(name, ignoreCase: true, out EditorTool tool) || !Enum.IsDefined(tool))
+                {
+                    throw new ProbeException($"'{name}' is not an editor tool — {Usage}");
+                }
+
+                editor.UseTool(tool);
+                Emit($"ok: tool armed: {tool}");
+                break;
+            }
+
+            case "brush":
+            {
+                int radius = (int)command.Whole(1, "a radius in cells", Usage, 0, 6);
+                int strength = (int)(command.Number(2, "a height step in metres", Usage) * WorldPos.MmPerMetre);
+                editor.UseBrush(radius, strength);
+                Emit($"ok: brush radius {radius}, step {strength} mm");
+                break;
+            }
+
+            case "paint":
+            {
+                string name = command.Argument(1, "a surface name", Usage);
+
+                if (!Enum.TryParse(name, ignoreCase: true, out TerrainType type) || !Enum.IsDefined(type))
+                {
+                    throw new ProbeException($"'{name}' is not a surface — {Usage}");
+                }
+
+                editor.UsePaint(type);
+                Emit($"ok: paint set to {type}");
+                break;
+            }
+
+            case "place":
+            {
+                string name = command.Argument(1, "a structure role", Usage);
+                float x = command.Number(2, "an x in metres", Usage);
+                float z = command.Number(3, "a z in metres", Usage);
+                int team = (int)command.OptionalNumber(4, 0f, "a team", Usage);
+
+                if (!Enum.TryParse(name, ignoreCase: true, out UnitKind kind) || !UnitCatalog.TryGet(kind, out _) ||
+                    !UnitCatalog.Get(kind).IsBuilding)
+                {
+                    throw new ProbeException($"'{name}' is not a structure — {Usage}");
+                }
+
+                editor.UsePlacement(kind, team);
+                bool placed = editor.PlaceStructure(kind, GroundMm(x, z));
+                Emit(placed
+                    ? $"ok: {UnitCatalog.GreekName(kind)} placed at (x {x:0.#}, z {z:0.#}) m for team {team}"
+                    : $"query: refused — {editor.Notice}");
+                break;
+            }
+
+            case "apply":
+            {
+                float x = command.Number(1, "an x in metres", Usage);
+                float z = command.Number(2, "a z in metres", Usage);
+                WorldPos at = GroundMm(x, z);
+                int sample = editor.SampleAt(at);
+
+                if (sample < 0)
+                {
+                    throw new ProbeException($"({x}, {z}) m is off the map — {Usage}");
+                }
+
+                TerrainEdit applied = editor.ApplyBrush(sample % editor.World.World.Terrain.Size, sample / editor.World.World.Terrain.Size);
+                Emit(
+                    $"ok: {applied.Kind} at cell ({applied.CellX}, {applied.CellZ}) of {applied.RadiusCells} cells radius, " +
+                    $"{applied.DeltaMm} mm — {ProbeFormat.Count(editor.EditCount, "edit")} in the list");
+                break;
+            }
+
+            case "undo":
+                editor.Undo();
+                Emit($"ok: undone — {ProbeFormat.Count(editor.EditCount, "edit")} in the list");
+                break;
+
+            case "name":
+                editor.SetFileName(command.Argument(1, "a file name", Usage));
+                Emit($"ok: file name: {editor.MapFileName}");
+                break;
+
+            case "save":
+            {
+                string before = editor.MapFileName;
+                editor.Save();
+
+                // A save that was refused is a reading, not a failure: the report is the
+                // author's sentence, and the transcript carries it.
+                Emit(editor.MapFileName == before && editor.Dirty
+                    ? $"query: save refused — {editor.Notice}"
+                    : $"ok: {editor.Notice}");
+                break;
+            }
+
+            case "report":
+                Emit($"query: editor — {ProbeFormat.Count(editor.EditCount, "edit")}, " +
+                    $"{editor.World.World.AliveCount} entities standing, " +
+                    $"{(editor.Dirty ? "unsaved changes" : "clean")}");
+                break;
+
+            default:
+                throw new ProbeException($"'{what}' is not an editor verb — {Usage}");
+        }
+    }
+
+    /// <summary>World position from metres, for the editor's cursor-free scripted clicks.</summary>
+    private static WorldPos GroundMm(float x, float z) => new((int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre));
 
     /// <summary>Every playing team with the side it is on now, in one line.</summary>
     private static string DescribeSides(SimWorld world)

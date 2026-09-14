@@ -801,9 +801,26 @@ and a gun emplacement on the road to it — as the demonstration, and
 `tools/probe/map-file.probe` reads the shaped ground itself: the surfaces census, the attributes
 on the painted cells, and the authored mission validated under the campaign's own check.
 
-**Still open here, and it is the part an interactive editor owes:** showing the author *what
-changed* — which placements an edit just invalidated, and why. The machinery to ask exists
-everywhere; the screen that asks it while the author works does not yet.
+**Built: the screen — the part the cursor is for.** `--editor` opens the authoring screen over
+the map being authored: a brush for **raise and lower** (radius and step, a stroke applied once per
+cell it crosses, the whole stroke one undo), **paint** with a surface choice, **structure
+placement** with the ghost drawn in the faction it will belong to and tinted by whether the rules
+accept it, and a **delete** that removes the placement and the entity together. The file row saves
+into `maps/` under a name the author types or the hour writes; **Δοκιμή παιχνιδιού** hands the map
+as it stands to a live match, and Πίσω στο μενού leaves the session where it was.
+
+**And the loop the section exists for is closed.** After every ground change the editor re-asks
+every placement the question the ground now answers, and the report lists what it refuses with the
+reason — the same sentence the build panel would show. The save refuses while the report is
+non-empty, because a file the loader would refuse is a file the editor does not write: the author
+resolves, or undoes, or moves the placement, and the file that leaves is one the game will open.
+`tools/probe/editor.probe` is the session scripted — the probe's `editor` verb drives the same
+methods the panels call, without a cursor — and it pins the loop in CI: a stroke, a placement, the
+deepened basin, the refused save, and the honest one after the undo.
+
+**What the editor does not do, and says so:** the mission body — objectives, triggers, the roster —
+is edited as data in the file, because that part has no cursor. The editor authors the ground, the
+surfaces and the placements.
 
 **Where the catalog stands, deliberately unchanged.** The campaign still ships as C#: the four
 missions' definitions are reviewed code, and moving them would be a migration of content rather

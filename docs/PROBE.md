@@ -2114,3 +2114,19 @@ query:   Mine            122 cells    2,8%  Κοίτασμα
 
 The loader refused what the placement rules refuse before the probe ever ran; the transcript
 reads the shaped ground itself.
+
+## Worked example: can an author shape ground and save what they shaped?
+
+`tools/probe/editor.probe` drives the editor session without a cursor — the same methods the
+panels call, scripted. The transcript reads the loop the editor exists for:
+
+```
+ok: AdjustHeight at cell (70, 70) of 3 cells radius, -20000 mm — 2 edits in the list
+ok: undone — 1 edit in the list
+query: refused — Πυροβολείο: χρειάζεται στεριά
+query: save refused — Δεν αποθηκεύτηκε — 1 τοποθέτηση(σεις) δεν γίνονται δεκτές από το έδαφος.
+ok: Αποθηκεύτηκε: maps/authored-probe.map.json
+```
+
+The save that was refused was refused by the editor, not by the loader: a file the loader would
+turn away is a file the editor does not write. See ROADMAP §10 for the report and the doors.

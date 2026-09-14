@@ -45,7 +45,7 @@ public partial class MiVicGame
     /// <summary>True while the pause panel is open, which stops the clock rather than the world.</summary>
     private bool _paused;
 
-    private GameScreen Screen => _options.Menu ? _screen : GameScreen.Battle;
+    private GameScreen Screen => _options.Menu || _options.Editor ? _screen : GameScreen.Battle;
 
     /// <summary>
     /// Reads the campaign record, or starts a fresh one when the file cannot be read.
@@ -286,5 +286,8 @@ public partial class MiVicGame
 
         /// <summary>A battle being played.</summary>
         Battle = 1,
+
+        /// <summary>The map editor: an authored map being shaped.</summary>
+        Editor = 2,
     }
 }

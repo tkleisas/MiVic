@@ -140,6 +140,7 @@ self-contained portable archives for linux-x64 and win-x64
 | `--paperclip-demo` | start the Operation Paperclip demonstration: a side the victory rule does not judge |
 | `--generator-demo` | a derelict factory on neutral ground emitting its wardens on a fixed cadence (ROADMAP §9) |
 | `--menu` | open the front-end menu even when another option drives the client, for screenshots of it |
+| `--editor` | the map editor: raise and lower with a brush, paint surfaces, place structures, save and test-play (ROADMAP §10) |
 | `--profile <dir>` | where the campaign's progress and saved matches live, instead of the platform default |
 | `--record <file>` | log every external command and save the match as a replay |
 | `--replay <file>` | verify a replay headlessly and exit (0 = the match was reproduced) |

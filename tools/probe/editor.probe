@@ -1,0 +1,44 @@
+# Q: can an author shape ground with the editor's own brush, place on it, and save what they
+# Q: shaped — and does the editor refuse to save what the ground refuses?
+#
+#   MiVic.Game.exe --probe tools/probe/editor.probe --probe-out artifacts/probe/editor.txt
+#
+# The editor session, scripted: the same methods the panels call, driven without a cursor.
+# The session is created on first ask and the screen follows it, so the transcript reads the
+# world the author is shaping. See ROADMAP §10.
+#
+#   - `editor apply` is a brush stroke: the edit is recorded, the passes re-derive from the
+#     edited ground, and the count in the list is the count the file will carry.
+#   - `editor place` asks the placement rules in the same words a player's construction gets;
+#     the refused one is recorded as the reading it is.
+#   - `editor undo` pops the last edit and rebuilds the world from what remains, because the
+#     world is a function of the list and nothing else.
+#   - the save with a refused placement is refused, in the report's own sentence; the honest
+#     save comes after the refused placement is gone.
+
+editor tool raise
+editor brush 2 8
+editor apply -50 -50
+editor report
+
+editor tool structure
+editor place GunEmplacement 120 120 0
+editor report
+
+editor tool lower
+editor brush 3 20
+editor apply 30 30
+editor undo
+editor apply 30 30
+
+# The basin is deep enough now that a second emplacement beside it may stand nowhere; the
+# report says so, and the save says no, which is the loop the editor exists for.
+editor tool structure
+editor place GunEmplacement 30 30 0
+editor save
+
+editor undo
+editor report
+editor tool none
+editor name authored-probe
+editor save

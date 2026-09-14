@@ -1563,7 +1563,7 @@ public sealed class SimBridge
         // can rebuild it with no client involved. A map's ground is edited and
         // re-derived before the layout that stands on it is searched for.
         ScenarioSetup setup = map is not null
-            ? MiVic.Core.Sim.Scenario.BuildMap(World, map)
+            ? MiVic.Core.Sim.Scenario.BuildMap(World, map, map.RefusalsSink)
             : mission is not null
                 ? MiVic.Core.Sim.Scenario.BuildMission(World, mission)
                 : MiVic.Core.Sim.Scenario.Build(World, scenario);

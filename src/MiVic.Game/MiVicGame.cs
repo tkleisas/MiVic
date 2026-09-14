@@ -77,7 +77,7 @@ public sealed partial class MiVicGame : XnaGame
     /// for, and a match is unchanged.
     /// </para>
     /// </summary>
-    private bool DrawsFogOfWar => !_options.IsFixture;
+    private bool DrawsFogOfWar => !_options.IsFixture && Screen != GameScreen.Editor;
 
     /// <summary>
     /// The window title, in Greek.
@@ -895,10 +895,15 @@ public sealed partial class MiVicGame : XnaGame
         }
 
         // A menu launch opens on the front end, over the battle the constructor built
-        // as a backdrop, frozen until the menu answers.
+        // as a backdrop, frozen until the menu answers. An editor launch opens on the
+        // map being authored, which is what the constructor built for it.
         if (_options.Menu)
         {
             _screen = GameScreen.Menu;
+        }
+        else if (_options.Editor)
+        {
+            _screen = GameScreen.Editor;
         }
 
         if (_options.VictoryDemo)
@@ -1061,6 +1066,16 @@ public sealed partial class MiVicGame : XnaGame
             }
         }
 
+        // The editor owns the frame while it is showing. The world on screen is the map
+        // being authored, and it never ticks: a battlefield nobody is fighting is a plan
+        // the author is drawing on. The frame accounting above still runs, because a
+        // screenshot of the editor is a screenshot of a frame like any other.
+        if (Screen == GameScreen.Editor)
+        {
+            UpdateEditor(gameTime);
+            return;
+        }
+
         // The front end owns the frame while it is showing. The battle behind it stays
         // on the map frozen — a menu over a battle nobody is watching is not a battle —
         // and the menu's answer, when one comes, replaces the battle wholesale. The
@@ -1169,7 +1184,7 @@ public sealed partial class MiVicGame : XnaGame
         // The gallery, the viewer and the effect fixtures are inspection tools, not a
         // game: a HUD over a contact sheet hides half the models, and the victory
         // banner that a team with no opposition triggers covers the rest.
-        HudCommand? command = _options.IsFixture ? null : _hud.Draw(BuildSnapshot());
+        HudCommand? command = _options.IsFixture || Screen == GameScreen.Editor ? null : _hud.Draw(BuildSnapshot());
 
         if (command is HudCommand requested && !IsPlayback)
         {
