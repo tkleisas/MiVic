@@ -147,6 +147,7 @@ self-contained portable archives for linux-x64 and win-x64
 | `--probe <script>` | run a probe script — scripted queries, screenshots and checks in one process — and exit |
 | `--probe-out <file>` | where a probe writes its transcript (default `probe-report.txt`) |
 | `--mission <id>` | start a campaign mission |
+| `--mission-file <path>` | play a mission authored as a file (the `MissionFile` format; the loader runs the script validator and refuses one that cannot be won) |
 | `--mission-list` | list the campaign |
 | `--render-audio <dir>` | export one WAV per faction theme and exit |
 | `--render-sfx <dir>` | export one WAV per sound effect and exit |

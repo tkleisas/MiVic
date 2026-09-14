@@ -83,7 +83,7 @@ jobs:
           for p in tools/probe/*.probe; do
             name=$(basename "$p" .probe)
             case "$name" in objectives|paperclip) continue ;; esac
-            flag=$(grep -o -- "--[a-z-]*-demo\|--victory-demo\|--select-hq" "$p" | head -1 || true)
+            flag=$(grep -o -- "--[a-z-]*-demo\|--victory-demo\|--select-hq\|--mission-file missions/[a-z_-]*.mission.json" "$p" | head -1 || true)
             echo "--- probe: $name ${flag}"
             LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
               dotnet run --project src/MiVic.Game -c Release --no-build -- \

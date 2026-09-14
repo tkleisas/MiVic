@@ -1,0 +1,23 @@
+# Q: does an authored mission file play the mission it says it is?
+#
+#   MiVic.Game.exe --mission-file missions/m_demo_passage.mission.json --probe tools/probe/mission-file.probe --probe-out artifacts/probe/mission-file.txt
+#
+# The file format's demonstration: a mission authored as data, loaded by --mission-file, and
+# asked the same questions a campaign mission is asked. The loader has already run the script
+# validator — a file whose mission cannot be won never reaches this probe — so what is read
+# here is the mission playing: the trigger the clock fires, the flag the ledger raises, and
+# the scripted objective the mission completes by its own sentence.
+#
+#   - `validate` is the same check the shipped missions sit under: an authored mission is
+#     judged by the machinery the campaign is judged by, and the check is recorded.
+#   - `triggers` reads the script's state; `objectives` reads the panel.
+#   - the second `objectives` is 400 ticks after the western loss ledger can move, and the
+#     probe does not depend on the AI's choice: the reading is of the vocabulary, not of who
+#     is winning.
+
+validate
+tick 320
+triggers
+messages
+tick 400
+objectives

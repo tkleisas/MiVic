@@ -94,6 +94,14 @@ public sealed record LaunchOptions
     public string? MissionId { get; init; }
 
     /// <summary>
+    /// A mission from a file, in the <see cref="MiVic.Core.Campaign.MissionFile"/> format —
+    /// the door an author's own mission walks through, before the campaign catalog knows it.
+    /// The loader runs the script validator, so a mission that cannot be won is refused here,
+    /// where the author is looking.
+    /// </summary>
+    public string? MissionFilePath { get; init; }
+
+    /// <summary>
     /// Which match to lay out: the standard three-faction skirmish unless the command line asks for
     /// one of the two-faction ones. The match decides the sides the simulation plays by as well as
     /// the bases on the map — see <c>MatchRoster</c> — so this is the only place the client chooses
@@ -591,6 +599,10 @@ public sealed record LaunchOptions
                     options = options with { PaperclipDemo = true, ShowHelp = false };
                     break;
 
+                case "--mission-file":
+                    options = options with { MissionFilePath = NextValue(args, ref i, arg) };
+                    break;
+
                 case "--menu":
                     options = options with { ForceMenu = true };
                     break;
@@ -679,6 +691,7 @@ public sealed record LaunchOptions
                    options.RecordPath is null &&
                    options.ReplayPath is null &&
                    options.MissionId is null &&
+                   options.MissionFilePath is null &&
                    options.RenderAudioPath is null &&
                    options.RenderSfxPath is null &&
                    !options.IsSelfTest &&

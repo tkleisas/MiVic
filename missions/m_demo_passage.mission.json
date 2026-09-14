@@ -1,0 +1,63 @@
+{
+  "mission": "MiVicMission",
+  "version": 1,
+  "id": "m_demo_passage",
+  "body": {
+    "id": "m_demo_passage",
+    "greekTitle": "Το Πέρασμα της Κολάσεως",
+    "greekBriefing": "Ένα πέρασμα ανάμεσα στους λάκκους της λάβας, και ο μοναδικός δρόμος για τα δυτικά. Οι Δυτικοί στέκονται στο άλλο άκρο του και εμείς κρατάμε το πέρασμα. Η πρώτη τους θέση που πέσει είναι η πρώτη που θα κρίνει την ημέρα — και τα κανόνια που θα κληθούν να τη φυλάξουν δεν χρειάζεται να φτάσουν μέχρι εδώ: μπορούν να τα κάψει η ίδια η γη.",
+    "seed": 20250111,
+    "playerBase": [-180000, 0, -180000],
+    "allyBase": [0, 0, 0],
+    "enemyBase": [180000, 0, 180000],
+    "playerUnits": 14,
+    "allyUnits": 0,
+    "enemyUnits": 14,
+    "timeLimitTicks": 7200,
+    "roster": {
+      "teams": [
+        { "team": 0, "faction": "Soviet", "side": 0, "judged": true },
+        { "team": 2, "faction": "Western", "side": 1, "judged": true }
+      ]
+    },
+    "objectives": [
+      {
+        "kind": "DestroyStructures",
+        "greekDescription": "Καταστρέψτε μία δυτική θέση.",
+        "team": 0,
+        "targetTeam": 2,
+        "targetCount": 1,
+        "deadlineTick": 7200,
+        "isPrimary": true,
+        "constraint": false
+      },
+      {
+        "kind": "Scripted",
+        "greekDescription": "Προαιρετικά: σιωπήστε το πέρασμα πριν φτάσουν.",
+        "team": 0,
+        "isPrimary": false,
+        "deadlineTick": 3600
+      }
+    ],
+    "triggers": [
+      {
+        "id": "warning",
+        "condition": { "kind": "TimeElapsed", "tick": 300 },
+        "actions": [
+          { "kind": "Message", "greekText": "Πυρβολή από το πέρασμα! Η γη εκεί καίει." }
+        ],
+        "note": "The mission tells the player where the passage is by telling them what the ground there does."
+      },
+      {
+        "id": "ambush",
+        "condition": { "kind": "StructuresLost", "team": 2, "count": 1 },
+        "actions": [
+          { "kind": "Message", "greekText": "Έπεσε η πρώτη τους θέση." },
+          { "kind": "SetFlag", "flag": 0 },
+          { "kind": "CompleteObjective", "objective": 1 }
+        ],
+        "note": "The scripted objective completes when the first western position falls — the mission knows it happened, the objective table does not."
+      }
+    ]
+  }
+}

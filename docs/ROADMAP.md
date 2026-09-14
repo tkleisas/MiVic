@@ -761,6 +761,28 @@ ledger and the path budget each had to be corrected for this month.
 are still C# today), an edit list that survives load, re-derivation after a terrain edit, an authoring
 UI, and a test-play loop that renders the author's mission and reports the validators to them. The
 test-play half is nearly free already: `--mission <id>`, the probe, and the replay round trip cover it.
+**Built: the format and the loader — the first missing piece.** A mission is now a file
+(`MissionFile`): JSON, indented, enums spelled as their names, versioned by an envelope that names
+what the file is, because a format nobody versioned is a format nobody can change. The loader runs
+`TriggerSystem.Validate` on everything it loads — the script that can never fire, the objective the
+opening world has already decided, the side that stands in nothing — and refuses the mission with
+the validator's own sentences, so an author meets the refusal where they are working rather than in
+a lost match. Placement stays with the scenario build, which lays a file's mission out through the
+same functions it lays the campaign's missions out through; there is no second rule here.
+
+The proof is the round trip: **every shipped mission, including the one with the richest script,
+goes through the format and comes back element-wise identical** — a test that walks ids, rosters,
+objectives and every trigger's condition and actions, because a record's own equality compares its
+collections by reference and would bless a format that silently rewrote them. `--mission-file
+<path>` plays one, with `missions/m_demo_passage.mission.json` — «Το Πέρασμα της Κολάσεως», a
+two-faction ambush on the lava field with a scripted objective and a flag — as the demonstration,
+and `tools/probe/mission-file.probe` is its transcript: validated clean, the trigger firing on the
+tick the file says, the message shown, and the objectives the mission hangs on its own sentence.
+
+**Where the catalog stands, deliberately unchanged.** The campaign still ships as C#: the four
+missions' definitions are reviewed code, and moving them would be a migration of content rather
+than of capability — the format is proven able to carry them, and the editor (§10's remaining
+pieces) will decide where missions live when it exists.
 
 **Answered: the environment is the authority, and the flow follows from it.** No buildings on water, no
 units on lava, no base on ground nothing can be built from — the editor does not get its own opinion

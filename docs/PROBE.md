@@ -2081,3 +2081,21 @@ while the factory stands. That is the second half of the reading: the zone gives
 and the factory is untouched by either — `order 508 attack 509` is taken (the factory is at war
 with everybody) and dropped by the next tick, because acquisition may never hold what nothing can
 hurt.
+
+## Worked example: does an authored mission file play the mission it says it is?
+
+`tools/probe/mission-file.probe`, against `--mission-file missions/m_demo_passage.mission.json` —
+a mission authored as data in the format ROADMAP §10 describes, loaded by the client, judged by
+the same validator the campaign sits under, and played:
+
+```
+query: validate: 'm_demo_passage' — 2 objectives, 2 triggers, 2 teams in the match, 0 problems
+check: PASS ''m_demo_passage' is a mission that can be won' — ...
+cmd: tick 320
+query:   #0 warning          FIRED on tick 300 (15.0 s in)
+query:       then       tell the player "Πυρβολή από το πέρασμα! Η γη εκεί καίει."
+```
+
+The loader has already refused anything the validator would, so what the transcript reads is the
+mission playing: the trigger the clock fires, the message shown, and the scripted objective the
+mission completes by its own sentence.

@@ -652,33 +652,35 @@ public sealed partial class MiVicGame : XnaGame
             ? new SimBridge(ReplayFile.Load(watchPath))
             : _options.MissionId is { } missionId
                 ? new SimBridge(MissionCatalog.Require(missionId))
-                : _options.Viewer
-                    ? new SimBridge(_options.Seed, ViewerFaction, ViewerKind)
-                    : _options.FireDemo
-                        ? SimBridge.CreateFiringRange(_options.Seed)
-                        : _options.CombatDemo
-                            ? SimBridge.CreateCombatDemo(_options.Seed)
-                            : _options.TurretDemo
-                                ? SimBridge.CreateTurretDemo(_options.Seed)
-                                : _options.FlightDemo
-                                    ? SimBridge.CreateFlightDemo(_options.Seed)
-                                    : _options.EmplacementDemo
-                                        ? SimBridge.CreateEmplacementDemo(_options.Seed)
-                                        : _options.DetectionDemo
-                                            ? SimBridge.CreateDetectionDemo(_options.Seed)
-                                            : _options.AllianceDemo
-                                                ? SimBridge.CreateAllianceDemo(_options.Seed)
-                                                : _options.ArmourDemo
-                                                    ? SimBridge.CreateArmourDemo(_options.Seed)
-                                                    : _options.MudDemo
-                                                        ? SimBridge.CreateMudDemo(_options.Seed)
-                                                        : _options.GeneratorDemo
-                                                            ? SimBridge.CreateGeneratorDemo(_options.Seed)
-                                                            : _options.ObjectiveDemo
-                                                            ? SimBridge.CreateObjectiveDemo()
-                                                            : _options.PaperclipDemo
-                                                                ? SimBridge.CreatePaperclipDemo()
-                                                                : new SimBridge(_options.Seed, _options.IsModelGallery ? ScenarioKind.ModelGallery : _options.Match);
+                : _options.MissionFilePath is { } missionPath
+                    ? new SimBridge(MissionFile.Load(missionPath))
+                    : _options.Viewer
+                        ? new SimBridge(_options.Seed, ViewerFaction, ViewerKind)
+                        : _options.FireDemo
+                            ? SimBridge.CreateFiringRange(_options.Seed)
+                            : _options.CombatDemo
+                                ? SimBridge.CreateCombatDemo(_options.Seed)
+                                : _options.TurretDemo
+                                    ? SimBridge.CreateTurretDemo(_options.Seed)
+                                    : _options.FlightDemo
+                                        ? SimBridge.CreateFlightDemo(_options.Seed)
+                                        : _options.EmplacementDemo
+                                            ? SimBridge.CreateEmplacementDemo(_options.Seed)
+                                            : _options.DetectionDemo
+                                                ? SimBridge.CreateDetectionDemo(_options.Seed)
+                                                : _options.AllianceDemo
+                                                    ? SimBridge.CreateAllianceDemo(_options.Seed)
+                                                    : _options.ArmourDemo
+                                                        ? SimBridge.CreateArmourDemo(_options.Seed)
+                                                        : _options.MudDemo
+                                                            ? SimBridge.CreateMudDemo(_options.Seed)
+                                                            : _options.GeneratorDemo
+                                                                ? SimBridge.CreateGeneratorDemo(_options.Seed)
+                                                                : _options.ObjectiveDemo
+                                                                    ? SimBridge.CreateObjectiveDemo()
+                                                                    : _options.PaperclipDemo
+                                                                        ? SimBridge.CreatePaperclipDemo()
+                                                                        : new SimBridge(_options.Seed, _options.IsModelGallery ? ScenarioKind.ModelGallery : _options.Match);
 
         _renderer = new InstancedRenderer(GraphicsDevice, Content);
         _catalog = new ModelCatalog(_renderer, AppContext.BaseDirectory);
