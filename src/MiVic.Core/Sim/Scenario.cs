@@ -173,7 +173,7 @@ public static class Scenario
         UnitKind.AntiAir, UnitKind.Commissar, UnitKind.RobotInfantry, UnitKind.Drone, UnitKind.Mercenary,
         UnitKind.StealthRecon, UnitKind.ElectroPrototype, UnitKind.Harvester,
         UnitKind.Aircraft, UnitKind.CommandCentre, UnitKind.PowerPlant, UnitKind.NuclearPlant,
-        UnitKind.Factory, UnitKind.DesignBureau,
+        UnitKind.SolarPlant, UnitKind.HydroPlant, UnitKind.Factory, UnitKind.DesignBureau,
     ];
 
     /// <summary>Metres between gallery columns, and twice that between its rows.</summary>
@@ -595,8 +595,15 @@ public static class Scenario
 
         // 2. Re-derive. The same builders the world was constructed with, run over the
         //    edited ground: this is not a second implementation of the passes, it is the
-        //    passes.
-        world.RebuildDerivedTerrain();
+        //    passes. The re-derivation only runs when the shape moved — a paint-only
+        //    edit writes the surface on the ground as it stands, and a re-derive here
+        //    would re-band the map and wipe the paint it is about to apply.
+        // The shape moved when any of these edits is a height edit; a paint-only call
+        // writes the surface on the ground as it stands.
+        if (edits.Any(edit => edit.Kind == TerrainEditKind.AdjustHeight))
+        {
+            world.RebuildDerivedTerrain();
+        }
 
         // 3. Paint. After the derivation, because the bands are the ground the author
         //    started from and a paint is a decision over them.

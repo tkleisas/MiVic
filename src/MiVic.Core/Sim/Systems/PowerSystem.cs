@@ -99,6 +99,13 @@ public static class PowerSystem
     {
         UnitKind.PowerPlant => EconomySystem.PowerPlantEnergy,
         UnitKind.NuclearPlant => EconomySystem.NuclearPlantEnergy,
+
+        // The hydro plant's ledger figure is its wet rate — the plant cannot stand
+        // anywhere else, so its dry rate does not exist. The solar plant's figure is its
+        // clear-sky rate: a weathered farm occupies the same capacity while producing
+        // less, which is the cost of the sun as a fuel.
+        UnitKind.HydroPlant => EconomySystem.HydroPlantEnergy,
+        UnitKind.SolarPlant => EconomySystem.SolarPlantEnergy,
         _ => 0,
     };
 

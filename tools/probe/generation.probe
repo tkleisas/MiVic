@@ -1,0 +1,41 @@
+# Q: is the plural generation real — a sun the Soviets cannot buy, water the hydro plant
+# Q: must stand beside, and a weather strike that takes a farm's output away?
+#
+#   MiVic.Game.exe --detection-demo --probe tools/probe/generation.probe --probe-out artifacts/probe/generation.txt
+#
+# §4's generation notes, applied: the solar plant the Σοβιετικοί cannot build, the hydro
+# plant the water constrains, and the weather that is an economic weapon.
+#
+#   - `structure` asks the build panel's own verdict for a solar plant on the Soviet
+#     headquarters: refused, in the same words the panel shows. The NotFor clause is the
+#     asymmetry stated as a list.
+#   - `place` a hydro plant at the fixture's own plant site — dry ground — and read the
+#     refusal: the water rule is the hydro plant's own, asked of the ground rather than
+#     of the purse.
+#   - the editor verbs build a Chinese solar farm beside the base, and the paint brush
+#     lays mud over it: `power` reads the rate at half while the ground under the farm
+#     reads mud. The faction that cannot build solar owns the weather, and this is why —
+#     the asymmetry bites in both directions.
+#   - `power` carries the ledgers: a farm occupies its clear-sky rate, and the hydro
+#     plant occupies the best non-nuclear figure in the game.
+
+structure SolarPlant 240 60 0
+place HydroPlant 240 -30 0
+
+editor place SolarPlant 240 240 2
+tick 2
+editor report
+power 2
+
+editor tool paint
+editor paint Mud
+editor brush 4 0
+editor apply 240 240
+tick 2
+
+power 2
+editor undo
+tick 2
+
+power 2
+# the rate is read again after the weather has been taken away

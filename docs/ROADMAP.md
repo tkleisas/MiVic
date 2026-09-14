@@ -684,6 +684,19 @@ capped role will quietly stop once the team hits the cap, which is correct but i
 generator on the neutral team is subject to no cap at all, which is how a zone ends up breeding. Say
 which of the two bounds a reader should expect to bite first, in the comment where the spawn happens.
 
+**Built: generation is plural, and the variants are faction-flavoured.** The solar plant —
+**Ηλιακός Σταθμός** — is the sun's own generation: half a thermal plant's output, three quarters of
+its cost, no water at all, and `NotFor` the Σοβιετικοί, whose weather ability is the counter to it.
+The rate is the *clear-sky* rate: **Έλεγχος Καιρού halves it while it sits on the farm**, reading
+the same surface the movement and the cover read, so the sun and the mud cannot disagree about
+what the weather is doing. The hydro plant — **Υδροηλεκτρικός Σταθμός** — is the best non-nuclear
+figure in the game, and the one structure whose placement the water constrains: three navigation
+cells of reach from a water cell, the same question the bridge asks for a span, and the refusal in
+the same words a player's construction is shown. Both are in the capacity ledger, both are in the
+editor's structure list, and a weather strike over a farm is an economic weapon rather than a
+decoration — the asymmetry biting in both directions instead of reading as a list of who may build
+what.
+
 **Built, and the order is whole.** The system had stopped at the first rank deliberately — the
 comment said so — and the other two ranks are built now. The stockpile is the **buffer**: a
 shortfall drains the bank, one tick at a time, and a base running short on a full bank is a base

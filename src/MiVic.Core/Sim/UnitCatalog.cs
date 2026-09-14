@@ -123,7 +123,8 @@ public readonly record struct UnitDefinition(
     int RoleArmourPermille = 1_000,
     int SupplyCost = 0,
     bool Invulnerable = false,
-    bool NeverBuilt = false)
+    bool NeverBuilt = false,
+    Faction NotFor = Faction.None)
 {
     /// <summary>True when the role can shoot at anything.</summary>
     public bool IsArmed => AttackDamage > 0 && AttackRangeMm > 0;
@@ -286,6 +287,34 @@ public static class UnitCatalog
         // defending, which is a decision rather than a formality.
         new(UnitKind.NuclearPlant, 900, 0, 600, 4_000, 0, 4, UnitKind.CommandCentre, true, WaterCost: 320,
             FootprintRadiusCells: 2, RoleArmourPermille: 800),
+
+        // Ηλιακός Σταθμός: the solar plant. Generation is the sun's, and the sun is
+        // free — no water, no fuel, the cheapest energy on the field. It is the
+        // generator the Σοβιετικοί cannot build, and the asymmetry is the point:
+        // weather control belongs to the faction that cannot build solar, so a Soviet
+        // Έλεγχος Καιρού laid over a solar farm takes its output away while the ground
+        // under it is weathered. The economics: cheaper than a thermal plant, half the
+        // rate, and the rate is halved again by the weather — a solar farm is a decision
+        // about the ground's climate as much as its ground.
+        //
+        // The NotFor clause is the second half of the OnlyFor question: a role this
+        // catalogue denies to one power rather than grants to one. The Δυτικοί and the
+        // Κινέζοι build it; the Σοβιετικοί cannot, which is why their weather ability
+        // bites in both directions instead of reading as a list of who may build what.
+        new(UnitKind.SolarPlant, 120, 0, 160, 800, 0, 1, UnitKind.CommandCentre, true,
+            FootprintRadiusCells: 1, NotFor: Faction.Soviet),
+
+        // Υδροηλεκτρικός Σταθμός — the hydro plant: the best non-nuclear generation in
+        // the game, and the first structure whose placement the terrain constrains. It
+        // must stand near water — a river, a lake, a ford's edge — because a turbine
+        // without a current is a shed with a wheel. The water is a level in this game,
+        // not a body, so the plant cannot draw on a flow; what it draws on is the fact
+        // of the water beside it, and the placement rule asks that fact the same way the
+        // bridge asks for a span. Everyone may build it: the power map of a match is
+        // shaped by where the water is, which is what makes the ground under a power
+        // plant a decision rather than a formality.
+        new(UnitKind.HydroPlant, 220, 0, 260, 1_500, 0, 2, UnitKind.CommandCentre, true, WaterCost: 140,
+            FootprintRadiusCells: 1, RoleArmourPermille: 900),
 
         // Πυροβολείο: the first structure in the game with a gun on it, and deliberately the
         // weakest thing a defensive line can be made of. Forty-five damage every two and a half
@@ -620,6 +649,11 @@ public static class UnitCatalog
             return false;
         }
 
+        if (definition.NotFor != Faction.None && definition.NotFor == faction)
+        {
+            return false;
+        }
+
         if (definition.RequiredTech != TechId.None && !TechCatalog.IsCompleted(techMask, definition.RequiredTech))
         {
             return false;
@@ -638,7 +672,8 @@ public static class UnitCatalog
         foreach (UnitDefinition definition in Definitions)
         {
             if (definition.RequiredTechTier <= profile.TechCeiling &&
-                (definition.OnlyFor == Faction.None || definition.OnlyFor == faction))
+                (definition.OnlyFor == Faction.None || definition.OnlyFor == faction) &&
+                definition.NotFor != faction)
             {
                 yield return definition;
             }
@@ -672,6 +707,8 @@ public static class UnitCatalog
         UnitKind.Harvester => "Συλλέκτης",
         UnitKind.CommandCentre => "Κέντρο Διοίκησης",
         UnitKind.PowerPlant => "Σταθμός Παραγωγής",
+        UnitKind.SolarPlant => "Ηλιακός Σταθμός",
+        UnitKind.HydroPlant => "Υδροηλεκτρικός Σταθμός",
         UnitKind.NuclearPlant => "Πυρηνικός Σταθμός",
         UnitKind.Factory => "Εργοστάσιο",
         UnitKind.DesignBureau => "Γραφείο Σχεδιασμού",

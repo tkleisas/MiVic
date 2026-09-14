@@ -2563,10 +2563,26 @@ public sealed class SimWorld
         if (!UnitCatalog.IsUnlocked(FactionOfTeam(team), kind, state.TechTier, state.TechMask) &&
             (state.LicenceMask & bit) == 0)
         {
-            return definition.RequiredTech != TechId.None &&
-                   !TechCatalog.IsCompleted(state.TechMask, definition.RequiredTech)
+            UnitDefinition locked = UnitCatalog.Get(kind);
+
+            // The clause that said no is named, in the order IsUnlocked asks them: the
+            // gate is the simulation's, and so is the sentence. A NotFor refusal is the
+            // catalogue telling the team this power is somebody else's — the solar plant
+            // is the case that named the clause.
+            if (locked.NeverBuilt)
+            {
+                return "κανείς δεν το χτίζει";
+            }
+
+            if (locked.NotFor != Faction.None && locked.NotFor == FactionOfTeam(team))
+            {
+                return "αυτός ο σταθμός ανήκει σε άλλη παράταξη";
+            }
+
+            return locked.RequiredTech != TechId.None &&
+                   !TechCatalog.IsCompleted(state.TechMask, locked.RequiredTech)
                 ? "χρειάζεται έρευνα"
-                : $"χρειάζεται τεχνολογία {definition.RequiredTechTier}";
+                : $"χρειάζεται τεχνολογία {locked.RequiredTechTier}";
         }
 
         // A capped design is a capability rather than a type: the team may field a limited
@@ -2666,6 +2682,17 @@ public sealed class SimWorld
             return false;
         }
 
+        // The hydro plant is the first structure whose placement the terrain constrains: a
+        // turbine needs a current, and the water must be within reach of the site. The water
+        // in this game is a level rather than a body — there is no flow to draw on — so what
+        // the rule asks is the fact of the water beside it, in the same cells the bridge asks
+        // for a span. A hydro plant on a dry ridge is a shed with a wheel.
+        if (kind == UnitKind.HydroPlant && !WaterWithinReach(cell, HydroWaterReachCells))
+        {
+            reason = "χρειάζεται νερό κοντά";
+            return false;
+        }
+
         // And the footprint: the cell is good, the ground around it is not. How much ground that is
         // comes from the role — a nuclear plant needs more of it than a power plant — and it is a
         // radius in cells, so the patch is a square of (2r+1)² cells centred on the one clicked.
@@ -2676,6 +2703,42 @@ public sealed class SimWorld
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// How far from the water a hydro plant may stand, in navigation cells. Three cells is
+    /// about twenty-eight metres: the plant's own yard, a weir, and the penstock that runs
+    /// to the water — a reach the placement preview can draw and the player can see.
+    /// </summary>
+    public const int HydroWaterReachCells = 3;
+
+    /// <summary>True when a navigation cell has water within <paramref name="reachCells"/> of it.</summary>
+    private bool WaterWithinReach(int cell, int reachCells)
+    {
+        int cx = Navigation.CellX(Math.Max(cell, 0));
+        int cz = Navigation.CellZ(Math.Max(cell, 0));
+
+        for (int dz = -reachCells; dz <= reachCells; dz++)
+        {
+            for (int dx = -reachCells; dx <= reachCells; dx++)
+            {
+                int candidate = Navigation.IndexOf(cx + dx, cz + dz);
+
+                if (candidate < 0)
+                {
+                    continue;
+                }
+
+                TerrainType surface = TerrainTypes.TypeAt(candidate);
+
+                if (surface is TerrainType.ShallowWater or TerrainType.DeepWater)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

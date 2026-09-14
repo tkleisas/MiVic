@@ -228,13 +228,29 @@ public sealed partial class MapEditor
     /// One application of the armed terrain tool at a resolved sample. The edit is recorded
     /// and applied to the live ground, and the passes re-derive from it. Returned so the
     /// client can hold it while a drag is running and undo the whole stroke.
+    /// <para>
+    /// The two lattices differ — the height field runs finer than the navigation grid the
+    /// surface layer sits on — so the edit carries <em>metres</em> and each pass resolves
+    /// the cell in its own lattice. A paint written in terrain cells would land past the
+    /// layer's edge and read as a paint off the map, which is what a brush over a lava
+    /// field just did.
     /// </summary>
     public TerrainEdit ApplyBrush(int cellX, int cellZ)
     {
+        int originX = World.World.Terrain.OriginMm;
+        int originZ = World.World.Terrain.OriginMm;
+        int size = World.World.Terrain.Size;
+        int cellSize = World.World.Terrain.CellSizeMm;
+
+        var at = new WorldPos(
+            originX + (cellX * cellSize) + (cellSize / 2),
+            0,
+            originZ + (cellZ * cellSize) + (cellSize / 2));
+
         var edit = new TerrainEdit(
             Kind: Tool == EditorTool.Paint ? TerrainEditKind.Paint : TerrainEditKind.AdjustHeight,
-            CellX: cellX,
-            CellZ: cellZ,
+            X: at.X,
+            Z: at.Z,
             DeltaMm: Tool == EditorTool.Lower ? -BrushStrengthMm : BrushStrengthMm,
             Type: PaintType,
             RadiusCells: BrushRadius);

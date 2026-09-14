@@ -144,8 +144,10 @@ public sealed class CheckpointStore
     {
         ArgumentNullException.ThrowIfNull(world);
 
-        if (world.Tick < _nextKeyframeTick)
+        if (!world.IsRecording || world.Tick < _nextKeyframeTick)
         {
+            // A world that is not recording has no log for a keyframe to carry — the
+            // editor's, which never plays a match — and a declined keyframe costs nothing.
             return;
         }
 

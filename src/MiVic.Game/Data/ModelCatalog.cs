@@ -321,6 +321,13 @@ public sealed class ModelCatalog : IDisposable
         UnitKind.StealthRecon => MeshBuilder.Wedge(1.6f, 1.4f, 2.2f),
         UnitKind.CommandCentre => MeshBuilder.Box(14f, 9f, 14f),
         UnitKind.PowerPlant => MeshBuilder.Box(9f, 7f, 9f),
+
+        // The solar farm, until its model arrives: a low panel array, flat and wide — the
+        // silhouette that says "the sun is my fuel" from any angle a tank sees it. The
+        // hydro plant: a tall mill hall on a weir base, one cell of water's worth of
+        // machinery. Two shapes on purpose, for the same reason the emplacements got two.
+        UnitKind.SolarPlant => MeshBuilder.Box(10f, 2.5f, 10f),
+        UnitKind.HydroPlant => MeshBuilder.Box(11f, 9f, 9f),
         UnitKind.NuclearPlant => MeshBuilder.Cylinder(11f, 14f),
         UnitKind.Factory => MeshBuilder.Box(16f, 8f, 12f),
         UnitKind.DesignBureau => MeshBuilder.Box(10f, 11f, 10f),

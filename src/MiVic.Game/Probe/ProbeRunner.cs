@@ -391,6 +391,9 @@ public sealed class ProbeRunner
             case "strike":
                 StrikeStructure(command);
                 break;
+            case "place":
+                PlaceStructure(command);
+                break;
             case "triggers":
                 Triggers(command);
                 break;
@@ -428,7 +431,7 @@ public sealed class ProbeRunner
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
                     "triggers, messages, objectives, map, save, restore, rewind, checkpoints, flip, " +
-                    "editor, strike, expect, validate");
+                    "editor, strike, place, expect, validate");
         }
     }
 
@@ -2422,6 +2425,7 @@ public sealed class ProbeRunner
                 }
 
                 TerrainEdit applied = editor.ApplyBrush(sample % editor.World.World.Terrain.Size, sample / editor.World.World.Terrain.Size);
+                int farmCell = editor.World.World.TerrainTypes.IndexOfWorld(240000, 240000);
                 Emit(
                     $"ok: {applied.Kind} at cell ({applied.CellX}, {applied.CellZ}) of {applied.RadiusCells} cells radius, " +
                     $"{applied.DeltaMm} mm — {ProbeFormat.Count(editor.EditCount, "edit")} in the list");
@@ -2524,6 +2528,35 @@ public sealed class ProbeRunner
         }
 
         throw new ProbeException($"team {team} has no {kind} standing — {Usage}");
+    }
+
+    /// <summary>
+    /// Asks the ground, not the purse: <see cref="SimWorld.CanPlaceStructure"/> — the site
+    /// question — without the build question the queue path asks first. A hydro plant on
+    /// dry ground is refused by the water's own sentence, whatever the team's tier.
+    /// </summary>
+    private void PlaceStructure(ProbeCommand command)
+    {
+        const string Usage = "place <Kind> <x> <z> [team]";
+
+        UnitKind kind = ParseKind(command.Argument(0, "a role", Usage));
+        float x = command.Number(1, "an x in metres", Usage);
+        float z = command.Number(2, "a z in metres", Usage);
+        int team = (int)command.OptionalNumber(3, 0f, "a team", Usage);
+
+        SimWorld world = _host.Simulation.World;
+        var site = new WorldPos((int)(x * WorldPos.MmPerMetre), 0, (int)(z * WorldPos.MmPerMetre));
+
+        Emit($"query: place {ProbeLabels.KindName(kind)} at (x {x:0.0}, z {z:0.0}) m for team {team}");
+
+        if (world.CanPlaceStructure(kind, site, out string reason))
+        {
+            Emit("query:   verdict    allowed — the ground will hold it");
+        }
+        else
+        {
+            Emit($"query:   verdict    refused — {reason}");
+        }
     }
 
     /// <summary>Every playing team with the side it is on now, in one line.</summary>

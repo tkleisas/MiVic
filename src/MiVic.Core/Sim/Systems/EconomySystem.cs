@@ -18,6 +18,26 @@ public static class EconomySystem
     /// <summary>Energy per tick from a power plant.</summary>
     public const int PowerPlantEnergy = 10;
 
+    /// <summary>
+    /// Energy per tick from a solar plant, in clear weather. Half a thermal plant's
+    /// output for three quarters of its cost, and no water at all — the sun asks for
+    /// neither fuel nor cooling. The rate is the <em>clear-sky</em> rate: the weather
+    /// halves it again while it sits on the farm, which is why the faction that cannot
+    /// build solar owns the weather.
+    /// </summary>
+    public const int SolarPlantEnergy = 5;
+
+    /// <summary>
+    /// The share of a solar plant's output that survives weather, in permille. Cloud
+    /// halves it: a farm under Έλεγχος Καιρού is a farm running at five hundred permille
+    /// of its clear-sky rate, which is what makes the Soviet weather strike an economic
+    /// weapon rather than a decoration.
+    /// </summary>
+    public const int SolarWeatherPermille = 500;
+
+    /// <summary>Energy per tick from a hydro plant standing near its water.</summary>
+    public const int HydroPlantEnergy = 14;
+
     /// <summary>Water per tick from a command centre: wells and purification.</summary>
     public const int CommandCentreWater = 1;
 
@@ -112,6 +132,26 @@ public static class EconomySystem
 
                 case UnitKind.PowerPlant:
                     state.EnergyPerTick += Scale(PowerPlantEnergy, income);
+                    state.WaterPerTick += Scale(PowerPlantWater, income);
+                    break;
+
+                case UnitKind.SolarPlant:
+                {
+                    // The rate is the clear-sky rate; the weather halves it while it sits
+                    // on the farm. The cell under the plant is the farm's own ground, and
+                    // the weather is a property of the ground — the same surface the
+                    // movement and the cover read — so the sun and the mud cannot
+                    // disagree about what the weather is doing.
+                    int cell = world.TerrainTypes.IndexOfWorld(entity.Position.X, entity.Position.Z);
+                    bool weathered = world.TerrainTypes.TypeAt(cell) == TerrainType.Mud;
+
+                    state.EnergyPerTick += Scale(
+                        SolarPlantEnergy, income) * (weathered ? SolarWeatherPermille : 1_000) / 1_000;
+                    break;
+                }
+
+                case UnitKind.HydroPlant:
+                    state.EnergyPerTick += Scale(HydroPlantEnergy, income);
                     state.WaterPerTick += Scale(PowerPlantWater, income);
                     break;
 

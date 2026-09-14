@@ -104,6 +104,19 @@ public enum UnitKind : byte
     /// the zone is where it comes from.
     /// </summary>
     Warden = 23,
+
+    /// <summary>
+    /// Ηλιακός Σταθμός — a solar plant: the sun's own generation, cheap and without
+    /// upkeep in water, and halved while the weather sits on it. The Σοβιετικοί cannot
+    /// build one, which is why their weather ability bites.
+    /// </summary>
+    SolarPlant = 24,
+
+    /// <summary>
+    /// Υδροηλεκτρικός Σταθμός — a hydro plant: the best non-nuclear generation, and the
+    /// one structure whose placement the water constrains.
+    /// </summary>
+    HydroPlant = 25,
 }
 
 /// <summary>
