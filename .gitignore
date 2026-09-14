@@ -49,3 +49,4 @@ shots/
 # Blender's Python bytecode cache, written when one generator imports another
 __pycache__/
 *.pyc
+maps/
