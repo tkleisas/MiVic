@@ -48,12 +48,46 @@ public partial class MiVicGame
     private GameScreen Screen => _options.Menu ? _screen : GameScreen.Battle;
 
     /// <summary>
+    /// Reads the campaign record, or starts a fresh one when the file cannot be read.
+    /// A progress file that refuses to load must never stop the game: the record is not
+    /// simulation state and nothing is desynced by starting over — so the unreadable file
+    /// is moved aside, where the player can find it, and the campaign begins empty. The
+    /// file is kept rather than overwritten precisely because it may hold missions the
+    /// player has earned, and a fresh campaign that silently ate a finished one would be
+    /// the worst thing this screen could do.
+    /// </summary>
+    private static CampaignProgress LoadProgressOrFresh()
+    {
+        string path = MiVicPaths.ProgressFile;
+
+        try
+        {
+            return CampaignProgress.Load(path);
+        }
+        catch (Exception failure) when (failure is InvalidDataException or IOException)
+        {
+            try
+            {
+                string aside = $"{path}.unreadable-{DateTime.Now:yyyyMMdd-HHmmss}";
+                File.Move(path, aside);
+                Console.WriteLine($"campaign: progress file unreadable ({failure.Message}); kept as {aside}");
+            }
+            catch (IOException)
+            {
+                // Nothing to preserve and nothing to say if even the rename is refused.
+            }
+
+            return new CampaignProgress();
+        }
+    }
+
+    /// <summary>
     /// Handles one menu command, on the frame the menu raised it. Null does nothing,
     /// because the menu answers only when a button is pressed.
     /// </summary>
     private void PumpMenu()
     {
-        _progress ??= CampaignProgress.Load(MiVicPaths.ProgressFile);
+        _progress ??= LoadProgressOrFresh();
 
         MenuCommand? raised = _menu.Draw(_progress, MiVicPaths.SavedMatches());
 
@@ -171,7 +205,7 @@ public partial class MiVicGame
             return;
         }
 
-        _progress ??= CampaignProgress.Load(MiVicPaths.ProgressFile);
+        _progress ??= LoadProgressOrFresh();
         _progress.MarkWon(mission.Id);
         _progress.Save(MiVicPaths.ProgressFile);
         _victoryRecorded = true;

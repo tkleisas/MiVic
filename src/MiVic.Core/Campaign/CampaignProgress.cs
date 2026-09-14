@@ -46,7 +46,7 @@ public sealed class CampaignProgress
 
         string[] lines = File.ReadAllLines(path);
 
-        if (lines.Length < 2 || !lines[0].StartsWith(Magic, StringComparison.Ordinal))
+        if (lines.Length < 1 || !lines[0].StartsWith(Magic, StringComparison.Ordinal))
         {
             throw new InvalidDataException($"'{path}' is not a MiVic campaign progress file.");
         }

@@ -99,4 +99,17 @@ public sealed class CampaignProgressTests
         Assert.Null(CampaignProgress.NextUnwon(
             ["m1_bridgehead", "m2_ridge", "m3_industry"], won));
     }
+
+    [Fact]
+    public void AHeaderOnlyFileIsAnEmptyCampaignRatherThanARefusal()
+    {
+        // The file a fresh campaign writes, and the one a player's next boot reads:
+        // a header with nothing under it is the empty record, which is exactly what
+        // it says it is, and refusing it would be refusing the campaign's own start.
+        File.WriteAllLines(_path, ["MiVicCampaign 1"]);
+
+        CampaignProgress progress = CampaignProgress.Load(_path);
+
+        Assert.Empty(progress.WonMissions);
+    }
 }
