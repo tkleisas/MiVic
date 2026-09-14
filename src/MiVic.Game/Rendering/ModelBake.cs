@@ -23,8 +23,6 @@ public static class ModelBake
     /// <param name="height">Top of the baked mesh, in metres, measured off the vertices.</param>
     public static MeshData Flatten(ModelData model, out float height)
     {
-        ArgumentNullException.ThrowIfNull(model);
-
         List<VertexPositionNormal> vertices = [];
         List<ushort> indices = [];
 

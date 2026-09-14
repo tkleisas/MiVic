@@ -148,7 +148,6 @@ public sealed partial class MapEditor
         ImGui.Text("Οι ομάδες:");
 
         var teams = new List<MatchTeam>();
-        bool changed = false;
         bool touched = false;
 
         Span<int> playing = stackalloc int[SimConstants.TeamCount];
