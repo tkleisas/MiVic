@@ -41,6 +41,11 @@ jobs:
         # build: the probes step the real world, render real frames and hold
         # their checks, so this is the client regression gate, not a census.
         #
+        # The probe's own header names the client line it is written for, so the
+        # flags are read from that line rather than guessed at with a pattern.
+        # The old grep could not see --rivals, --seed or --editor, so two
+        # probes were being run in a scenario their own comment did not ask for.
+        #
         # objectives.probe and paperclip.probe are excluded: each one is a
         # demonstration of the mission validator's refusals, whose subject
         # mission is broken on purpose, so they exit non-zero by design on
@@ -50,15 +55,36 @@ jobs:
           for p in tools/probe/*.probe; do
             name=$(basename "$p" .probe)
             case "$name" in objectives|paperclip) continue ;; esac
-            flag=$(grep -o -- "--[a-z-]*-demo\|--victory-demo\|--select-hq\|--mission-file missions/[a-z_-]*.mission.json\|--map-file maps/[a-z_-]*.map.json" "$p" | head -1 || true)
-            echo "--- probe: $name ${flag}"
+            flags=$(line=$(grep -m1 -E '^#[[:space:]]*MiVic\.Game\.exe ' "$p" || true)
+              flags=${line#*MiVic.Game.exe }
+              flags=${flags%%--probe *}
+              echo "$flags" | xargs)
+            echo "--- probe: $name ${flags}"
             LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
               dotnet run --project src/MiVic.Game -c Release --no-build -- \
-              $flag --probe "$p" --probe-out "artifacts/probe/$name.txt" || {
+              $flags --probe "$p" --probe-out "artifacts/probe/$name.txt" || {
                 echo "::error file=$p::probe $name failed"
                 exit 1
               }
           done
+
+      - name: Self-test
+        # The self-test is the client's own verdict on Greek text, the symbol
+        # atlas, the health bars, the replay round-trip and the frame budget.
+        # It used to be absent from CI, and while it was absent it crashed on
+        # Linux before printing the verdict and reported FAIL when it did not —
+        # so the check the documentation leans on was never actually run in the
+        # one place the documentation is read. It exits non-zero on FAIL.
+        run: |
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
+            dotnet run --project src/MiVic.Game -c Release --no-build -- --selftest 600
+
+      - name: Upload self-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest-report
+          path: src/MiVic.Game/bin/Release/net9.0/selftest-report.txt
 
       - name: Upload probe reports
         if: always()

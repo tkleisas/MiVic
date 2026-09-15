@@ -25,8 +25,17 @@ public static class SelfTestReport
     /// <summary>Greek sample text that must render for the UI to be considered valid.</summary>
     public const string GreekSample = "Σοβιετικοί Κινέζοι Δυτικοί Τικ Μονάδες Ζουμ";
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool AttachConsole(int processId);
+    // Windows API: a windowed executable is attached to no console, so this attaches a
+    // parent's. Asked for nowhere else, and on Linux there is no console to attach — the
+    // answer there is simply "no". The guard is not decoration: without it the call threw
+    // DllNotFoundException on Linux *after* the report was written, so `--selftest` exited
+    // non-zero and looked like a failed self-test rather than a missing console. Both
+    // `ReplayTool` and `AudioExporter` already guarded theirs; this one did not.
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "AttachConsole")]
+    private static extern bool AttachConsoleWindows(int processId);
+
+    private static bool AttachConsole(int processId)
+        => OperatingSystem.IsWindows() && AttachConsoleWindows(processId);
 
     /// <summary>Writes the report and returns its text.</summary>
     public static string Write(

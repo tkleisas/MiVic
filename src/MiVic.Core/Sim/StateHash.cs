@@ -236,6 +236,31 @@ public static class StateHash
             Mix(ref hash, e.RevealedUntilTick);
             Mix(ref hash, e.DistanceTravelledMm);
             Mix(ref hash, e.ConstructionTicksRemaining);
+            Mix(ref hash, e.ConstructionTicksTotal);
+
+            // Three fields the entity loop used to skip, all of them state the next tick
+            // reads back. MoraleTargetRaw is what morale moves toward, so a peer that
+            // disagreed about it would diverge a few ticks later when the (hashed) morale
+            // arrived somewhere else. NeedsPath decides whether the next tick spends a
+            // budgeted path search on this unit, and the budget is shared, so the
+            // divergence would land on other units too. PathFailures is memory of the past
+            // — how many times the route has already failed — which is precisely the kind
+            // of number that cannot be recomputed and so must be hashed.
+            Mix(ref hash, e.MoraleTargetRaw);
+            Mix(ref hash, e.NeedsPath ? 1 : 0);
+            Mix(ref hash, e.PathFailures);
+
+            // And the route itself, not only how long it is. PathLength and PathCursor
+            // count waypoints; two peers that agreed on both, and on every field above,
+            // could still hold different cells there and then walk to different places.
+            // That is exactly the divergence a hash exists to expose, and it was the one
+            // hole left in this file.
+            ReadOnlySpan<int> route = world.PathOf(slot);
+
+            for (int step = 0; step < route.Length; step++)
+            {
+                Mix(ref hash, route[step]);
+            }
 
             // What a generator remembers: how many it has emitted and when it will
             // next. The condition reads the role, which is hashed two lines above, so

@@ -961,10 +961,15 @@ public static class MapSceneBuilder
                 continue;
             }
 
+            // The floor is 40 only while the palette's ceiling is above it. Math.Clamp
+            // throws when min > max, so `palette with { EventAlpha = 0 }` — a fair way to
+            // ask for no marks at all — used to take the whole picture down. A ceiling
+            // below the floor means the floor is the ceiling.
+            byte ceiling = palette.EventAlpha;
             byte alpha = (byte)Math.Clamp(
-                (long)palette.EventAlpha * (window - age) / window,
-                40,
-                palette.EventAlpha);
+                (long)ceiling * (window - age) / window,
+                Math.Min((byte)40, ceiling),
+                ceiling);
 
             MapRgb colour = palette.Unit(mark.Faction, mark.Role);
             double x = projection.X(mark.Position.X);

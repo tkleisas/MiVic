@@ -380,7 +380,12 @@ public sealed class MissionTests
         // no triggers hashes nothing new, so the layer cannot disturb a mission that does not use
         // it. The fourth hash is a new mission's, not a moved one's.
         //
-        // Last changed by the production queues becoming state: a mission's starting buildings have
+        // Last changed by the audit that closed the state hash: every world's hash moved
+        // because the hash now folds in the entity fields it had been skipping, the route's
+        // own waypoints, and the corrected rounding of negative fixed-point products. None
+        // of the four missions changed; the fingerprint did.
+        //
+        // Before that it was the production queues becoming state: a mission's starting buildings have
         // empty queues and their hashes moved anyway, which is exactly why the queue field is mixed
         // for every live slot rather than only for the ones with something in them. Before that it
         // was the crossings a team builds becoming state: a bridge records its span,
@@ -397,10 +402,10 @@ public sealed class MissionTests
         // cell.
         ulong[] expected =
         [
-            3325266512074465616UL,
-            12294173242831419616UL,
-            741485423866759929UL,
-            4315071333504370662UL,
+            653583401159573312UL,
+            16436917479652038972UL,
+            15959304878872880113UL,
+            5603431237667183566UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)

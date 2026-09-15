@@ -98,7 +98,7 @@ public sealed class ModelCatalog : IDisposable
                 {
                     model = GltfLoader.LoadModel(path, spec.ToImportOptions());
                 }
-                catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException)
+                catch (Exception exception) when (IsModelFailure(exception))
                 {
                     _failed.Add($"{spec.Folder}/{spec.FileName}: {exception.Message}");
                 }
@@ -286,7 +286,7 @@ public sealed class ModelCatalog : IDisposable
 
                     return imported;
                 }
-                catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException)
+                catch (Exception exception) when (IsModelFailure(exception))
                 {
                     if (report)
                     {
@@ -527,4 +527,22 @@ public sealed class ModelCatalog : IDisposable
         _partsCache.Clear();
         _wholeCache.Clear();
     }
+
+    /// <summary>
+    /// True when an exception out of the model loader means "this model is unusable"
+    /// rather than "this process is out of room".
+    /// <para>
+    /// The contract is that a missing or malformed model falls back to procedural
+    /// geometry and the game still runs. That was only true of three exception types, and
+    /// the loader can also throw <see cref="System.Text.Json.JsonException"/>,
+    /// <see cref="FormatException"/>, <see cref="OverflowException"/>,
+    /// <see cref="IndexOutOfRangeException"/> and <see cref="NullReferenceException"/> on a
+    /// file whose shape is wrong — so a single corrupt model aborted startup instead of
+    /// falling back. The loader now converts what it can at the source, and this is the
+    /// backstop for what it cannot; an out-of-memory failure is deliberately not swallowed,
+    /// because continuing from it is not a promise this can keep.
+    /// </para>
+    /// </summary>
+    private static bool IsModelFailure(Exception exception)
+        => exception is not OutOfMemoryException;
 }

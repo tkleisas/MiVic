@@ -22,7 +22,7 @@ public sealed class TwoFactionMatchTests
     private const int SkirmishCapacity = 1024;
 
     /// <summary>The initial hash of the standard skirmish, from <c>ScenarioTests</c>.</summary>
-    private const ulong SkirmishInitialHash = 7771467923509982711UL;
+    private const ulong SkirmishInitialHash = 5927313007404611319UL;
 
     [Fact]
     public void ATwoFactionMatchRunsAndReachesAVerdict()

@@ -729,6 +729,16 @@ public sealed record LaunchOptions
             // the menu is the first reader.
             MiVic.Game.Data.MiVicPaths.UseProfile(options.ProfilePath);
         }
+        else if (options.IsProbe || options.IsSelfTest)
+        {
+            // A probe or a self-test plays a match to its end, and a won mission writes
+            // campaign progress. Without this, running a probe on a developer's machine
+            // edits that developer's real campaign — which the roadmap says must never
+            // happen, and which was only a convention until it was enforced here. A
+            // caller that wants a real profile can still name one with --profile.
+            MiVic.Game.Data.MiVicPaths.UseProfile(
+                Path.Combine(Path.GetTempPath(), "mivic-scratch"));
+        }
 
         return options;
     }

@@ -1050,6 +1050,10 @@ public sealed partial class MiVicGame : XnaGame
             _imgui?.Update(gameTime);
             DrawPausePanel();
 
+            // A paused frame must still count as a frame for input, or a key held over
+            // the pause panel is a fresh press on every one of them.
+            RememberInput(Keyboard.GetState(), Mouse.GetState());
+
             base.Update(gameTime);
             return;
         }
@@ -1155,6 +1159,14 @@ public sealed partial class MiVicGame : XnaGame
             _imgui?.Update(gameTime);
             PumpMenu();
 
+            // The menu returns before the battle path's own refresh, so it has to do the
+            // refresh itself. Without these three lines _previousKeyboard stays frozen
+            // while the front end is up and `Pressed` is true on every frame a key is
+            // held: F11 called ToggleFullScreen — and the graphics device's ApplyChanges —
+            // sixty times a second. The editor met this bug first and fixed it in its own
+            // path; the menu and the pause panel never got the same fix.
+            RememberInput(keyboard, mouse);
+
             base.Update(gameTime);
             return;
         }
@@ -1258,9 +1270,7 @@ public sealed partial class MiVicGame : XnaGame
                 PinnedLeitmotiv));
         }
 
-        _previousScrollWheel = mouse.ScrollWheelValue;
-        _previousKeyboard = keyboard;
-        _previousMouse = mouse;
+        RememberInput(keyboard, mouse);
 
         _imgui.Update(gameTime);
 
@@ -5670,7 +5680,13 @@ public sealed partial class MiVicGame : XnaGame
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            // A failed save must not take the shutdown path down with it.
+            // A failed save must not take the shutdown path down with it — but it must not
+            // be silent either, which is what it was: a recording that could not be written
+            // simply vanished, and the first anybody knew of it was a file that was not
+            // there. The recording is a player's match, so the failure is said out loud
+            // rather than swallowed.
+            Console.Error.WriteLine($"MiVic could not write the recording to '{path}': {exception.Message}");
+            _hud.Notify($"Η εγγραφή δεν αποθηκεύτηκε: {Path.GetFileName(path)}");
         }
     }
 
@@ -6311,6 +6327,25 @@ public sealed partial class MiVicGame : XnaGame
     private bool Pressed(KeyboardState keyboard, Keys key)
         => keyboard.IsKeyDown(key) && !_previousKeyboard.IsKeyDown(key);
 
+    /// <summary>
+    /// Remembers this frame's raw input, so the next frame's <see cref="Pressed"/> sees an
+    /// edge rather than a held key.
+    /// <para>
+    /// Every path that returns from <c>Update</c> before the battle path has to call this
+    /// first, or a held key fires on every frame of that screen. The menu and the pause
+    /// panel both returned early without it — holding F11 there called
+    /// <see cref="ToggleFullScreen"/> and the graphics device's <c>ApplyChanges</c> at
+    /// frame rate. The editor's path already carried its own copy of these three lines,
+    /// with the story of the same bug beside it.
+    /// </para>
+    /// </summary>
+    private void RememberInput(KeyboardState keyboard, MouseState mouse)
+    {
+        _previousScrollWheel = mouse.ScrollWheelValue;
+        _previousKeyboard = keyboard;
+        _previousMouse = mouse;
+    }
+
     /// <summary>True when the client is replaying a recorded match.</summary>
     private bool IsPlayback => _simulation?.IsPlayback == true;
 
@@ -6323,6 +6358,7 @@ public sealed partial class MiVicGame : XnaGame
         _screenshotTarget?.Dispose();
         _audio?.Dispose();
         _sfx?.Dispose();
+        _scoreDirector?.Dispose();
 
         _terrainMesh?.Dispose();
         _forest?.Dispose();
@@ -6334,6 +6370,17 @@ public sealed partial class MiVicGame : XnaGame
         _coverageMesh?.Dispose();
         _bridges?.Dispose();
         _fog?.Dispose();
+
+        // The remaining meshes. Each is a vertex and an index buffer, and every one of them
+        // was created in LoadContent and then never disposed: _orderMesh is the exception,
+        // because it is an alias of _selectionMarkerMesh and disposing it here would be a
+        // second dispose of the same buffers.
+        _particleMesh?.Dispose();
+        _ringMesh?.Dispose();
+        _blastMesh?.Dispose();
+        _projectileMesh?.Dispose();
+        _waterMesh?.Dispose();
+        _lavaMesh?.Dispose();
 
         _catalog?.Dispose();
         _renderer?.Dispose();

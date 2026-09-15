@@ -26,6 +26,16 @@ public sealed class ReplayFile
     /// <summary>Format version. Bump whenever the layout changes.</summary>
     public const int Version = 2;
 
+    /// <summary>
+    /// Bytes one command record occupies in the stream: the six fields read in the loop in
+    /// <see cref="Read"/>, and nothing variable-length. It exists so a declared command
+    /// count can be checked against the bytes that are actually left.
+    /// </summary>
+    private const int BytesPerCommandRecord = 51;
+
+    /// <summary>Longest mission id the loader will read, in UTF-8 bytes.</summary>
+    private const int MaxMissionIdBytes = 256;
+
     private ReplayFile(
         ulong seed,
         int capacity,
@@ -209,7 +219,7 @@ public sealed class ReplayFile
         ulong seed = reader.ReadUInt64();
         int capacity = reader.ReadInt32();
         var scenario = (ScenarioKind)reader.ReadByte();
-        string missionId = reader.ReadString();
+        string missionId = ReadBoundedString(reader, MaxMissionIdBytes, "mission id");
         long finalTick = reader.ReadInt64();
         ulong finalHash = reader.ReadUInt64();
         int count = reader.ReadInt32();
@@ -219,9 +229,31 @@ public sealed class ReplayFile
             throw new InvalidDataException($"Replay capacity {capacity} is out of range.");
         }
 
-        if (count < 0 || count > 100_000_000)
+        if (count < 0)
         {
-            throw new InvalidDataException($"Replay command count {count} is out of range.");
+            throw new InvalidDataException($"Replay command count {count} is negative.");
+        }
+
+        // A count is a number the file chooses, and a List pre-sized to it allocates before
+        // a single record is read: a forty-byte file could ask for gigabytes. The stream
+        // itself is the only honest bound — every record is exactly BytesPerCommandRecord
+        // bytes, so a count larger than what is left cannot be true. The old ceiling of a
+        // hundred million was three orders of magnitude too generous to stop that.
+        if (reader.BaseStream.CanSeek)
+        {
+            long remaining = reader.BaseStream.Length - reader.BaseStream.Position;
+            long possible = remaining / BytesPerCommandRecord;
+
+            if (count > possible)
+            {
+                throw new InvalidDataException(
+                    $"Replay declares {count} commands but only {remaining} bytes remain after the header.");
+            }
+        }
+
+        if (finalTick < 0)
+        {
+            throw new InvalidDataException($"Replay final tick {finalTick} is negative.");
         }
 
         if (!Enum.IsDefined(scenario))
@@ -253,6 +285,25 @@ public sealed class ReplayFile
                 new SimCommand(kind, target, destination, executeTick, issuerTeam, unitKind, attackTarget, tech)));
         }
 
+        // The log has to be in tick order, because the replay walks it with a cursor that
+        // only ever moves forward: a command stamped before the one before it is never
+        // reached, and every command after it is skipped too. That produced a replay which
+        // verified against the wrong state rather than one that was refused — and a
+        // half-read replay that silently replays wrong is worse than a refusal.
+        for (int i = 0; i < commands.Count; i++)
+        {
+            if (commands[i].Tick < 0)
+            {
+                throw new InvalidDataException($"Replay command {i} is stamped a negative tick {commands[i].Tick}.");
+            }
+
+            if (i > 0 && commands[i].Tick < commands[i - 1].Tick)
+            {
+                throw new InvalidDataException(
+                    $"Replay command {i} is stamped tick {commands[i].Tick}, before command {i - 1} on tick {commands[i - 1].Tick}; the log is not in order.");
+            }
+        }
+
         return new ReplayFile(
             seed,
             capacity,
@@ -261,6 +312,34 @@ public sealed class ReplayFile
             finalTick,
             finalHash,
             commands);
+    }
+
+    /// <summary>
+    /// Reads a length-prefixed string with a cap on the prefix.
+    /// <para>
+    /// <see cref="BinaryReader.ReadString"/> trusts the length it finds, and that length is
+    /// bytes of the file's own choosing: a few bytes on disk could ask the reader to
+    /// allocate a hundred megabytes before discovering there is no such string. The cap
+    /// turns that into the refusal it should have been.
+    /// </para>
+    /// </summary>
+    private static string ReadBoundedString(BinaryReader reader, int maxBytes, string what)
+    {
+        int length = reader.Read7BitEncodedInt();
+
+        if (length < 0 || length > maxBytes)
+        {
+            throw new InvalidDataException($"Replay {what} declares {length} bytes; the limit is {maxBytes}.");
+        }
+
+        byte[] bytes = reader.ReadBytes(length);
+
+        if (bytes.Length != length)
+        {
+            throw new EndOfStreamException();
+        }
+
+        return System.Text.Encoding.UTF8.GetString(bytes);
     }
 
     /// <summary>
@@ -378,7 +457,7 @@ public sealed class ReplayFile
         {
             while (next < commands.Count && commands[next].Tick == world.Tick)
             {
-                world.Enqueue(commands[next].Command);
+                EnqueueRecord(world, commands[next].Command);
                 next++;
                 applied++;
             }
@@ -388,12 +467,29 @@ public sealed class ReplayFile
 
         while (next < commands.Count && commands[next].Tick == targetTick)
         {
-            world.Enqueue(commands[next].Command);
+            EnqueueRecord(world, commands[next].Command);
             next++;
             applied++;
         }
 
         return applied;
+    }
+
+    /// <summary>
+    /// Issues one recorded command, turning the world's own refusal into a file-level one.
+    /// A command whose execute tick has already passed is a malformed replay, not an
+    /// argument error the caller can act on.
+    /// </summary>
+    private static void EnqueueRecord(SimWorld world, in SimCommand command)
+    {
+        try
+        {
+            world.Enqueue(command);
+        }
+        catch (ArgumentOutOfRangeException failure)
+        {
+            throw new InvalidDataException($"A recorded command cannot be issued: {failure.Message}", failure);
+        }
     }
 }
 

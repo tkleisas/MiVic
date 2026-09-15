@@ -149,6 +149,34 @@ public sealed class MusicGeneratorTests
         Assert.Throws<InvalidDataException>(() => WavWriter.Read(new MemoryStream(file[..20])));
     }
 
+    /// <summary>
+    /// A <c>fmt </c> chunk shorter than the sixteen bytes the reader consumes must be
+    /// refused. The reader skipped the remainder with <c>Position += size - 16</c>, so a
+    /// shorter chunk seeked *backwards* onto its own start and the read never terminated —
+    /// a malformed file that hung the process rather than being rejected.
+    /// </summary>
+    [Fact]
+    public void AShortFormatChunkIsRejectedRatherThanReadForever()
+    {
+        using var stream = new MemoryStream();
+
+        using (var writer = new BinaryWriter(stream, System.Text.Encoding.ASCII, leaveOpen: true))
+        {
+            writer.Write("RIFF"u8.ToArray());
+            writer.Write(40);
+            writer.Write("WAVE"u8.ToArray());
+            writer.Write("fmt "u8.ToArray());
+            writer.Write(8); // too short: a format chunk is sixteen bytes
+            writer.Write(new byte[8]);
+            writer.Write("data"u8.ToArray());
+            writer.Write(0);
+        }
+
+        stream.Position = 0;
+
+        Assert.Throws<InvalidDataException>(() => WavWriter.Read(stream));
+    }
+
     [Fact]
     public void TempoAndScaleAreReported()
     {

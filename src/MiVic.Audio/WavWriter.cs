@@ -85,8 +85,22 @@ public static class WavWriter
             string id = new(reader.ReadChars(4));
             int size = reader.ReadInt32();
 
+            if (size < 0)
+            {
+                throw new InvalidDataException($"Chunk '{id}' declares a negative size {size}.");
+            }
+
             if (id == "fmt ")
             {
+                // The reader consumes sixteen bytes of a fmt chunk and then skips the rest.
+                // A size below sixteen therefore seeks *backwards*, and a fmt chunk of eight
+                // bytes seeks back to its own start and is read again — a malformed file
+                // that hangs the reader instead of being refused.
+                if (size < 16)
+                {
+                    throw new InvalidDataException($"A fmt chunk of {size} bytes is too short to be a format.");
+                }
+
                 reader.ReadInt16();                  // format
                 channels = reader.ReadInt16();
                 reader.ReadInt32();                  // sample rate

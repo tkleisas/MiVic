@@ -117,4 +117,48 @@ public sealed class PrototypeCapTests
         Assert.Equal(definition.MaxAlive - 1, world.CountOf(0, UnitKind.ElectroPrototype));
         Assert.True(world.CanBuild(0, UnitKind.ElectroPrototype));
     }
+
+    /// <summary>
+    /// A queue on somebody else's factory is not this team's cap.
+    /// <para>
+    /// The queue half of <c>CountOf</c> used to walk every slot without asking who owned
+    /// the building or whether it was even alive, so an opponent's prototype on the pad
+    /// counted against this team — and in a Σοβιετικοί mirror match that locked a player
+    /// out of a role because the other player had one queued.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AnEnemysQueueDoesNotCountAgainstTheCap()
+    {
+        (SimWorld world, EntityId _) = SovietFactory(1UL << (int)TechId.SovietElectro);
+
+        // A second Σοβιετικοί factory, on team 1, with a job on its pad. The job is added
+        // directly rather than through a command, because a command from a team the match
+        // does not have in play is refused before it ever reaches the queue — and the point
+        // here is what CountOf does with a queue that exists, not how it came to exist.
+        EntityId theirs = world.Spawn(Faction.Soviet, 1, UnitKind.Factory, WorldPos.FromMetres(200, 0, 200), Fix32.Zero, 5_000);
+        Assert.True(world.AddJob(theirs.Slot, UnitKind.ElectroPrototype, totalTicks: 120));
+
+        Assert.Equal(1, world.GetRefBySlot(theirs.Slot).QueueLength);
+        Assert.Equal(0, world.CountOf(0, UnitKind.ElectroPrototype));
+        Assert.True(world.CanBuild(0, UnitKind.ElectroPrototype));
+    }
+
+    /// <summary>
+    /// A destroyed factory leaves its queue bytes in the slot, and a dead slot is not a
+    /// slot that is building anything.
+    /// </summary>
+    [Fact]
+    public void ADestroyedBuildingsQueueStopsCounting()
+    {
+        (SimWorld world, EntityId factory) = SovietFactory(1UL << (int)TechId.SovietElectro);
+
+        world.Enqueue(SimCommand.QueueUnit(factory, UnitKind.ElectroPrototype, world.Tick + 1, 0));
+        world.Step();
+
+        Assert.Equal(1, world.CountOf(0, UnitKind.ElectroPrototype));
+
+        Assert.True(world.Despawn(factory));
+        Assert.Equal(0, world.CountOf(0, UnitKind.ElectroPrototype));
+    }
 }

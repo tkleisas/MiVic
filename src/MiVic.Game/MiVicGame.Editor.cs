@@ -132,10 +132,9 @@ public partial class MiVicGame
         // it used to be refreshed only on the battle path, and the editor saw every
         // held frame as a fresh press: the delete tool stripped one structure per
         // frame, the undo popped one edit per keystroke, and the placements refused
-        // with a lying notice on the second frame of a held click.
-        _previousScrollWheel = mouse.ScrollWheelValue;
-        _previousKeyboard = keyboard;
-        _previousMouse = mouse;
+        // with a lying notice on the second frame of a held click. The menu and the
+        // pause panel now call the same helper.
+        RememberInput(keyboard, mouse);
 
         base.Update(gameTime);
     }

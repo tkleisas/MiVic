@@ -96,6 +96,22 @@ public static class GltfLoader
     private const uint ChunkJson = 0x4E4F534A; // 'JSON'
     private const uint ChunkBinary = 0x004E4942; // 'BIN\0'
 
+    /// <summary>
+    /// How deep the node graph may nest before the walk gives up. glTF is a DAG in
+    /// principle and a tree in every file that ships, so a graph deeper than this is a
+    /// cycle or a hostile file — and a cycle with no guard is a <c>StackOverflowException</c>,
+    /// which .NET cannot catch and which therefore cannot be turned into a fallback.
+    /// </summary>
+    private const int MaxNodeDepth = 64;
+
+    /// <summary>
+    /// Ceiling on one accessor's element count. The loader's own vertex limit is 65,535,
+    /// so anything approaching this is a file that means to make the allocator fail.
+    /// Without a bound, <c>new float[accessor.Count * components]</c> is sized by a number
+    /// the file chooses.
+    /// </summary>
+    private const int MaxAccessorElements = 2_000_000;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -302,8 +318,14 @@ public static class GltfLoader
         Matrix parentTransform,
         int parentPartIndex,
         ModelImportOptions options,
-        List<PartBuilder> parts)
+        List<PartBuilder> parts,
+        int depth = 0)
     {
+        if (depth > MaxNodeDepth)
+        {
+            throw new InvalidDataException("The glTF node graph nests too deeply to walk; it may contain a cycle.");
+        }
+
         GltfNode[] nodes = root.Nodes ?? [];
 
         if ((uint)nodeIndex >= (uint)nodes.Length)
@@ -356,7 +378,7 @@ public static class GltfLoader
 
         foreach (int child in node.Children)
         {
-            AppendPart(root, buffers, child, world, partIndex, options, parts);
+            AppendPart(root, buffers, child, world, partIndex, options, parts, depth + 1);
         }
     }
 
@@ -413,10 +435,8 @@ public static class GltfLoader
         }
 
         string json = Encoding.UTF8.GetString(file);
-        GltfRoot root = JsonSerializer.Deserialize<GltfRoot>(json, JsonOptions)
-            ?? throw new InvalidDataException($"'{path}' is not a valid glTF document.");
 
-        return (root, null);
+        return (Deserialize(path, json), null);
     }
 
     private static (GltfRoot Root, byte[]? Binary) ParseGlb(string path, byte[] file)
@@ -454,10 +474,31 @@ public static class GltfLoader
             throw new InvalidDataException($"'{path}' contains no JSON chunk.");
         }
 
-        GltfRoot root = JsonSerializer.Deserialize<GltfRoot>(json, JsonOptions)
-            ?? throw new InvalidDataException($"'{path}' is not a valid glTF document.");
+        return (Deserialize(path, json), binary);
+    }
 
-        return (root, binary);
+    /// <summary>
+    /// Reads the glTF document out of its JSON.
+    /// <para>
+    /// <see cref="JsonSerializer"/> throws <see cref="JsonException"/> on malformed JSON,
+    /// which is not one of the exception types <c>ModelCatalog</c> catches — so a single
+    /// corrupt model file used to abort startup instead of falling back to procedural
+    /// geometry, which is the exact contract that class documents. Converting it here
+    /// keeps the loader's promise that every way a file can be wrong arrives as
+    /// <see cref="InvalidDataException"/>.
+    /// </para>
+    /// </summary>
+    private static GltfRoot Deserialize(string path, string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<GltfRoot>(json, JsonOptions)
+                ?? throw new InvalidDataException($"'{path}' is not a valid glTF document.");
+        }
+        catch (JsonException failure)
+        {
+            throw new InvalidDataException($"'{path}' is not valid glTF JSON: {failure.Message}", failure);
+        }
     }
 
     private static byte[][] ResolveBuffers(string path, GltfRoot root, byte[]? binaryChunk)
@@ -478,11 +519,40 @@ public static class GltfLoader
             else if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
             {
                 int comma = uri.IndexOf(',', StringComparison.Ordinal);
-                buffers[i] = Convert.FromBase64String(uri[(comma + 1)..]);
+
+                if (comma < 0)
+                {
+                    throw new InvalidDataException($"'{path}' has a data URI with no comma in it.");
+                }
+
+                try
+                {
+                    buffers[i] = Convert.FromBase64String(uri[(comma + 1)..]);
+                }
+                catch (FormatException failure)
+                {
+                    throw new InvalidDataException($"'{path}' has a buffer whose base64 data is malformed.", failure);
+                }
             }
             else
             {
-                string bufferPath = Path.Combine(directory ?? ".", Uri.UnescapeDataString(uri));
+                // The URI comes from the file, so the path it names is untrusted: a buffer
+                // of "../../../../etc/passwd" is read verbatim otherwise. The resolved path
+                // has to stay inside the directory the model itself lives in.
+                string baseDirectory = Path.GetFullPath(directory ?? ".");
+                string bufferPath = Path.GetFullPath(
+                    Path.Combine(baseDirectory, Uri.UnescapeDataString(uri)));
+
+                string prefix = baseDirectory.EndsWith(Path.DirectorySeparatorChar)
+                    ? baseDirectory
+                    : baseDirectory + Path.DirectorySeparatorChar;
+
+                if (!bufferPath.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        $"'{path}' points a buffer URI outside the model's own directory.");
+                }
+
                 buffers[i] = File.ReadAllBytes(bufferPath);
             }
         }
@@ -500,8 +570,14 @@ public static class GltfLoader
         List<Vector3> normals,
         List<Vector3> colors,
         List<float> masks,
-        List<ushort> indices)
+        List<ushort> indices,
+        int depth = 0)
     {
+        if (depth > MaxNodeDepth)
+        {
+            throw new InvalidDataException("The glTF node graph nests too deeply to walk; it may contain a cycle.");
+        }
+
         GltfNode[] nodes = root.Nodes ?? [];
         if ((uint)nodeIndex >= (uint)nodes.Length)
         {
@@ -523,7 +599,7 @@ public static class GltfLoader
 
         foreach (int child in node.Children)
         {
-            AppendNode(root, buffers, child, transform, options, positions, normals, colors, masks, indices);
+            AppendNode(root, buffers, child, transform, options, positions, normals, colors, masks, indices, depth + 1);
         }
     }
 
@@ -589,7 +665,7 @@ public static class GltfLoader
                 continue;
             }
 
-            int vertexCount = root.Accessors![positionAccessor].Count;
+            int vertexCount = GetAccessor(root, positionAccessor).Count;
             if (positions.Count + vertexCount > ushort.MaxValue)
             {
                 throw new NotSupportedException("Model exceeds 65,535 vertices; split it into parts.");
@@ -600,7 +676,7 @@ public static class GltfLoader
             float[]? rawNormals = normalAccessor >= 0 ? ReadFloats(root, buffers, normalAccessor) : null;
             int colorAccessor = FindAttribute(primitive, "COLOR_0");
             float[]? rawColors = colorAccessor >= 0 ? ReadFloats(root, buffers, colorAccessor) : null;
-            int colorComponents = colorAccessor >= 0 ? ComponentCount(root.Accessors![colorAccessor].Type) : 0;
+            int colorComponents = colorAccessor >= 0 ? ComponentCount(GetAccessor(root, colorAccessor).Type) : 0;
 
             float materialShade = MaterialShade(root, primitive.Material);
             ushort baseIndex = (ushort)positions.Count;
@@ -844,8 +920,12 @@ public static class GltfLoader
         }
 
         (byte[] buffer, int start, int stride) = Locate(root, buffers, accessor, components);
+        int componentSize = ComponentSize(accessor.ComponentType);
+        int elementSize = componentSize * components;
+
+        EnsureRange(accessorIndex, buffer, start, accessor.Count, stride > 0 ? stride : elementSize, elementSize);
+
         float[] result = new float[accessor.Count * components];
-        int elementSize = ComponentSize(accessor.ComponentType) * components;
 
         for (int i = 0; i < accessor.Count; i++)
         {
@@ -853,7 +933,7 @@ public static class GltfLoader
 
             for (int c = 0; c < components; c++)
             {
-                result[(i * components) + c] = ReadComponent(buffer, elementOffset + (c * ComponentSize(accessor.ComponentType)), accessor);
+                result[(i * components) + c] = ReadComponent(buffer, elementOffset + (c * componentSize), accessor);
             }
         }
 
@@ -864,8 +944,11 @@ public static class GltfLoader
     {
         GltfAccessor accessor = GetAccessor(root, accessorIndex);
         (byte[] buffer, int start, int stride) = Locate(root, buffers, accessor, 1);
-        int[] result = new int[accessor.Count];
         int componentSize = ComponentSize(accessor.ComponentType);
+
+        EnsureRange(accessorIndex, buffer, start, accessor.Count, stride > 0 ? stride : componentSize, componentSize);
+
+        int[] result = new int[accessor.Count];
 
         for (int i = 0; i < accessor.Count; i++)
         {
@@ -922,12 +1005,55 @@ public static class GltfLoader
         int stride = view.ByteStride ?? 0;
         int minimum = ComponentSize(accessor.ComponentType) * components;
 
-        if (stride != 0 && stride < minimum)
+        if (stride < 0 || (stride != 0 && stride < minimum))
         {
             throw new InvalidDataException($"Buffer view stride {stride} is smaller than the element size {minimum}.");
         }
 
-        return (buffers[view.Buffer], view.ByteOffset + accessor.ByteOffset, stride);
+        if (accessor.ByteOffset < 0 || view.ByteOffset < 0)
+        {
+            throw new InvalidDataException($"Buffer view {viewIndex} has a negative offset.");
+        }
+
+        long start = (long)view.ByteOffset + accessor.ByteOffset;
+
+        if (start > int.MaxValue)
+        {
+            throw new InvalidDataException($"Buffer view {viewIndex} starts past the addressable end of its buffer.");
+        }
+
+        return (buffers[view.Buffer], (int)start, stride);
+    }
+
+    /// <summary>
+    /// Checks that an accessor's elements lie inside its buffer, before anything is
+    /// allocated or read.
+    /// <para>
+    /// The declared <c>byteLength</c> of a buffer view is not read anywhere else in this
+    /// loader, and the offsets that place an accessor inside a buffer are plain integers
+    /// from the file. Without this check a truncated or hostile file read past the end of
+    /// its buffer — an exception at best, and before the element count was bounded, a
+    /// multi-gigabyte allocation before the exception.
+    /// </para>
+    /// </summary>
+    private static void EnsureRange(int accessorIndex, byte[] buffer, int start, int count, int step, int elementSize)
+    {
+        if (count < 0 || count > MaxAccessorElements)
+        {
+            throw new InvalidDataException($"Accessor {accessorIndex} declares {count} elements.");
+        }
+
+        if (start < 0 || step < elementSize)
+        {
+            throw new InvalidDataException($"Accessor {accessorIndex} has a negative offset or a stride below its element size.");
+        }
+
+        long required = count == 0 ? 0 : ((long)(count - 1) * step) + elementSize;
+
+        if (required > buffer.Length - (long)start)
+        {
+            throw new InvalidDataException($"Accessor {accessorIndex} reads past the end of its buffer.");
+        }
     }
 
     private static float ReadComponent(byte[] buffer, int offset, GltfAccessor accessor)

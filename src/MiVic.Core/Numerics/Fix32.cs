@@ -99,8 +99,17 @@ public readonly struct Fix32 : IEquatable<Fix32>, IComparable<Fix32>
     public static Fix32 operator *(Fix32 a, Fix32 b)
     {
         long product = (long)a.Raw * b.Raw;
-        // Round to nearest, halves away from zero.
-        return new Fix32((int)((product + (product >= 0 ? HalfRaw : -HalfRaw)) >> FractionalBits));
+
+        // Round to nearest, halves away from zero — which is the rule this file's header
+        // states and which the old form did not keep. Adding -HalfRaw and then
+        // arithmetic-shifting floors the result instead of rounding it, so every negative
+        // product with a zero fraction came out one raw unit too low: -1.0 * 1.0 was
+        // -1.0000153 rather than -1.0, and the bias accumulated through morale, damage and
+        // movement. The sibling DivRoundToInt below gets there with a truncating division,
+        // and so does this.
+        long rounded = product >= 0 ? product + HalfRaw : product - HalfRaw;
+
+        return new Fix32((int)(rounded / OneRaw));
     }
 
     public static Fix32 operator /(Fix32 a, Fix32 b)

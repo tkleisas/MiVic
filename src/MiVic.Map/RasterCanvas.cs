@@ -12,6 +12,19 @@ namespace MiVic.Map;
 /// </summary>
 public sealed class RasterCanvas
 {
+    /// <summary>
+    /// The largest side the rasteriser will allocate, in pixels.
+    /// <para>
+    /// The size is arithmetic on a caller's <c>scale</c>, and <c>width * height * 4</c> is
+    /// unchecked: at the documented ceiling of 64 pixels a metre a 600 m map is 39 000
+    /// pixels across, the product overflowed int32, and the picture it asked for was a
+    /// gigabyte before it died with an exception about a byte array. A 600 m map at four
+    /// pixels a metre is 2 437 across, so this is four times the largest picture anyone
+    /// has drawn and the refusal is a message rather than an allocation.
+    /// </para>
+    /// </summary>
+    public const int MaxSide = 8_192;
+
     private readonly byte[] _pixels;
 
     /// <summary>A blank canvas of one colour.</summary>
@@ -20,6 +33,14 @@ public sealed class RasterCanvas
         if (width <= 0 || height <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(width), width, "A canvas needs a positive size.");
+        }
+
+        if (width > MaxSide || height > MaxSide)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                width,
+                $"A canvas side may be at most {MaxSide} pixels; {width}x{height} is not a picture.");
         }
 
         Width = width;

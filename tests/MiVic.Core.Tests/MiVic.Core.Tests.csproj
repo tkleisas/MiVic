@@ -5,6 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- The tests target net9.0 but must also run on a machine with only the .NET 10
+         runtime, which is a configuration the README explicitly blesses. The game project
+         already rolls forward; without the same line here `dotnet test MiVic.sln` refuses
+         to start. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 
   <ItemGroup>

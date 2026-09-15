@@ -95,7 +95,13 @@ public sealed class ChipSynth
         ArgumentNullException.ThrowIfNull(mix);
 
         double frequency = Scales.Frequency(midiNote) * Math.Pow(2d, detuneCents / 1200d);
-        double total = durationSeconds + envelope.Release;
+
+        // The whole envelope, not half of it. Sustain does not begin until the attack and
+        // the decay have elapsed — the envelope says so two hundred lines down — so a
+        // buffer of `duration + Release` cut the release off by `Attack + Decay`. Brass
+        // and Pluck, whose releases are short, never rendered one at all and ended the
+        // note at full sustain, which is the click you hear on every pitched note.
+        double total = envelope.Attack + envelope.Decay + durationSeconds + envelope.Release;
         int sampleCount = (int)(total * _sampleRate);
 
         if (sampleCount <= 0 || volume <= 0f)

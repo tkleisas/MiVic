@@ -65,11 +65,14 @@ Design rationale and the alternate-history tech tree are in
 is in [docs/TERRAIN.md](docs/TERRAIN.md). What is planned but not built is in
 [docs/ROADMAP.md](docs/ROADMAP.md). How to interrogate a running client without looking
 at it — scripted queries, screenshots and checks in one process — is in
-[docs/PROBE.md](docs/PROBE.md).
+[docs/PROBE.md](docs/PROBE.md). What a skeptical pass over the whole project found,
+including the defects it has since fixed, is in [docs/AUDIT.md](docs/AUDIT.md).
 
 ## Requirements
 
-- .NET 9 SDK (the project also builds with the .NET 10 SDK)
+- .NET 9 SDK (the project also builds and tests with the .NET 10 SDK — the game
+  and the test projects both roll forward, so a machine with only the .NET 10
+  runtime can build the solution and run the suite)
 - Windows, Linux or macOS with an OpenGL 3.3 capable GPU
 - MonoGame content tools are restored automatically by the build
 
@@ -77,7 +80,7 @@ at it — scripted queries, screenshots and checks in one process — is in
 
 ```pwsh
 dotnet build MiVic.sln
-dotnet test tests/MiVic.Core.Tests          # 374 determinism, terrain, placement and maths tests
+dotnet test MiVic.sln                       # 712 tests: 643 core, 44 audio, 25 map
 
 pwsh ./tools/fetch-assets.ps1               # optional: the old borrowed models, no longer used
 
@@ -103,9 +106,16 @@ build). The compiled shaders land next to their sources and are not committed �
 a build regenerates them when a `.fx` changes.
 
 CI (`.github/workflows/ci.yml`) does exactly this on every push and pull
-request; a `v*` tag publishes a versioned GitHub release with
-self-contained portable archives for linux-x64 and win-x64
+request, and then runs three gates: `dotnet test MiVic.sln`, every probe in the
+repository through a virtual display, and `--selftest 600`, which is the
+client's own verdict on Greek text, the symbol atlas, the health bars, the
+replay round-trip and the frame budget. A `v*` tag publishes a versioned GitHub
+release with self-contained portable archives for linux-x64 and win-x64
 (`.github/workflows/release.yml`).
+
+The probes and the self-test run under a scratch profile — `--probe` and
+`--selftest` write to a temporary directory unless `--profile` names another —
+so a test can never touch a player's real campaign.
 
 ### Command line
 
@@ -117,7 +127,7 @@ self-contained portable archives for linux-x64 and win-x64
 | `--screenshot <file>` | render one frame to PNG and exit |
 | `--screenshot-zoom/-yaw/-pitch/-target-x/-target-z` | camera overrides for verification shots |
 | `--font-sample` | draw a large SpriteFont sample, for font diagnostics |
-| `--selftest [frames]` | measure performance, write `selftest-report.txt`, exit |
+| `--selftest [frames]` | measure performance and check the client end to end, write `selftest-report.txt` next to the executable, exit non-zero on FAIL; run by CI |
 | `--inspect-models` | headless model diagnostics, no GPU required |
 | `--inspect-ui` | headless ImGui draw-data and font-atlas diagnostics |
 | `--model-gallery <file>` | render every model with axis markers, for orientation checks |
@@ -153,6 +163,14 @@ self-contained portable archives for linux-x64 and win-x64
 | `--render-sfx <dir>` | export one WAV per sound effect and exit |
 | `--no-audio` | no music or sound effects |
 | `--help` | usage |
+
+The table is the options worth reading about; `--help` prints all 61. The fixture
+flags are how a mechanic is put on screen without playing to it — `--rivals`
+(Σοβιετικοί against Κινέζοι), `--duel`, and the `--alliance-demo`,
+`--armour-demo`, `--detection-demo`, `--emplacement-demo`, `--flight-demo`,
+`--forest-demo`, `--ground-demo`, `--lava-demo` and `--mud-demo` scenes behind
+the probes. Two headless exports are also not in the table: `--render-scores`
+and `--inspect-ui`.
 
 ### The menu, saving and loading
 
@@ -241,27 +259,45 @@ system, and procedurally generated faction music.
 
 | Metric | Value |
 |---|---|
-| Entities | 510 (3 factions × 167 units + 9 structures) |
+| Entities | 510 — 3 factions × (166 units + 4 structures) |
 | Terrain | 129 × 129 samples over 600 m, 42 m relief |
 | Surfaces | 9 types on the navigation lattice, generated from the seed |
 | Navigation | 65 × 65 cells, slope- and surface-costed |
-| Instanced draw calls | 38 — one per model part, not per unit, so a turret can aim |
-| Frame time | ~3.2 ms average (worst frame 20–40 ms, always an early simulation tick) |
-| Models imported | 34 generated, plus the fetched set |
-| Pick round-trip | 168/168 |
-| Tests | 385 passing (368 core, 17 audio) |
+| Instanced draw calls | ~1 100 on the standard skirmish — one per model part in frame, not per unit, so a turret can aim |
+| Frame time | ~3.2 ms average on the development machine; CI runs software rendering, so it reports no budget |
+| Models imported | 49 configured slots (57 generated `.glb` files); 31 load in a skirmish |
+| Pick round-trip | 170/170 |
+| Tests | **712 passing** (643 core, 44 audio, 25 map) |
+
+Every number in this table that a program can measure is now measured by one: the
+entity, instance, draw-call, model, replay and pick figures come from `--selftest`,
+which CI runs, so the table and the client cannot disagree without a red build.
+The two it cannot measure — terrain relief and navigation resolution — are
+constants in the simulation.
 
 ### Performance
 
 Vision stamping is staggered across ticks (each unit contributes once every ten
 ticks) and the A\* inner loop avoids integer divisions entirely; together those
-took the worst visibility sample from 28 ms to under 8 ms and the average frame
-to 3.2 ms. A 200-tick run allocates 6 MB and triggers three gen-0 collections, so
-the residual outliers are the operating system pre-empting the process rather
-than the simulation or the collector. The self-test reports both the per-system
-profile and the garbage-collection counters, so the next regression is visible in
-a build log. See
-[docs/DESIGN.md](docs/DESIGN.md#8-performance-what-a-hitch-actually-costs).
+took the worst visibility sample from 28 ms to under 8 ms.
+
+Frame time is a property of the machine and the GPU, so the honest statement is
+the one the self-test prints rather than a number in a table. On the development
+machine a measured run averages ~3.2 ms with occasional 20–40 ms outliers that
+land on an early simulation tick. Under CI's software rasteriser the average is
+tens of milliseconds and the budget line reports `False`, which is why CI treats
+the frame budget as information and the functional checks as the gate. The
+self-test does report one cost worth watching on any machine: the **fog mask
+rebuild** — 14 ms average, 26 ms worst in the software-rendered run — is a
+periodic CPU and texture-upload stall every ten simulation ticks, and it is the
+largest single thing the frame does outside the simulation. A 600-frame run
+allocates ~84 MB and triggers nine gen-0 collections. See
+[docs/DESIGN.md](docs/DESIGN.md#8-performance-what-a-hitch-actually-costs) and
+[docs/AUDIT.md](docs/AUDIT.md).
+
+`--selftest` used to be run by hand. It is now a CI step, which is how the
+Linux-only crash it had carried (an unguarded `kernel32.dll` call) and the
+unreadable SDL window title it reported were found and fixed.
 
 ### The campaign
 
@@ -596,9 +632,18 @@ tech tier, which is what keeps the Κινέζοι out of the aircraft tier entir
 
 ### Roadmap
 
-Next: make the AI respect fog of war (it currently plans against the whole map),
-then a balance pass over the branched alternate-history tech tree, and finally
-campaign scripting for scripted events between missions.
+Next: a balance pass over the branched alternate-history tech tree, then campaign
+scripting for scripted events between missions.
+
+The AI already respects the fog for everything that moves: `AiSystem` will not
+order an attack on a mobile enemy the team cannot see, and it asks the same
+visibility grid the client draws. What it deliberately knows is **where enemy
+buildings stand** — a structure does not move, so an order against one is an
+order against a place, and requiring live eyes on a base six hundred metres away
+would mean no army could ever be sent. Giving it a scouting memory of its own is
+a feature, not a bug fix, and it is on the list. (This entry used to read "make
+the AI respect fog of war (it currently plans against the whole map)", which had
+stopped being true.)
 
 ## Greek text
 

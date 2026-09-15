@@ -627,8 +627,18 @@ public sealed class SimWorld
         ref Entity e = ref _entities[slot];
         int generation = e.Generation;
 
-        e.Alive = true;
+        // A recycled slot still holds everything the last occupant left in it. This used
+        // to name each field it meant to clear, and it forgot six of them:
+        // ConstructionTicksRemaining, ConstructionTicksTotal, RevealedUntilTick,
+        // DistanceTravelledMm, SpawnedCount and NextSpawnTick. A tank born into a slot an
+        // unfinished structure had left behind was therefore treated as a building site —
+        // no vision, no economy, no supply cost — a stealth unit could inherit a future
+        // reveal, and a generator could inherit a count and a cadence. Clearing the whole
+        // struct is the fix that cannot forget a field the next time one is added.
+        e = default;
+
         e.Generation = generation;
+        e.Alive = true;
         e.Faction = faction;
         e.TeamId = teamId;
         e.Kind = kind;
@@ -1478,7 +1488,19 @@ public sealed class SimWorld
 
         for (int slot = 0; slot < _entities.Length; slot++)
         {
-            if (_entities[slot].Alive && _entities[slot].TeamId == team && _entities[slot].Kind == kind)
+            ref Entity entity = ref _entities[slot];
+
+            // A queued job belongs to the building holding it, so it counts only when that
+            // building is alive and on the asking team. The queue loop used to skip both
+            // checks, so a destroyed factory's stale queue and an enemy's queue each
+            // counted against this team's MaxAlive — which meant a Σοβιετικοί player could
+            // be locked out of a prototype because the opponent had one on the pad.
+            if (!entity.Alive || entity.TeamId != team)
+            {
+                continue;
+            }
+
+            if (entity.Kind == kind)
             {
                 total++;
             }

@@ -315,8 +315,7 @@ public sealed record Score(
 
     private static KitHit[] ReadKitVoice(string voice, JsonElement value, string pattern, int grid, string path)
     {
-        string steps = value.GetString()
-            ?? throw new ScoreException($"μοτίβο {pattern}, φωνή {voice}: δεν είναι κείμενο");
+        string steps = StringOf(value, $"μοτίβο {pattern}, φωνή {voice}", path);
 
         if (steps.Length != grid)
         {
@@ -404,8 +403,7 @@ public sealed record Score(
 
         foreach (JsonElement name in Require(value, "patterns", path).EnumerateArray())
         {
-            string patternName = name.GetString()
-                ?? throw new ScoreException($"θέμα {property.Name}: ένα μοτίβο δεν είναι κείμενο");
+            string patternName = StringOf(name, $"θέμα {property.Name}: ένα μοτίβο", path);
             ScorePattern? found = patterns.Find(candidate => candidate.Name == patternName);
 
             if (found is null)
@@ -454,8 +452,7 @@ public sealed record Score(
         string name(string field)
         {
             JsonElement value = Require(element, field, path);
-            string leitmotivName = value.GetString()
-                ?? throw new ScoreException($"ενδείξεις: το πεδίο {field} δεν είναι κείμενο");
+            string leitmotivName = StringOf(value, $"ενδείξεις: το πεδίο {field}", path);
 
             if (!leitmotivs.Any(candidate => candidate.Name == leitmotivName))
             {
@@ -500,7 +497,31 @@ public sealed record Score(
             throw new ScoreException($"παρτιτούρα {path}: το πεδίο {field} δεν είναι αριθμός");
         }
 
-        return value.GetInt32();
+        // TryGetInt32 rather than GetInt32: the latter throws FormatException for a number
+        // it cannot fit in an int — `"tempo": 112.5` is the everyday typo — and a
+        // FormatException is not the ScoreException this loader defines, nor one the audio
+        // director catches, so it escaped as an unhandled exception rather than a refusal.
+        if (!value.TryGetInt32(out int number))
+        {
+            throw new ScoreException($"παρτιτούρα {path}: το πεδίο {field} δεν είναι ακέραιος");
+        }
+
+        return number;
+    }
+
+    /// <summary>
+    /// Reads a string, refusing a value of another kind with this loader's own exception.
+    /// <see cref="JsonElement.GetString"/> throws <see cref="InvalidOperationException"/> on
+    /// a number or an object, which is not the exception this file promises its callers.
+    /// </summary>
+    private static string StringOf(JsonElement value, string what, string path)
+    {
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            throw new ScoreException($"παρτιτούρα {path}: {what} δεν είναι κείμενο");
+        }
+
+        return value.GetString()!;
     }
 }
 

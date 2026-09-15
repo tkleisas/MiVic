@@ -233,7 +233,12 @@ public sealed class PcgNoise
     public double NextSigned()
     {
         _state = (_state * 6364136223846793005UL) + 1442695040888963407UL;
-        ulong bits = _state >> 33;
+
+        // The top thirty-two bits, scaled by their own width. Taking thirty-three and
+        // dividing by 2^32 — which is what this did — leaves a value in [0, 0.5), so the
+        // "uniform over -1..1" sample could never be positive: the snare wires and the
+        // tambourine jingle carried a permanent -0.5 offset and no positive excursion.
+        ulong bits = _state >> 32;
 
         return (bits / (double)(1UL << 32) * 2d) - 1d;
     }

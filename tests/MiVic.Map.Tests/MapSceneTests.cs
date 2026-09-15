@@ -518,6 +518,30 @@ public sealed class MapSceneTests
         Assert.Throws<ArgumentException>(() => MapLayerText.Parse("trail"));
         Assert.Throws<ArgumentException>(() => MapLayerText.Parse(string.Empty));
     }
+
+    /// <summary>
+    /// A palette whose event alpha sits below the old hard-coded floor must still draw. The
+    /// clamp was <c>Math.Clamp(value, 40, palette.EventAlpha)</c>, which throws when the
+    /// ceiling is under the floor — so asking for no marks took the whole picture down.
+    /// </summary>
+    [Fact]
+    public void AnEventMarkWithNoAlphaDoesNotTakeThePictureDown()
+    {
+        SimWorld world = TestWorld.NewWorld();
+        TestWorld.SpawnTank(world, Faction.Soviet, 0);
+        MapTrails trails = TestWorld.Sampled(world, 8);
+
+        MapPalette faint = TestWorld.Palette with { EventAlpha = 0 };
+
+        MapDrawing drawing = MapSceneBuilder.Build(
+            world,
+            trails,
+            faint,
+            new MapRequest { Layers = MapLayers.Events, EventWindowTicks = 1_000, PixelsPerMetre = 2.0 },
+            [new MapEventMark(MapEventKind.Death, 0, Faction.Soviet, 0, UnitKind.Tank, WorldPos.FromMetres(1, 0, 1), null, 0)]);
+
+        Assert.NotNull(drawing);
+    }
 }
 
 /// <summary>
@@ -727,6 +751,21 @@ public sealed class RasterCanvasTests
         int index = ((y * canvas.Width) + x) * 4;
 
         return new MapRgb(pixels[index], pixels[index + 1], pixels[index + 2]);
+    }
+
+    /// <summary>
+    /// A picture larger than the rasteriser's ceiling is refused, not attempted. The size is
+    /// arithmetic on a caller's scale and is unchecked, so the request used to wrap int32
+    /// and then ask for a gigabyte before throwing about a byte array.
+    /// </summary>
+    [Fact]
+    public void AnOversizedCanvasIsRefusedRatherThanAllocated()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new RasterCanvas(RasterCanvas.MaxSide + 1, 8, new MapRgb(0, 0, 0)));
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new RasterCanvas(8, RasterCanvas.MaxSide + 1, new MapRgb(0, 0, 0)));
     }
 }
 

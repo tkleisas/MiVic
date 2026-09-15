@@ -234,9 +234,18 @@ public partial class MiVicGame
 
         string path = Path.Combine(MiVicPaths.SavesDirectory, $"{name}.mvsav");
 
-        ReplayFile.Capture(bridge.World, bridge.Scenario).Save(path);
-
-        _hud.Notify($"Αποθηκεύτηκε: {Path.GetFileName(path)}");
+        try
+        {
+            ReplayFile.Capture(bridge.World, bridge.Scenario).Save(path);
+            _hud.Notify($"Αποθηκεύτηκε: {Path.GetFileName(path)}");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            // A save that cannot be written is a save the player believes they made. Say so
+            // in the panel rather than letting the exception leave Draw and close the match.
+            Console.Error.WriteLine($"MiVic could not save the match to '{path}': {exception.Message}");
+            _hud.Notify($"Η αποθήκευση απέτυχε: {Path.GetFileName(path)}");
+        }
     }
 
     /// <summary>The pause panel: what Esc opens, and the doors out of a running match.</summary>

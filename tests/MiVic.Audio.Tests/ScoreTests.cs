@@ -132,6 +132,30 @@ public sealed class ScoreTests
         Assert.Contains("nowhere", refused.Message);
     }
 
+    /// <summary>
+    /// A number the loader cannot fit in an int is refused with the loader's own exception.
+    /// <c>GetInt32</c> throws <see cref="FormatException"/> for <c>112.5</c> — the everyday
+    /// typo — which is neither the <c>ScoreException</c> this loader defines nor one the
+    /// audio director catches, so it escaped as an unhandled exception.
+    /// </summary>
+    [Fact]
+    public void ANonIntegerTempoIsRefused()
+    {
+        string path = WriteScore(
+            """
+            {
+              "tempo": 112.5, "grid": 16, "root": 45, "scale": [0, 2, 3, 5, 7, 8, 11],
+              "patterns": { "d": { "bassdrum": "X..............." } },
+              "leitmotivs": { "m": { "bars": 2, "patterns": ["d"] } },
+              "cues": { "victory": "m", "defeat": "m", "combat": "m", "alert": "m", "calm": "m" }
+            }
+            """);
+
+        var refused = Assert.Throws<ScoreException>(() => Score.Load(path));
+
+        Assert.Contains("ακέραιος", refused.Message);
+    }
+
     [Fact]
     public void AFillRendersOneBar()
     {

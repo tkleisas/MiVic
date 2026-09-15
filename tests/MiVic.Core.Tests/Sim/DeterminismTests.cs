@@ -1,6 +1,7 @@
 using MiVic.Core.Numerics;
 using MiVic.Core.Random;
 using MiVic.Core.Sim;
+using System.Reflection;
 
 namespace MiVic.Core.Tests.Sim;
 
@@ -229,10 +230,97 @@ public sealed class DeterminismTests
             HashWith(static (ref Entity e) => e.TeamId = 1),
             HashWith(static (ref Entity e) => e.Faction = Faction.Soviet),
             HashWith(static (ref Entity e) => e.Kind = UnitKind.Infantry),
+            HashWith(static (ref Entity e) => e.MoraleTargetRaw = 12_345),
+            HashWith(static (ref Entity e) => e.NeedsPath = true),
+            HashWith(static (ref Entity e) => e.PathFailures = 2),
         ];
 
         Assert.All(variants, v => Assert.NotEqual(baseline, v));
     }
+
+    /// <summary>
+    /// Every public field of <see cref="Entity"/> must move the hash when it moves.
+    /// <para>
+    /// The explicit list above is the fields a reader is likely to think of; this test is
+    /// the one that cannot forget. <c>MoraleTargetRaw</c>, <c>NeedsPath</c> and
+    /// <c>PathFailures</c> all went unhashed precisely because a hand-written list did not
+    /// mention them and nothing failed when they were added to the struct. Reflection over
+    /// the struct closes that hole: add a field, and this test fails until
+    /// <see cref="StateHash"/> folds it in.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void StateHash_ChangesForEveryEntityField()
+    {
+        ulong baseline = HashEntity(static (ref Entity _) => { });
+
+        foreach (FieldInfo field in typeof(Entity).GetFields(BindingFlags.Public | BindingFlags.Instance))
+        {
+            // A generator's count and clock are folded in only where the role asks for
+            // them; the generator test below pins those two instead. Every other field is
+            // unconditional.
+            if (field.Name is nameof(Entity.SpawnedCount) or nameof(Entity.NextSpawnTick))
+            {
+                continue;
+            }
+
+            ulong mutated = HashEntity((ref Entity e) =>
+            {
+                Entity copy = e;
+                field.SetValueDirect(__makeref(copy), Nudge(field, field.GetValue(copy)));
+                e = copy;
+            });
+
+            Assert.True(mutated != baseline, $"StateHash does not fold in Entity.{field.Name}.");
+        }
+    }
+
+    /// <summary>
+    /// A generator's own memory is state too, and is hashed because the role asks for it:
+    /// how many it has emitted and when it will next. Without these two the cadence could
+    /// differ between two peers that agreed on every other field.
+    /// </summary>
+    [Fact]
+    public void StateHash_PinsAGeneratorsCountAndClock()
+    {
+        static ulong HashGenerator(Action<SimWorld> mutate)
+        {
+            SimWorld world = new(seed: 42, capacity: 4);
+            world.Spawn(Faction.Soviet, 0, UnitKind.DerelictFactory, WorldPos.FromMetres(1, 0, 1), Fix32.Zero, 500);
+            mutate(world);
+            return StateHash.Compute(world);
+        }
+
+        ulong baseline = HashGenerator(static _ => { });
+
+        Assert.NotEqual(baseline, HashGenerator(static w => w.GetRefBySlot(0).SpawnedCount = 1));
+        Assert.NotEqual(baseline, HashGenerator(static w => w.GetRefBySlot(0).NextSpawnTick = 7));
+    }
+
+    private static ulong HashEntity(EntityMutator mutate)
+    {
+        SimWorld world = new(seed: 42, capacity: 4);
+        world.Spawn(Faction.Western, 2, UnitKind.Tank, WorldPos.FromMetres(1, 0, 1), Fix32.FromInt(5), 100);
+        mutate(ref world.GetRefBySlot(0));
+        return StateHash.Compute(world);
+    }
+
+    /// <summary>A different value of the field's own type, chosen deterministically.</summary>
+    private static object Nudge(FieldInfo field, object? current) => current switch
+    {
+        bool value => !value,
+        byte value => (byte)(value + 1),
+        int value => value + 1,
+        long value => value + 1,
+        ushort value => (ushort)(value + 1),
+        Faction value => value == Faction.Western ? Faction.Soviet : Faction.Western,
+        UnitKind value => value == UnitKind.Tank ? UnitKind.Infantry : UnitKind.Tank,
+        WorldPos value => new WorldPos(value.X + 1_000, value.Y, value.Z),
+        Fix32 value => Fix32.FromRaw(value.Raw + 1),
+        _ => throw new InvalidOperationException(
+            $"No deterministic nudge for Entity.{field.Name} ({field.FieldType}); "
+            + "add one so the completeness check can see the field."),
+    };
 
     [Fact]
     public void StateHash_IsOrderSensitive()
@@ -355,7 +443,22 @@ public sealed class DeterminismTests
     /// Golden hash of the fixed scenario. Regenerate only on a deliberate balance or
     /// system change.
     /// <para>
-    /// <b>Last changed by the fog no longer painting ground its own sensor cannot reach.</b> The
+    /// <b>Last changed by the audit that closed the state hash.</b> Three things moved it,
+    /// and all three are corrections rather than balance. <see cref="StateHash"/> now folds
+    /// in the entity fields it had been skipping — <c>MoraleTargetRaw</c>, <c>NeedsPath</c>
+    /// and <c>PathFailures</c> — and the route's own waypoints rather than only how many
+    /// there are, so a divergence that used to be invisible to the hash is now a different
+    /// number. <c>Fix32</c> multiplication now rounds negatives as its header always said it
+    /// did: the old form added <c>-HalfRaw</c> and arithmetic-shifted, which floors, so every
+    /// negative product with a zero fraction came out one raw unit low and every morale,
+    /// damage and movement value that multiplied two fixed-point numbers carried the bias.
+    /// And <c>SimWorld.Spawn</c> clears the whole entity instead of naming the fields it
+    /// meant to reset, so a recycled slot no longer lends the next occupant an unfinished
+    /// structure's construction state. The completeness test beside this one is the reason
+    /// the first of those cannot happen again.
+    /// </para>
+    /// <para>
+    /// <b>Before that it was the fog no longer painting ground its own sensor cannot reach.</b> The
     /// rasteriser filled each row of the disc from the chord's own ends instead of from the cell
     /// centres inside it, so it marked every cell the chord clipped: on a 260 m radar, 49 of the
     /// 2 410 cells it painted had centres outside the disc and the ground it claimed ran 4 067 mm
@@ -467,7 +570,7 @@ public sealed class DeterminismTests
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(10154127444074215258UL, HashScenario(20250101));
+        => Assert.Equal(17148397231897855551UL, HashScenario(20250101));
 
     /// <summary>
     /// A fixed defensive scene with the whole sensor chain in it: a Σοβιετικοί line of two gun
@@ -509,7 +612,7 @@ public sealed class DeterminismTests
     public void GoldenSensorScenarioHash_IsStable()
     {
         Assert.Equal(HashSensorScenario(20250101), HashSensorScenario(20250101));
-        Assert.Equal(4974330669004448552UL, HashSensorScenario(20250101));
+        Assert.Equal(3439057954535519016UL, HashSensorScenario(20250101));
     }
 
     /// <summary>

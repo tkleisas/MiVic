@@ -51,6 +51,28 @@ public sealed class Fix32Tests
         Assert.InRange(roundTrip, Fix32.One.Raw - 1, Fix32.One.Raw);
     }
 
+    /// <summary>
+    /// The sign of a product must not decide how it rounds.
+    /// <para>
+    /// The contract is "halves away from zero", so -1 × 1 must be exactly -1 and -0.5 × 1
+    /// exactly -0.5. The old implementation added -HalfRaw and arithmetic-shifted, which
+    /// floors: it returned -1.0000153 and -0.5000153. The positive cases passed, so the
+    /// bug only ever showed up on the negative side of every simulation value that
+    /// multiplied two fixed-point numbers.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(-1.0, 1.0, -1.0)]
+    [InlineData(-0.5, 1.0, -0.5)]
+    [InlineData(-2.0, 3.0, -6.0)]
+    [InlineData(1.0, -1.0, -1.0)]
+    [InlineData(1.0, -0.5, -0.5)]
+    [InlineData(-0.25, -0.5, 0.125)]
+    public void Multiplication_RoundsNegativesAwayFromZero(double a, double b, double expected)
+    {
+        Assert.Equal(Fix32.FromDouble(expected).Raw, (Fix32.FromDouble(a) * Fix32.FromDouble(b)).Raw);
+    }
+
     [Fact]
     public void Division_TruncatesTowardsZero()
     {

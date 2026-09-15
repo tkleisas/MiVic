@@ -309,7 +309,7 @@ public const int SampleRate = 22050;
         for (int i = 0; i < buffer.Length; i++)
         {
             double t = (double)i / SampleRate;
-            double raw = Noise(rng);
+            double raw = Noise(ref rng);
 
             // One noise source, split in the loop: what the low-pass keeps is the
             // blast's body, on the envelope; what it leaves is the crack. A whole-buffer
@@ -318,7 +318,7 @@ public const int SampleRate = 22050;
             lowState += 0.18d * (raw - lowState);
             double crack = (raw - lowState) * Math.Exp(-t * 95d) * 1.6d;
             double body = lowState * Envelope(t, 0.002d, 0.05d, seconds * 0.7d, seconds);
-            double slap = Noise(rng) * Noise(rng) * Math.Exp(-t * 24d) * 0.45d;
+            double slap = Noise(ref rng) * Noise(ref rng) * Math.Exp(-t * 24d) * 0.45d;
 
             buffer[i] = (float)(crack + (body * 1.6d) + slap);
         }
@@ -348,8 +348,8 @@ public const int SampleRate = 22050;
             phase += frequency / SampleRate;
 
             double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 5d) * 1.1d;
-            double body = Noise(rng) * Envelope(t, 0.003d, seconds * 0.22d, seconds * 0.7d, seconds) * 1.2d;
-            double slap = Noise(rng) * Noise(rng) * Math.Exp(-t * 14d) * 0.5d;
+            double body = Noise(ref rng) * Envelope(t, 0.003d, seconds * 0.22d, seconds * 0.7d, seconds) * 1.2d;
+            double slap = Noise(ref rng) * Noise(ref rng) * Math.Exp(-t * 14d) * 0.5d;
 
             buffer[i] = (float)(sub + body + slap);
         }
@@ -377,8 +377,8 @@ public const int SampleRate = 22050;
             phase += frequency / SampleRate;
 
             double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 3.6d) * 1.15d;
-            double body = Noise(rng) * Envelope(t, 0.004d, seconds * 0.18d, seconds * 0.8d, seconds);
-            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * 8d) * 0.6d;
+            double body = Noise(ref rng) * Envelope(t, 0.004d, seconds * 0.18d, seconds * 0.8d, seconds);
+            double rumble = Noise(ref rng) * Noise(ref rng) * Math.Exp(-t * 8d) * 0.6d;
 
             buffer[i] = (float)(sub + (body * 1.1d) + rumble);
         }
@@ -402,7 +402,7 @@ public const int SampleRate = 22050;
             for (int i = offset; i < buffer.Length; i++)
             {
                 double t = (double)(i - offset) / SampleRate;
-                double raw = Noise(rng);
+                double raw = Noise(ref rng);
 
                 lowState += 0.25d * (raw - lowState);
                 double crack = (raw - lowState) * Math.Exp(-t * 70d);
@@ -437,11 +437,11 @@ public const int SampleRate = 22050;
             double frequency = subFrequency * (1d - (0.55d * Math.Min(1d, progress * 1.5d)));
             phase += frequency / SampleRate;
 
-            double crack = Noise(rng) * Math.Exp(-t * (55d / seconds)) * 1.3d;
+            double crack = Noise(ref rng) * Math.Exp(-t * (55d / seconds)) * 1.3d;
             double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * (2.4d / seconds)) * 0.9d;
-            double body = Noise(rng) * Envelope(t, 0.005d, seconds * 0.28d, seconds * 0.85d, seconds) * 1.15d;
-            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * (1.6d / seconds)) * 0.6d;
-            double crackle = Noise(rng) * Noise(rng) * Math.Exp(-t * (1.4d / seconds)) * 0.3d;
+            double body = Noise(ref rng) * Envelope(t, 0.005d, seconds * 0.28d, seconds * 0.85d, seconds) * 1.15d;
+            double rumble = Noise(ref rng) * Noise(ref rng) * Math.Exp(-t * (1.6d / seconds)) * 0.6d;
+            double crackle = Noise(ref rng) * Noise(ref rng) * Math.Exp(-t * (1.4d / seconds)) * 0.3d;
 
             buffer[i] = (float)(crack + sub + body + rumble + crackle);
         }
@@ -470,10 +470,10 @@ public const int SampleRate = 22050;
             double frequency = 60d - (42d * Math.Min(1d, progress * 1.3d));
             phase += frequency / SampleRate;
 
-            double crack = Noise(rng) * Math.Exp(-t * 70d) * 1.6d;
+            double crack = Noise(ref rng) * Math.Exp(-t * 70d) * 1.6d;
             double sub = Math.Sin(2d * Math.PI * phase) * Envelope(t, 0.004d, seconds * 0.2d, seconds * 0.8d, seconds) * 1.1d;
-            double roar = Noise(rng) * Envelope(t, 0.003d, seconds * 0.12d, seconds * 0.85d, seconds);
-            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * 0.7d) * 0.8d;
+            double roar = Noise(ref rng) * Envelope(t, 0.003d, seconds * 0.12d, seconds * 0.85d, seconds);
+            double rumble = Noise(ref rng) * Noise(ref rng) * Math.Exp(-t * 0.7d) * 0.8d;
 
             buffer[i] = (float)(crack + sub + roar + rumble);
         }
@@ -498,7 +498,7 @@ public const int SampleRate = 22050;
             double ring = (Math.Sin(2d * Math.PI * 1150d * t) * 0.3d) +
                            (Math.Sin(2d * Math.PI * 1730d * t) * 0.22d);
 
-            buffer[i] = (float)((ring * decay) + (Noise(rng) * Math.Exp(-t * 90d) * 1.1d));
+            buffer[i] = (float)((ring * decay) + (Noise(ref rng) * Math.Exp(-t * 90d) * 1.1d));
         }
 
         return buffer;
@@ -563,7 +563,7 @@ public const int SampleRate = 22050;
                 double ring = (Math.Sin(2d * Math.PI * (1450d + (strike * 190d)) * local) * 0.45d) +
                     (Math.Sin(2d * Math.PI * (2180d + (strike * 260d)) * local) * 0.3d);
 
-                sum += (ring + (Noise(rng) * Math.Exp(-local * 180d) * 0.7d)) * Math.Exp(-local * 26d);
+                sum += (ring + (Noise(ref rng) * Math.Exp(-local * 180d) * 0.7d)) * Math.Exp(-local * 26d);
             }
 
             // The chime: two rising fifths, the machine saying "ready".
@@ -604,7 +604,7 @@ public const int SampleRate = 22050;
                 // burst against the body's own note.
                 double local = t % 0.135d;
                 double pulse = Math.Exp(-local * 55d);
-                sum = (Noise(rng) * pulse * 0.8d) + (Math.Sin(2d * Math.PI * 120d * t) * pulse * 0.55d);
+                sum = (Noise(ref rng) * pulse * 0.8d) + (Math.Sin(2d * Math.PI * 120d * t) * pulse * 0.55d);
             }
             else
             {
@@ -615,7 +615,7 @@ public const int SampleRate = 22050;
                 phase += rate / SampleRate;
 
                 double saw = (2d * phase) - 1d;
-                sum = (saw * (0.55d + (0.45d * up))) + (Noise(rng) * 0.3d);
+                sum = (saw * (0.55d + (0.45d * up))) + (Noise(ref rng) * 0.3d);
             }
 
             double gate = Math.Min(1d, t * 300d) *
@@ -654,7 +654,7 @@ public const int SampleRate = 22050;
                 double strikeFrequency = 900d - (strike * 180d);
                 double ring = Math.Sin(2d * Math.PI * strikeFrequency * local) * 0.4d;
 
-                sum += (ring + (Noise(rng) * Math.Exp(-local * 140d) * 0.8d)) * Math.Exp(-local * 22d);
+                sum += (ring + (Noise(ref rng) * Math.Exp(-local * 140d) * 0.8d)) * Math.Exp(-local * 22d);
             }
 
             // The resolve: the deck's own note, a low round tone under the whole span.
@@ -694,7 +694,7 @@ public const int SampleRate = 22050;
             }
 
             double saw = (2d * phase) - 1d;
-            buffer[i] = (float)((saw * 0.55d) + (Noise(rng) * 0.25d));
+            buffer[i] = (float)((saw * 0.55d) + (Noise(ref rng) * 0.25d));
         }
 
         // Crossfade the ends so the loop point is inaudible.
@@ -732,8 +732,18 @@ public const int SampleRate = 22050;
 
     private static int Samples(double seconds) => Math.Max(1, (int)(seconds * SampleRate));
 
-    /// <summary>White noise in [-1, 1] from the generator.</summary>
-    private static double Noise(Pcg32 rng) => ((rng.NextUInt() / (double)uint.MaxValue) * 2d) - 1d;
+    /// <summary>
+    /// White noise in [-1, 1] from the generator.
+    /// <para>
+    /// <b>The generator is taken by <c>ref</c>, and that is the whole point.</b>
+    /// <see cref="Pcg32"/> is a mutable struct: passed by value, every call advanced a
+    /// copy and threw it away, so every "noise" sample in a buffer came back as the
+    /// same constant and the whole bank was an envelope-shaped DC thump — a rifle with
+    /// no crack and an explosion with no roar. Taking it by reference is what makes the
+    /// noise a noise.
+    /// </para>
+    /// </summary>
+    private static double Noise(ref Pcg32 rng) => ((rng.NextUInt() / (double)uint.MaxValue) * 2d) - 1d;
 
     /// <summary>Fades the buffer's last milliseconds to zero, so no kind ends on a step.</summary>
     private static void FadeOut(float[] buffer, double seconds)
