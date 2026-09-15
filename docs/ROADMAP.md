@@ -120,15 +120,29 @@ their own firing sounds and hits play an impact.
 - **A battlefield bed** — distant guns, wind over the terrain, the low rumble of an
   army moving — so silence between engagements is not silence.
 
-**Built, since the list was written: the actions have their sounds, and the shots have
-takes.** Every sound effect now renders from **three takes** — the same weapon recorded on
-different days, salted seeds of the same kind — and the play rotates them by the count of
-everything played so far, deterministic and varied, so a rifle platoon no longer plays one
-sample four times in the first second; a small pitch wander per play carries the rest. The
-bank's effects match what they answer to: every **structure** dies in the large explosion,
+**Built, since the list was written: the actions have their sounds, the shots have takes, and
+the model is an envelope.** Every sound effect now renders from **three takes** — the same
+weapon recorded on different days, salted seeds of the same kind — and the play rotates them by
+the count of everything played so far, deterministic and varied, so a rifle platoon no longer
+plays one sample four times in the first second; a small pitch wander per play carries the rest.
+
+And the model changed, because the first one made beeps. A shot and an explosion are **noise
+shaped by an envelope**, and the first bank shaped its noise with an exponential decay — loud for
+a twentieth of a second and gone, which is the shape a beep has. The bank is built now on the
+ADSR a studio would ask for: attack measured in milliseconds, the body **held at full**, a
+release that runs a fifth of a second on a rifle and seconds on an explosion. One noise source,
+split in the loop — what a low-pass keeps is the blast's body, what it leaves is the crack —
+because the whole-buffer filter the first pass used took the body away with the ring and left a
+spike and a hiss: the rifle's own RMS went from one per cent of full scale to over half. Under
+everything sits a small **synthetic reverb** — four comb filters at the classic spacings and two
+all-passes — because an open field does not answer a rifle with silence, and a dry crack is
+exactly what a beep is.
+
+The bank's effects match what they answer to: every **structure** dies in the large explosion,
 vehicles brew up deeper than an infantryman falls, and the **tactical nuke** owns a register
-nothing else on the field visits — a 3.2-second sub that drops below the explosions' floor
-and stays there.
+nothing else on the field visits — a 3.2-second sub that drops below the explosions' floor and
+stays there. The factory's rollout revs where a small speaker can carry it — an idle at seventy
+hertz is a rumble a laptop's cones cannot move, which is why it was not audible.
 
 And the **major actions are covered**: a structure's construction finishing plays the rivets
 and the ready chime, a factory's rollout plays the starter cranking and the engine catching,

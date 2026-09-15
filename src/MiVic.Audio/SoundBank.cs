@@ -54,9 +54,21 @@ public enum SoundEffectKind : byte
 /// <para>
 /// Same reasoning as the music: an early-80s machine had one noise channel and
 /// one or two tone channels, so a convincing "tank firing" is a pitched sweep
-/// plus a noise burst, not a recording. The result is short, cheap, and exactly
-/// the kind of sound this game's look implies. Everything is a pure function of
-/// (kind, seed), so it is testable and reproducible.
+/// plus a noise burst, not a recording. Everything is a pure function of
+/// (kind, take-seed), so it is testable and reproducible.
+/// </para>
+/// <para>
+/// <b>The model, and what made the first one weak.</b> A shot is not a tone with a
+/// decay and an explosion is not a tone with a longer decay — both are *noise shaped
+/// by an envelope*, and the first bank shaped its noise with an exponential decay,
+/// which is the shape a beep has: loud for a twentieth of a second and gone. The
+/// sounds are built now on one envelope, the ADSR a studio would ask for — attack
+/// measured in milliseconds, the body held at full, a release that runs for a
+/// fraction of a second on a shot and for seconds on an explosion — over noise the
+/// filters have already given the character to: a high-pass for the crack, a low-pass
+/// for the body. Under all of it sits a small synthetic reverb, four comb filters
+/// and two all-passes, because an open field does not answer a rifle with silence
+/// and a dry crack is exactly what a beep is.
 /// </para>
 /// </summary>
 public static class SoundBank
@@ -77,19 +89,29 @@ public const int SampleRate = 22050;
             SoundEffectKind.TankGun => TankGun(rng),
             SoundEffectKind.ArtilleryLaunch => ArtilleryLaunch(rng),
             SoundEffectKind.AntiAirBurst => AntiAirBurst(rng),
-            SoundEffectKind.ExplosionSmall => Explosion(rng, 0.7, 90d),
-            SoundEffectKind.ExplosionLarge => Explosion(rng, 2.1, 55d),
+            SoundEffectKind.ExplosionSmall => Explosion(rng, Duration(SoundEffectKind.ExplosionSmall), 90d),
+            SoundEffectKind.ExplosionLarge => Explosion(rng, Duration(SoundEffectKind.ExplosionLarge), 55d),
             SoundEffectKind.UiClick => UiClick(),
             SoundEffectKind.Alarm => Alarm(),
             SoundEffectKind.Impact => Impact(rng),
             SoundEffectKind.ConstructionComplete => ConstructionComplete(),
-            SoundEffectKind.UnitComplete => UnitComplete(),
+            SoundEffectKind.UnitComplete => UnitComplete(rng),
             SoundEffectKind.NuclearDetonation => NuclearDetonation(rng),
             SoundEffectKind.BridgeComplete => BridgeComplete(),
             _ => EngineLoop(rng),
         };
 
-        Normalise(buffer, 0.85f);
+        // The room answers: the wet share is the kind's own — a rifle in an open field
+        // has a slap, a detonation owns a tail, and a UI click lives in the player's
+        // hand, not in a hall.
+        buffer = Reverb(buffer, ReverbWet(kind));
+
+        // The buffer ends where the kind says it does, and a reverb tail cut in the
+        // middle of ringing would end the sound with a click; a short fade takes the
+        // seam off every kind the same way.
+        FadeOut(buffer, 0.012d);
+
+        Normalise(buffer, 0.9f);
         return buffer;
     }
 
@@ -110,15 +132,15 @@ public const int SampleRate = 22050;
     /// <summary>How long an effect lasts, in seconds.</summary>
     public static double Duration(SoundEffectKind kind) => kind switch
     {
-        SoundEffectKind.RifleShot => 0.16,
-        SoundEffectKind.TankGun => 0.55,
-        SoundEffectKind.ArtilleryLaunch => 0.62,
-        SoundEffectKind.AntiAirBurst => 0.28,
-        SoundEffectKind.ExplosionSmall => 0.7,
-        SoundEffectKind.ExplosionLarge => 2.1,
+        SoundEffectKind.RifleShot => 0.28,
+        SoundEffectKind.TankGun => 0.7,
+        SoundEffectKind.ArtilleryLaunch => 0.75,
+        SoundEffectKind.AntiAirBurst => 0.32,
+        SoundEffectKind.ExplosionSmall => 0.8,
+        SoundEffectKind.ExplosionLarge => 2.4,
         SoundEffectKind.UiClick => 0.06,
         SoundEffectKind.Alarm => 0.9,
-        SoundEffectKind.Impact => 0.16,
+        SoundEffectKind.Impact => 0.2,
         SoundEffectKind.ConstructionComplete => 0.75,
         SoundEffectKind.UnitComplete => 1.15,
         SoundEffectKind.NuclearDetonation => 3.2,
@@ -126,125 +148,282 @@ public const int SampleRate = 22050;
         _ => 1d,
     };
 
+    // ------------------------------------------------------------------ the envelope
+
     /// <summary>
-    /// A round hitting armour: two detuned high partials ringing against a noise
-    /// crack. Metal is bright and short, which is why this is nothing like the
-    /// explosion.
+    /// The ADSR the whole bank is shaped by: fast attack, the body held at full, a
+    /// release that runs for the rest. An exponential decay — what the first bank used —
+    /// is a beep's shape; this one is the shape a physical event has, because the air
+    /// the gun moved does not vanish, it runs out.
     /// </summary>
-    private static float[] Impact(Pcg32 rng)
+    private static double Envelope(double t, double attack, double hold, double release, double total)
     {
-        float[] buffer = new float[Samples(Duration(SoundEffectKind.Impact))];
+        if (t < attack)
+        {
+            return t / attack;
+        }
+
+        if (t < attack + hold)
+        {
+            return 1d;
+        }
+
+        // The release runs for as long as the kind's own length allows, clamped so a
+        // long release on a short buffer is a release that ends when the buffer does.
+        double releaseSpan = Math.Min(release, Math.Max(0d, total - attack - hold));
+        double released = (t - attack - hold) / Math.Max(1e-9, releaseSpan);
+
+        return Math.Max(0d, 1d - released);
+    }
+
+    // ------------------------------------------------------------------ the filters
+
+    /// <summary>A one-pole low-pass, in place: <c>alpha</c> of the input per sample.</summary>
+    private static void Lowpass(float[] buffer, double alpha)
+    {
+        double state = 0d;
 
         for (int i = 0; i < buffer.Length; i++)
         {
-            double t = (double)i / SampleRate;
-            double decay = Math.Exp(-t * 70d);
+            state += alpha * (buffer[i] - state);
+            buffer[i] = (float)state;
+        }
+    }
 
-            double ring = (Math.Sin(2d * Math.PI * 1150d * t) * 0.5d) +
-                          (Math.Sin(2d * Math.PI * 1730d * t) * 0.35d);
+    /// <summary>A one-pole high-pass, in place: the input minus what the low-pass keeps.</summary>
+    private static void Highpass(float[] buffer, double alpha)
+    {
+        double lowState = 0d;
 
-            buffer[i] = (float)((ring * decay) + (Noise(rng) * Math.Exp(-t * 220d) * 0.7d));
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            lowState += alpha * (buffer[i] - lowState);
+            buffer[i] -= (float)lowState;
+        }
+    }
+
+    /// <summary>
+    /// A small synthetic reverb: four comb filters at the classic spacings, then two
+    /// all-passes to wash the early pattern out. Deterministic — fixed delays, fixed
+    /// gains — so the same kind is the same room every run, and cheap: a few adds per
+    /// sample over a buffer that is generated once.
+    /// </summary>
+    private static float[] Reverb(float[] buffer, double wet)
+    {
+        if (wet <= 0d || buffer.Length < 4)
+        {
+            return buffer;
+        }
+
+        int[] combDelays =
+        [
+            (int)(0.0297d * SampleRate),
+            (int)(0.0371d * SampleRate),
+            (int)(0.0411d * SampleRate),
+            (int)(0.0437d * SampleRate),
+        ];
+
+        var combs = new float[combDelays.Length][];
+        var combWrite = new int[combDelays.Length];
+
+        for (int c = 0; c < combDelays.Length; c++)
+        {
+            combs[c] = new float[combDelays[c]];
+        }
+
+        int[] allpassDelays = [(int)(0.005d * SampleRate), (int)(0.0017d * SampleRate)];
+        var allpasses = new float[allpassDelays.Length][];
+        var allpassWrite = new int[allpassDelays.Length];
+
+        for (int a = 0; a < allpassDelays.Length; a++)
+        {
+            allpasses[a] = new float[allpassDelays[a]];
+        }
+
+        const double Feedback = 0.774d;
+        const double AllPassGain = 0.7d;
+
+        var tail = new float[buffer.Length];
+
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            double sum = 0d;
+
+            // The combs: a circular line of past outputs. Read the oldest, feed it
+            // back with the input, write the sum where the oldest was.
+            for (int c = 0; c < combs.Length; c++)
+            {
+                float[] line = combs[c];
+                int write = combWrite[c];
+                double delayed = line[write];
+
+                line[write] = (float)(buffer[i] + (delayed * Feedback));
+                combWrite[c] = (write + 1) % combDelays[c];
+
+                sum += delayed;
+            }
+
+            double washed = sum / combs.Length;
+
+            // The all-passes, in the form Freeverb uses: read the oldest output, the
+            // new output is it minus the input, and the line takes input plus the
+            // damped oldest back.
+            for (int a = 0; a < allpasses.Length; a++)
+            {
+                float[] line = allpasses[a];
+                int write = allpassWrite[a];
+                double delayed = line[write];
+                double output = (delayed - buffer[i]) * 0.7d;
+
+                line[write] = (float)(buffer[i] + (delayed * 0.5d));
+                allpassWrite[a] = (write + 1) % allpassDelays[a];
+
+                washed = (washed * (1d - AllPassGain)) + (output * AllPassGain);
+            }
+
+            tail[i] = (float)washed;
+        }
+
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            buffer[i] = (float)((buffer[i] * (1d - wet)) + (tail[i] * wet));
         }
 
         return buffer;
     }
 
+    // ------------------------------------------------------------------ the weapons
+
+    /// <summary>
+    /// A rifle: a high-passed crack that stings, a low-passed body the muzzle blast
+    /// carries, and the stock's thump. There is no sine in it — a sine is where the
+    /// beep came from.
+    /// </summary>
     private static float[] RifleShot(Pcg32 rng)
     {
-        float[] buffer = new float[Samples(Duration(SoundEffectKind.RifleShot))];
+        double seconds = Duration(SoundEffectKind.RifleShot);
+        float[] buffer = new float[Samples(seconds)];
+
+        double lowState = 0d;
 
         for (int i = 0; i < buffer.Length; i++)
         {
             double t = (double)i / SampleRate;
+            double raw = Noise(rng);
 
-            // Three layers, because a rifle report is one *event*, not a click: the
-            // muzzle's crack (a fast decayed noise, the part that stings), the crack's
-            // own pitch body dropping as the gas expands, and the low thump the
-            // stock carries back to the shoulder. A click alone reads as a door latch.
-            double crack = Noise(rng) * Math.Exp(-t * 150d) * 1.2d;
-            double pitch = Math.Sin(2d * Math.PI * ((700d * Math.Exp(-t * 9d)) + 110d) * t) * Math.Exp(-t * 55d);
-            double thump = Math.Sin(2d * Math.PI * 78d * t) * Math.Exp(-t * 40d) * 0.55d;
-            double click = Math.Sin(2d * Math.PI * 900d * t) * Math.Exp(-t * 400d) * 0.5d;
+            // One noise source, split in the loop: what the low-pass keeps is the
+            // blast's body, on the envelope; what it leaves is the crack. A whole-buffer
+            // high-pass would have taken the body with the ring, which is what left the
+            // first cut as a spike and a hiss.
+            lowState += 0.18d * (raw - lowState);
+            double crack = (raw - lowState) * Math.Exp(-t * 95d) * 1.6d;
+            double body = lowState * Envelope(t, 0.002d, 0.05d, seconds * 0.7d, seconds);
+            double slap = Noise(rng) * Noise(rng) * Math.Exp(-t * 24d) * 0.45d;
 
-            buffer[i] = (float)(crack + (pitch * 0.8d) + thump + click);
+            buffer[i] = (float)(crack + (body * 1.6d) + slap);
         }
 
         return buffer;
     }
 
+    /// <summary>
+    /// A tank gun: the report is a low-passed blast on the ADSR with a sub that the
+    /// ground carries — the barrel note the first bank swept was the beep, and the
+    /// sweep is what the tone of a real report never does.
+    /// </summary>
     private static float[] TankGun(Pcg32 rng)
     {
-        float[] buffer = new float[Samples(Duration(SoundEffectKind.TankGun))];
+        double seconds = Duration(SoundEffectKind.TankGun);
+        float[] buffer = new float[Samples(seconds)];
         double phase = 0d;
-        double subPhase = 0d;
 
         for (int i = 0; i < buffer.Length; i++)
         {
             double t = (double)i / SampleRate;
-            double progress = t / Duration(SoundEffectKind.TankGun);
+            double progress = t / seconds;
 
-            // The barrel note drops from a bark to a thud; the sub carries the report
-            // into the chest, which is the part a small speaker loses and the part
-            // that made the old take feel thin.
-            double frequency = 200d - (140d * progress);
+            // The sub sweeps down under the blast — the note the ground answers — and
+            // the body is the muzzle blast held on the envelope.
+            double frequency = 110d - (60d * Math.Min(1d, progress * 1.6d));
             phase += frequency / SampleRate;
 
-            double body = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 6d);
-            double sub = Math.Sin(2d * Math.PI * subPhase) * Math.Exp(-t * 3.5d) * 0.85d;
-            subPhase += 52d / SampleRate;
+            double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 5d) * 1.1d;
+            double body = Noise(rng) * Envelope(t, 0.003d, seconds * 0.22d, seconds * 0.7d, seconds) * 1.2d;
+            double slap = Noise(rng) * Noise(rng) * Math.Exp(-t * 14d) * 0.5d;
 
-            double blast = Noise(rng) * Math.Exp(-t * 22d);
-            double slap = Noise(rng) * Noise(rng) * Math.Exp(-t * 10d) * 0.5d;
-
-            buffer[i] = (float)((body * 0.85d) + sub + (blast * 0.8d) + slap);
+            buffer[i] = (float)(sub + body + slap);
         }
 
+        Lowpass(buffer, 0.42d);
         return buffer;
     }
 
+    /// <summary>
+    /// An artillery piece firing: the same report the tank has, deeper, with the
+    /// charge's longer burn and a rumble the ground answers for longer.
+    /// </summary>
     private static float[] ArtilleryLaunch(Pcg32 rng)
     {
-        float[] buffer = new float[Samples(Duration(SoundEffectKind.ArtilleryLaunch))];
+        double seconds = Duration(SoundEffectKind.ArtilleryLaunch);
+        float[] buffer = new float[Samples(seconds)];
         double phase = 0d;
 
         for (int i = 0; i < buffer.Length; i++)
         {
             double t = (double)i / SampleRate;
-            double progress = t / Duration(SoundEffectKind.ArtilleryLaunch);
+            double progress = t / seconds;
 
-            double frequency = 130d - (90d * progress);
+            double frequency = 82d - (40d * Math.Min(1d, progress * 1.4d));
             phase += frequency / SampleRate;
 
-            double body = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 4.5d);
-            double rumble = Noise(rng) * Math.Exp(-t * 9d) * 0.8d;
+            double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 3.6d) * 1.15d;
+            double body = Noise(rng) * Envelope(t, 0.004d, seconds * 0.18d, seconds * 0.8d, seconds);
+            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * 8d) * 0.6d;
 
-            buffer[i] = (float)(body + rumble);
+            buffer[i] = (float)(sub + (body * 1.1d) + rumble);
         }
 
+        Lowpass(buffer, 0.35d);
         return buffer;
     }
 
     private static float[] AntiAirBurst(Pcg32 rng)
     {
-        float[] buffer = new float[Samples(Duration(SoundEffectKind.AntiAirBurst))];
-        double decay = 120d;
+        double seconds = Duration(SoundEffectKind.AntiAirBurst);
+        float[] buffer = new float[Samples(seconds)];
 
-        // Three quick reports, 70 ms apart.
+        // Three quick reports, 70 ms apart, each a crack over a short body.
         for (int shot = 0; shot < 3; shot++)
         {
             int offset = Samples(shot * 0.07d);
+            double loudness = 0.85d - (shot * 0.15d);
+            double lowState = 0d;
 
             for (int i = offset; i < buffer.Length; i++)
             {
                 double t = (double)(i - offset) / SampleRate;
-                double envelope = Math.Exp(-t * decay);
-                buffer[i] += (float)(Noise(rng) * envelope * (0.85d - (shot * 0.15d)));
+                double raw = Noise(rng);
+
+                lowState += 0.25d * (raw - lowState);
+                double crack = (raw - lowState) * Math.Exp(-t * 70d);
+                double body = lowState * Envelope(t, 0.002d, 0.02d, 0.09d, seconds);
+
+                buffer[i] += (float)((crack + (body * 1.4d)) * loudness);
             }
         }
 
         return buffer;
     }
 
+    // ------------------------------------------------------------------ the explosions
+
+    /// <summary>
+    /// An explosion: a crack, then noise held at full on the ADSR — fast attack, the
+    /// body sustained, a release that runs most of the sound — with the sub sweeping
+    /// down under it and the ground's rumble answering late. The envelope is why a
+    /// detonation reads as a detonation: the air is pushed and then runs out, rather
+    /// than decaying like a struck bell.
+    /// </summary>
     private static float[] Explosion(Pcg32 rng, double seconds, double subFrequency)
     {
         float[] buffer = new float[Samples(seconds)];
@@ -255,21 +434,71 @@ public const int SampleRate = 22050;
             double t = (double)i / SampleRate;
             double progress = t / seconds;
 
-            // A sub-bass drop under a long noise tail: the difference between a
-            // firecracker and a building coming down. The opening crack is the blast
-            // front — the first fifth of the tail carries the sharp part, then the
-            // roar owns the rest — and the ground's answer is a second, lower noise
-            // wave the listener feels rather than hears.
-            double frequency = subFrequency * (1d - (0.6d * progress));
+            double frequency = subFrequency * (1d - (0.55d * Math.Min(1d, progress * 1.5d)));
             phase += frequency / SampleRate;
 
-            double crack = Noise(rng) * Math.Exp(-t * (60d / seconds)) * 1.4d;
-            double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * (3.5d / seconds));
-            double noise = Noise(rng) * Math.Exp(-t * (5.5d / seconds)) * 0.9d;
-            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * (1.8d / seconds)) * 0.55d;
-            double crackle = Noise(rng) * Noise(rng) * Math.Exp(-t * (2.2d / seconds)) * 0.35d;
+            double crack = Noise(rng) * Math.Exp(-t * (55d / seconds)) * 1.3d;
+            double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * (2.4d / seconds)) * 0.9d;
+            double body = Noise(rng) * Envelope(t, 0.005d, seconds * 0.28d, seconds * 0.85d, seconds) * 1.15d;
+            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * (1.6d / seconds)) * 0.6d;
+            double crackle = Noise(rng) * Noise(rng) * Math.Exp(-t * (1.4d / seconds)) * 0.3d;
 
-            buffer[i] = (float)(crack + (sub * 0.8d) + noise + rumble + crackle);
+            buffer[i] = (float)(crack + sub + body + rumble + crackle);
+        }
+
+        Lowpass(buffer, 0.5d);
+        return buffer;
+    }
+
+    /// <summary>
+    /// The tactical nuke: the same envelope the explosions use, dropped two registers
+    /// and held long — the crack, a roar that owns the first second, and a sub the
+    /// ground carries for seconds after. The release is the point: a detonation's tail
+    /// is the sound arriving from further and further away.
+    /// </summary>
+    private static float[] NuclearDetonation(Pcg32 rng)
+    {
+        double seconds = Duration(SoundEffectKind.NuclearDetonation);
+        float[] buffer = new float[Samples(seconds)];
+        double phase = 0d;
+
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            double t = (double)i / SampleRate;
+            double progress = t / seconds;
+
+            double frequency = 60d - (42d * Math.Min(1d, progress * 1.3d));
+            phase += frequency / SampleRate;
+
+            double crack = Noise(rng) * Math.Exp(-t * 70d) * 1.6d;
+            double sub = Math.Sin(2d * Math.PI * phase) * Envelope(t, 0.004d, seconds * 0.2d, seconds * 0.8d, seconds) * 1.1d;
+            double roar = Noise(rng) * Envelope(t, 0.003d, seconds * 0.12d, seconds * 0.85d, seconds);
+            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * 0.7d) * 0.8d;
+
+            buffer[i] = (float)(crack + sub + roar + rumble);
+        }
+
+        Lowpass(buffer, 0.3d);
+        return buffer;
+    }
+
+    // ------------------------------------------------------------------ the interfaces and the reports
+
+    /// <summary>A round hitting armour: two detuned high partials against a noise crack,
+    /// with less of the ring than the first bank gave it — the ring was the beep again.</summary>
+    private static float[] Impact(Pcg32 rng)
+    {
+        float[] buffer = new float[Samples(Duration(SoundEffectKind.Impact))];
+
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            double t = (double)i / SampleRate;
+            double decay = Math.Exp(-t * 40d);
+
+            double ring = (Math.Sin(2d * Math.PI * 1150d * t) * 0.3d) +
+                           (Math.Sin(2d * Math.PI * 1730d * t) * 0.22d);
+
+            buffer[i] = (float)((ring * decay) + (Noise(rng) * Math.Exp(-t * 90d) * 1.1d));
         }
 
         return buffer;
@@ -309,9 +538,7 @@ public const int SampleRate = 22050;
 
     /// <summary>
     /// A structure's construction finished: three rivet strikes walking the frame, then
-    /// the two-note chime the machine raises when it is ready to work. The knocks come
-    /// first because the builders sign the work; the chime is for the player who is not
-    /// looking at the building when it finishes.
+    /// the two-note chime the machine raises when it is ready to work.
     /// </summary>
     private static float[] ConstructionComplete()
     {
@@ -357,13 +584,13 @@ public const int SampleRate = 22050;
 
     /// <summary>
     /// A factory rolled a vehicle off the line: the starter cranks, catches, and the
-    /// engine revs up. The crank is what sells it — three low chuffs before the rise,
-    /// the shape every cold engine has.
+    /// engine revs. The rev lives in the two-to-three hundred hertz a small speaker
+    /// can carry — an idle at seventy is a rumble the laptop's cones cannot move, and
+    /// that is why the first version was not audible.
     /// </summary>
-    private static float[] UnitComplete()
+    private static float[] UnitComplete(Pcg32 rng)
     {
         float[] buffer = new float[Samples(Duration(SoundEffectKind.UnitComplete))];
-        var rng = new Pcg32(0x6E0C_7A7E_5A1F_0001UL);
         double phase = 0d;
 
         for (int i = 0; i < buffer.Length; i++)
@@ -371,64 +598,30 @@ public const int SampleRate = 22050;
             double t = (double)i / SampleRate;
             double sum;
 
-            if (t < 0.42d)
+            if (t < 0.4d)
             {
                 // The crank: three chuffs a fraction of a second apart, each a noise
-                // burst against the body's own low note.
-                double local = t % 0.14d;
-                double pulse = Math.Exp(-local * 60d);
-                sum = (Noise(rng) * pulse * 0.7d) + (Math.Sin(2d * Math.PI * 85d * t) * pulse * 0.5d);
+                // burst against the body's own note.
+                double local = t % 0.135d;
+                double pulse = Math.Exp(-local * 55d);
+                sum = (Noise(rng) * pulse * 0.8d) + (Math.Sin(2d * Math.PI * 120d * t) * pulse * 0.55d);
             }
             else
             {
                 // The catch and the rev: the saw's rate climbs from the idle to the
                 // working engine, and the noise floor rises with it.
-                double up = Math.Min(1d, (t - 0.42d) / 0.7d);
-                double rate = 70d + (160d * up);
+                double up = Math.Min(1d, (t - 0.4d) / 0.65d);
+                double rate = 130d + (190d * up);
                 phase += rate / SampleRate;
 
                 double saw = (2d * phase) - 1d;
-                sum = (saw * (0.4d + (0.5d * up))) + (Noise(rng) * 0.22d);
+                sum = (saw * (0.55d + (0.45d * up))) + (Noise(rng) * 0.3d);
             }
 
-            double gate = Math.Min(1d, t * 220d) *
-                Math.Min(1d, Math.Max(0d, (Duration(SoundEffectKind.UnitComplete) - t) * 30d));
+            double gate = Math.Min(1d, t * 300d) *
+                Math.Min(1d, Math.Max(0d, (Duration(SoundEffectKind.UnitComplete) - t) * 25d));
 
             buffer[i] = (float)(sum * gate);
-        }
-
-        return buffer;
-    }
-
-    /// <summary>
-    /// The tactical nuke: the blast front's crack, the roar that owns the first second
-    /// and a half, and a sub the drop of which the ground carries for seconds after.
-    /// An explosion the size of a building shares its palette; this one owns a register
-    /// nothing else on the field reaches into.
-    /// </summary>
-    private static float[] NuclearDetonation(Pcg32 rng)
-    {
-        double seconds = Duration(SoundEffectKind.NuclearDetonation);
-        float[] buffer = new float[Samples(seconds)];
-        double phase = 0d;
-
-        for (int i = 0; i < buffer.Length; i++)
-        {
-            double t = (double)i / SampleRate;
-            double progress = t / seconds;
-
-            // The sub drops from the explosion's own register to a floor no other sound
-            // in the game visits, and stays there — the long tail is what a detonation
-            // has that an explosion does not.
-            double frequency = 55d - (40d * Math.Min(1d, progress * 1.4d));
-            phase += frequency / SampleRate;
-
-            double crack = Noise(rng) * Math.Exp(-t * 110d) * 1.6d;
-            double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 0.8d) * 1.2d;
-            double roar = Noise(rng) * Math.Exp(-t * 2.2d);
-            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * 0.7d) * 0.8d;
-
-            buffer[i] = (float)(crack + sub + roar + rumble);
         }
 
         return buffer;
@@ -441,7 +634,7 @@ public const int SampleRate = 22050;
     private static float[] BridgeComplete()
     {
         float[] buffer = new float[Samples(Duration(SoundEffectKind.BridgeComplete))];
-        var rng = new Pcg32(0x0E1A_CEB_0055_0002UL);
+        var rng = new Pcg32(0x0E1A_CEB0_0055_0002UL);
 
         for (int i = 0; i < buffer.Length; i++)
         {
@@ -518,10 +711,40 @@ public const int SampleRate = 22050;
         return buffer;
     }
 
+    /// <summary>How much of a kind is room: the weapons answer an open field, the
+    /// detonation owns a valley, and the interfaces live in the player's hand.</summary>
+    private static double ReverbWet(SoundEffectKind kind) => kind switch
+    {
+        SoundEffectKind.RifleShot => 0.28d,
+        SoundEffectKind.TankGun => 0.4d,
+        SoundEffectKind.ArtilleryLaunch => 0.42d,
+        SoundEffectKind.AntiAirBurst => 0.3d,
+        SoundEffectKind.ExplosionSmall => 0.45d,
+        SoundEffectKind.ExplosionLarge => 0.55d,
+        SoundEffectKind.NuclearDetonation => 0.6d,
+        SoundEffectKind.Impact => 0.25d,
+        SoundEffectKind.BridgeComplete => 0.35d,
+        SoundEffectKind.UnitComplete => 0.2d,
+        SoundEffectKind.ConstructionComplete => 0.15d,
+        SoundEffectKind.Alarm => 0.1d,
+        _ => 0.05d,
+    };
+
     private static int Samples(double seconds) => Math.Max(1, (int)(seconds * SampleRate));
 
     /// <summary>White noise in [-1, 1] from the generator.</summary>
     private static double Noise(Pcg32 rng) => ((rng.NextUInt() / (double)uint.MaxValue) * 2d) - 1d;
+
+    /// <summary>Fades the buffer's last milliseconds to zero, so no kind ends on a step.</summary>
+    private static void FadeOut(float[] buffer, double seconds)
+    {
+        int fade = Math.Min(buffer.Length, Samples(seconds));
+
+        for (int i = 0; i < fade; i++)
+        {
+            buffer[buffer.Length - fade + i] *= (float)(1d - ((double)i / fade));
+        }
+    }
 
     private static void Normalise(float[] buffer, float peakTarget)
     {

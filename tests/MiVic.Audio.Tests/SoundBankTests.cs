@@ -17,7 +17,8 @@ public sealed class SoundBankTests
             float[] samples = SoundBank.Generate(kind, 1UL);
             int expected = (int)(SoundBank.Duration(kind) * SoundBank.SampleRate);
 
-            Assert.Equal(expected, samples.Length);
+            Assert.True(samples.Length == expected,
+                $"{kind}: Duration says {SoundBank.Duration(kind):0.###} s = {expected}, render is {samples.Length} ({samples.Length / (double)SoundBank.SampleRate:0.###} s)");
             Assert.True(samples.Length > 0);
         }
     }
