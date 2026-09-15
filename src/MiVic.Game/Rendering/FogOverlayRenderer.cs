@@ -57,7 +57,7 @@ public sealed class FogOverlayRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(navigation);
 
         _device = device;
-        _effect = content.Load<Effect>("Shaders/FogOverlay");
+        _effect = EffectFile.Load(device, "FogOverlay");
 
         _viewProjectionParameter = _effect.Parameters["ViewProjection"]
             ?? throw new InvalidOperationException("Fog shader is missing the ViewProjection parameter.");

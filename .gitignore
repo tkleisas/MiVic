@@ -50,3 +50,6 @@ shots/
 __pycache__/
 *.pyc
 maps/
+
+# The effects are compiled by the build's ShadowDusk target, next to their sources.
+src/MiVic.Game/Content/Shaders/*.mgfx

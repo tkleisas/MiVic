@@ -36,7 +36,7 @@ public sealed class InstancedRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(content);
 
         _device = device;
-        _effect = content.Load<Effect>("Shaders/InstancedMesh");
+        _effect = EffectFile.Load(device, "InstancedMesh");
 
         _viewProjectionParameter = _effect.Parameters["ViewProjection"]
             ?? throw new InvalidOperationException("Shader is missing the ViewProjection parameter.");

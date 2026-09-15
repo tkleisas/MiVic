@@ -59,4 +59,24 @@
     -->
     <ProjectReference Include="..\MiVic.Map\MiVic.Map.csproj" />
   </ItemGroup>
+  <Target Name="CompileEffects"
+      BeforeTargets="RunContentBuilder"
+      Inputs="Content\Shaders\InstancedMesh.fx;Content\Shaders\FogOverlay.fx"
+      Outputs="Content\Shaders\InstancedMesh.mgfx;Content\Shaders\FogOverlay.mgfx">
+    <!--
+      The effects compile with ShadowDuskCLI — HLSL through DXC and SPIRV-Cross
+      straight to GLSL, with every native binary shipped for every desktop platform —
+      so the shader build needs no Wine and no Windows SDK anywhere. The tool comes
+      from the project's own dotnet tool manifest (dotnet tool restore). The roll
+      forward is the same one the rest of the build carries: the tool targets net8,
+      the machine runs the newest SDK.
+    -->
+    <Exec Command="dotnet tool restore" WorkingDirectory="$(MSBuildProjectDirectory)" IgnoreExitCode="false" />
+    <Exec EnvironmentVariables="DOTNET_ROLL_FORWARD=Major"
+        Command="dotnet tool run ShadowDuskCLI -- Content/Shaders/InstancedMesh.fx Content/Shaders/InstancedMesh.mgfx /Profile:OpenGL"
+        WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec EnvironmentVariables="DOTNET_ROLL_FORWARD=Major"
+        Command="dotnet tool run ShadowDuskCLI -- Content/Shaders/FogOverlay.fx Content/Shaders/FogOverlay.mgfx /Profile:OpenGL"
+        WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
 </Project>

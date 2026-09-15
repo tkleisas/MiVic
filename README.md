@@ -89,20 +89,18 @@ dotnet run --project src/MiVic.Game
 
 ### Building on Linux
 
-Shader compilation runs the DirectX compiler through Wine, because
-`d3dcompiler_47.dll` is Windows-only. Wine is a build-time tool only — the
-game itself is DesktopGL and needs none of it at run time.
+No Wine and no Windows SDK anywhere. The effects compile with the project's
+own dotnet tool — `ShadowDuskCLI`, HLSL through DXC and SPIRV-Cross straight
+to GLSL, natives shipped for every desktop platform — which the build runs
+automatically from the tool manifest:
 
 ```sh
-sudo apt install wine64 wine32 p7zip-full          # Ubuntu; wine >= 8 is required
-wget -qO- https://monogame.net/downloads/net9_mgfxc_wine_setup.sh > /tmp/mgfxc_setup.sh
-# Wine >= 9 refuses to launch dotnet.exe from system32, so the Windows SDK the
-# setup script installs goes into drive_c/windows/ instead:
-bash <(sed 's#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/system32/"#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/"#g' /tmp/mgfxc_setup.sh)
-source ~/.profile                                  # picks up MGFXC_WINE_PATH
-
 dotnet build MiVic.sln
 ```
+
+The first build restores the tool (`dotnet tool restore` runs inside the
+build). The compiled shaders land next to their sources and are not committed —
+a build regenerates them when a `.fx` changes.
 
 CI (`.github/workflows/ci.yml`) does exactly this on every push and pull
 request; a `v*` tag publishes a versioned GitHub release with

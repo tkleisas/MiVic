@@ -4,8 +4,8 @@
 # carry a version of their own.
 #
 # The archives are self-contained: players unzip and run, with no .NET
-# install and no Wine. Wine is only a build-time tool for the shader
-# compiler.
+# install. The shaders compile natively — the project's own dotnet tool —
+# so the build itself needs no Wine and no Windows SDK either.
 name: Release
 
 on:
@@ -37,38 +37,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
-
-      - name: Install Wine and 7zip
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine wine64 p7zip-full
-
-      - name: Restore MonoGame Wine prefix
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.winemonogame
-          key: winemonogame-${{ runner.os }}-v1
-
-      - name: Setup MonoGame shader-compiler Wine environment
-        run: |
-          if [ ! -d ~/.winemonogame ]; then
-            wget -qO- https://monogame.net/downloads/net9_mgfxc_wine_setup.sh > /tmp/mgfxc_setup.sh
-            # Wine >= 9 refuses to launch dotnet.exe from system32; the Windows
-            # SDK goes into drive_c/windows/ instead (wine's PATH includes it).
-            # The d3dcompiler_47.dll extraction must stay in system32, so only
-            # the SDK line is rewritten.
-            bash <(sed 's#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/system32/"#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/"#g' /tmp/mgfxc_setup.sh)
-          fi
-          # The publish steps run in fresh shells that do not read ~/.profile,
-          # where the setup script leaves its export.
-          echo "MGFXC_WINE_PATH=$HOME/.winemonogame" >> "$GITHUB_ENV"
-
-      - name: Save MonoGame Wine prefix
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.winemonogame
-          key: winemonogame-${{ runner.os }}-v1
 
       - name: Publish
         run: dotnet publish src/MiVic.Game -c Release -r ${{ matrix.runtime }} --self-contained true -p:PublishSingleFile=false -o publish/${{ matrix.runtime }}

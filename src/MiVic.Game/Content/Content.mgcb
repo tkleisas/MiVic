@@ -13,17 +13,11 @@
 
 #---------------------------------- Content ---------------------------------#
 
-#begin Shaders/InstancedMesh.fx
-/importer:EffectImporter
-/processor:EffectProcessor
-/processorParam:DebugMode=Auto
-/build:Shaders/InstancedMesh.fx
+#begin Shaders/InstancedMesh.mgfx
+/copy:Shaders/InstancedMesh.mgfx
 
-#begin Shaders/FogOverlay.fx
-/importer:EffectImporter
-/processor:EffectProcessor
-/processorParam:DebugMode=Auto
-/build:Shaders/FogOverlay.fx
+#begin Shaders/FogOverlay.mgfx
+/copy:Shaders/FogOverlay.mgfx
 
 #begin Fonts/UiText.spritefont
 /importer:FontDescriptionImporter

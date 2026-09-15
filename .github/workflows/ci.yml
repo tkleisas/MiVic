@@ -1,9 +1,8 @@
 # Every push and pull request: build the solution and run the tests.
 #
-# Shader compilation needs Wine on Linux — MGFXC runs the DirectX
-# d3dcompiler inside Wine. The ~/.winemonogame prefix is cached, and the
-# cache is versioned by the setup script's own checksum so a MonoGame
-# toolchain change invalidates it.
+# The effects compile with the project's own dotnet tool (ShadowDuskCLI — HLSL
+# through DXC and SPIRV-Cross straight to GLSL, natives shipped for every desktop
+# platform), so the build needs no Wine and no Windows SDK anywhere.
 name: CI
 
 on:
@@ -29,38 +28,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
-
-      - name: Install Wine and 7zip
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine wine64 p7zip-full
-
-      - name: Restore MonoGame Wine prefix
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.winemonogame
-          key: winemonogame-${{ runner.os }}-v1
-
-      - name: Setup MonoGame shader-compiler Wine environment
-        run: |
-          if [ ! -d ~/.winemonogame ]; then
-            wget -qO- https://monogame.net/downloads/net9_mgfxc_wine_setup.sh > /tmp/mgfxc_setup.sh
-            # Wine >= 9 refuses to launch dotnet.exe from system32; the Windows
-            # SDK goes into drive_c/windows/ instead (wine's PATH includes it).
-            # The d3dcompiler_47.dll extraction on line 60 must stay in system32,
-            # so only the SDK line is rewritten.
-            bash <(sed 's#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/system32/"#dotnet-sdk.zip" -o"$WINEPREFIX/drive_c/windows/"#g' /tmp/mgfxc_setup.sh)
-          fi
-          # The build steps run in fresh shells that do not read ~/.profile,
-          # where the setup script leaves its export.
-          echo "MGFXC_WINE_PATH=$HOME/.winemonogame" >> "$GITHUB_ENV"
-
-      - name: Save MonoGame Wine prefix
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.winemonogame
-          key: winemonogame-${{ runner.os }}-v1
 
       - name: Build
         run: dotnet build MiVic.sln -c Release
