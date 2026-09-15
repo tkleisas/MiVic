@@ -4000,7 +4000,11 @@ public sealed class ProbeRunner
 
         foreach (ProbeEvent probeEvent in _tickEvents)
         {
-            if (probeEvent.Type == SimEventType.ShotFired ||
+            // The ledger accounts damage and deaths, and nothing else: the presentation
+            // events the SFX reads — a rollout, a completion, a crossing's last block —
+            // are history no weapon caused, and counting them here would report every
+            // factory's work as damage nobody explained.
+            if (probeEvent.Type is not (SimEventType.UnitHit or SimEventType.UnitDestroyed) ||
                 (uint)probeEvent.TeamId >= SimConstants.TeamCount)
             {
                 continue;
@@ -4454,6 +4458,14 @@ public sealed class ProbeRunner
                     history.PositionMm.X + (int)(history.Direction.X * history.RangeMetres * WorldPos.MmPerMetre),
                     history.PositionMm.Y,
                     history.PositionMm.Z + (int)(history.Direction.Z * history.RangeMetres * WorldPos.MmPerMetre));
+            }
+
+            // The presentation events the map has no mark for — a rollout, a completion, a
+            // crossing's last block — are history the ledger does not carry: the map's marks
+            // are combat, and a chime is not.
+            if (history.Type is not (SimEventType.ShotFired or SimEventType.UnitHit or SimEventType.UnitDestroyed))
+            {
+                continue;
             }
 
             marks.Add(new MapEventMark(

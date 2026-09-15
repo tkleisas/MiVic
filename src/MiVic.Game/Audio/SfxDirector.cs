@@ -14,11 +14,22 @@ namespace MiVic.Game.Audio;
 /// events than a sound card can mix, and the useful information is "something is
 /// happening over there", not every individual round.
 /// </para>
+/// <para>
+/// <b>Every kind carries takes.</b> One waveform per kind means a rifle platoon firing
+/// four rounds plays one sample four times, which the ear hears as a loop within the
+/// first second — the single biggest reason a firefight sounds like a loop. Each kind
+/// is rendered a few times from derived seeds, and the play picks a take by the count
+/// of everything played so far: deterministic, so two machines agree on which take
+/// was where, and varied enough that no two neighbouring rifles sound alike.
+/// </para>
 /// </summary>
 public sealed class SfxDirector : IDisposable
 {
     /// <summary>Maximum effects started per frame, so a firefight cannot flood the mixer.</summary>
     public const int MaxSoundsPerFrame = 6;
+
+    /// <summary>Takes rendered per kind: three reads as variation, not as a different weapon.</summary>
+    public const int TakesPerKind = 3;
 
     /// <summary>Falloff for a close-in camera, in metres.</summary>
     public const float DefaultFalloffDistance = 220f;
@@ -30,7 +41,7 @@ public sealed class SfxDirector : IDisposable
     /// </summary>
     public float FalloffDistance { get; set; } = DefaultFalloffDistance;
 
-    private readonly Dictionary<SoundEffectKind, SoundEffect> _effects = [];
+    private readonly Dictionary<SoundEffectKind, SoundEffect[]> _takes = [];
     private readonly ulong _seed;
 
     private int _playedThisFrame;
@@ -53,7 +64,7 @@ public sealed class SfxDirector : IDisposable
     public int DroppedCount { get; private set; }
 
     /// <summary>Number of effects generated so far.</summary>
-    public int GeneratedCount => _effects.Count;
+    public int GeneratedCount => _takes.Count * TakesPerKind;
 
     /// <summary>Resets the per-frame budget. Call once at the start of a frame.</summary>
     public void BeginFrame() => _playedThisFrame = 0;
@@ -61,6 +72,7 @@ public sealed class SfxDirector : IDisposable
     /// <summary>
     /// Plays <paramref name="kind"/> at a world position, attenuated by distance
     /// from <paramref name="listener"/> and panned by where it sits on screen.
+    /// The take is the play count's: deterministic, and varied between neighbours.
     /// </summary>
     public void Play(SoundEffectKind kind, Vector3 position, Vector3 listener, float volume = 1f, float pitch = 0f)
     {
@@ -89,8 +101,14 @@ public sealed class SfxDirector : IDisposable
 
         try
         {
-            SoundEffect effect = GetOrCreate(kind);
-            effect.Play(Math.Clamp(volume * attenuation, 0f, 1f), Math.Clamp(pitch, -1f, 1f), pan);
+            SoundEffect[] takes = GetOrCreate(kind);
+            SoundEffect effect = takes[PlayedCount % takes.Length];
+
+            // The take carries most of the variation; the pitch wander carries the rest,
+            // and keeps even a same-take repeat from landing identically.
+            float jitter = (((PlayedCount * 37) % 5) - 2) * 0.015f;
+
+            effect.Play(Math.Clamp(volume * attenuation, 0f, 1f), Math.Clamp(pitch + jitter, -1f, 1f), pan);
             _playedThisFrame++;
             PlayedCount++;
         }
@@ -100,29 +118,42 @@ public sealed class SfxDirector : IDisposable
         }
     }
 
-    private SoundEffect GetOrCreate(SoundEffectKind kind)
+    private SoundEffect[] GetOrCreate(SoundEffectKind kind)
     {
-        if (_effects.TryGetValue(kind, out SoundEffect? effect))
+        if (_takes.TryGetValue(kind, out SoundEffect[]? existing))
         {
-            return effect;
+            return existing;
         }
 
-        short[] pcm = ChipSoundBank.GeneratePcm16(kind, _seed);
-        byte[] bytes = new byte[pcm.Length * sizeof(short)];
-        Buffer.BlockCopy(pcm, 0, bytes, 0, bytes.Length);
+        var takes = new SoundEffect[TakesPerKind];
 
-        effect = new SoundEffect(bytes, ChipSoundBank.SampleRate, AudioChannels.Mono);
-        _effects[kind] = effect;
-        return effect;
+        for (int take = 0; take < TakesPerKind; take++)
+        {
+            // Each take is the kind's own seed salted with the take's index, so the three
+            // are the same weapon on different days and not three different weapons.
+            ulong takeSeed = _seed ^ (((ulong)kind * TakesPerKind) + (ulong)take + 1UL) * 0x9E37_79B9_7F4A_7C15UL;
+
+            short[] pcm = ChipSoundBank.GeneratePcm16(kind, takeSeed);
+            byte[] bytes = new byte[pcm.Length * sizeof(short)];
+            Buffer.BlockCopy(pcm, 0, bytes, 0, bytes.Length);
+
+            takes[take] = new SoundEffect(bytes, ChipSoundBank.SampleRate, AudioChannels.Mono);
+        }
+
+        _takes[kind] = takes;
+        return takes;
     }
 
     public void Dispose()
     {
-        foreach (SoundEffect effect in _effects.Values)
+        foreach (SoundEffect[] group in _takes.Values)
         {
-            effect.Dispose();
+            foreach (SoundEffect effect in group)
+            {
+                effect.Dispose();
+            }
         }
 
-        _effects.Clear();
+        _takes.Clear();
     }
 }

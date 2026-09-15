@@ -3508,10 +3508,12 @@ public sealed partial class MiVicGame : XnaGame
             {
                 case AbilityId.TacticalNuke:
                     // The catalogue's radius, so what is drawn and what is killed are
-                    // the same circle.
+                    // the same circle. The sound is the nuke's own: a register nothing
+                    // else on the field reaches into, and the reason a detonation and
+                    // a structure fire are never confused.
                     _particles.SpawnNuke(strike.Ground, AbilityRadiusMetres(AbilityId.TacticalNuke));
                     _camera?.Shake(6f);
-                    _sfx?.Play(SoundEffectKind.ExplosionLarge, strike.Ground, _camera?.Target ?? Vector3.Zero, 1f, -0.55f);
+                    _sfx?.Play(SoundEffectKind.NuclearDetonation, strike.Ground, _camera?.Target ?? Vector3.Zero, 1f, -0.55f);
                     break;
 
                 case AbilityId.OrbitalStrike:
@@ -5414,6 +5416,35 @@ public sealed partial class MiVicGame : XnaGame
                 continue;
             }
 
+            if (simEvent.Type == SimEventType.ConstructionComplete)
+            {
+                // A structure finished: the rivets and the chime. The sound is played at
+                // the building for the player who is looking at it, and quiet enough to
+                // not shout over the battle around it.
+                _sfx?.Play(SoundEffectKind.ConstructionComplete, simEvent.Position, listener, 0.8f, 0f);
+                continue;
+            }
+
+            if (simEvent.Type == SimEventType.UnitSpawned)
+            {
+                // The opening layout is laid down, not rolled out: a hundred and seventy
+                // spawn events land in the match's first second, and sounding them would
+                // be a start-up motorcade. After the opening, a slot filling is a
+                // factory's work, and the crank says so.
+                if (world.Tick > 60 && !IsBuilding(simEvent.Kind))
+                {
+                    _sfx?.Play(SoundEffectKind.UnitComplete, simEvent.Position, listener, 0.75f, 0f);
+                }
+
+                continue;
+            }
+
+            if (simEvent.Type == SimEventType.BridgeComplete)
+            {
+                _sfx?.Play(SoundEffectKind.BridgeComplete, simEvent.Position, listener, 0.85f, 0f);
+                continue;
+            }
+
             if (simEvent.Type == SimEventType.UnitHit)
             {
                 // The impact is drawn by the round that arrives, so this only needs
@@ -5431,6 +5462,19 @@ public sealed partial class MiVicGame : XnaGame
 
                 float volume = Math.Clamp(0.25f + (simEvent.Damage / 60f), 0.25f, 1f);
                 _sfx?.Play(SoundEffectKind.Impact, simEvent.Position, listener, volume, pitch);
+
+                // The alarm, on the edge of the alert window: the first structure hit of
+                // an attack rings the bell, and the window's own ten seconds is the rate
+                // limiter — a base under sustained fire is one alarm, not one per shell.
+                if (simEvent.Kind is UnitKind.CommandCentre or UnitKind.Factory
+                    or UnitKind.PowerPlant or UnitKind.NuclearPlant or UnitKind.DesignBureau)
+                {
+                    if (_battleSeconds >= _alertUntil)
+                    {
+                        _sfx?.Play(SoundEffectKind.Alarm, simEvent.Position, listener, 0.85f, 0f);
+                    }
+                }
+
                 continue;
             }
 
@@ -5462,19 +5506,32 @@ public sealed partial class MiVicGame : XnaGame
                 _camera?.Shake(structure ? simEvent.Scale * 0.22f : simEvent.Scale * 0.10f);
             }
 
-            if (simEvent.Kind is UnitKind.CommandCentre or UnitKind.Factory)
+            if (structure)
             {
                 // A big structure keeps burning for a moment after it goes up.
-                for (int i = 0; i < 4; i++)
+                if (simEvent.Kind is UnitKind.CommandCentre or UnitKind.Factory)
                 {
-                    _particles.SpawnSmokePlume(simEvent.Position, 0.9f);
+                    for (int i = 0; i < 4; i++)
+                    {
+                        _particles.SpawnSmokePlume(simEvent.Position, 0.9f);
+                    }
                 }
 
-                _sfx?.Play(SoundEffectKind.ExplosionLarge, simEvent.Position, listener, 1f, -0.3f);
+                // Every structure dies the same way, because they are all the same size
+                // of thing coming down: the large explosion, pitched by how big it was.
+                _sfx?.Play(SoundEffectKind.ExplosionLarge, simEvent.Position, listener, 1f,
+                    simEvent.Kind is UnitKind.NuclearPlant ? -0.45f : -0.3f);
+            }
+            else if (vehicle)
+            {
+                // A vehicle brews up: deeper than an infantryman's end, because there is
+                // fuel and ammunition behind the armour that an infantry death does not
+                // carry.
+                _sfx?.Play(SoundEffectKind.ExplosionSmall, simEvent.Position, listener, 0.95f, -0.25f);
             }
             else
             {
-                _sfx?.Play(SoundEffectKind.ExplosionSmall, simEvent.Position, listener, 0.9f, 0.1f - (simEvent.Scale * 0.05f));
+                _sfx?.Play(SoundEffectKind.ExplosionSmall, simEvent.Position, listener, 0.7f, 0.15f);
             }
         }
 

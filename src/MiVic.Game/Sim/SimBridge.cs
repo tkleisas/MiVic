@@ -20,6 +20,15 @@ public enum SimEventType : byte
 
     /// <summary>An entity fired at another. Nothing has landed yet.</summary>
     ShotFired = 2,
+
+    /// <summary>A structure finished building and is ready to work.</summary>
+    ConstructionComplete = 3,
+
+    /// <summary>A production line rolled a new unit off it.</summary>
+    UnitSpawned = 4,
+
+    /// <summary>A crossing's last block of deck was laid.</summary>
+    BridgeComplete = 5,
 }
 
 /// <summary>A presentation event, in render-space metres.</summary>
@@ -89,6 +98,13 @@ public sealed class SimBridge
     private readonly int[] _previousHealth;
     private readonly int[] _previousCooldown;
     private readonly int[] _previousTarget;
+
+    // The construction tracker, the spawn tracker, and the bridge work's progress last
+    // tick: the three comparisons a completion is. A build's finish, a factory's rollout
+    // and a crossing's last block are transitions, not states — the client has to see
+    // what they were the tick before to say anything about now.
+    private readonly int[] _previousConstruction;
+    private readonly int[] _bridgeBuilt;
     private readonly List<SimEvent> _events = [];
 
     private int _wanderCountdown;
@@ -1515,6 +1531,8 @@ public sealed class SimBridge
         _previousHealth = new int[capacity];
         _previousCooldown = new int[capacity];
         _previousTarget = new int[capacity];
+        _previousConstruction = new int[capacity];
+        _bridgeBuilt = new int[Bridgeworks.MaxBridges];
         _orderRng = new Pcg32(match.World.Seed ^ 0x5DEE_CE66_D1CE_F00DUL);
 
         World = match.World;
@@ -1547,6 +1565,8 @@ public sealed class SimBridge
         _homePositions = new WorldPos[World.Capacity];
         _wasAlive = new bool[World.Capacity];
         _previousHealth = new int[World.Capacity];
+        _previousConstruction = new int[World.Capacity];
+        _bridgeBuilt = new int[Bridgeworks.MaxBridges];
 
         // Firing is detected by watching these two: the combat system sets the
         // cooldown only on the tick a weapon actually fires, and the target is who
@@ -1728,6 +1748,42 @@ public sealed class SimBridge
                 _previousCooldown[slot] = entity.AttackCooldown;
                 _previousTarget[slot] = entity.TargetSlot;
 
+                // A construction finished: the build counter was running last tick and is
+                // spent now. A spawn into a fresh slot carries its build counter too, so the
+                // first tick of a foundation is a spawn and its last tick is a completion —
+                // two facts, and the client sounds them differently.
+                if (_previousConstruction[slot] > 0 && entity.ConstructionTicksRemaining == 0)
+                {
+                    _events.Add(new SimEvent(
+                        SimEventType.ConstructionComplete,
+                        slot,
+                        GetRenderPosition(slot, interpolate: false),
+                        entity.Position,
+                        entity.Faction,
+                        entity.TeamId,
+                        entity.Kind,
+                        ExplosionScale(entity.Kind)));
+                }
+
+                _previousConstruction[slot] = entity.ConstructionTicksRemaining;
+
+                if (!_wasAlive[slot])
+                {
+                    // A rollout: something occupies a slot that did not, the tick before. The
+                    // opening layout is included, and the client decides what the opening is
+                    // worth sounding — a match's first second lays a hundred and seventy of
+                    // these down at once, and they are laid down, not rolled out.
+                    _events.Add(new SimEvent(
+                        SimEventType.UnitSpawned,
+                        slot,
+                        GetRenderPosition(slot, interpolate: false),
+                        entity.Position,
+                        entity.Faction,
+                        entity.TeamId,
+                        entity.Kind,
+                        ExplosionScale(entity.Kind)));
+                }
+
                 if (_wasAlive[slot] && health < _previousHealth[slot])
                 {
                     // A hit is a shot that landed. The two are separate events because
@@ -1786,6 +1842,36 @@ public sealed class SimBridge
             }
 
             _wasAlive[slot] = alive;
+        }
+
+        // The crossings, walked for the same reason the slots were: the work's progress
+        // is a number last tick and a number now, and the tick the one reaches the other
+        // is the tick the span went from building to walking. The event carries the last
+        // block's position, because that is where the rivet gun was.
+        Bridgeworks bridgeworks = World.Bridgeworks;
+
+        for (int bridge = 0; bridge < bridgeworks.Count; bridge++)
+        {
+            ReadOnlySpan<int> cells = bridgeworks.Cells(bridge);
+            int built = Math.Min(bridgeworks.State(bridge).Built, cells.Length);
+
+            if (built > _bridgeBuilt[bridge] && built >= cells.Length)
+            {
+                int last = cells[^1];
+                WorldPos centre = World.Navigation.CentreOf(last);
+
+                _events.Add(new SimEvent(
+                    SimEventType.BridgeComplete,
+                    -1,
+                    ToMetres(centre),
+                    centre,
+                    World.FactionOfTeam(bridgeworks.Team(bridge)),
+                    bridgeworks.Team(bridge),
+                    UnitKind.None,
+                    3f));
+            }
+
+            _bridgeBuilt[bridge] = built;
         }
     }
 

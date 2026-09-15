@@ -115,18 +115,29 @@ their own firing sounds and hits play an impact.
 
 **What is missing, and what "procedural" buys:**
 
-- **Variation between takes.** The same shot fired twice should not be the same
-  waveform twice. With synthesis this is free — a second seed, or a parameter jittered
-  per shot — and it is the single biggest thing that stops a firefight sounding like a
-  loop.
-- **Explosions that match what exploded.** There are two explosion sounds for a game
-  with cratering artillery, salvo rockets, a tactical nuke, and a tank brewing up.
 - **Distance and occlusion.** Attenuation exists; a blast on the far side of a hill
   should be dulled as well as quietened.
 - **A battlefield bed** — distant guns, wind over the terrain, the low rumble of an
   army moving — so silence between engagements is not silence.
-- **A nuclear detonation**, which is a different sound from any other in the game and
-  currently plays the generic large explosion.
+
+**Built, since the list was written: the actions have their sounds, and the shots have
+takes.** Every sound effect now renders from **three takes** — the same weapon recorded on
+different days, salted seeds of the same kind — and the play rotates them by the count of
+everything played so far, deterministic and varied, so a rifle platoon no longer plays one
+sample four times in the first second; a small pitch wander per play carries the rest. The
+bank's effects match what they answer to: every **structure** dies in the large explosion,
+vehicles brew up deeper than an infantryman falls, and the **tactical nuke** owns a register
+nothing else on the field visits — a 3.2-second sub that drops below the explosions' floor
+and stays there.
+
+And the **major actions are covered**: a structure's construction finishing plays the rivets
+and the ready chime, a factory's rollout plays the starter cranking and the engine catching,
+a crossing's last block plays the rivet gun and the low resolve, and the alarm now rings on
+the edge of the alert window — one bell per attack, not one per shell. The three come from
+new presentation events the client detects the same way it detects a hit: by comparing what
+a slot was last tick with what it is now, so the simulation still knows nothing about
+sound. The probe's damage ledger skips them the same way it skips everything no weapon
+caused — a factory's work is not damage nobody explained.
 
 ---
 

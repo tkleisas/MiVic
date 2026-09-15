@@ -34,6 +34,18 @@ public enum SoundEffectKind : byte
 
     /// <summary>A round striking armour or ground: a short metallic clang.</summary>
     Impact = 9,
+
+    /// <summary>A structure's construction finished: rivets, then the ready chime.</summary>
+    ConstructionComplete = 10,
+
+    /// <summary>A factory rolled a vehicle off the line: ignition, then the rev.</summary>
+    UnitComplete = 11,
+
+    /// <summary>The tactical nuke: a crack, a roar, and a sub the ground carries.</summary>
+    NuclearDetonation = 12,
+
+    /// <summary>A crossing's last block laid: rivets going in, then the low resolve.</summary>
+    BridgeComplete = 13,
 }
 
 /// <summary>
@@ -65,11 +77,15 @@ public const int SampleRate = 22050;
             SoundEffectKind.TankGun => TankGun(rng),
             SoundEffectKind.ArtilleryLaunch => ArtilleryLaunch(rng),
             SoundEffectKind.AntiAirBurst => AntiAirBurst(rng),
-            SoundEffectKind.ExplosionSmall => Explosion(rng, 0.55, 90d),
-            SoundEffectKind.ExplosionLarge => Explosion(rng, 1.7, 55d),
+            SoundEffectKind.ExplosionSmall => Explosion(rng, 0.7, 90d),
+            SoundEffectKind.ExplosionLarge => Explosion(rng, 2.1, 55d),
             SoundEffectKind.UiClick => UiClick(),
             SoundEffectKind.Alarm => Alarm(),
             SoundEffectKind.Impact => Impact(rng),
+            SoundEffectKind.ConstructionComplete => ConstructionComplete(),
+            SoundEffectKind.UnitComplete => UnitComplete(),
+            SoundEffectKind.NuclearDetonation => NuclearDetonation(rng),
+            SoundEffectKind.BridgeComplete => BridgeComplete(),
             _ => EngineLoop(rng),
         };
 
@@ -94,15 +110,19 @@ public const int SampleRate = 22050;
     /// <summary>How long an effect lasts, in seconds.</summary>
     public static double Duration(SoundEffectKind kind) => kind switch
     {
-        SoundEffectKind.RifleShot => 0.09,
-        SoundEffectKind.TankGun => 0.38,
+        SoundEffectKind.RifleShot => 0.16,
+        SoundEffectKind.TankGun => 0.55,
         SoundEffectKind.ArtilleryLaunch => 0.62,
         SoundEffectKind.AntiAirBurst => 0.28,
-        SoundEffectKind.ExplosionSmall => 0.55,
-        SoundEffectKind.ExplosionLarge => 1.7,
+        SoundEffectKind.ExplosionSmall => 0.7,
+        SoundEffectKind.ExplosionLarge => 2.1,
         SoundEffectKind.UiClick => 0.06,
         SoundEffectKind.Alarm => 0.9,
         SoundEffectKind.Impact => 0.16,
+        SoundEffectKind.ConstructionComplete => 0.75,
+        SoundEffectKind.UnitComplete => 1.15,
+        SoundEffectKind.NuclearDetonation => 3.2,
+        SoundEffectKind.BridgeComplete => 1.1,
         _ => 1d,
     };
 
@@ -132,17 +152,21 @@ public const int SampleRate = 22050;
     private static float[] RifleShot(Pcg32 rng)
     {
         float[] buffer = new float[Samples(Duration(SoundEffectKind.RifleShot))];
-        double decay = 55d;
 
         for (int i = 0; i < buffer.Length; i++)
         {
             double t = (double)i / SampleRate;
-            double envelope = Math.Exp(-t * decay);
 
-            // A click plus a noise burst: the click gives it a muzzle, the noise
-            // gives it a body.
-            double click = Math.Sin(2d * Math.PI * 900d * t) * Math.Exp(-t * 400d);
-            buffer[i] = (float)((Noise(rng) * 0.9d * envelope) + (click * 0.6d));
+            // Three layers, because a rifle report is one *event*, not a click: the
+            // muzzle's crack (a fast decayed noise, the part that stings), the crack's
+            // own pitch body dropping as the gas expands, and the low thump the
+            // stock carries back to the shoulder. A click alone reads as a door latch.
+            double crack = Noise(rng) * Math.Exp(-t * 150d) * 1.2d;
+            double pitch = Math.Sin(2d * Math.PI * ((700d * Math.Exp(-t * 9d)) + 110d) * t) * Math.Exp(-t * 55d);
+            double thump = Math.Sin(2d * Math.PI * 78d * t) * Math.Exp(-t * 40d) * 0.55d;
+            double click = Math.Sin(2d * Math.PI * 900d * t) * Math.Exp(-t * 400d) * 0.5d;
+
+            buffer[i] = (float)(crack + (pitch * 0.8d) + thump + click);
         }
 
         return buffer;
@@ -152,20 +176,27 @@ public const int SampleRate = 22050;
     {
         float[] buffer = new float[Samples(Duration(SoundEffectKind.TankGun))];
         double phase = 0d;
+        double subPhase = 0d;
 
         for (int i = 0; i < buffer.Length; i++)
         {
             double t = (double)i / SampleRate;
             double progress = t / Duration(SoundEffectKind.TankGun);
 
-            // The barrel note drops from a bark to a thud.
+            // The barrel note drops from a bark to a thud; the sub carries the report
+            // into the chest, which is the part a small speaker loses and the part
+            // that made the old take feel thin.
             double frequency = 200d - (140d * progress);
             phase += frequency / SampleRate;
 
-            double body = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 7d);
-            double blast = Noise(rng) * Math.Exp(-t * 26d);
+            double body = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 6d);
+            double sub = Math.Sin(2d * Math.PI * subPhase) * Math.Exp(-t * 3.5d) * 0.85d;
+            subPhase += 52d / SampleRate;
 
-            buffer[i] = (float)((body * 0.9d) + (blast * 0.7d));
+            double blast = Noise(rng) * Math.Exp(-t * 22d);
+            double slap = Noise(rng) * Noise(rng) * Math.Exp(-t * 10d) * 0.5d;
+
+            buffer[i] = (float)((body * 0.85d) + sub + (blast * 0.8d) + slap);
         }
 
         return buffer;
@@ -225,15 +256,20 @@ public const int SampleRate = 22050;
             double progress = t / seconds;
 
             // A sub-bass drop under a long noise tail: the difference between a
-            // firecracker and a building coming down.
+            // firecracker and a building coming down. The opening crack is the blast
+            // front — the first fifth of the tail carries the sharp part, then the
+            // roar owns the rest — and the ground's answer is a second, lower noise
+            // wave the listener feels rather than hears.
             double frequency = subFrequency * (1d - (0.6d * progress));
             phase += frequency / SampleRate;
 
+            double crack = Noise(rng) * Math.Exp(-t * (60d / seconds)) * 1.4d;
             double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * (3.5d / seconds));
             double noise = Noise(rng) * Math.Exp(-t * (5.5d / seconds)) * 0.9d;
+            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * (1.8d / seconds)) * 0.55d;
             double crackle = Noise(rng) * Noise(rng) * Math.Exp(-t * (2.2d / seconds)) * 0.35d;
 
-            buffer[i] = (float)((sub * 0.8d) + noise + crackle);
+            buffer[i] = (float)(crack + (sub * 0.8d) + noise + rumble + crackle);
         }
 
         return buffer;
@@ -266,6 +302,178 @@ public const int SampleRate = 22050;
             double fade = Math.Min(1d, Math.Min(t * 40d, (Duration(SoundEffectKind.Alarm) - t) * 40d));
 
             buffer[i] = (float)(tone * gate * fade * 0.8d);
+        }
+
+        return buffer;
+    }
+
+    /// <summary>
+    /// A structure's construction finished: three rivet strikes walking the frame, then
+    /// the two-note chime the machine raises when it is ready to work. The knocks come
+    /// first because the builders sign the work; the chime is for the player who is not
+    /// looking at the building when it finishes.
+    /// </summary>
+    private static float[] ConstructionComplete()
+    {
+        float[] buffer = new float[Samples(Duration(SoundEffectKind.ConstructionComplete))];
+        var rng = new Pcg32(0x4A11_7E00_0001_0001UL);
+
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            double t = (double)i / SampleRate;
+            double sum = 0d;
+
+            for (int strike = 0; strike < 3; strike++)
+            {
+                double at = strike * 0.13d;
+
+                if (t < at)
+                {
+                    continue;
+                }
+
+                double local = t - at;
+                double ring = (Math.Sin(2d * Math.PI * (1450d + (strike * 190d)) * local) * 0.45d) +
+                    (Math.Sin(2d * Math.PI * (2180d + (strike * 260d)) * local) * 0.3d);
+
+                sum += (ring + (Noise(rng) * Math.Exp(-local * 180d) * 0.7d)) * Math.Exp(-local * 26d);
+            }
+
+            // The chime: two rising fifths, the machine saying "ready".
+            double chime = 0d;
+
+            if (t > 0.42d)
+            {
+                double c = t - 0.42d;
+                double note = c < 0.16d ? 660d : 990d;
+                chime = Math.Sin(2d * Math.PI * note * c) * Math.Exp(-c * 9d) * 0.5d;
+            }
+
+            buffer[i] = (float)(sum + chime);
+        }
+
+        return buffer;
+    }
+
+    /// <summary>
+    /// A factory rolled a vehicle off the line: the starter cranks, catches, and the
+    /// engine revs up. The crank is what sells it — three low chuffs before the rise,
+    /// the shape every cold engine has.
+    /// </summary>
+    private static float[] UnitComplete()
+    {
+        float[] buffer = new float[Samples(Duration(SoundEffectKind.UnitComplete))];
+        var rng = new Pcg32(0x6E0C_7A7E_5A1F_0001UL);
+        double phase = 0d;
+
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            double t = (double)i / SampleRate;
+            double sum;
+
+            if (t < 0.42d)
+            {
+                // The crank: three chuffs a fraction of a second apart, each a noise
+                // burst against the body's own low note.
+                double local = t % 0.14d;
+                double pulse = Math.Exp(-local * 60d);
+                sum = (Noise(rng) * pulse * 0.7d) + (Math.Sin(2d * Math.PI * 85d * t) * pulse * 0.5d);
+            }
+            else
+            {
+                // The catch and the rev: the saw's rate climbs from the idle to the
+                // working engine, and the noise floor rises with it.
+                double up = Math.Min(1d, (t - 0.42d) / 0.7d);
+                double rate = 70d + (160d * up);
+                phase += rate / SampleRate;
+
+                double saw = (2d * phase) - 1d;
+                sum = (saw * (0.4d + (0.5d * up))) + (Noise(rng) * 0.22d);
+            }
+
+            double gate = Math.Min(1d, t * 220d) *
+                Math.Min(1d, Math.Max(0d, (Duration(SoundEffectKind.UnitComplete) - t) * 30d));
+
+            buffer[i] = (float)(sum * gate);
+        }
+
+        return buffer;
+    }
+
+    /// <summary>
+    /// The tactical nuke: the blast front's crack, the roar that owns the first second
+    /// and a half, and a sub the drop of which the ground carries for seconds after.
+    /// An explosion the size of a building shares its palette; this one owns a register
+    /// nothing else on the field reaches into.
+    /// </summary>
+    private static float[] NuclearDetonation(Pcg32 rng)
+    {
+        double seconds = Duration(SoundEffectKind.NuclearDetonation);
+        float[] buffer = new float[Samples(seconds)];
+        double phase = 0d;
+
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            double t = (double)i / SampleRate;
+            double progress = t / seconds;
+
+            // The sub drops from the explosion's own register to a floor no other sound
+            // in the game visits, and stays there — the long tail is what a detonation
+            // has that an explosion does not.
+            double frequency = 55d - (40d * Math.Min(1d, progress * 1.4d));
+            phase += frequency / SampleRate;
+
+            double crack = Noise(rng) * Math.Exp(-t * 110d) * 1.6d;
+            double sub = Math.Sin(2d * Math.PI * phase) * Math.Exp(-t * 0.8d) * 1.2d;
+            double roar = Noise(rng) * Math.Exp(-t * 2.2d);
+            double rumble = Noise(rng) * Noise(rng) * Math.Exp(-t * 0.7d) * 0.8d;
+
+            buffer[i] = (float)(crack + sub + roar + rumble);
+        }
+
+        return buffer;
+    }
+
+    /// <summary>
+    /// A crossing's last block laid: the rivet gun signs the deck with three strikes
+    /// walking the span, and a low resolve says the work is whole.
+    /// </summary>
+    private static float[] BridgeComplete()
+    {
+        float[] buffer = new float[Samples(Duration(SoundEffectKind.BridgeComplete))];
+        var rng = new Pcg32(0x0E1A_CEB_0055_0002UL);
+
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            double t = (double)i / SampleRate;
+            double sum = 0d;
+
+            for (int strike = 0; strike < 3; strike++)
+            {
+                double at = strike * 0.11d;
+
+                if (t < at)
+                {
+                    continue;
+                }
+
+                double local = t - at;
+                double strikeFrequency = 900d - (strike * 180d);
+                double ring = Math.Sin(2d * Math.PI * strikeFrequency * local) * 0.4d;
+
+                sum += (ring + (Noise(rng) * Math.Exp(-local * 140d) * 0.8d)) * Math.Exp(-local * 22d);
+            }
+
+            // The resolve: the deck's own note, a low round tone under the whole span.
+            double resolve = 0d;
+
+            if (t > 0.4d)
+            {
+                double r = t - 0.4d;
+                resolve = Math.Sin(2d * Math.PI * 96d * r) * Math.Exp(-r * 6d) * 0.6d;
+            }
+
+            buffer[i] = (float)(sum + resolve);
         }
 
         return buffer;

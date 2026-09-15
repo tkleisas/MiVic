@@ -34,19 +34,59 @@ public sealed class SoundBankTests
     [Fact]
     public void NoiseBasedEffectsChangeWithTheSeed()
     {
-        // The click and the alarm are pure tones and do not use the generator;
-        // everything else must respond to the seed.
+        // The click, the alarm, the completion chime, the rollout, the bridge resolve —
+        // these are sequences with fixed seeds of their own and do not use the external
+        // generator; everything else must respond to the seed.
         SoundEffectKind[] seeded =
         [
             SoundEffectKind.RifleShot, SoundEffectKind.TankGun, SoundEffectKind.ArtilleryLaunch,
             SoundEffectKind.AntiAirBurst, SoundEffectKind.ExplosionSmall, SoundEffectKind.ExplosionLarge,
-            SoundEffectKind.EngineLoop, SoundEffectKind.Impact,
+            SoundEffectKind.EngineLoop, SoundEffectKind.Impact, SoundEffectKind.NuclearDetonation,
         ];
 
         foreach (SoundEffectKind kind in seeded)
         {
             Assert.NotEqual(SoundBank.Generate(kind, 1UL), SoundBank.Generate(kind, 2UL));
         }
+    }
+
+
+    [Fact]
+    public void TheCompletionSoundsTellTheirStory()
+    {
+        // The construction chime: three rivet strikes the first half carries, then the
+        // chime the machine raises — so the opening of the sound is percussive and the
+        // tail is tonal.
+        float[] construction = SoundBank.Generate(SoundEffectKind.ConstructionComplete, 1UL);
+        double firstHalf = Energy(construction, 0, construction.Length / 2);
+        double lastHalf = Energy(construction, construction.Length / 2, construction.Length);
+
+        Assert.True(firstHalf > lastHalf, "the rivets should carry the first half");
+
+        // The nuclear detonation: its sub sweeps down to a floor nothing else in the
+        // bank visits, and its tail runs seconds past the explosion's own.
+        float[] nuke = SoundBank.Generate(SoundEffectKind.NuclearDetonation, 1UL);
+
+        Assert.True(SoundBank.Duration(SoundEffectKind.NuclearDetonation) >
+            2d * SoundBank.Duration(SoundEffectKind.ExplosionLarge) / 2d);
+
+        // And the whole of it is audible: a detonation that fades in the first second
+        // is an explosion, not a detonation.
+        double tail = Energy(nuke, nuke.Length * 3 / 4, nuke.Length);
+
+        Assert.True(tail > 0.0005, $"the nuke's last quarter carries {tail:0.0000}");
+    }
+
+    private static double Energy(float[] samples, int start, int end)
+    {
+        double sum = 0d;
+
+        for (int i = start; i < end; i++)
+        {
+            sum += (double)samples[i] * samples[i];
+        }
+
+        return sum / Math.Max(1, end - start);
     }
 
     [Fact]
