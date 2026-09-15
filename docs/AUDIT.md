@@ -156,29 +156,34 @@ symptom, and the fix was never applied to the other two early returns.
 
 ## C. Medium
 
-| # | Finding | Location | Status |
-|---|---|---|---|
-| C1 | `Fix32` multiplication mis-rounds negatives (adds `-HalfRaw` then floors); `-1.0 × 1.0` gives raw `-65537`, not `-65536`. Contradicts its own documented contract and the sibling `DivRoundToInt`. | `Numerics/Fix32.cs:99-104` | Verified |
-| C2 | `CountOf` counts jobs in dead buildings' queues and enemy queues against `MaxAlive`. | `SimWorld.cs:1475-1498` | Verified |
-| C3 | `ReplayFile.Load` pre-sizes a list from a file-supplied count capped at 100,000,000, and reads an unbounded string. | `Replay/ReplayFile.cs:212-237` | Verified |
-| C4 | `ReplayForward` silently drops an unsorted log instead of refusing it. | `Replay/ReplayFile.cs:377-394` | Verified |
-| C5 | Map writers use unchecked `width*height*4`, reachable from the documented `scale=` probe option; `Math.Clamp(x, 40, palette.EventAlpha)` throws for a legal `EventAlpha < 40`. | `RasterCanvas.cs:26`, `PngMapWriter.cs:80`, `MapSceneBuilder.cs:964-967` | Verified |
-| C6 | `WavWriter.ReadCore` loops forever on a malformed `fmt` chunk (`Position += size - 16` with `size < 16` seeks backwards). | `Audio/WavWriter.cs:96` | Verified |
-| C7 | `Score.Load` leaks `FormatException`/`InvalidOperationException` past its `ScoreException` contract. | `Audio/Score.cs:318,498-503` | Verified |
-| C8 | A failed save on exit is swallowed with no log, notice or exit code. | `MiVicGame.cs:5671` | Verified |
-| C9 | `_scoreDirector` is never disposed; seven GPU meshes are never disposed. | `MiVicGame.cs:6317-6341` | Verified |
-| C10 | `_live` accounting drifts in the projectile/particle ring buffers, then pins at capacity. | `ProjectileSystem.cs:204-217`, `ParticleSystem.cs:1005-1016` | Suspected |
-| C11 | Energy may be charged twice in a deficit (power shortfall drain plus per-structure load). | `PowerSystem.cs:178-186`, `EconomySystem.cs:163-187` | Suspected |
-| C12 | The A\* binary heap may overflow its fixed `cellCount+1` array; `Push` is unbounded and there is no decrease-key. | `Pathfinding/PathFinder.cs:46-47,302-306` | Suspected |
-| C13 | `MapSceneBuilder` centres a trigger mark on the last spatial action but sizes it with the largest radius. | `MapSceneBuilder.cs:562-585` | Verified |
-| C14 | `MapTrails` sizes a `stackalloc` from an unvalidated public constructor argument. | `MapTrails.cs:70-84,173` | Verified |
+| # | Finding | Location | Verified | Fixed |
+|---|---|---|---|---|
+| C1 | `Fix32` multiplication mis-rounds negatives (adds `-HalfRaw` then floors); `-1.0 × 1.0` gives raw `-65537`, not `-65536`. Contradicts its own documented contract and the sibling `DivRoundToInt`. | `Numerics/Fix32.cs:99-104` | Verified | Yes |
+| C2 | `CountOf` counts jobs in dead buildings' queues and enemy queues against `MaxAlive`. | `SimWorld.cs:1475-1498` | Verified | Yes |
+| C3 | `ReplayFile.Load` pre-sizes a list from a file-supplied count capped at 100,000,000, and reads an unbounded string. | `Replay/ReplayFile.cs:212-237` | Verified | Yes |
+| C4 | `ReplayForward` silently drops an unsorted log instead of refusing it. | `Replay/ReplayFile.cs:377-394` | Verified | Yes |
+| C5 | Map writers use unchecked `width*height*4`, reachable from the documented `scale=` probe option; `Math.Clamp(x, 40, palette.EventAlpha)` throws for a legal `EventAlpha < 40`. | `RasterCanvas.cs:26`, `PngMapWriter.cs:80`, `MapSceneBuilder.cs:964-967` | Verified | Yes |
+| C6 | `WavWriter.ReadCore` loops forever on a malformed `fmt` chunk (`Position += size - 16` with `size < 16` seeks backwards). | `Audio/WavWriter.cs:96` | Verified | Yes |
+| C7 | `Score.Load` leaks `FormatException`/`InvalidOperationException` past its `ScoreException` contract. | `Audio/Score.cs:318,498-503` | Verified | Yes |
+| C8 | A failed save on exit is swallowed with no log, notice or exit code. | `MiVicGame.cs:5671` | Verified | Yes |
+| C9 | `_scoreDirector` is never disposed; seven GPU meshes are never disposed. | `MiVicGame.cs:6317-6341` | Verified | Yes |
+| C10 | `_live` accounting drifts in the projectile/particle ring buffers, then pins at capacity. | `ProjectileSystem.cs:204-217`, `ParticleSystem.cs:1005-1016` | Suspected | **Open** |
+| C11 | Energy may be charged twice in a deficit (power shortfall drain plus per-structure load). | `PowerSystem.cs:178-186`, `EconomySystem.cs:163-187` | Suspected | **Open** |
+| C12 | The A\* binary heap may overflow its fixed `cellCount+1` array; `Push` is unbounded and there is no decrease-key. | `Pathfinding/PathFinder.cs:46-47,302-306` | Suspected | **Open** |
+| C13 | `MapSceneBuilder` centres a trigger mark on the last spatial action but sizes it with the largest radius. | `MapSceneBuilder.cs:562-585` | Verified | **Open** |
+| C14 | `MapTrails` sizes a `stackalloc` from an unvalidated public constructor argument. | `MapTrails.cs:70-84,173` | Verified | **Open** |
 
-Also verified and lower impact: `SaveScreenshot`/`SaveMatch` do unchecked file I/O;
-production can throw at entity capacity where structure placement correctly refuses
-(`SimWorld.CanProduce` lacks the `AliveCount >= Capacity` guard); `PrototypeSystem`
-delivers with no placement validation; `RemoveJobAt`/`RemoveLastJob` lack bounds
-checks; `MatchRoster.Declare` does not validate the `Faction` enum; malformed JSON
-shape leaks `KeyNotFoundException` from the map and mission loaders.
+Also verified and lower impact, and **still open**: `SaveScreenshot` does unchecked file
+I/O (`SaveMatch` and `SaveRecording` now report their failures); production can throw at
+entity capacity where structure placement correctly refuses (`SimWorld.CanProduce` lacks
+the `AliveCount >= Capacity` guard); `PrototypeSystem` delivers with no placement
+validation; `RemoveJobAt`/`RemoveLastJob` lack bounds checks; `MatchRoster.Declare` does
+not validate the `Faction` enum; malformed JSON shape leaks `KeyNotFoundException` from
+the map and mission loaders. The engine-level items are open too: the O(n²)
+`SelectionController.Contains` on the per-frame health-bar path, the per-frame HUD
+allocations, and the `_live` drift of C10. So is the floating `MonoGame 3.8.*` dependency
+version in `MiVic.Game.csproj` (section E) — a build is not reproducible across a point
+release.
 
 ## D. Documentation drift
 
@@ -255,8 +260,11 @@ there is no network layer yet.
 
 ## I. Fix log
 
-Every finding above was addressed in the same pass, in priority order. Each row names the
-fix and how it was verified.
+Everything in sections A and B, and C1–C9, was fixed in the same pass, in priority
+order, and each row below names the fix and how it was verified. **C10–C14 and the
+lower-impact items listed under the C table were not fixed**; they are marked `Open`
+there and are the honest remainder of this audit. Nothing in the D row is a code fix —
+the README was corrected to match what the client measures.
 
 | # | Fix | Verified by |
 |---|---|---|
