@@ -60,7 +60,12 @@ ANKLE = 0.09
 KNEE = 0.47
 HIP = 0.90
 SHOULDER = 1.36
-HEAD_BASE = 1.46
+# The neck's joint, which is where the head's own coordinates start: the head is
+# authored from z = 0 at the neck and hangs off it to 0.289. Everything on the
+# torso is measured up towards it, and the one number that matters is the gap
+# between the top of the collar and the chin — at 1.43 and 1.45 there is 1.8 cm of
+# neck, and at 1.43 and 1.40 the collar is over the man's mouth.
+HEAD_BASE = 1.506
 
 # Where the head's own warp put its features. `_head_surface` runs `v` from 0 at
 # the crown to 1 under the chin along `z = 0.150 + cos(pi * v) * 0.139`, so these
@@ -72,9 +77,10 @@ EYE_Z = 0.151       # v = 0.50
 NOSE_TIP_Z = 0.093  # v = 0.635
 LIP_Z = 0.068       # v = 0.70
 EAR_Z = 0.146       # v = 0.53
+MOUTH_Z = 0.048     # v = 0.76, the crease between the lips
 
-FLESH = MATERIALS["flesh"]
-FLESH_SHADE = (0.52, 0.39, 0.30, 0.00)
+FLESH = (0.80, 0.63, 0.47, 0.00)
+FLESH_SHADE = (0.60, 0.45, 0.33, 0.00)
 
 
 def smooth(*objects, angle_degrees=32.0):
@@ -152,7 +158,7 @@ def _grid_mesh(name, segments, rings, warp, keep=None):
 
 def _head_surface(segments=36, rings=26):
     """One face, as a function of where you are on a head."""
-    half_x, half_y, half_z = 0.099, 0.113, 0.139
+    half_x, half_y, half_z = 0.104, 0.116, 0.139
     centre_z = 0.150
 
     def warp(u, v):
@@ -173,7 +179,7 @@ def _head_surface(segments=36, rings=26):
         # The jaw narrows towards the chin, which is what makes a head a head
         # rather than an egg; the back of the skull keeps its width.
         if v > 0.62:
-            taper = 1.0 - (0.30 * ((v - 0.62) / 0.38) ** 1.4)
+            taper = 1.0 - (0.17 * ((v - 0.62) / 0.38) ** 1.3)
             x *= taper
             y *= 0.55 + (0.45 * taper)
 
@@ -230,7 +236,7 @@ def _head_surface(segments=36, rings=26):
 def _hair_shell(segments=36, rings=18):
     """The hair, as the same head with a bigger radius and the face left open."""
     warp = _head_surface(segments, rings)
-    half_scale = 1.055
+    half_scale = 1.05
 
     def warped(u, v):
         x, y, z = warp(u, v)
@@ -245,12 +251,13 @@ def _hair_shell(segments=36, rings=18):
 
     def keep(u, v):
         # The hairline, measured around the head rather than across the face: 0 at
-        # the face, 1 at the nape. It climbs from the brow to the neck, which is
-        # what a receding hairline is, and a dip at the temples gives the two
-        # corners that say "old" instead of "shaved".
+        # the face, 1 at the nape. It starts a third of the way down the front —
+        # a high forehead, which is what the reference has — and falls to the nape
+        # at the back, so the head has hair on it and not a polished dome.
         around = min(abs(u - 0.25), 1.0 - abs(u - 0.25)) * 2.0
-        hairline = 0.13 + (0.52 * (around ** 0.85))
-        hairline -= 0.06 * math.exp(-(((around - 0.30) / 0.16) ** 2))
+        # A high forehead that recedes steadily and never doubles back: a hairline
+        # with a corner in it renders as a staircase at this grid's resolution.
+        hairline = 0.26 + (0.34 * (around ** 0.55))
         return v < hairline
 
     return warped, keep
@@ -331,19 +338,25 @@ def build_elder():
     # The arms sit just outside the coat's shoulder, near enough to the body that
     # the coat reads as something he is wearing: a gesture is the only motion a
     # rigid-part figure has, and an arm out in the air has none to give it weight.
-    arm_x = (shoulders * 0.40) + (0.055 * bulk)
+    arm_x = (shoulders * 0.40)
 
-    tunic = (0.34, 0.37, 0.17, 0.60)
-    tunic_dark = (0.24, 0.27, 0.11, 0.34)
-    trouser = (0.28, 0.31, 0.14, 0.30)
+    # Sampled off the reference the brief was modelled from: an olive tunic with
+    # gold buttons, and a man whose hair, brows and moustache are all one dark
+    # grey-brown. An old soldier, not a white-haired one — the first version got
+    # that wrong and painted him with the hair of a man twenty years older.
+    tunic = (0.36, 0.35, 0.17, 0.60)
+    tunic_dark = (0.27, 0.27, 0.12, 0.34)
+    trouser = (0.31, 0.30, 0.16, 0.30)
     boot = (0.10, 0.10, 0.10, 0.05)
-    belt = (0.17, 0.14, 0.11, 0.10)
-    hair_colour = (0.62, 0.60, 0.57, 0.03)
-    collar_red = (0.40, 0.07, 0.06, 0.00)
-    eye_white = (0.80, 0.78, 0.74, 0.00)
-    iris_colour = (0.16, 0.14, 0.12, 0.00)
-    hair_shadow = (0.50, 0.48, 0.45, 0.03)
-    gold = (0.74, 0.60, 0.24, 0.00)
+    belt_colour = (0.14, 0.11, 0.08, 0.10)
+    collar_red = (0.46, 0.08, 0.06, 0.00)
+    gold = (0.74, 0.58, 0.22, 0.00)
+    hair_colour = (0.22, 0.18, 0.15, 0.03)
+    hair_dark = (0.14, 0.11, 0.09, 0.03)
+    eye_white = (0.82, 0.80, 0.76, 0.00)
+    iris_colour = (0.20, 0.14, 0.09, 0.00)
+    lip_colour = (0.68, 0.44, 0.38, 0.00)
+    mouth_colour = (0.15, 0.06, 0.06, 0.00)
 
     # ---- legs: tapered cylinders, two parts each so a stance can shift --------
     for side, tag in ((-1, "Left"), (1, "Right")):
@@ -369,86 +382,106 @@ def build_elder():
         parts.append(foot)
         paint(foot, boot, variation=0.04)
 
-    # ---- torso: a body of revolution pressed flat  --------------------------
-    pelvis = merge("Pelvis", [
-        _prism_geo((shoulders * 0.72, 0.28 * bulk), (1.04, 1.02), 0.20, offset=(0.0, 0.0, HIP + 0.02)),
-    ])
-    parts.append(pelvis)
-    paint(pelvis, trouser)
-
-    waist = merge("Waist", [
-        _prism_geo((shoulders * 0.76, 0.30 * bulk), (1.02, 1.0), 0.065, offset=(0.0, 0.0, HIP + 0.20), segments=20),
-    ])
-    parts.append(waist)
-    paint(waist, belt)
-
-    # The trunk is the tunic the coat is worn open over: the same shape, a little
-    # inside the coat, so the coat reads as a coat and not as the whole man.
-    trunk = _prism_geo((shoulders * 0.82, 0.30 * bulk), (1.06, 1.04), 0.23, offset=(0.0, 0.0, HIP + 0.19))
-    crown = _dome_geo(shoulders * 0.47, (1.0, 0.62, 0.40), segments=16, rings=5, offset=(0.0, 0.0, HIP + 0.42))
-    chest = merge("Body", [trunk, crown])
-    parts.append(chest)
-    paint(chest, tunic, variation=0.05)
-
-    # A greatcoat that flares to a rounded hem: wider at the bottom than at the
-    # top, which is the one line on a figure that says "coat" and not "box".
-    coat = merge("Coat", [
-        _prism_geo((shoulders * 1.30, 0.46 * bulk), (0.72, 0.74), 0.78, offset=(0.0, 0.0, HIP - 0.44)),
-    ])
-    parts.append(coat)
-    paint(coat, tunic, variation=0.05)
-
-    skirt = merge("CoatSkirt", [
-        _dome_geo(shoulders * 0.65, (1.0, 0.62, 0.22), segments=16, rings=3, offset=(0.0, 0.0, HIP - 0.42)),
+    # ---- torso: a fitted tunic ----------------------------------------------
+    # A greatcoat is one silhouette from the shoulder to the hem, and at three
+    # metres that silhouette is a barrel with a head on it — which is what made
+    # the first version read as a toy. A service tunic has a waist and a chest
+    # and two of them are different widths, so the figure has a middle.
+    skirt = merge("Tunic", [
+        _prism_geo((shoulders * 0.80, 0.29 * bulk), (0.94, 0.96), 0.42, offset=(0.0, 0.0, HIP - 0.30), power=0.52),
     ])
     parts.append(skirt)
-    paint(skirt, tunic_dark, variation=0.05)
+    paint(skirt, tunic, variation=0.04)
 
-    # Shoulder boards and one medal: two bright notes that say "rank" at a
-    # distance, where a face says nothing at all.
+    belt = merge("Belt", [
+        _prism_geo((shoulders * 0.77, 0.30 * bulk), (1.0, 1.0), 0.055, offset=(0.0, 0.0, HIP + 0.10), power=0.52),
+    ])
+    parts.append(belt)
+    paint(belt, belt_colour)
+
+    trunk = _prism_geo((shoulders * 0.78, 0.30 * bulk), (1.16, 1.06), 0.24, offset=(0.0, 0.0, HIP + 0.155), power=0.52)
+    crown = _dome_geo(shoulders * 0.52, (1.0, 0.62, 0.26), segments=20, rings=6, offset=(0.0, 0.0, HIP + 0.35))
+    chest = merge("Body", [trunk, crown])
+    parts.append(chest)
+    paint(chest, tunic, variation=0.04)
+
+    # The placket: the strip the buttons sit on, standing a few millimetres proud
+    # of the tunic, because a row of buttons floating on a flat chest reads as
+    # beads rather than as a fastening.
+    placket = box("Placket", (0.062, 0.020, 0.60), offset=(0.0, 0.0, 0.0))
+    placket.location = (0.0, 0.030, HIP + 0.16)
+    parts.append(placket)
+    paint(placket, tunic_dark, variation=0.03)
+
+    # The stand collar, with the two red tabs that make it a uniform.
+    collar = merge("Collar", [
+        _prism_geo((0.138, 0.136), (0.94, 0.94), 0.048, offset=(0.0, 0.0, 0.0), power=0.60, segments=18),
+    ])
+    collar.location = (0.0, 0.0, SHOULDER + 0.012)
+    parts.append(collar)
+    paint(collar, tunic, variation=0.03)
+
     for side in (-1, 1):
-        board = box("Board", (0.058, 0.145, 0.020), offset=(0.0, 0.0, 0.0))
-        board.location = (side * shoulders * 0.30, -0.012, HIP + 0.475)
-        board.rotation_euler = (0.0, math.radians(side * 11.0), 0.0)
+        tab = box("CollarTab", (0.036, 0.018, 0.042), offset=(0.0, 0.0, 0.0))
+        tab.location = (side * 0.033, 0.064, SHOULDER + 0.036)
+        parts.append(tab)
+        paint(tab, collar_red, variation=0.02)
+
+        # A shoulder board on each shoulder, laid along it and tipped outward.
+        board = box("Board", (0.050, 0.130, 0.016), offset=(0.0, 0.0, 0.0))
+        board.location = (side * shoulders * 0.28, -0.008, HIP + 0.478)
+        board.rotation_euler = (0.0, math.radians(side * 14.0), 0.0)
         parts.append(board)
         paint(board, gold, variation=0.03)
 
-    medal = box("Medal", (0.042, 0.016, 0.055), offset=(0.0, 0.0, 0.0))
-    medal.location = (-shoulders * 0.20, 0.196, HIP + 0.34)
-    parts.append(medal)
-    paint(medal, gold, variation=0.02)
+    # A gold star on the left breast: the one bright note on the chest.
+    star = merge("Star", [
+        _cyl_geo(0.028, 0.012, segments=5, axis="y", offset=(0.0, 0.0, 0.0)),
+    ])
+    star.location = (-shoulders * 0.22, 0.196, HIP + 0.36)
+    parts.append(star)
+    paint(star, gold, variation=0.02)
 
-    # ---- arms: cylinders, with the right forearm carried forward as if it held
-    # the pipe. The director can raise either one from here. -------------------
+    ribbon = box("Ribbon", (0.034, 0.012, 0.026), offset=(0.0, 0.0, 0.0))
+    ribbon.location = (-shoulders * 0.22, 0.194, HIP + 0.40)
+    parts.append(ribbon)
+    paint(ribbon, collar_red, variation=0.02)
+
+    # ---- arms: sleeves off the shoulder, with the right forearm carried up
+    # towards the pipe. The director can raise either one from here. ---------
     for side, tag in ((-1, "Left"), (1, "Right")):
         upper = merge("Arm" + tag, [
-            _cyl_geo(0.064 * bulk, 0.30, segments=10, axis="z", offset=(0.0, 0.0, -0.15)),
+            _cyl_geo(0.062 * bulk, 0.30, segments=12, axis="z", offset=(0.0, 0.0, -0.15)),
+            # A shoulder cap, so the sleeve grows out of the tunic instead of
+            # being a tube parked beside it.
+            _dome_geo(0.062 * bulk, (1.0, 1.0, 0.55), segments=12, rings=4),
         ])
-        upper.location = (side * arm_x, 0.0, SHOULDER - 0.02)
+        upper.location = (side * arm_x, 0.0, SHOULDER + 0.010)
         parts.append(upper)
-        paint(upper, tunic)
+        paint(upper, tunic, variation=0.04)
 
         fore = merge("Forearm" + tag, [
-            _cyl_geo(0.056 * bulk, 0.28, segments=10, axis="z", offset=(0.0, 0.0, -0.14)),
+            _cyl_geo(0.056 * bulk, 0.26, segments=12, axis="z", offset=(0.0, 0.0, -0.13)),
+            # The cuff: one ring, and the sleeve becomes a sleeve.
+            _cyl_geo(0.066 * bulk, 0.035, segments=12, axis="z", offset=(0.0, 0.0, -0.245)),
         ])
         fore.parent = upper
         fore.location = (0.0, 0.0, -0.30)
 
         if side == 1:
-            # The pipe hand: bent up and in, so the elbow reads as a corner and
-            # not as a sleeve hanging straight.
             fore.rotation_euler = (math.radians(-58.0), 0.0, 0.0)
 
         parts.append(fore)
-        paint(fore, tunic)
+        paint(fore, tunic, variation=0.04)
 
         hand = merge("Hand" + tag, [
-            _frustum_geo((0.10, 0.125), (0.86, 0.90), 0.10, offset=(0.0, 0.0, -0.10)),
+            _cyl_geo(0.052, 0.055, segments=10, axis="z", offset=(0.0, 0.0, -0.028)),
+            _dome_geo(0.052, (1.0, 0.85, 0.90), segments=10, rings=4, offset=(0.0, 0.0, -0.055)),
         ])
         hand.parent = fore
-        hand.location = (0.0, 0.0, -0.28)
+        hand.location = (0.0, 0.0, -0.275)
         parts.append(hand)
-        paint(hand, FLESH, variation=0.04)
+        paint(hand, FLESH, variation=0.03)
 
     # ---- head: one sculpted surface, not a stack of boxes. The features are the
     # warp of the grid; the eyes, brows and moustache are set into it as their own
@@ -482,8 +515,8 @@ def build_elder():
     parts.append(head)
     paint(head, FLESH, variation=0.0)
 
-    warped, keep = _hair_shell(48, 30)
-    hair = _grid_mesh("Hair", 48, 30, warped, keep)
+    warped, keep = _hair_shell(56, 64)
+    hair = _grid_mesh("Hair", 56, 64, warped, keep)
     hair.parent = head
     parts.append(hair)
     paint(hair, hair_colour, variation=0.0)
@@ -493,16 +526,16 @@ def build_elder():
         # iris a little proud of it. Two domes of two colours, because there is no
         # texture on this renderer and a single dark bead reads as a hole.
         sclera = _face_dome(
-            "Eye", 0.023, 1.0, 0.92, 0.55,
-            (side * 0.036, 0.085, EYE_Z),
+            "Eye", 0.020, 1.05, 0.90, 0.50,
+            (side * 0.037, 0.082, EYE_Z - 0.006),
         )
         sclera.parent = head
         parts.append(sclera)
         paint(sclera, eye_white, variation=0.02)
 
         iris = _face_dome(
-            "Iris", 0.0100, 1.0, 1.0, 0.85,
-            (side * 0.036, 0.095, EYE_Z),
+            "Iris", 0.0110, 1.0, 1.0, 0.80,
+            (side * 0.037, 0.091, EYE_Z - 0.006),
             rings=4,
         )
         iris.parent = head
@@ -511,28 +544,28 @@ def build_elder():
 
         # A brow riding the ridge, thick at the nose and swept out over the eye.
         ridge = _face_dome(
-            "Brow", 0.031, 1.15, 0.45, 0.45,
-            (side * 0.043, 0.110, BROW_Z - 0.004),
+            "Brow", 0.032, 1.05, 0.30, 0.38,
+            (side * 0.043, 0.113, BROW_Z - 0.004),
             droop=side * 7.0,
             sweep=side * -13.0,
             rings=4,
         )
         ridge.parent = head
         parts.append(ridge)
-        paint(ridge, hair_shadow, variation=0.03)
+        paint(ridge, hair_dark, variation=0.03)
 
-        # Half a moustache: a wing that meets its pair at the parting, runs out
-        # over the lip and hangs at the tip.
+        # Half a moustache: a wing that meets its pair at the parting, covers the
+        # upper lip and stops at the corner of the mouth.
         sweep_part = _face_dome(
-            "Moustache", 0.034, 1.75, 0.44, 0.58,
-            (side * 0.026, 0.088, LIP_Z + 0.012),
-            droop=side * 12.0,
-            sweep=side * -8.0,
+            "Moustache", 0.032, 1.90, 0.46, 0.58,
+            (side * 0.024, 0.090, LIP_Z + 0.006),
+            droop=side * 10.0,
+            sweep=side * -7.0,
             rings=4,
         )
         sweep_part.parent = head
         parts.append(sweep_part)
-        paint(sweep_part, hair_colour, variation=0.03)
+        paint(sweep_part, hair_dark, variation=0.03)
 
         # An ear, flattened against the skull, now that the hair has left the side
         # of the head alone.
@@ -546,6 +579,27 @@ def build_elder():
         ear.location = (side * 0.098, -0.010, EAR_Z)
         parts.append(ear)
         paint(ear, FLESH_SHADE, variation=0.0)
+
+    # The mouth: a dark slot at the lip line with a lower lip under it. The head's
+    # own warp makes lips, but a lip has no colour of its own and a mouth that is
+    # the same colour as the face is not a mouth.
+    mouth = _face_dome(
+        "Mouth", 0.030, 1.0, 0.16, 0.32,
+        (0.0, 0.074, MOUTH_Z),
+        rings=4,
+    )
+    mouth.parent = head
+    parts.append(mouth)
+    paint(mouth, mouth_colour, variation=0.0)
+
+    lip = _face_dome(
+        "Lip", 0.026, 1.0, 0.30, 0.26,
+        (0.0, 0.070, MOUTH_Z - 0.013),
+        rings=4,
+    )
+    lip.parent = head
+    parts.append(lip)
+    paint(lip, lip_colour, variation=0.0)
 
     # The pipe: a thin stem out of the corner of the mouth and a small bowl at the
     # far end of it. Measured against the head, not against a hand.
@@ -565,26 +619,14 @@ def build_elder():
     parts.append(bowl)
     paint(bowl, MATERIALS["gun"])
 
-    # ---- uniform trim: a button row down the tunic and a star on the chest -----
-    for button in range(6):
+    # ---- uniform trim: the button row the reference wears ------------------
+    for button in range(5):
         stud = merge("Button", [
-            _cyl_geo(0.014, 0.016, segments=10, axis="y", offset=(0.0, 0.0, 0.0)),
+            _cyl_geo(0.0135, 0.014, segments=10, axis="y", offset=(0.0, 0.0, 0.0)),
         ])
-        stud.location = (0.0, 0.198, HIP + 0.34 - (button * 0.062))
+        stud.location = (0.0, 0.196, HIP + 0.36 - (button * 0.100))
         parts.append(stud)
         paint(stud, gold, variation=0.02)
-
-    star = merge("Star", [
-        _cyl_geo(0.030, 0.014, segments=5, axis="y", offset=(0.0, 0.0, 0.0)),
-    ])
-    star.location = (-shoulders * 0.26, 0.200, HIP + 0.30)
-    parts.append(star)
-    paint(star, gold, variation=0.02)
-
-    ribbon = box("Ribbon", (0.042, 0.014, 0.030), offset=(0.0, 0.0, 0.0))
-    ribbon.location = (-shoulders * 0.26, 0.198, HIP + 0.345)
-    parts.append(ribbon)
-    paint(ribbon, collar_red, variation=0.02)
 
     # Every curved face smoothed, every corner left sharp.
     smooth(*parts)
