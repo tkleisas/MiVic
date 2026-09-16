@@ -133,7 +133,8 @@ def paint_skin(image):
             blue = SKIN[2] * shade * (1.0 - (0.10 * local_warm))
             blue = blue * (1.0 + (0.10 * max(0.0, across))) + (6.0 * max(0.0, across))
 
-            grain = 0.965 + (0.06 * noise(x // 5, y // 5, 3.1))
+            mottle = noise(x / 47.0, y / 31.0, 17.0) + noise(x / 19.0, y / 13.0, 41.0)
+            grain = 0.955 + (0.06 * noise(x // 5, y // 5, 3.1)) + (0.035 * (mottle - 1.0))
             red *= grain
             green *= grain
             blue *= grain
@@ -233,24 +234,33 @@ def paint_form(image):
         ellipse(draw, side * 0.052, 0.062, 0.018, 0.016, (*SHADOW, 96))
         ellipse(draw, side * 0.060, 0.092, 0.012, 0.017, (*SHADOW, 62))
 
-    # The crease under the lip, and the shadow under the jaw.
-    ellipse(draw, 0.0, 0.0600, 0.024, 0.0075, (*SHADOW, 150))
-    ellipse(draw, 0.0, 0.0300, 0.028, 0.0065, (*SHADOW, 138))
+    # The crease under the lip, the ball of the chin catching the light, and the
+    # shadow the jaw casts on the neck. A chin is a shape, not the place the face
+    # stops, and the lower third of this one was blank for four versions.
+    ellipse(draw, 0.0, 0.0620, 0.0235, 0.0068, (*SHADOW, 165))
+    ellipse(draw, 0.0, 0.0470, 0.0180, 0.0110, (*SKIN_LIT, 120))
+    ellipse(draw, 0.0, 0.0300, 0.0290, 0.0070, (*SHADOW, 155))
+    ellipse(draw, 0.0, 0.0160, 0.0300, 0.0055, (*SHADOW, 120))
+
+    # The jowls, which are what makes a heavy jaw heavy.
+    for side in (-1, 1):
+        ellipse(draw, side * 0.047, 0.0520, 0.0140, 0.0150, (*SHADOW, 86))
+        ellipse(draw, side * 0.038, 0.0620, 0.0110, 0.0120, (*SHADOW, 62))
     ellipse(draw, 0.0, 0.0440, 0.013, 0.0090, (*SKIN_LIT, 90))
 
     # The nose: a shadow down the far side and beside each wing, a lit bridge,
     # and the two dark nostrils under the tip. It is the largest thing on this
     # face in the reference and it is what the light is arranged around.
-    ellipse(draw, 0.0115, 0.116, 0.0060, 0.025, (*SHADOW, 190))
-    ellipse(draw, -0.0090, 0.118, 0.0080, 0.022, (*SKIN_WARM, 130))
+    ellipse(draw, 0.0115, 0.118, 0.0060, 0.026, (*SHADOW, 200))
+    ellipse(draw, -0.0090, 0.120, 0.0080, 0.023, (*SKIN_WARM, 140))
     for side in (-1, 1):
         # The wing, the crease behind it, and the nostril under the tip.
-        ellipse(draw, side * 0.0250, 0.1060, 0.0080, 0.0068, (*SHADOW, 205))
-        ellipse(draw, side * 0.0350, 0.1020, 0.0064, 0.0095, (*SHADOW, 140))
-        ellipse(draw, side * 0.0135, 0.1035, 0.0048, 0.0034, (44, 26, 20, 235))
+        ellipse(draw, side * 0.0245, 0.1080, 0.0080, 0.0062, (*SHADOW, 215))
+        ellipse(draw, side * 0.0360, 0.1060, 0.0058, 0.0090, (*SHADOW, 170))
+        ellipse(draw, side * 0.0130, 0.1045, 0.0046, 0.0034, (40, 24, 18, 240))
 
-    ellipse(draw, 0.0, 0.126, 0.0055, 0.025, (*SKIN_LIT, 175))
-    ellipse(draw, 0.0, 0.1085, 0.0105, 0.0060, (*SKIN_LIT, 110))
+    ellipse(draw, 0.0, 0.126, 0.0050, 0.026, (*SKIN_LIT, 190))
+    ellipse(draw, 0.0, 0.1180, 0.0098, 0.0052, (*SKIN_LIT, 140))
 
     over(image, shade, 18.0)
 
@@ -269,12 +279,12 @@ def paint_eyes(image):
     for side in (-1, 1):
         x, z = side * 0.037, 0.164
 
-        ellipse(draw, x, z, 0.0128, 0.0068, (*EYE_WHITE, 255))
+        ellipse(draw, x, z, 0.0120, 0.0064, (*EYE_WHITE, 255))
 
         # The iris, with a limbal ring: an iris that fades into the white has no
         # edge, and an eye without an edge is a hole.
-        ellipse(draw, x - (side * 0.0011), z + 0.0003, 0.0088, 0.0084, (46, 32, 22, 255))
-        ellipse(draw, x - (side * 0.0011), z + 0.0003, 0.0076, 0.0074, (*IRIS, 255))
+        ellipse(draw, x - (side * 0.0010), z + 0.0002, 0.0086, 0.0084, (46, 32, 22, 255))
+        ellipse(draw, x - (side * 0.0010), z + 0.0002, 0.0074, 0.0074, (*IRIS, 255))
         ellipse(draw, x - (side * 0.0016), z + 0.0002, 0.0030, 0.0030, (*PUPIL, 255))
         ellipse(draw, x - (side * 0.0036), z + 0.0032, 0.0014, 0.0014, (255, 255, 255, 230))
 

@@ -249,25 +249,28 @@ def _head_surface(segments=36, rings=26):
             socket = math.exp(-((((dx - (side * 0.40)) / 0.30) ** 2) + (((v - 0.466) / 0.082) ** 2)))
             y -= 0.024 * socket
 
-        # The nose: a bridge that narrows towards the brow, a tip, and the
-        # underside turning back in. A nose is a wedge, not a blade — narrower than
-        # this it renders as a fin down the middle of the face.
-        if abs(dx) < 0.34:
-            across = math.exp(-((dx / 0.205) ** 2))
-            if v < 0.58:
-                profile = 0.036 * math.exp(-(((v - 0.520) / 0.115) ** 2))
-            else:
-                profile = 0.062 * math.exp(-(((v - 0.572) / 0.058) ** 2))
-            y += profile * across * max(0.15, ny)
+        # The nose. Not a ridge with a bulge on it: a bridge that narrows towards
+        # the nasion, a tip that is its own ball of cartilage on the end of it, two
+        # wings that flare at the bottom, a crease behind each of them, and an
+        # underside that turns back in. A gaussian across the whole thing is a
+        # smear, and a smear with paint on it is what the first four versions of
+        # this face were.
+        bridge = math.exp(-((dx / 0.185) ** 2))
+        rise = 0.056 * math.exp(-(((v - 0.556) / 0.082) ** 2))
+        y += rise * bridge * max(0.15, ny)
 
-        # The wings of the nose, either side of the tip, and the crease beside
-        # them that a nose sits in.
+        tip = math.exp(-(((dx / 0.150) ** 2) + (((v - 0.578) / 0.030) ** 2)))
+        y += 0.020 * tip * max(0.15, ny)
+
         for side in (-1.0, 1.0):
-            wing = math.exp(-((((dx - (side * 0.245)) / 0.125) ** 2) + (((v - 0.610) / 0.055) ** 2)))
-            y += 0.019 * wing * front
+            wing = math.exp(-((((dx - (side * 0.225)) / 0.100) ** 2) + (((v - 0.604) / 0.040) ** 2)))
+            y += 0.018 * wing * front
 
-            fold = math.exp(-((((dx - (side * 0.400)) / 0.115) ** 2) + (((v - 0.650) / 0.072) ** 2)))
-            y -= 0.009 * fold * front
+            crease = math.exp(-((((dx - (side * 0.355)) / 0.070) ** 2) + (((v - 0.606) / 0.052) ** 2)))
+            y -= 0.012 * crease * front
+
+        under = math.exp(-(((v - 0.632) / 0.018) ** 2)) * math.exp(-((dx / 0.30) ** 2))
+        y -= 0.015 * under * front
 
         # Lips, with the crease between them, and a chin under both.
         mouth = math.exp(-(((v - 0.691) / 0.043) ** 2)) * math.exp(-((dx / 0.42) ** 2))
