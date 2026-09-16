@@ -562,6 +562,7 @@ expected_parts = {
     "ShinLeft": 1,
     "ShinRight": 1,
     "Boot": 2,
+    "PlacketSeam": 2,
     "Board": 2,
     "BoardEdge": 4,
     "CollarTab": 2,
@@ -631,6 +632,7 @@ def build_elder():
     # grey-brown. An old soldier, not a white-haired one — the first version got
     # that wrong and painted him with the hair of a man twenty years older.
     tunic = (0.44, 0.43, 0.22, 0.60)
+    tunic_lit = (0.52, 0.51, 0.28, 0.60)
     tunic_dark = (0.33, 0.32, 0.16, 0.34)
     trouser = (0.38, 0.37, 0.20, 0.30)
     boot = (0.10, 0.10, 0.10, 0.05)
@@ -696,10 +698,19 @@ def build_elder():
     # The placket: the strip the buttons sit on, standing a few millimetres proud
     # of the tunic, because a row of buttons floating on a flat chest reads as
     # beads rather than as a fastening.
-    placket = box("Placket", (0.062, 0.020, 0.60), offset=(0.0, 0.0, 0.0))
-    placket.location = (0.0, 0.030, HIP + 0.16)
+    # The placket, and the two seams either side of it. The portrait's tunic front
+    # carries a lit strip down the middle with a shadow each side of it, and that
+    # vertical line is most of what says "a coat done up" rather than "a box".
+    placket = box("Placket", (0.058, 0.020, 0.60), offset=(0.0, 0.0, 0.0))
+    placket.location = (0.0, 0.032, HIP + 0.16)
     parts.append(placket)
-    paint(placket, tunic_dark, variation=0.03)
+    paint(placket, tunic_lit, variation=0.02)
+
+    for edge in (-1, 1):
+        seam = box("PlacketSeam", (0.009, 0.017, 0.60), offset=(0.0, 0.0, 0.0))
+        seam.location = (edge * 0.033, 0.027, HIP + 0.16)
+        parts.append(seam)
+        paint(seam, tunic_dark, variation=0.02)
 
     # A fall collar, not a stand one. The tunic's collar turns down over the
     # shoulders and is open at the throat, with the two tabs laid on it — and those
