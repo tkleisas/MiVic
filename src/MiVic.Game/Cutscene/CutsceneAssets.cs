@@ -97,6 +97,7 @@ public sealed class CutsceneAssets : IDisposable
         ModelData data = GltfLoader.LoadModel(path, Raw);
         Texture2D? face = LoadTexture(asset, string.Empty);
         Texture2D? cloth = LoadTexture(asset, "_cloth");
+        Texture2D? metal = LoadTexture(asset, "_metal");
         var parts = new CutscenePart[data.Parts.Count];
 
         for (int i = 0; i < parts.Length; i++)
@@ -106,7 +107,12 @@ public sealed class CutsceneAssets : IDisposable
             // A figure is not one material. A face is one of a kind and a tunic is
             // a surface that repeats, so they are two images, and which part gets
             // which is decided by what the part is rather than by the file.
-            Texture2D? texture = IsCloth(part.Name) ? cloth ?? face : face;
+            Texture2D? texture = part.Name switch
+            {
+                var n when IsMetal(n) => metal ?? face,
+                var n when IsCloth(n) => cloth ?? face,
+                _ => face,
+            };
             InstancedRenderer.Mesh mesh = _renderer.CreateMesh(part.Mesh, texture);
             _owned.Add(mesh);
 
@@ -129,6 +135,15 @@ public sealed class CutsceneAssets : IDisposable
     /// model's name is a rule that can be checked by looking in the folder.
     /// </para>
     /// </summary>
+    /// <summary>Whether a part is metal, and so samples a surface with no colour in it.</summary>
+    private static bool IsMetal(string part) =>
+        part.StartsWith("Board", StringComparison.Ordinal)
+        || part.StartsWith("Button", StringComparison.Ordinal)
+        || part.StartsWith("CollarEdge", StringComparison.Ordinal)
+        || part.StartsWith("Star", StringComparison.Ordinal)
+        || part.StartsWith("Ribbon", StringComparison.Ordinal)
+        || part.StartsWith("Pipe", StringComparison.Ordinal);
+
     /// <summary>Whether a part is made of cloth, and so samples the cloth map.</summary>
     private static bool IsCloth(string part) =>
         part.StartsWith("Tunic", StringComparison.Ordinal)

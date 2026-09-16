@@ -766,6 +766,19 @@ def build_cloth(path):
     return path
 
 
+def build_metal(path):
+    """A flat neutral surface for everything metal on the figure.
+
+    The trim was pinned to a texel of the *face* — the lit bridge of the nose, which
+    is the brightest place on the map — and multiplied by it, so gold came out
+    orange and brass came out orange-brown. Metal has no colour of its own beyond
+    what the vertex colour says, so it samples a surface that has none.
+    """
+    image = Image.new("RGB", (8, 8), (198, 198, 198))
+    image.save(path, optimize=True)
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description="Paint the cutscene personality textures.")
     parser.add_argument("--out", required=True, help="Directory to write the PNGs into.")
@@ -786,6 +799,9 @@ def main():
 
     cloth = build_cloth(os.path.join(args.out, "personality_elder_cloth.png"))
     print(f"wrote {os.path.basename(cloth)}  ({os.path.getsize(cloth) / 1024:.1f} KB)")
+
+    metal = build_metal(os.path.join(args.out, "personality_elder_metal.png"))
+    print(f"wrote {os.path.basename(metal)}  ({os.path.getsize(metal) / 1024:.1f} KB)")
     print("done: 1 personality texture")
 
 
