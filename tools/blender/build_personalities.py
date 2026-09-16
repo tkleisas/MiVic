@@ -606,7 +606,7 @@ def build_elder():
 
     parts = []
 
-    shoulders = 0.50
+    shoulders = 0.455
     bulk = 1.18
     leg_half = shoulders * 0.25
 
