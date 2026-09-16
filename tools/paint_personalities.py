@@ -74,6 +74,12 @@ def ellipse(draw, x, z, half_width, half_height, fill):
     draw.ellipse([left, top, (2 * cx) - left, bottom], fill=fill)
 
 
+#: How many samples each straight edge of a patch is walked in before it is drawn. Eight
+#: is enough for the widest feature on this face — the moustache — to follow the surface
+#: to within a texture pixel; more only costs time.
+EDGE_STEPS = 8
+
+
 def polygon(draw, points, fill):
     """A patch of the face with corners, given in metres.
 
@@ -81,8 +87,23 @@ def polygon(draw, points, fill):
     but a moustache is not: it has a top edge under the nose, a bottom edge over
     the lip and two corners at the ends, and a shape with corners drawn out of
     ellipses is a haze.
+
+    The corners are joined by a curve through the mapping rather than by a straight
+    line in the texture. A polygon is drawn in texture space, so joining two corners
+    there cuts the corner off the face: the surface between the outer end of a
+    moustache and the top of its wing bends, and a straight line across that bend is
+    a straight top edge on a curved face — which is what the wing looked like, flat
+    where the reference's turns. The corners are unchanged; only the path between
+    them is sampled where it actually runs.
     """
-    draw.polygon([at(x, z) for x, z in points], fill=fill)
+    dense = []
+    for index, (x, z) in enumerate(points):
+        nx, nz = points[(index + 1) % len(points)]
+        for step in range(EDGE_STEPS):
+            t = step / EDGE_STEPS
+            dense.append(((x + ((nx - x) * t)), (z + ((nz - z) * t))))
+
+    draw.polygon([at(x, z) for x, z in dense], fill=fill)
 
 
 def blur(layer, radius):
@@ -640,15 +661,27 @@ def paint_moustache_bed(image):
     )
 
     for side in (-1, 1):
-        for step in range(26):
-            t01 = step / 25.0
+        for step in range(30):
+            t01 = step / 29.0
+
+            # Uneven, because hair is. These were thirty identical marks at even
+            # spacing along one straight line, which is the teeth of a comb rather
+            # than a moustache — the single most wrong thing on this face at the
+            # distance it is seen from. Spacing, length and tone all vary per strand
+            # now, and the tone varies with a strand's own noise rather than with its
+            # position along the row, so the light does not come back as a gradient.
+            jitter = noise(step, side + 2.0, 17.0)
+            spread = t01 + ((jitter - 0.5) * 0.040)
+            length = 0.0068 * (0.45 + (1.15 * noise(step, 5.0, 29.0)))
+            tone = 148 + int(78 * noise(step, 9.0, 41.0))
+
             ellipse(
                 detail_draw,
-                side * (0.002 + (t01 * 0.058)),
-                0.0955 - (t01 * 0.021),
-                0.0010,
-                0.0068,
-                (110, 100, 90, 96),
+                side * (0.002 + (spread * 0.058)),
+                0.0955 - (spread * 0.021) + ((jitter - 0.5) * 0.005),
+                0.0009,
+                length,
+                (tone, tone - 12, tone - 24, 104),
             )
 
     detail = Image.composite(detail, Image.new("RGBA", image.size, (0, 0, 0, 0)), shape)
