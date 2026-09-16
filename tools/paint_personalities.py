@@ -236,9 +236,15 @@ def paint_hair(image):
         if stray < 0.82:
             continue
 
+        # Longer and finer than the first attempt, which drew short stubs that read
+        # as a dotted line ruled across the forehead rather than as stray hairs.
         edge = face_uv.hairline_at(u) * HEIGHT
-        length = 6.0 + (13.0 * (stray - 0.82) / 0.18)
-        fringe_draw.line([(x, edge - 3), (x, edge + length)], fill=int(150 + (100 * stray)), width=1)
+        length = 10.0 + (22.0 * (stray - 0.82) / 0.18)
+
+        if (x % 2) == 0:
+            continue
+
+        fringe_draw.line([(x, edge - 6), (x + 1, edge + length)], fill=int(90 + (90 * stray)), width=1)
 
     image.paste(overlay, (0, 0), blur(mask, 4.5))
 
@@ -474,7 +480,7 @@ def paint_age(image):
     over(image, lines, 3.2)
 
 
-MOUSTACHE = (46, 40, 35)
+MOUSTACHE = (58, 50, 44)
 
 
 MOUSTACHE_TOP = 0.1065
@@ -525,6 +531,24 @@ def paint_moustache_bed(image):
     # the moustache or sit beside it.
     detail = layer()
     detail_draw = ImageDraw.Draw(detail)
+
+    # Light on the top of it and dark under the lip: a moustache is a mass with a
+    # lit side, and one flat tone reads as a shape cut out of paper.
+    for step in range(14):
+        tone = 0.35 + (0.65 * (step / 13.0))
+        ellipse(
+            detail_draw,
+            0.0,
+            0.0855 + (step * 0.0018) + 0.0,
+            0.0500,
+            0.0016,
+            (
+                int(112 * tone),
+                int(100 * tone),
+                int(88 * tone),
+                int(120 * (1.0 - (step / 13.0))),
+            ),
+        )
 
     detail_draw.line(
         [at(0.0, 0.1090), at(0.0, 0.0870)],
