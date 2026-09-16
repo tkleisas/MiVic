@@ -492,6 +492,49 @@ def _face_dome(name, radius, width, height, depth, at, droop=0.0, sweep=0.0, rin
     return part
 
 
+def _ring_geo(plan, inner, top, height, offset=(0.0, 0.0, 0.0), segments=20, power=0.6):
+    """A hollow band: a collar, a cuff, a rim, a belt.
+
+    `_prism_geo` makes a solid, and a collar is not a solid — it is a band with the
+    neck through the middle of it. A box with a hole needed in it is a box with a
+    neck sticking out of both ends, which is exactly what the collar looked like.
+    `inner` is the inside wall as a fraction of the outside one.
+    """
+    ox, oy, oz = offset
+    verts = []
+    faces = []
+
+    for level in (0, 1):
+        sx = plan[0] * 0.5 * (top[0] ** level)
+        sy = plan[1] * 0.5 * (top[1] ** level)
+        z = oz + (height * level)
+
+        for i in range(segments):
+            angle = (2.0 * math.pi * i) / segments
+            cosine, sine = math.cos(angle), math.sin(angle)
+            cx = math.copysign(abs(cosine) ** power, cosine)
+            cy = math.copysign(abs(sine) ** power, sine)
+            verts.append((cx * sx + ox, cy * sy + oy, z))
+            verts.append((cx * sx * inner + ox, cy * sy * inner + oy, z))
+
+    for i in range(segments):
+        j = (i + 1) % segments
+        outer_low, inner_low = i * 2, (i * 2) + 1
+        outer_high = (segments * 2) + (i * 2)
+        inner_high = (segments * 2) + (i * 2) + 1
+
+        j_outer_low, j_inner_low = j * 2, (j * 2) + 1
+        j_outer_high = (segments * 2) + (j * 2)
+        j_inner_high = (segments * 2) + (j * 2) + 1
+
+        faces.append((outer_low, j_outer_low, j_outer_high, outer_high))
+        faces.append((inner_high, j_inner_high, j_inner_low, inner_low))
+        faces.append((outer_high, j_outer_high, j_inner_high, inner_high))
+        faces.append((inner_low, j_inner_low, j_outer_low, outer_low))
+
+    return verts, faces
+
+
 def _prism_geo(plan, top, height, offset=(0.0, 0.0, 0.0), segments=20, power=0.45):
     """`_frustum_geo` with as many sides as you like, and the corners taken off.
 
@@ -523,6 +566,29 @@ def _prism_geo(plan, top, height, offset=(0.0, 0.0, 0.0), segments=20, power=0.4
     faces.append(tuple(range(segments * 2 - 2, -1, -2)))
     faces.append(tuple(range(1, segments * 2, 2)))
     return verts, faces
+
+
+#: How many parts each name is allowed. Anything not named here is expected once.
+#: `Ear` and `Hand` and the rest are built in a loop over two sides, so they are two.
+expected_parts = {
+    "Ear": 2,
+    "HandLeft": 1,
+    "HandRight": 1,
+    "ArmLeft": 1,
+    "ArmRight": 1,
+    "ForearmLeft": 1,
+    "ForearmRight": 1,
+    "LegLeft": 1,
+    "LegRight": 1,
+    "ShinLeft": 1,
+    "ShinRight": 1,
+    "Boot": 2,
+    "Board": 2,
+    "CollarTab": 2,
+    "Button": 5,
+    "Star": 1,
+    "Ribbon": 1,
+}
 
 
 def build_elder():
@@ -626,16 +692,16 @@ def build_elder():
 
     # The stand collar, with the two red tabs that make it a uniform.
     collar = merge("Collar", [
-        _prism_geo((0.140, 0.138), (0.82, 0.82), 0.062, offset=(0.0, 0.0, 0.0), power=0.60, segments=20),
+        _ring_geo((0.142, 0.140), 0.86, (0.84, 0.84), 0.062, power=0.60, segments=24),
     ])
-    collar.location = (0.0, 0.0, SHOULDER + 0.018)
+    collar.location = (0.0, 0.0, SHOULDER - 0.012)
     _wrap_uv(collar)
     parts.append(collar)
     paint(collar, tunic, variation=0.03)
 
     for side in (-1, 1):
         tab = box("CollarTab", (0.030, 0.016, 0.036), offset=(0.0, 0.0, 0.0))
-        tab.location = (side * 0.028, 0.062, SHOULDER + 0.046)
+        tab.location = (side * 0.026, 0.064, SHOULDER + 0.020)
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
 
@@ -801,6 +867,23 @@ def build_elder():
 
         if not laid_out:
             _pin_uv(part, lit)
+
+    # Nothing on this figure is meant to appear twice. A block of this script that
+    # is replaced and not deleted leaves a twin behind, and the model wears both —
+    # which has happened three times now: the moustache, the uniform's trim, and a
+    # second collar round the neck. The check costs nothing and it fails the build
+    # rather than the render.
+    counts = {}
+    for part in parts:
+        stem = part.name.split(".")[0]
+        counts[stem] = counts.get(stem, 0) + 1
+
+    for stem, count in counts.items():
+        if count > expected_parts.get(stem, 1):
+            raise RuntimeError(
+                f"{count} parts named '{stem}'; at most {expected_parts.get(stem, 1)} "
+                "is expected. A block that was replaced was probably not deleted."
+            )
 
     # Every curved face smoothed, every corner left sharp.
     smooth(*parts)
