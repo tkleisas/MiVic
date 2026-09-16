@@ -24,7 +24,7 @@ import math
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "blender"))
 
@@ -212,6 +212,26 @@ def paint_hair(image):
                 min(255, int(base[2] * tone)),
             )
 
+    # Loose hairs crossing the hairline, so the boundary breaks up instead of
+    # reading as the edge of a cap. Long ones, and few: the first attempt drew one
+    # on most locks and covered the forehead in hair.
+    fringe = Image.new("L", image.size, 0)
+    fringe_draw = ImageDraw.Draw(fringe)
+
+    for x in range(WIDTH):
+        u = x / WIDTH
+        lock = int(x // LOCK_PIXELS + (4.0 * noise(x // 53, 0.0, 23.0)))
+        stray = noise(lock, 7.7, 31.0)
+
+        if stray < 0.82:
+            continue
+
+        edge = face_uv.hairline_at(u) * HEIGHT
+        length = 6.0 + (13.0 * (stray - 0.82) / 0.18)
+        fringe_draw.line([(x, edge - 3), (x, edge + length)], fill=int(150 + (100 * stray)), width=1)
+
+    mask = ImageChops.lighter(mask, fringe)
+
     image.paste(overlay, (0, 0), blur(mask, 4.5))
 
 
@@ -306,12 +326,12 @@ def paint_eyes(image):
     for side in (-1, 1):
         x, z = side * 0.037, 0.164
 
-        ellipse(draw, x, z, 0.0120, 0.0064, (*EYE_WHITE, 255))
+        ellipse(draw, x, z, 0.0108, 0.0058, (*EYE_WHITE, 255))
 
         # The iris, with a limbal ring: an iris that fades into the white has no
         # edge, and an eye without an edge is a hole.
-        ellipse(draw, x - (side * 0.0010), z + 0.0002, 0.0086, 0.0084, (46, 32, 22, 255))
-        ellipse(draw, x - (side * 0.0010), z + 0.0002, 0.0074, 0.0074, (*IRIS, 255))
+        ellipse(draw, x - (side * 0.0008), z + 0.0000, 0.0080, 0.0078, (46, 32, 22, 255))
+        ellipse(draw, x - (side * 0.0008), z + 0.0000, 0.0069, 0.0069, (*IRIS, 255))
         ellipse(draw, x - (side * 0.0016), z + 0.0002, 0.0030, 0.0030, (*PUPIL, 255))
         ellipse(draw, x - (side * 0.0036), z + 0.0032, 0.0014, 0.0014, (255, 255, 255, 230))
 
@@ -325,7 +345,7 @@ def paint_eyes(image):
 
         # A heavy hooded lid, sitting on the top third of the eye and reaching the
         # outer corner: this is where the age is, more than in any line.
-        ellipse(draw, x, z + 0.0104, 0.0158, 0.0048, (*LID, 240))
+        ellipse(draw, x, z + 0.0088, 0.0148, 0.0050, (*LID, 244))
         # The crease above the lid, and the shadow it throws into the socket.
         ellipse(draw, x, z + 0.0142, 0.0170, 0.0028, (74, 50, 38, 215))
         ellipse(draw, x, z + 0.0176, 0.0186, 0.0030, (*SHADOW, 120))
