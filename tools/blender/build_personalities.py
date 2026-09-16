@@ -706,12 +706,12 @@ def build_elder():
     # says "officer" from across a room. A stand collar with two small squares on it
     # is a different garment entirely, which is what the portrait showed.
     for side in (-1, 1):
-        angle = (math.radians(-38.0), math.radians(side * 9.0), math.radians(side * -7.0))
+        angle = (math.radians(-30.0), math.radians(side * 22.0), math.radians(side * -14.0))
 
         flap = merge("Collar", [
             _box_geo((0.092, 0.070, 0.013), offset=(0.0, 0.0, 0.0), taper=0.84),
         ])
-        flap.location = (side * 0.032, 0.052, SHOULDER + 0.008)
+        flap.location = (side * 0.030, 0.040, SHOULDER + 0.058)
         flap.rotation_euler = angle
         _wrap_uv(flap)
         parts.append(flap)
@@ -721,7 +721,7 @@ def build_elder():
         tab = merge("CollarTab", [
             _box_geo((0.074, 0.052, 0.011), offset=(0.0, 0.0, 0.0), taper=0.88),
         ])
-        tab.location = (side * 0.034, 0.060, SHOULDER + 0.014)
+        tab.location = (side * 0.032, 0.048, SHOULDER + 0.064)
         tab.rotation_euler = angle
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
@@ -729,7 +729,7 @@ def build_elder():
         edge = merge("CollarEdge", [
             _box_geo((0.076, 0.007, 0.012), offset=(0.0, 0.0, 0.0)),
         ])
-        edge.location = (side * 0.034, 0.024, SHOULDER + 0.014)
+        edge.location = (side * 0.032, 0.012, SHOULDER + 0.064)
         edge.rotation_euler = angle
         parts.append(edge)
         paint(edge, gold, variation=0.02)
