@@ -110,6 +110,17 @@ Both are fixed:
    stays where the pivot is.
 2. **`COLOR_0` passes through as RGB**, so a model's own palette reaches the shader
    and the faction tint composites over it rather than replacing it.
+3. **Textures have a mip chain**, built where they are loaded rather than shipped,
+   because a PNG carries one image and the content pipeline is not in that path.
+   `Texture2D.FromStream` returns the top level alone, and the textured technique had
+   asked for `MipFilter = Linear` since it was written — so the sampler was reading a
+   chain that was never built and falling back to full resolution at every distance.
+   That is the cloth aliasing at three metres: a 512-pixel weave on a shoulder a
+   quarter of the screen wide puts several pixels inside one texel, and with no smaller
+   level to read, the sampler shows one texel, which reads as corduroy that is not in
+   the cloth. A mip chain is invisible in a magnified shot and only matters when the
+   surface is minified, which is why the close-up that every art round is judged by
+   could not show it.
 
 `--inspect-models` lists each model's parts, which is the animation contract and
 the check that catches a model whose parts are baked into one mesh. It showed that

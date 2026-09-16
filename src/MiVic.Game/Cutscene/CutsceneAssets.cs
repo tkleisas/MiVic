@@ -165,8 +165,91 @@ public sealed class CutsceneAssets : IDisposable
         }
 
         using FileStream stream = File.OpenRead(path);
-        Texture2D texture = Texture2D.FromStream(_device, stream);
+        Texture2D flat = Texture2D.FromStream(_device, stream);
+        Texture2D texture = WithMipmaps(_device, flat);
         _textures.Add(texture);
+        return texture;
+    }
+
+    /// <summary>
+    /// A texture with its mip chain filled in.
+    /// <para>
+    /// <see cref="Texture2D.FromStream"/> returns the top level and nothing else, and the
+    /// textured technique has asked for <c>MipFilter = Linear</c> since it was written —
+    /// so the sampler has been reading a chain that was never built and falling back to
+    /// the full-resolution image at every distance. That is the cloth aliasing at three
+    /// metres: a 512-pixel weave on a shoulder a quarter of the screen wide puts several
+    /// pixels inside one texel, and with no smaller level to read the sampler picks one
+    /// texel and shows it, which is the corduroy that is not in the cloth.
+    /// </para>
+    /// <para>
+    /// The chain is built here rather than shipped because a PNG carries one image and
+    /// the content pipeline is not in this path. A 2x2 box filter per level is what every
+    /// mip generator does, and averaging in the stored space rather than in linear light
+    /// is what a mip chain in an sRGB texture normally gets — the point is that the level
+    /// exists, not that it is clever.
+    /// </para>
+    /// </summary>
+    private static Texture2D WithMipmaps(GraphicsDevice device, Texture2D source)
+    {
+        int width = source.Width;
+        int height = source.Height;
+        SurfaceFormat format = source.Format;
+
+        Color[] level = new Color[width * height];
+        source.GetData(level);
+        source.Dispose();
+
+        int levels = 1;
+        for (int w = width, h = height; w > 1 || h > 1; levels++)
+        {
+            w = Math.Max(1, w / 2);
+            h = Math.Max(1, h / 2);
+        }
+
+        Texture2D texture = new Texture2D(device, width, height, mipmap: true, format);
+        texture.SetData(0, null, level, 0, level.Length);
+
+        int previousWidth = width;
+        int previousHeight = height;
+
+        for (int mip = 1; mip < levels; mip++)
+        {
+            int w = Math.Max(1, previousWidth / 2);
+            int h = Math.Max(1, previousHeight / 2);
+            Color[] next = new Color[w * h];
+
+            for (int y = 0; y < h; y++)
+            {
+                // Clamped rather than skipped: an odd-sized level (3 pixels wide, say)
+                // has a last destination texel whose second source column is itself.
+                int y0 = Math.Min(previousHeight - 1, y * 2);
+                int y1 = Math.Min(previousHeight - 1, (y * 2) + 1);
+
+                for (int x = 0; x < w; x++)
+                {
+                    int x0 = Math.Min(previousWidth - 1, x * 2);
+                    int x1 = Math.Min(previousWidth - 1, (x * 2) + 1);
+
+                    Color a = level[(y0 * previousWidth) + x0];
+                    Color b = level[(y0 * previousWidth) + x1];
+                    Color c = level[(y1 * previousWidth) + x0];
+                    Color d = level[(y1 * previousWidth) + x1];
+
+                    next[(y * w) + x] = new Color(
+                        (a.R + b.R + c.R + d.R + 2) / 4,
+                        (a.G + b.G + c.G + d.G + 2) / 4,
+                        (a.B + b.B + c.B + d.B + 2) / 4,
+                        (a.A + b.A + c.A + d.A + 2) / 4);
+                }
+            }
+
+            texture.SetData(mip, null, next, 0, next.Length);
+            level = next;
+            previousWidth = w;
+            previousHeight = h;
+        }
+
         return texture;
     }
 
