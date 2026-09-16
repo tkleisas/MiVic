@@ -18,7 +18,7 @@ only applies below the mouth, where the only thing painted is a chin.
 
 import math
 
-HALF_X = 0.100
+HALF_X = 0.096
 HALF_Y = 0.117
 HALF_Z = 0.130
 CENTRE_Z = 0.150
@@ -27,7 +27,7 @@ CENTRE_Z = 0.150
 #: difference between a head and an egg, and a painter working from the ellipsoid
 #: instead of from these puts every feature in the wrong place — the face's width
 #: at a given height is not a sine of it.
-RADIUS_POWER = 0.86
+RADIUS_POWER = 0.97
 PLAN_POWER = 2.0
 
 #: How hard the front is expanded. 1 is a linear map; smaller is more face and a
@@ -142,7 +142,8 @@ def hairline(u):
     """
     around = min(abs(u - 0.25), 1.0 - abs(u - 0.25)) * 2.0
 
-    return 0.29 + (0.34 * (around ** 0.9)) - (0.13 * math.exp(-(((around - 0.30) / 0.15) ** 2)))
+    peak = math.exp(-((around / 0.09) ** 2))
+    return 0.29 + (0.42 * (around ** 0.8)) - (0.13 * math.exp(-(((around - 0.30) / 0.15) ** 2))) + (0.025 * peak)
 
 
 def hairline_at(texture_u):

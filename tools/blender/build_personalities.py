@@ -166,7 +166,7 @@ def _grid_mesh(name, segments, rings, warp, keep=None):
 
 def _head_surface(segments=36, rings=26):
     """One face, as a function of where you are on a head."""
-    half_x, half_y, half_z = 0.100, 0.117, 0.130
+    half_x, half_y, half_z = 0.096, 0.117, 0.130
     centre_z = 0.150
 
     def warp(u, v):
@@ -181,7 +181,7 @@ def _head_surface(segments=36, rings=26):
         # The first keeps the crown and the temples *full* instead of letting them
         # fall away — a sine reaches its width at one height and curves off either
         # side of it, and a skull holds its width across the whole parietal.
-        radius = math.sin(phi) ** 0.86
+        radius = math.sin(phi) ** 0.97
 
         # The second flattens the plan from a circle into a rounded rectangle, so
         # the face is a face and not the front of a ball.
@@ -206,8 +206,8 @@ def _head_surface(segments=36, rings=26):
         # three the surface is smooth all the way round and reads as a ball, which
         # is what every version of this head did before this one.
         for side in (-1.0, 1.0):
-            temple = math.exp(-((((dx - (side * 0.82)) / 0.36) ** 2) + (((v - 0.36) / 0.18) ** 2)))
-            x -= side * 0.014 * temple
+            temple = math.exp(-((((dx - (side * 0.78)) / 0.34) ** 2) + (((v - 0.34) / 0.20) ** 2)))
+            x -= side * 0.019 * temple
 
             zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.590) / 0.085) ** 2)))
             x += side * 0.015 * zygomatic
@@ -236,16 +236,16 @@ def _head_surface(segments=36, rings=26):
         if abs(dx) < 0.34:
             across = math.exp(-((dx / 0.205) ** 2))
             if v < 0.58:
-                profile = 0.032 * math.exp(-(((v - 0.520) / 0.110) ** 2))
+                profile = 0.036 * math.exp(-(((v - 0.520) / 0.115) ** 2))
             else:
-                profile = 0.055 * math.exp(-(((v - 0.572) / 0.055) ** 2))
+                profile = 0.062 * math.exp(-(((v - 0.572) / 0.058) ** 2))
             y += profile * across * max(0.15, ny)
 
         # The wings of the nose, either side of the tip, and the crease beside
         # them that a nose sits in.
         for side in (-1.0, 1.0):
             wing = math.exp(-((((dx - (side * 0.245)) / 0.125) ** 2) + (((v - 0.610) / 0.055) ** 2)))
-            y += 0.016 * wing * front
+            y += 0.019 * wing * front
 
             fold = math.exp(-((((dx - (side * 0.400)) / 0.115) ** 2) + (((v - 0.650) / 0.072) ** 2)))
             y -= 0.009 * fold * front
