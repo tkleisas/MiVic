@@ -323,16 +323,23 @@ def paint_age(image):
         ellipse(draw, 0.0, z, half_width, 0.0018, (*SHADOW, 120))
 
     for side in (-1, 1):
-        # The folds beside the nose, which are the ones that carry the age.
-        for step in range(3):
+        # The folds beside the nose, which carry more of the age than any other
+        # line on a face, and they run from the wing of the nose to the corner of
+        # the mouth rather than straight down.
+        for step in range(9):
+            t01 = step / 8.0
             ellipse(
                 draw,
-                side * (0.024 + (step * 0.005)),
-                0.100 - (step * 0.011),
-                0.0020,
-                0.0105,
-                (*SHADOW, 112),
+                side * (0.021 + (t01 * 0.026)),
+                0.1015 - (t01 * 0.030),
+                0.0026,
+                0.0075,
+                (*SHADOW, 118),
             )
+
+        # The bag under the eye, and the hollow beside it.
+        ellipse(draw, side * 0.034, 0.1470, 0.0130, 0.0042, (*SHADOW, 78))
+        ellipse(draw, side * 0.048, 0.1520, 0.0080, 0.0090, (*SHADOW, 52))
 
         # Crow's feet.
         for step in range(3):

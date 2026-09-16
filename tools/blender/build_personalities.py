@@ -217,10 +217,10 @@ def _head_surface(segments=36, rings=26):
             x += math.copysign(0.010 * corner, dx) if abs(dx) > 1e-9 else 0.0
 
         # Below the corner of the jaw the bone turns in towards the chin.
-        if v > 0.70:
-            taper = 1.0 - (0.46 * ((v - 0.70) / 0.30) ** 1.5)
+        if v > 0.58:
+            taper = 1.0 - (0.58 * ((v - 0.58) / 0.42) ** 1.35)
             x *= taper
-            y *= 0.66 + (0.34 * taper)
+            y *= 0.58 + (0.42 * taper)
 
         # Brow ridge: a shelf over the eyes, and the sockets cut in under it.
         brow = math.exp(-(((v - 0.405) / 0.075) ** 2))
