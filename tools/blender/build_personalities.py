@@ -721,7 +721,7 @@ def build_elder():
         angle = (math.radians(-30.0), math.radians(side * 22.0), math.radians(side * -14.0))
 
         flap = merge("Collar", [
-            _box_geo((0.100, 0.082, 0.014), offset=(0.0, 0.0, 0.0), taper=0.76),
+            _box_geo((0.106, 0.082, 0.015), offset=(0.0, 0.0, 0.0), taper=0.70),
         ])
         flap.location = (side * 0.030, 0.040, SHOULDER + 0.058)
         flap.rotation_euler = angle
@@ -731,7 +731,7 @@ def build_elder():
 
         # The tab, with its gold edging as a thin strip along the outer side.
         tab = merge("CollarTab", [
-            _box_geo((0.083, 0.062, 0.012), offset=(0.0, 0.0, 0.0), taper=0.80),
+            _box_geo((0.090, 0.062, 0.013), offset=(0.0, 0.0, 0.0), taper=0.74),
         ])
         tab.location = (side * 0.032, 0.048, SHOULDER + 0.064)
         tab.rotation_euler = angle
@@ -739,7 +739,7 @@ def build_elder():
         paint(tab, collar_red, variation=0.02)
 
         edge = merge("CollarEdge", [
-            _box_geo((0.085, 0.007, 0.013), offset=(0.0, 0.0, 0.0)),
+            _box_geo((0.092, 0.007, 0.014), offset=(0.0, 0.0, 0.0)),
         ])
         edge.location = (side * 0.032, 0.012, SHOULDER + 0.064)
         edge.rotation_euler = angle
