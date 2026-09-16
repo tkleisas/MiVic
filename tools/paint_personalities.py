@@ -435,32 +435,55 @@ def paint_eyes(image):
     over(image, lids, 1.1)
 
 
-def paint_brows(image):
-    """Two heavy brows, long and straight, dropping at the outer end.
+def brow_outline(side):
+    """One brow: a tapered arch with a top edge and a bottom one.
 
-    The reference's brows are the second darkest thing on the face after the
-    moustache and they run most of the way across it. Short ones read as a raised
-    eyebrow — surprise — and this man is not surprised by anything.
+    It was a row of overlapping ellipses, which has no edges — the top of a brow is
+    a line and so is the bottom, and a brow drawn out of blobs has neither. Thickest
+    at the inner end, tapering outward, arching over the eye and finishing lower
+    than it started.
     """
+    top = []
+    bottom = []
+
+    for step in range(20):
+        t01 = step / 19.0
+        dx = 0.010 + (t01 * 0.058)
+        dz = 0.1800 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
+        half = 0.0054 - (0.0026 * (t01 ** 0.85))
+
+        top.append((side * dx, dz + half))
+        bottom.append((side * dx, dz - half))
+
+    return top + list(reversed(bottom))
+
+
+def paint_brows(image):
+    """Two heavy brows, long and arched, dropping at the outer end."""
     brows = layer()
     draw = ImageDraw.Draw(brows)
 
     for side in (-1, 1):
-        for step in range(22):
-            t01 = step / 21.0
-            dx = 0.010 + (t01 * 0.056)
-            # A straight brow that drops at the outer end, thickest a third of the
-            # way along: a brow drawn as a row of dots is a row of dots.
-            # An arch, not a line: it rises from the inner end to a peak just
-            # outside the middle of the eye and falls away to the outer end, and
-            # the outer end finishes lower than the inner one started. A brow
-            # drawn as a taper is a bar, and a bar is not an eyebrow.
-            dz = 0.1800 + (0.0066 * math.sin(math.pi * (t01 ** 0.72))) - (0.0072 * t01)
-            half_width = 0.0050
-            half_height = 0.0050 - (0.0022 * t01)
-            ellipse(draw, side * dx, dz, half_width, half_height, (*BROW, 254))
+        polygon(draw, brow_outline(side), (*BROW, 254))
 
-    over(image, brows, 2.0)
+    # A few hairs standing off the top edge, so it is a brow and not a sticker.
+    hairs = layer()
+    hair_draw = ImageDraw.Draw(hairs)
+
+    for side in (-1, 1):
+        for step in range(7):
+            t01 = 0.12 + (step * 0.13)
+            dx = 0.010 + (t01 * 0.058)
+            dz = 0.1800 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
+            half = 0.0054 - (0.0026 * (t01 ** 0.85))
+            hair_draw.line(
+                [at(side * dx, dz + half), at(side * dx + (side * 0.0016), dz + half + 0.0022)],
+                fill=(*BROW, 150),
+                width=1,
+            )
+
+    over(image, brows, 1.6)
+    over(image, hairs, 0.8)
 
 
 def paint_mouth(image):
