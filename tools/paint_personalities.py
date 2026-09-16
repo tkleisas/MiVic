@@ -133,11 +133,22 @@ def paint_skin(image):
             blue = SKIN[2] * shade * (1.0 - (0.10 * local_warm))
             blue = blue * (1.0 + (0.10 * max(0.0, across))) + (6.0 * max(0.0, across))
 
-            mottle = noise(x / 47.0, y / 31.0, 17.0) + noise(x / 19.0, y / 13.0, 41.0)
-            grain = 0.955 + (0.06 * noise(x // 5, y // 5, 3.1)) + (0.035 * (mottle - 1.0))
-            red *= grain
+            # Skin varies at every scale, and one frequency of it is a texture
+            # rather than a surface. There are four here: blotches across the whole
+            # face, the mottling of a cheek, a fine grain, and the pixel noise that
+            # keeps the whole thing from banding. The broad one is the one that
+            # matters — it is what makes a face look lived in rather than filled in.
+            broad = noise(x / 190.0, y / 130.0, 3.0) - 0.5
+            mid = noise(x / 47.0, y / 31.0, 17.0) - 0.5
+            fine = noise(x / 11.0, y / 9.0, 41.0) - 0.5
+            speck = (noise(x // 3, y // 3, 61.0) - 0.5) * 0.5
+
+            grain = 1.0 + (0.075 * broad) + (0.050 * mid) + (0.030 * fine) + (0.045 * speck)
+            # and the broad blotches carry colour as well as brightness: a patch of
+            # skin is redder or greyer than its neighbour, not only lighter
+            red *= grain * (1.0 + (0.045 * broad))
             green *= grain
-            blue *= grain
+            blue *= grain * (1.0 - (0.035 * broad))
 
             pixels[x, y] = (
                 min(255, max(0, int(red))),
