@@ -181,7 +181,17 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         # The first keeps the crown and the temples *full* instead of letting them
         # fall away — a sine reaches its width at one height and curves off either
         # side of it, and a skull holds its width across the whole parietal.
-        radius = math.sin(phi) ** 0.62
+        # A sine reaches its widest at the middle of its span, and a skull does not:
+        # measured against the reference, the widest point is at about a third of the
+        # way down — the parietal — and the temples are already turning in by the
+        # middle. This is that, as a boost that peaks where the bone does.
+        radius = math.sin(phi) ** 0.40
+        radius *= 1.0 + (0.42 * math.exp(-(((v - 0.34) / 0.40) ** 2)))
+
+        # and the jaw holds its width to the corner rather than tapering from the
+        # cheekbone down, which is the other thing the profile said
+        radius *= 1.0 + (0.20 * math.exp(-(((v - 0.80) / 0.16) ** 2)))
+        radius /= 1.365
 
         # The crown itself comes to a point rather sooner than the parietal does.
         if crown_taper and v < 0.14:
@@ -234,10 +244,10 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         # point. Mine was widest at the cheekbones and tapered to nothing below,
         # which is what made the lower third of the face a long blank.
         middle = max(0.0, min(1.0, (v - 0.44) / 0.28))
-        x *= 1.0 - (0.17 * middle)
+        x *= 1.0 - (0.05 * middle)
 
         if v > 0.58:
-            taper = 1.0 - (0.06 * ((v - 0.58) / 0.42) ** 1.4)
+            taper = 1.0 - (0.02 * ((v - 0.58) / 0.42) ** 1.4)
             x *= taper
             y *= 0.72 + (0.28 * taper)
 
