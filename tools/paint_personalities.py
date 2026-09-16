@@ -319,8 +319,8 @@ def paint_form(image):
 
     # The sockets, which the warp cut into the skull and the light has to find.
     for side in (-1, 1):
-        ellipse(draw, side * 0.030, 0.1605, 0.025, 0.0170, (*SHADOW, 172))
-        ellipse(draw, side * 0.026, 0.176, 0.024, 0.0080, (*SHADOW, 128))
+        ellipse(draw, side * 0.030, 0.1485, 0.025, 0.0170, (*SHADOW, 172))
+        ellipse(draw, side * 0.026, 0.164, 0.024, 0.0080, (*SHADOW, 128))
 
     # The temples, the jaw and the jowls an old man carries.
     for side in (-1, 1):
@@ -376,7 +376,7 @@ def eye_outline(side, lift=0.0):
     the outer end. `lift` moves the whole shape up the lid.
     """
     cx = side * 0.030
-    z = 0.164 + lift
+    z = 0.152 + lift
 
     return [
         (cx - (side * 0.0104), z - 0.0004),
@@ -449,7 +449,7 @@ def brow_outline(side):
     for step in range(20):
         t01 = step / 19.0
         dx = 0.010 + (t01 * 0.052)
-        dz = 0.1890 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
+        dz = 0.1770 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
         half = 0.0054 - (0.0026 * (t01 ** 0.85))
 
         top.append((side * dx, dz + half))
@@ -474,7 +474,7 @@ def paint_brows(image):
         for step in range(7):
             t01 = 0.12 + (step * 0.13)
             dx = 0.010 + (t01 * 0.052)
-            dz = 0.1890 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
+            dz = 0.1770 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
             half = 0.0054 - (0.0026 * (t01 ** 0.85))
             hair_draw.line(
                 [at(side * dx, dz + half), at(side * dx + (side * 0.0016), dz + half + 0.0022)],
@@ -650,12 +650,12 @@ def paint_moustache_bed(image):
 #: the geometry built for it is visible as a crosshair beside a brow rather than as
 #: something to be argued about later.
 MARKERS = [
-    ("eye inner", lambda side: (side * 0.0190, 0.1636)),
-    ("eye centre", lambda side: (side * 0.0300, 0.1640)),
-    ("eye outer", lambda side: (side * 0.0404, 0.1636)),
-    ("brow inner", lambda side: (side * 0.0100, 0.1890)),
-    ("brow peak", lambda side: (side * 0.0320, 0.1958)),
-    ("brow outer", lambda side: (side * 0.0640, 0.1814)),
+    ("eye inner", lambda side: (side * 0.0190, 0.1516)),
+    ("eye centre", lambda side: (side * 0.0300, 0.1520)),
+    ("eye outer", lambda side: (side * 0.0404, 0.1516)),
+    ("brow inner", lambda side: (side * 0.0100, 0.1770)),
+    ("brow peak", lambda side: (side * 0.0320, 0.1838)),
+    ("brow outer", lambda side: (side * 0.0640, 0.1694)),
     ("nose tip", lambda side: (0.0, 0.1110)),
     ("nose wing", lambda side: (side * 0.0245, 0.0990)),
     ("nostril", lambda side: (side * 0.0130, 0.0955)),
