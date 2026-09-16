@@ -304,6 +304,18 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         # instead of the place the jaw stops.
         y -= 0.009 * math.exp(-(((v - 0.805) / 0.021) ** 2)) * math.exp(-((dx / 0.30) ** 2))
 
+        # Skin is not smooth. At 88 by 62 the grid holds a feature about three
+        # millimetres across, which is the scale of the unevenness that makes a
+        # cheek catch the light in patches instead of in one clean sweep — and a
+        # clean sweep is what "it looks smoother than a face" means. A millimetre of
+        # it, crossed at two angles so it never reads as a pattern.
+        if front > 0.0:
+            ripple = (
+                math.sin((dx * 41.0) + (v * 57.0))
+                * math.sin((v * 63.0) - (dx * 37.0))
+            )
+            y += 0.0011 * ripple * front
+
         # The neck opening: the underside converges on the neck rather than ending
         # in a flat lid.
         if v > 0.94:
