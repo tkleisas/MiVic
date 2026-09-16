@@ -47,7 +47,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # there is exactly one definition of what "steel" is.
 from build_vehicles import MATERIALS, box, clear_scene, cylinder, dome, export, join  # noqa: E402
 from build_vehicles import paint  # noqa: E402
-from build_vehicles import _box_geo, _cyl_geo, _dome_geo, _frustum_geo, _link, merge  # noqa: E402
+from build_vehicles import _box_geo, _cyl_geo, _dome_geo, _frustum_geo, _link, _spin_geo, merge  # noqa: E402
 import face_uv  # noqa: E402
 
 
@@ -166,15 +166,30 @@ def _grid_mesh(name, segments, rings, warp, keep=None):
 
 def _head_surface(segments=36, rings=26):
     """One face, as a function of where you are on a head."""
-    half_x, half_y, half_z = 0.107, 0.117, 0.133
+    half_x, half_y, half_z = 0.100, 0.118, 0.134
     centre_z = 0.150
 
     def warp(u, v):
         phi = math.pi * v
         theta = 2.0 * math.pi * u
 
-        nx = math.sin(phi) * math.cos(theta)
-        ny = math.sin(phi) * math.sin(theta)
+        # A head is not an egg, and an ellipsoid is exactly an egg: round in every
+        # direction, curving away from the light everywhere at once. A skull is a
+        # box of bone with the corners taken off, and two exponents are what turn
+        # one into the other.
+        #
+        # The first keeps the crown and the temples *full* instead of letting them
+        # fall away — a sine reaches its width at one height and curves off either
+        # side of it, and a skull holds its width across the whole parietal.
+        radius = math.sin(phi) ** 0.62
+
+        # The second flattens the plan from a circle into a rounded rectangle, so
+        # the face is a face and not the front of a ball.
+        cosine, sine = math.cos(theta), math.sin(theta)
+        squircle = (abs(cosine) ** 3.2 + abs(sine) ** 3.2) ** (-1.0 / 3.2)
+
+        nx = radius * cosine * squircle
+        ny = radius * sine * squircle
         nz = math.cos(phi)
 
         x = nx * half_x
@@ -184,50 +199,68 @@ def _head_surface(segments=36, rings=26):
         dx = nx                     # -1 left .. +1 right
         front = max(0.0, ny)        # 1 at the face, 0 at the sides and back
 
-        # The jaw narrows towards the chin, which is what makes a head a head
-        # rather than an egg; the back of the skull keeps its width.
-        if v > 0.62:
-            taper = 1.0 - (0.10 * ((v - 0.62) / 0.38) ** 1.25)
+        # ---- the face: cheekbones, then a jaw, then a chin ------------------
+        # A head is not an egg. It is a box of bone with the corners taken off: a
+        # cheekbone that catches the light, a jaw that keeps its width out to a
+        # corner and only then turns in, and a chin under a crease. Without those
+        # three the surface is smooth all the way round and reads as a ball, which
+        # is what every version of this head did before this one.
+        for side in (-1.0, 1.0):
+            temple = math.exp(-((((dx - (side * 0.86)) / 0.30) ** 2) + (((v - 0.40) / 0.10) ** 2)))
+            x -= side * 0.006 * temple
+
+            zygomatic = math.exp(-((((dx - (side * 0.60)) / 0.24) ** 2) + (((v - 0.630) / 0.080) ** 2)))
+            x += side * 0.011 * zygomatic
+            y += 0.009 * zygomatic * front
+
+            corner = math.exp(-((((abs(dx) - 0.70) / 0.30) ** 2) + (((v - 0.800) / 0.090) ** 2)))
+            x += math.copysign(0.013 * corner, dx) if abs(dx) > 1e-9 else 0.0
+
+        # Below the corner of the jaw the bone turns in towards the chin.
+        if v > 0.80:
+            taper = 1.0 - (0.34 * ((v - 0.80) / 0.20) ** 1.3)
             x *= taper
-            y *= 0.55 + (0.45 * taper)
+            y *= 0.66 + (0.34 * taper)
 
         # Brow ridge: a shelf over the eyes, and the sockets cut in under it.
         brow = math.exp(-(((v - 0.405) / 0.075) ** 2))
-        y += 0.014 * brow * front
+        y += 0.016 * brow * front
 
         for side in (-1.0, 1.0):
             socket = math.exp(-((((dx - (side * 0.40)) / 0.30) ** 2) + (((v - 0.495) / 0.085) ** 2)))
-            y -= 0.020 * socket
+            y -= 0.024 * socket
 
-            cheek = math.exp(-((((dx - (side * 0.52)) / 0.42) ** 2) + (((v - 0.615) / 0.115) ** 2)))
-            y += 0.011 * cheek
-
-        # The nose: a bridge that runs from between the brows to a tip, then the
-        # underside turns back in.
-        # A nose is a wedge, not a blade: the ridge is the width of a nose, and
-        # narrower than that it renders as a fin down the middle of the face.
-        if abs(dx) < 0.40:
-            across = math.exp(-((dx / 0.235) ** 2))
-            if v < 0.60:
-                profile = 0.030 * math.exp(-(((v - 0.560) / 0.120) ** 2))
+        # The nose: a bridge that narrows towards the brow, a tip, and the
+        # underside turning back in. A nose is a wedge, not a blade — narrower than
+        # this it renders as a fin down the middle of the face.
+        if abs(dx) < 0.34:
+            across = math.exp(-((dx / 0.205) ** 2))
+            if v < 0.58:
+                profile = 0.027 * math.exp(-(((v - 0.545) / 0.110) ** 2))
             else:
-                # The tip, then the underside turning back in: a nose that runs on
-                # past the tip hangs over the mouth and splits the moustache.
-                profile = 0.040 * math.exp(-(((v - 0.622) / 0.050) ** 2))
+                profile = 0.043 * math.exp(-(((v - 0.618) / 0.048) ** 2))
             y += profile * across * max(0.15, ny)
 
-        # The wings of the nose, either side of the tip.
+        # The wings of the nose, either side of the tip, and the crease beside
+        # them that a nose sits in.
         for side in (-1.0, 1.0):
-            wing = math.exp(-((((dx - (side * 0.235)) / 0.13) ** 2) + (((v - 0.655) / 0.055) ** 2)))
-            y += 0.010 * wing * front
+            wing = math.exp(-((((dx - (side * 0.225)) / 0.115) ** 2) + (((v - 0.648) / 0.050) ** 2)))
+            y += 0.012 * wing * front
+
+            fold = math.exp(-((((dx - (side * 0.400)) / 0.115) ** 2) + (((v - 0.690) / 0.075) ** 2)))
+            y -= 0.009 * fold * front
 
         # Lips, with the crease between them, and a chin under both.
         mouth = math.exp(-(((v - 0.735) / 0.045) ** 2)) * math.exp(-((dx / 0.42) ** 2))
-        y += 0.007 * mouth * front
-        y -= 0.009 * math.exp(-(((v - 0.762) / 0.018) ** 2)) * math.exp(-((dx / 0.34) ** 2))
+        y += 0.008 * mouth * front
+        y -= 0.011 * math.exp(-(((v - 0.762) / 0.017) ** 2)) * math.exp(-((dx / 0.34) ** 2))
 
-        chin = math.exp(-(((v - 0.905) / 0.075) ** 2)) * math.exp(-((dx / 0.55) ** 2))
-        y += 0.014 * chin * front
+        chin = math.exp(-(((v - 0.900) / 0.062) ** 2)) * math.exp(-((dx / 0.48) ** 2))
+        y += 0.018 * chin * front
+
+        # The crease under the lower lip, which is what makes a chin a chin
+        # instead of the place the jaw stops.
+        y -= 0.009 * math.exp(-(((v - 0.845) / 0.022) ** 2)) * math.exp(-((dx / 0.30) ** 2))
 
         # The neck opening: the underside converges on the neck rather than ending
         # in a flat lid.
@@ -455,8 +488,8 @@ def build_elder():
     paint(collar, tunic, variation=0.03)
 
     for side in (-1, 1):
-        tab = box("CollarTab", (0.036, 0.018, 0.042), offset=(0.0, 0.0, 0.0))
-        tab.location = (side * 0.033, 0.064, SHOULDER + 0.036)
+        tab = box("CollarTab", (0.030, 0.016, 0.036), offset=(0.0, 0.0, 0.0))
+        tab.location = (side * 0.030, 0.062, SHOULDER + 0.036)
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
 
@@ -507,9 +540,18 @@ def build_elder():
         parts.append(fore)
         paint(fore, tunic, variation=0.04)
 
+        # The fist: a cylinder with a dome on the end of it. `_dome_geo` bulges
+        # along +Z and the arm hangs along -Z, so the dome is spun half a turn
+        # about the wrist to cap the knuckles — written straight from the kit it
+        # capped the wrist and left the fingers flat, which is what "the joint on
+        # the hand is reversed" was.
         hand = merge("Hand" + tag, [
-            _cyl_geo(0.052, 0.055, segments=10, axis="z", offset=(0.0, 0.0, -0.028)),
-            _dome_geo(0.052, (1.0, 0.85, 0.90), segments=10, rings=4, offset=(0.0, 0.0, -0.055)),
+            _cyl_geo(0.050, 0.070, segments=12, axis="z", offset=(0.0, 0.0, -0.035)),
+            _spin_geo(
+                _dome_geo(0.050, (1.0, 0.86, 0.80), segments=12, rings=4),
+                pitch=180.0,
+                pivot=(0.0, 0.0, -0.035),
+            ),
         ])
         hand.parent = fore
         hand.location = (0.0, 0.0, -0.275)
@@ -545,7 +587,7 @@ def build_elder():
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
 
-    head = _grid_mesh("Head", 36, 26, _head_surface(36, 26))
+    head = _grid_mesh("Head", 52, 36, _head_surface(52, 36))
     head.parent = neck
     parts.append(head)
 
@@ -556,7 +598,7 @@ def build_elder():
 
     # The hair is capped at the hairline rather than cut at it: the head's own
     # surface, pushed out, running from the crown down to a curve.
-    warped, _ = _hair_shell(72, 26)
+    warped, _ = _hair_shell(76, 30)
     hair = _capped_mesh("Hair", 72, 22, warped, face_uv.hairline)
     hair.parent = head
     parts.append(hair)
@@ -577,7 +619,7 @@ def build_elder():
         ear.rotation_euler = (0.0, math.radians(side * 90.0), 0.0)
         ear.location = (side * 0.098, -0.010, EAR_Z)
         parts.append(ear)
-        paint(ear, FLESH_SHADE, variation=0.0)
+        paint(ear, FLESH, variation=0.0)
 
     # The pipe: a thin stem out of the corner of the mouth and a small bowl at the
     # far end of it. Measured against the head, not against a hand.

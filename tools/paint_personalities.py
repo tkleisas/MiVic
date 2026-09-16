@@ -173,46 +173,54 @@ def over(image, painted, radius=0.0):
 
 
 def paint_form(image):
-    """The soft shadows that give the face its planes: cheeks, sockets, the nose."""
+    """The soft shadows that give the face its planes: cheekbones, sockets, the nose.
+
+    Placed against the warp rather than by eye. Every height here is a `v` the
+    generator uses — the cheekbone at v = 0.63, the wings of the nose at 0.65, the
+    crease beside it at 0.69, the mouth at 0.76 — read through the same ellipsoid,
+    so a shadow sits in the hollow it is shading.
+    """
     shade = layer()
     draw = ImageDraw.Draw(shade)
 
     # Cheekbones, catching the light, and the hollow under them.
     for side in (-1, 1):
-        ellipse(draw, side * 0.048, 0.126, 0.020, 0.015, (*SKIN_WARM, 104))
-        ellipse(draw, side * 0.040, 0.100, 0.019, 0.014, (*SHADOW, 74))
+        ellipse(draw, side * 0.054, 0.099, 0.019, 0.012, (*SKIN_WARM, 96))
+        ellipse(draw, side * 0.044, 0.076, 0.018, 0.013, (*SHADOW, 86))
 
     # The sockets, which the warp cut into the skull and the light has to find.
     for side in (-1, 1):
-        ellipse(draw, side * 0.037, 0.152, 0.027, 0.017, (*SHADOW, 140))
+        ellipse(draw, side * 0.037, 0.152, 0.028, 0.019, (*SHADOW, 150))
 
-    # The temples, the jaw, and the heavy jowls an old man carries.
+    # The temples, the jaw and the jowls an old man carries.
     for side in (-1, 1):
-        ellipse(draw, side * 0.070, 0.176, 0.016, 0.028, (*SHADOW, 92))
-        ellipse(draw, side * 0.050, 0.062, 0.018, 0.015, (*SHADOW, 62))
-        ellipse(draw, side * 0.064, 0.086, 0.012, 0.018, (*SHADOW, 56))
+        ellipse(draw, side * 0.080, 0.184, 0.016, 0.022, (*SHADOW, 62))
+        ellipse(draw, side * 0.052, 0.050, 0.018, 0.016, (*SHADOW, 96))
+        ellipse(draw, side * 0.060, 0.080, 0.012, 0.017, (*SHADOW, 62))
 
-    # Under the lip and under the jaw: the shadow that makes a chin a chin.
-    ellipse(draw, 0.0, 0.030, 0.026, 0.009, (*SHADOW, 78))
-    ellipse(draw, 0.0, 0.012, 0.028, 0.007, (*SHADOW, 60))
+    # The crease under the lip, and the shadow under the jaw.
+    ellipse(draw, 0.0, 0.0335, 0.024, 0.0070, (*SHADOW, 110))
+    ellipse(draw, 0.0, 0.0140, 0.026, 0.0060, (*SHADOW, 74))
 
-    # The nose: a narrow shadow down one side, a warm one beside each wing, and a
-    # lit bridge. Wide, this reads as a bruise rather than as a nose.
-    ellipse(draw, 0.010, 0.112, 0.0050, 0.028, (*SHADOW, 120))
-    ellipse(draw, -0.009, 0.108, 0.0060, 0.024, (*SKIN_WARM, 70))
+    # The nose: a shadow down the far side and beside each wing, a lit bridge.
+    ellipse(draw, 0.008, 0.105, 0.0042, 0.020, (*SHADOW, 130))
+    ellipse(draw, -0.007, 0.104, 0.0050, 0.017, (*SKIN_WARM, 78))
     for side in (-1, 1):
-        ellipse(draw, side * 0.017, 0.092, 0.0060, 0.0060, (*SHADOW, 160))
+        ellipse(draw, side * 0.0225, 0.0905, 0.0058, 0.0050, (*SHADOW, 165))
+        ellipse(draw, side * 0.0300, 0.0860, 0.0050, 0.0075, (*SHADOW, 92))
 
-    ellipse(draw, 0.0, 0.122, 0.0048, 0.026, (*SKIN_LIT, 168))
+    ellipse(draw, 0.0, 0.112, 0.0040, 0.022, (*SKIN_LIT, 180))
 
-    over(image, shade, 6.0)
+    over(image, shade, 5.0)
 
 
 def paint_eyes(image):
     """Two eyes: a sclera, an iris, a pupil, a lid over them and a lash line.
 
     Placed at the height the head's own warp cut its sockets at — 15.2 cm up from
-    the neck — because an eye painted below the socket is an eye on a cheekbone.
+    the neck. The sclera is small and the upper lid covers a third of it, because
+    an eye with white all round the iris is an eye that is alarmed, and this man
+    has not been surprised by anything in thirty years.
     """
     eyes = layer()
     draw = ImageDraw.Draw(eyes)
@@ -220,36 +228,29 @@ def paint_eyes(image):
     for side in (-1, 1):
         x, z = side * 0.037, 0.152
 
-        # The white of the eye: an almond, wider than it is tall, which is what
-        # stops an eye being a circle with a dot in it.
-        ellipse(draw, x, z, 0.0180, 0.0102, (*EYE_WHITE, 255))
+        ellipse(draw, x, z, 0.0158, 0.0090, (*EYE_WHITE, 255))
 
-        # The iris sits a little high, which is where an eye that is looking at you
-        # has it, and it is darker at its rim than at its centre.
-        ellipse(draw, x - (side * 0.0018), z + 0.0004, 0.0084, 0.0084, (*IRIS, 255))
-        ellipse(draw, x - (side * 0.0018), z + 0.0004, 0.0062, 0.0062, (*IRIS_DARK, 255))
-        ellipse(draw, x - (side * 0.0018), z + 0.0004, 0.0032, 0.0032, (*PUPIL, 255))
-
-        # A catchlight. One bright pixel is the difference between an eye and a hole.
-        ellipse(draw, x - (side * 0.0048), z + 0.0046, 0.0017, 0.0017, (255, 255, 255, 240))
+        # The iris, with a limbal ring: an iris that fades into the white has no
+        # edge, and an eye without an edge is a hole.
+        ellipse(draw, x - (side * 0.0016), z + 0.0002, 0.0086, 0.0086, (46, 32, 22, 255))
+        ellipse(draw, x - (side * 0.0016), z + 0.0002, 0.0076, 0.0076, (*IRIS, 255))
+        ellipse(draw, x - (side * 0.0016), z + 0.0002, 0.0030, 0.0030, (*PUPIL, 255))
+        ellipse(draw, x - (side * 0.0044), z + 0.0040, 0.0016, 0.0016, (255, 255, 255, 235))
 
     over(image, eyes, 0.8)
 
-    # The lids and the lash line are their own pass so their edge stays crisp: an
-    # eyelid is a boundary, and blurred it becomes the smudge of a tired man rather
-    # than the lid of an old one.
     lids = layer()
     draw = ImageDraw.Draw(lids)
 
     for side in (-1, 1):
         x, z = side * 0.037, 0.152
 
-        # A heavy hooded upper lid, sitting on the top of the eye.
-        ellipse(draw, x, z + 0.0130, 0.0196, 0.0056, (*LID, 238))
-        ellipse(draw, x, z + 0.0168, 0.0204, 0.0034, (*SHADOW, 205))
-        ellipse(draw, x, z + 0.0092, 0.0182, 0.0014, (58, 40, 30, 225))
-        # The lower lid.
-        ellipse(draw, x, z - 0.0102, 0.0160, 0.0013, (*LID, 175))
+        # A heavy hooded lid, sitting on the top third of the eye and reaching the
+        # outer corner: this is where the age is, more than in any line.
+        ellipse(draw, x, z + 0.0106, 0.0190, 0.0064, (*LID, 244))
+        ellipse(draw, x, z + 0.0152, 0.0200, 0.0036, (*SHADOW, 210))
+        ellipse(draw, x, z + 0.0072, 0.0178, 0.0015, (52, 36, 26, 235))
+        ellipse(draw, x, z - 0.0100, 0.0155, 0.0013, (*LID, 180))
 
     over(image, lids, 0.7)
 

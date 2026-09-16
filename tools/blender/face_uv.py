@@ -18,10 +18,17 @@ only applies below the mouth, where the only thing painted is a chin.
 
 import math
 
-HALF_X = 0.104
-HALF_Y = 0.116
-HALF_Z = 0.139
+HALF_X = 0.100
+HALF_Y = 0.118
+HALF_Z = 0.134
 CENTRE_Z = 0.150
+
+#: The skull's two shape exponents, which `_head_surface` also uses. They are the
+#: difference between a head and an egg, and a painter working from the ellipsoid
+#: instead of from these puts every feature in the wrong place — the face's width
+#: at a given height is not a sine of it.
+RADIUS_POWER = 0.62
+PLAN_POWER = 3.2
 
 #: How hard the front is expanded. 1 is a linear map; smaller is more face and a
 #: more crushed back of the head.
@@ -51,29 +58,56 @@ def head_z(v):
     return CENTRE_Z + (math.cos(math.pi * v) * HALF_Z)
 
 
+def head_half_width(v):
+    """Half the head's width at a grid `v`, in metres."""
+    return (math.sin(math.pi * v) ** RADIUS_POWER) * HALF_X
+
+
+def head_x(theta, v):
+    """How far round the head a point at `theta` and `v` sits, in metres."""
+    radius = math.sin(math.pi * v) ** RADIUS_POWER
+    cosine, sine = math.cos(theta), math.sin(theta)
+    squircle = (abs(cosine) ** PLAN_POWER + abs(sine) ** PLAN_POWER) ** (-1.0 / PLAN_POWER)
+
+    return radius * cosine * squircle * HALF_X
+
+
 def face_uv(x, z):
     """Where a point on the front of the head lands on the texture.
 
-    `x` is across the head in metres, positive to the model's left, and `z` is up
+    `x` is across the head in metres, positive to the model's side, and `z` is up
     from the neck. The answer is in 0..1 texture space with the origin at the top
     left, which is the order an image is written in.
+
+    The angle is solved for rather than taken from an arc cosine, because the head
+    is not an ellipse: its plan is a rounded rectangle, so the width at a given
+    angle depends on the angle in a way that has no closed form. A short bisection
+    is cheaper than the alternative, which is a painter and a generator that
+    disagree about where a cheekbone is.
     """
     v = head_v(z)
-    radius = math.sin(math.pi * v) * HALF_X
+    target = min(abs(x), head_x(0.0, v))
+    low, high = 0.0, math.pi * 0.5
 
-    # A point further out than the head is wide at that height has no place on it;
-    # clamping puts it on the silhouette, which is where a painter would put it.
-    cosine = 0.0 if abs(radius) < 1e-9 else max(-1.0, min(1.0, x / radius))
-    u = math.acos(cosine) / (2.0 * math.pi)
+    for _ in range(28):
+        middle = (low + high) * 0.5
+
+        if head_x(middle, v) > target:
+            low = middle
+        else:
+            high = middle
+
+    u = (low + high) * 0.5 / (2.0 * math.pi)
 
     return wrap_u(u), v
 
 
 def face_uv_across(x, z):
-    """`face_uv` for a point on the left of the face, mirrored back for the right.
+    """`face_uv` for a point off the middle, mirrored for the other side.
 
     Features are painted as a pair, and this is what makes them one: the head is
-    symmetric, so an eye at -x is the same texture coordinate as an eye at +x.
+    symmetric, so an eye at -x is the same texture coordinate, mirrored, as an eye
+    at +x.
     """
     u, v = face_uv(abs(x), z)
 
