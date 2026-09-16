@@ -560,15 +560,15 @@ def moustache_outline(side):
     — it is the mouth that is hidden, not the moustache that is vague.
     """
     return [
-        (side * 0.000, 0.1130),
-        (side * 0.017, 0.1125),
-        (side * 0.032, 0.1085),
-        (side * 0.049, 0.1010),
-        (side * 0.056, 0.0910),
-        (side * 0.046, 0.0805),
-        (side * 0.033, 0.0790),
-        (side * 0.017, 0.0830),
-        (side * 0.000, 0.0855),
+        (side * 0.000, 0.1040),
+        (side * 0.017, 0.1035),
+        (side * 0.032, 0.0995),
+        (side * 0.049, 0.0920),
+        (side * 0.056, 0.0820),
+        (side * 0.046, 0.0715),
+        (side * 0.033, 0.0700),
+        (side * 0.017, 0.0740),
+        (side * 0.000, 0.0765),
     ]
 
 
@@ -615,7 +615,7 @@ def paint_moustache_bed(image):
         )
 
     detail_draw.line(
-        [at(0.0, 0.1090), at(0.0, 0.0870)],
+        [at(0.0, 0.1000), at(0.0, 0.0780)],
         fill=(30, 25, 22, 190),
         width=3,
     )
@@ -626,7 +626,7 @@ def paint_moustache_bed(image):
             ellipse(
                 detail_draw,
                 side * (0.002 + (t01 * 0.058)),
-                0.1045 - (t01 * 0.021),
+                0.0955 - (t01 * 0.021),
                 0.0010,
                 0.0068,
                 (110, 100, 90, 96),
@@ -638,7 +638,7 @@ def paint_moustache_bed(image):
     # rather than floating above it.
     bed = layer()
     bed_draw = ImageDraw.Draw(bed)
-    ellipse(bed_draw, 0.0, 0.0820, 0.0400, 0.0045, (*SHADOW, 140))
+    ellipse(bed_draw, 0.0, 0.0730, 0.0400, 0.0045, (*SHADOW, 140))
     over(image, bed, 1.5)
 
     over(image, mass, 0.5)
