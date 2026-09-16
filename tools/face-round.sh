@@ -92,6 +92,14 @@ for panel, label in zip(panels, labels):
     draw.text((x + 6, 5), label, font=font, fill=(220, 220, 210))
     x += panel.width + 20
 
+# And one crop that is exactly crown to chin, for measurement rather than for
+# looking. The head is centred in the close-up and 263 mm tall in a 415 mm frame, so
+# it runs from 0.17 to 0.83 of the frame — and every measurement taken before this
+# used a crop that ran on past the chin into the neck, which made every row a
+# fraction of the neck's width and produced two rounds of numbers not to be trusted.
+front.crop((int(w * 0.36), int(h * 0.17), int(w * 0.64), int(h * 0.83))) \
+    .save("artifacts/probe/face-chin-crop.png")
+
 strip.save("artifacts/probe/round.png")
 
 if wide:
