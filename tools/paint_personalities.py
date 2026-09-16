@@ -367,6 +367,30 @@ def paint_form(image):
     over(image, cool, 14.0)
 
 
+def eye_outline(side, lift=0.0):
+    """One eye's silhouette: an almond with a corner at each end.
+
+    The eye was an ellipse, and an ellipse is a shape with no corners — which is why
+    it read as a doll's. The inner corner is the pointed one and sits lower, the
+    outer one is blunter, and the upper lid's peak is not at the middle but towards
+    the outer end. `lift` moves the whole shape up the lid.
+    """
+    cx = side * 0.037
+    z = 0.164 + lift
+
+    return [
+        (cx - (side * 0.0104), z - 0.0004),
+        (cx - (side * 0.0072), z + 0.0034),
+        (cx - (side * 0.0016), z + 0.0054),
+        (cx + (side * 0.0038), z + 0.0050),
+        (cx + (side * 0.0078), z + 0.0030),
+        (cx + (side * 0.0104), z - 0.0004),
+        (cx + (side * 0.0060), z - 0.0034),
+        (cx, z - 0.0048),
+        (cx - (side * 0.0060), z - 0.0036),
+    ]
+
+
 def paint_eyes(image):
     """Two eyes: a sclera, an iris, a pupil, a lid over them and a lash line.
 
@@ -381,7 +405,7 @@ def paint_eyes(image):
     for side in (-1, 1):
         x, z = side * 0.037, 0.164
 
-        ellipse(draw, x, z, 0.0100, 0.0052, (*EYE_WHITE, 255))
+        polygon(draw, eye_outline(side), (*EYE_WHITE, 255))
 
         # The iris, with a limbal ring: an iris that fades into the white has no
         # edge, and an eye without an edge is a hole.
