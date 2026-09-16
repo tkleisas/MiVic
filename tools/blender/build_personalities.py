@@ -559,7 +559,7 @@ def build_elder():
     boot = (0.10, 0.10, 0.10, 0.05)
     belt_colour = (0.14, 0.11, 0.08, 0.10)
     collar_red = (0.46, 0.08, 0.06, 0.00)
-    gold = (0.74, 0.58, 0.22, 0.00)
+    gold = (0.66, 0.53, 0.21, 0.00)
     moustache_colour = (0.20, 0.16, 0.13, 0.00)
     hair_colour = (0.22, 0.18, 0.15, 0.03)
     hair_dark = (0.14, 0.11, 0.09, 0.03)
@@ -628,20 +628,20 @@ def build_elder():
     collar = merge("Collar", [
         _prism_geo((0.138, 0.136), (0.94, 0.94), 0.048, offset=(0.0, 0.0, 0.0), power=0.60, segments=18),
     ])
-    collar.location = (0.0, 0.0, SHOULDER - 0.028)
+    collar.location = (0.0, 0.0, SHOULDER + 0.026)
     _wrap_uv(collar)
     parts.append(collar)
     paint(collar, tunic, variation=0.03)
 
     for side in (-1, 1):
         tab = box("CollarTab", (0.030, 0.016, 0.036), offset=(0.0, 0.0, 0.0))
-        tab.location = (side * 0.030, 0.062, SHOULDER - 0.004)
+        tab.location = (side * 0.030, 0.062, SHOULDER + 0.050)
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
 
         # A shoulder board on each shoulder, laid along it and tipped outward.
         board = box("Board", (0.050, 0.130, 0.016), offset=(0.0, 0.0, 0.0))
-        board.location = (side * shoulders * 0.28, -0.008, HIP + 0.478)
+        board.location = (side * shoulders * 0.30, -0.008, HIP + 0.512)
         board.rotation_euler = (0.0, math.radians(side * 14.0), 0.0)
         parts.append(board)
         paint(board, gold, variation=0.03)
@@ -800,6 +800,23 @@ def build_elder():
         stud.location = (0.0, 0.196, HIP + 0.36 - (button * 0.100))
         parts.append(stud)
         paint(stud, gold, variation=0.02)
+
+    # Every part that carries no texture layout of its own samples the corner of
+    # whichever map it is given, and the face map's corner is the back of the head in
+    # shadow. That is why the buttons, the shoulder boards and the star all rendered
+    # brown: they are painted gold, and then multiplied by a texel that is nearly
+    # black. Anything without a layout is pinned to the lit bridge of the nose, where
+    # the map is brightest and a vertex colour therefore shows as it was authored.
+    lit = face_uv.face_uv_across(0.0, 0.118)
+
+    for part in parts:
+        layer = part.data.uv_layers.get("UVMap")
+        laid_out = layer is not None and any(
+            abs(loop.uv[0]) > 1e-6 or abs(loop.uv[1]) > 1e-6 for loop in layer.data
+        )
+
+        if not laid_out:
+            _pin_uv(part, lit)
 
     # Every curved face smoothed, every corner left sharp.
     smooth(*parts)
