@@ -39,9 +39,9 @@ SKIN = (178, 124, 82)
 SKIN_LIT = (216, 164, 116)
 SKIN_SHADE = (112, 70, 46)
 SKIN_WARM = (200, 108, 72)
-HAIR = (68, 62, 56)
-HAIR_LIT = (104, 96, 88)
-HAIR_DARK = (44, 40, 36)
+HAIR = (62, 56, 50)
+HAIR_LIT = (88, 82, 74)
+HAIR_DARK = (38, 34, 30)
 BROW = (58, 48, 40)
 EYE_WHITE = (222, 216, 208)
 IRIS = (74, 52, 34)
@@ -122,7 +122,7 @@ def paint_skin(image):
             grid_u = face_uv.unwrap_u(u)
             across = (grid_u - 0.25) / 0.25 if grid_u < 0.5 else (0.75 - grid_u) / 0.25
 
-            shade = light * (1.0 - (0.42 * min(1.0, abs(across)) ** 1.5))
+            shade = light * (1.0 - (0.50 * min(1.0, abs(across)) ** 1.4))
             shade *= 1.0 - (0.22 * max(0.0, across))
 
             # Warm in the light, cool in the shadow, and both of them only a little:
@@ -197,14 +197,14 @@ def paint_hair(image):
             sheen = math.exp(-(((y - (edge - 70.0)) / 52.0) ** 2))
             roots = math.exp(-(((y - edge) / 26.0) ** 2))
 
-            if lock_grey > 0.72:
+            if lock_grey > 0.88:
                 base = HAIR_LIT
             elif lock_tone < 0.42:
                 base = HAIR_DARK
             else:
                 base = HAIR
 
-            tone = 0.62 + (0.52 * lock_tone) + (0.34 * rounded) + (0.45 * sheen) - (0.20 * roots)
+            tone = 0.64 + (0.46 * lock_tone) + (0.32 * rounded) + (0.42 * sheen) - (0.20 * roots)
 
             overlay_pixels[x, y] = (
                 min(255, int(base[0] * tone)),
@@ -272,7 +272,7 @@ def paint_form(image):
 
     # The sockets, which the warp cut into the skull and the light has to find.
     for side in (-1, 1):
-        ellipse(draw, side * 0.037, 0.1605, 0.027, 0.0165, (*SHADOW, 148))
+        ellipse(draw, side * 0.037, 0.1605, 0.028, 0.0175, (*SHADOW, 172))
         ellipse(draw, side * 0.030, 0.176, 0.026, 0.0080, (*SHADOW, 128))
 
     # The temples, the jaw and the jowls an old man carries.
@@ -284,7 +284,7 @@ def paint_form(image):
     # The crease under the lip, the ball of the chin catching the light, and the
     # shadow the jaw casts on the neck. A chin is a shape, not the place the face
     # stops, and the lower third of this one was blank for four versions.
-    ellipse(draw, 0.0, 0.0620, 0.0235, 0.0068, (*SHADOW, 165))
+    ellipse(draw, 0.0, 0.0620, 0.0245, 0.0072, (*SHADOW, 185))
     ellipse(draw, 0.0, 0.0470, 0.0180, 0.0110, (*SKIN_LIT, 120))
     ellipse(draw, 0.0, 0.0300, 0.0290, 0.0070, (*SHADOW, 155))
     ellipse(draw, 0.0, 0.0160, 0.0300, 0.0055, (*SHADOW, 120))
@@ -309,7 +309,7 @@ def paint_form(image):
     ellipse(draw, 0.0, 0.126, 0.0050, 0.026, (*SKIN_LIT, 190))
     ellipse(draw, 0.0, 0.1180, 0.0098, 0.0052, (*SKIN_LIT, 140))
 
-    over(image, shade, 18.0)
+    over(image, shade, 16.0)
 
 
 def paint_eyes(image):
