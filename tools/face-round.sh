@@ -32,16 +32,17 @@ cat > "$CUTSCENES/zz_face.cutscene.json" <<'JSON'
   "body": {
     "id": "zz_face", "kind": "Briefing", "faction": "Soviet", "set": "set_study", "music": "bridge",
     "camera": [
-      { "milliseconds": 0,    "x": 60, "y": 1600, "z": 3400, "targetX": 0, "targetY": 1590, "targetZ": 4000 },
-      { "milliseconds": 4000, "x": 700, "y": 1150, "z": 2900, "targetX": 0, "targetY": 1050, "targetZ": 4000 }
+      { "milliseconds": 0,     "x": 60,  "y": 1600, "z": 1100, "targetX": 0, "targetY": 1590, "targetZ": 1700 },
+      { "milliseconds": 4000,  "x": 250, "y": 1250, "z": 500,  "targetX": 0, "targetY": 1200, "targetZ": 1700 },
+      { "milliseconds": 8000,  "x": 260, "y": 1540, "z": -600, "targetX": 0, "targetY": 1440, "targetZ": 1600 }
     ],
-    "figures": [ { "asset": "personality_elder", "x": 0, "z": 4000, "facingDegrees": 0 } ],
+    "figures": [ { "asset": "personality_elder", "x": 0, "z": 1700, "facingDegrees": 0 } ],
     "lines": [ { "speaker": "personality_elder", "greekText": "Κάθισε.", "milliseconds": 2800 } ]
   }
 }
 JSON
 
-printf 'cutscene seek 200\nshot artifacts/probe/face-front.png\ncutscene seek 3900\nshot artifacts/probe/body.png\n' \
+printf 'cutscene seek 200\nshot artifacts/probe/face-front.png\ncutscene seek 3900\nshot artifacts/probe/torso.png\ncutscene seek 7900\nshot artifacts/probe/wide.png\n' \
     > artifacts/probe/face.probe
 
 dotnet build src/MiVic.Game/MiVic.Game.csproj -c Debug 2>&1 | grep -E 'error|Elapsed' | head -3
@@ -53,27 +54,58 @@ LIBGL_ALWAYS_SOFTWARE=1 DOTNET_ROLL_FORWARD=Major timeout 300 \
 
 python3 - "$@" <<'PY'
 import sys
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 wide = "--wide" in sys.argv
-front = Image.open("artifacts/probe/face-front.png")
+front = Image.open("artifacts/probe/face-front.png").convert("RGB")
 w, h = front.size
-box = (int(w * 0.30), int(h * 0.02), int(w * 0.70), int(h * 0.98))
-front.crop(box).save("artifacts/probe/face-front-crop.png")
 
-body = Image.open("artifacts/probe/body.png")
-w, h = body.size
-body.crop((int(w * 0.22), int(h * 0.02), int(w * 0.78), int(h * 0.98))) \
-    .save("artifacts/probe/body-crop.png")
+# Three distances in one image, every round. The uniform's metal rendered brown for
+# weeks because nothing looked at the torso, and the head is only ever seen at the
+# briefing's own framing — a strip that shows all three is the check that would have
+# caught it, and it costs one extra shot.
+face = front.crop((int(w * 0.30), int(h * 0.02), int(w * 0.70), int(h * 0.98)))
+
+torso = Image.open("artifacts/probe/torso.png").convert("RGB")
+tw, th = torso.size
+torso = torso.crop((int(tw * 0.30), int(th * 0.02), int(tw * 0.70), int(th * 0.98)))
+
+wideshot = Image.open("artifacts/probe/wide.png").convert("RGB")
+ww, wh = wideshot.size
+wideshot = wideshot.crop((int(ww * 0.20), 0, int(ww * 0.80), wh))
+
+height = 660
+panels = []
+for image in (face, torso, wideshot):
+    scale = height / image.height
+    panels.append(image.resize((max(1, int(image.width * scale)), height), Image.LANCZOS))
+
+labels = ("face 0.6 m", "torso 1.2 m", "briefing 2.5 m")
+width = sum(p.width for p in panels) + (20 * (len(panels) - 1))
+strip = Image.new("RGB", (width, height + 30), (22, 22, 26))
+x = 0
+draw = ImageDraw.Draw(strip)
+font = ImageFont.truetype("src/MiVic.Game/Content/Fonts/NotoSans-Regular.ttf", 20)
+
+for panel, label in zip(panels, labels):
+    strip.paste(panel, (x, 30))
+    draw.text((x + 6, 5), label, font=font, fill=(220, 220, 210))
+    x += panel.width + 20
+
+strip.save("artifacts/probe/round.png")
 
 if wide:
     ref = Image.open("/home/tkleisas/.dsh/attachments/v1/objects/4c/"
                      "4caafdc36c78cc5bfcb502efad7b258dad0c20b4acc36e09baaf32355880b2c0").convert("RGB")
-    head = ref.crop((880, 150, 1160, 400)).resize((420, 375), Image.LANCZOS)
-    mine = front.convert("RGB").crop((int(front.width * 0.30), int(front.height * 0.02), int(front.width * 0.70), int(front.height * 0.98))).resize((320, 470), Image.LANCZOS)
-    sheet = Image.new("RGB", (790, 515), (24, 24, 28))
-    sheet.paste(head, (10, 45))
-    sheet.paste(mine, (450, 45))
+    head = ref.crop((880, 150, 1160, 400)).resize((400, 357), Image.LANCZOS)
+    mine = front.crop((int(w * 0.30), int(h * 0.02), int(w * 0.70), int(h * 0.98)))
+    mine = mine.resize((int(mine.width * 357 / mine.height), 357), Image.LANCZOS)
+    sheet = Image.new("RGB", (head.width + mine.width + 30, 400), (24, 24, 28))
+    sheet.paste(head, (10, 40))
+    sheet.paste(mine, (head.width + 20, 40))
+    sheet_draw = ImageDraw.Draw(sheet)
+    sheet_draw.text((10, 10), "reference", font=font, fill=(225, 225, 215))
+    sheet_draw.text((head.width + 20, 10), "built", font=font, fill=(225, 225, 215))
     sheet.save("artifacts/preview/compare.png")
 
 print("face-front-crop.png and body-crop.png written")
