@@ -368,7 +368,11 @@ def _hair_shell(segments=36, rings=18):
         # Flat across the top. The portrait's hair is brushed back and lies level
         # over the crown, so its head is already two thirds of its full width at the
         # very top; a shell that follows the skull's dome comes to a point there.
-        crown_fill = 1.0 + (0.55 * math.exp(-((v / 0.14) ** 2)))
+        # Enough to take the point off the crown, not enough to make a slab. The
+        # width profile is happy either way — it samples twelve rows and cannot see
+        # the shape between two of them — but the eye can, and at 0.55 this read as
+        # a flat cap rather than as hair lying over a skull.
+        crown_fill = 1.0 + (0.30 * math.exp(-((v / 0.19) ** 2)))
         x *= crown_fill
         y *= crown_fill
 
