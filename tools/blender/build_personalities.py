@@ -616,14 +616,14 @@ def build_elder():
     collar = merge("Collar", [
         _prism_geo((0.138, 0.136), (0.94, 0.94), 0.048, offset=(0.0, 0.0, 0.0), power=0.60, segments=18),
     ])
-    collar.location = (0.0, 0.0, SHOULDER - 0.008)
+    collar.location = (0.0, 0.0, SHOULDER - 0.028)
     _wrap_uv(collar)
     parts.append(collar)
     paint(collar, tunic, variation=0.03)
 
     for side in (-1, 1):
         tab = box("CollarTab", (0.030, 0.016, 0.036), offset=(0.0, 0.0, 0.0))
-        tab.location = (side * 0.030, 0.062, SHOULDER + 0.016)
+        tab.location = (side * 0.030, 0.062, SHOULDER - 0.004)
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
 

@@ -364,12 +364,12 @@ def paint_eyes(image):
     for side in (-1, 1):
         x, z = side * 0.037, 0.164
 
-        ellipse(draw, x, z, 0.0108, 0.0058, (*EYE_WHITE, 255))
+        ellipse(draw, x, z, 0.0100, 0.0052, (*EYE_WHITE, 255))
 
         # The iris, with a limbal ring: an iris that fades into the white has no
         # edge, and an eye without an edge is a hole.
-        ellipse(draw, x - (side * 0.0008), z + 0.0000, 0.0080, 0.0078, (46, 32, 22, 255))
-        ellipse(draw, x - (side * 0.0008), z + 0.0000, 0.0069, 0.0069, (*IRIS, 255))
+        ellipse(draw, x - (side * 0.0007), z - 0.0002, 0.0074, 0.0072, (46, 32, 22, 255))
+        ellipse(draw, x - (side * 0.0007), z - 0.0002, 0.0064, 0.0064, (*IRIS, 255))
         ellipse(draw, x - (side * 0.0016), z + 0.0002, 0.0030, 0.0030, (*PUPIL, 255))
         ellipse(draw, x - (side * 0.0036), z + 0.0032, 0.0014, 0.0014, (255, 255, 255, 230))
 
@@ -383,7 +383,7 @@ def paint_eyes(image):
 
         # A heavy hooded lid, sitting on the top third of the eye and reaching the
         # outer corner: this is where the age is, more than in any line.
-        ellipse(draw, x, z + 0.0088, 0.0148, 0.0050, (*LID, 244))
+        ellipse(draw, x, z + 0.0074, 0.0140, 0.0052, (*LID, 248))
         # The crease above the lid, and the shadow it throws into the socket.
         ellipse(draw, x, z + 0.0142, 0.0170, 0.0028, (74, 50, 38, 215))
         ellipse(draw, x, z + 0.0176, 0.0186, 0.0030, (*SHADOW, 120))
