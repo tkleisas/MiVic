@@ -188,6 +188,11 @@ def paint_hair(image):
         lock = int((x + (5.0 * math.sin(edge * 0.07))) / width)
         lock_tone = noise(lock, 0.0, 5.7)
         lock_grey = noise(lock, 3.3, 11.1)
+
+        # Hair clumps: five or six locks lying together share a tone, so the head
+        # reads as a mass of clumps rather than as a hundred independent strands of
+        # the same width. Uniformity at the lock scale is what made it look printed.
+        clump = noise(lock // 6, 1.9, 31.0)
         across_lock = ((x % width) / width) - 0.5
         rounded = 1.0 - ((abs(across_lock) * 2.0) ** 1.5)
 
@@ -205,7 +210,8 @@ def paint_hair(image):
             # the forehead — which is what makes it read as combed back rather than
             # as a cap.
             sheen = math.exp(-(((y - (edge - 70.0)) / 52.0) ** 2))
-            roots = math.exp(-(((y - edge) / 26.0) ** 2))
+            roots = math.exp(-(((y - edge) / 30.0) ** 2))
+            length_light = 1.0 - (0.22 * math.exp(-(((y - (edge * 0.35)) / (edge * 0.45 + 1.0)) ** 2)))
 
             if lock_grey > 0.88:
                 base = HAIR_LIT
@@ -214,7 +220,7 @@ def paint_hair(image):
             else:
                 base = HAIR
 
-            tone = (0.60 + (0.50 * lock_tone) + (0.34 * rounded) + (0.46 * sheen) - (0.20 * roots)) * key
+            tone = (0.56 + (0.34 * lock_tone) + (0.30 * clump) + (0.30 * rounded) + (0.46 * sheen) - (0.20 * roots)) * key * length_light
 
             overlay_pixels[x, y] = (
                 min(255, int(base[0] * tone)),
