@@ -720,24 +720,6 @@ def build_elder():
     parts.append(neck)
     paint(neck, FLESH_SHADE)
 
-    # A stand collar on the shoulders. It has to clear the chin, which on a sculpted
-    # head is only 1.7 cm above the neck's own base — a collar sized for a soldier's
-    # block head rises past the mouth and the moustache ends up behind it.
-    collar = merge("Collar", [
-        _frustum_geo((0.100, 0.108), (0.86, 0.86), 0.062, offset=(0.0, 0.0, 0.015)),
-    ])
-    collar.parent = neck
-    _wrap_uv(collar)
-    parts.append(collar)
-    paint(collar, tunic)
-
-    for side in (-1, 1):
-        tab = box("CollarTab", (0.046, 0.022, 0.040), offset=(0.0, 0.0, 0.0))
-        tab.parent = neck
-        tab.location = (side * 0.040, 0.070, 0.052)
-        parts.append(tab)
-        paint(tab, collar_red, variation=0.02)
-
     head = _grid_mesh("Head", 88, 62, _head_surface(88, 62))
     head.parent = neck
     parts.append(head)
