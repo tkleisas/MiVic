@@ -645,6 +645,59 @@ def paint_moustache_bed(image):
     over(image, detail, 0.5)
 
 
+#: Every feature the painter places, as the head-local metres it is placed at. The
+#: marker render draws a crosshair at each one, so a feature that does not land on
+#: the geometry built for it is visible as a crosshair beside a brow rather than as
+#: something to be argued about later.
+MARKERS = [
+    ("eye inner", lambda side: (side * 0.0266, 0.1636)),
+    ("eye centre", lambda side: (side * 0.0370, 0.1640)),
+    ("eye outer", lambda side: (side * 0.0474, 0.1636)),
+    ("brow inner", lambda side: (side * 0.0100, 0.1800)),
+    ("brow peak", lambda side: (side * 0.0330, 0.1868)),
+    ("brow outer", lambda side: (side * 0.0680, 0.1724)),
+    ("nose tip", lambda side: (0.0, 0.1200)),
+    ("nose wing", lambda side: (side * 0.0245, 0.1080)),
+    ("nostril", lambda side: (side * 0.0130, 0.1045)),
+    ("mouth", lambda side: (0.0, 0.0798)),
+    ("lip", lambda side: (0.0, 0.0600)),
+    ("chin", lambda side: (0.0, 0.0300)),
+    ("temple", lambda side: (side * 0.0580, 0.0980)),
+    ("hairline", lambda side: (0.0, 0.2360)),
+]
+
+
+def pose_markers(image):
+    """Draws a crosshair at every feature the painter places, and the hairline.
+
+    This is the instrument the face work was missing. The eye and the brow were found
+    to be the wrong shape by looking, and the texture's V axis was found to be
+    inverted only by a marker render improvised when nothing else was working — and
+    then thrown away. A feature that is painted somewhere other than where its
+    geometry is looks like a painting mistake; it is a mapping mistake, and this is
+    what tells the two apart.
+    """
+    draw = ImageDraw.Draw(image)
+
+    for name, place in MARKERS:
+        for side in ((-1, 1) if place(1)[0] != 0.0 or name in ("nose tip", "mouth", "lip", "chin", "hairline") else (1,)):
+            x, z = place(side)
+            cx, cy = at(x, z)
+            colour = (255, 40, 40) if side < 0 else (40, 200, 255)
+
+            draw.line([(cx - 14, cy), (cx + 14, cy)], fill=colour, width=3)
+            draw.line([(cx, cy - 14), (cx, cy + 14)], fill=colour, width=3)
+
+    # And the hairline, which is a curve rather than a point.
+    for step in range(0, 101):
+        u = step / 100.0
+        v = face_uv.hairline_at(u)
+        cx, cy = px(u, v)
+        draw.line([(cx - 3, cy), (cx + 3, cy)], fill=(40, 255, 60), width=2)
+
+    return image
+
+
 def build_face(path):
     """Paints the head texture and writes it out."""
     image = Image.new("RGB", (WIDTH, HEIGHT), SKIN)
@@ -716,9 +769,18 @@ def build_cloth(path):
 def main():
     parser = argparse.ArgumentParser(description="Paint the cutscene personality textures.")
     parser.add_argument("--out", required=True, help="Directory to write the PNGs into.")
+    parser.add_argument("--markers", action="store_true",
+                        help="Draw a crosshair at every feature and write that instead.")
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
+    if args.markers:
+        marked = pose_markers(Image.new("RGB", (WIDTH, HEIGHT), (58, 58, 62)))
+        marked_path = os.path.join(args.out, "personality_elder.png")
+        marked.save(marked_path, optimize=True, compress_level=9)
+        print(f"wrote markers to {os.path.basename(marked_path)}")
+        return 0
+
     path = build_face(os.path.join(args.out, "personality_elder.png"))
     print(f"wrote {os.path.basename(path)}  ({os.path.getsize(path) / 1024:.1f} KB)")
 
