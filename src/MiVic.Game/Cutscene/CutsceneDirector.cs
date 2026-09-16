@@ -294,9 +294,12 @@ public sealed class CutsceneDirector : IDisposable
             150f);
 
         var environment = new InstancedRenderer.Environment(
-            // From the window: the study's one source of daylight is on the back wall, so the
-            // light comes from behind and to the right of what the camera is looking at.
-            LightDirection: Vector3.Normalize(new Vector3(0.45f, 0.55f, 0.70f)),
+            // From the front, above and to the left of the camera. It used to come from
+            // +z, which is *behind* the man: the camera looks down +z, so a light
+            // pointing that way lit the back of his head and left his face and tunic in
+            // their own shadow. That is why a tunic the right olive rendered almost
+            // black, and why every paint correction to it did nothing.
+            LightDirection: Vector3.Normalize(new Vector3(0.42f, 0.52f, -0.74f)),
 
             // Warmer and dimmer than the battlefield, but not so dim that a room lit by one lamp
             // has a wall of pure black in it: the lamp is the warm note, the window the cold one.

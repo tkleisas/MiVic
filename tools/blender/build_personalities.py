@@ -496,9 +496,9 @@ def build_elder():
     # gold buttons, and a man whose hair, brows and moustache are all one dark
     # grey-brown. An old soldier, not a white-haired one — the first version got
     # that wrong and painted him with the hair of a man twenty years older.
-    tunic = (0.36, 0.35, 0.17, 0.60)
-    tunic_dark = (0.27, 0.27, 0.12, 0.34)
-    trouser = (0.31, 0.30, 0.16, 0.30)
+    tunic = (0.44, 0.43, 0.22, 0.60)
+    tunic_dark = (0.33, 0.32, 0.16, 0.34)
+    trouser = (0.38, 0.37, 0.20, 0.30)
     boot = (0.10, 0.10, 0.10, 0.05)
     belt_colour = (0.14, 0.11, 0.08, 0.10)
     collar_red = (0.46, 0.08, 0.06, 0.00)
@@ -539,7 +539,7 @@ def build_elder():
         _prism_geo((shoulders * 0.80, 0.29 * bulk), (0.94, 0.96), 0.42, offset=(0.0, 0.0, HIP - 0.30), power=0.52),
     ])
     parts.append(skirt)
-    paint(skirt, tunic, variation=0.04)
+    paint(skirt, tunic, variation=0.09)
 
     belt = merge("Belt", [
         _prism_geo((shoulders * 0.77, 0.30 * bulk), (1.0, 1.0), 0.055, offset=(0.0, 0.0, HIP + 0.10), power=0.52),
@@ -551,7 +551,7 @@ def build_elder():
     crown = _dome_geo(shoulders * 0.52, (1.0, 0.62, 0.26), segments=20, rings=6, offset=(0.0, 0.0, HIP + 0.35))
     chest = merge("Body", [trunk, crown])
     parts.append(chest)
-    paint(chest, tunic, variation=0.04)
+    paint(chest, tunic, variation=0.09)
 
     # The placket: the strip the buttons sit on, standing a few millimetres proud
     # of the tunic, because a row of buttons floating on a flat chest reads as

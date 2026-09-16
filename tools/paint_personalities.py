@@ -35,10 +35,10 @@ HEIGHT = 1536
 
 # The same palette the generator paints the head's vertex colours with, so the
 # painted face and the shaded skull agree where the texture ends.
-SKIN = (186, 134, 92)
-SKIN_LIT = (222, 172, 126)
-SKIN_SHADE = (124, 80, 54)
-SKIN_WARM = (206, 118, 82)
+SKIN = (178, 124, 82)
+SKIN_LIT = (216, 164, 116)
+SKIN_SHADE = (112, 70, 46)
+SKIN_WARM = (200, 108, 72)
 HAIR = (68, 62, 56)
 HAIR_LIT = (104, 96, 88)
 HAIR_DARK = (44, 40, 36)
@@ -122,8 +122,8 @@ def paint_skin(image):
             grid_u = face_uv.unwrap_u(u)
             across = (grid_u - 0.25) / 0.25 if grid_u < 0.5 else (0.75 - grid_u) / 0.25
 
-            shade = light * (1.0 - (0.30 * min(1.0, abs(across)) ** 1.7))
-            shade *= 1.0 - (0.16 * max(0.0, across))
+            shade = light * (1.0 - (0.42 * min(1.0, abs(across)) ** 1.5))
+            shade *= 1.0 - (0.22 * max(0.0, across))
 
             # Warm in the light, cool in the shadow, and both of them only a little:
             # a face painted hard in two colours is a clown's.
