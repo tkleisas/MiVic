@@ -299,15 +299,46 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
 def _hair_shell(segments=36, rings=18):
     """The hair, as the same head with a bigger radius and the face left open."""
     warp = _head_surface(segments, rings, crown_taper=False)
-    half_scale = 1.13
 
     def warped(u, v):
         x, y, z = warp(u, v)
         # Push the shell out from the head's centre, and sweep the back up into a
         # comb-back: a receding hairline is the shape that says "old" without a caption.
         cz = 0.150
-        x *= half_scale
-        y *= half_scale
+
+        # Hair lies on a skull. It is not a mass standing off it and it is not a
+        # shell the same thickness everywhere — the first is a toupee and the
+        # second is a moulding, and both of them were tried here. What this man has
+        # is hair combed back from a high forehead that is *thinner over the crown*
+        # than at the sides and the nape, because that is what a receding head of
+        # hair does: it goes on top first.
+        thickness = 1.030 + (0.055 * (1.0 - math.exp(-(((v - 0.02) / 0.30) ** 2))))
+        x *= thickness
+        y *= thickness
+        z = cz + ((z - cz) * 1.01)
+        y -= 0.004 * (1.0 - v)
+
+        return (x, y, z)
+
+    return warp
+
+
+def _hair_shell(segments=36, rings=18):
+    """The hair, as the same head with a bigger radius and the face left open."""
+    warp = _head_surface(segments, rings, crown_taper=False)
+
+    def warped(u, v):
+        x, y, z = warp(u, v)
+        # Push the shell out from the head's centre, and sweep the back up into a
+        # comb-back: a receding hairline is the shape that says "old" without a caption.
+        cz = 0.150
+
+        # Thick over the crown, thin at the hairline and the temples. A shell the
+        # same thickness everywhere is a moulding, and that is exactly what this
+        # read as; hair lies on the skull at the edges and stands off it on top.
+        thickness = 1.035 + (0.075 * math.exp(-(((v - 0.03) / 0.26) ** 2)))
+        x *= thickness
+        y *= thickness
         z = cz + ((z - cz) * 1.02)
         y -= 0.004 * (1.0 - v)
 

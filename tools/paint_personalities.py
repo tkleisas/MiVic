@@ -35,10 +35,10 @@ HEIGHT = 1536
 
 # The same palette the generator paints the head's vertex colours with, so the
 # painted face and the shaded skull agree where the texture ends.
-SKIN = (198, 148, 106)
-SKIN_LIT = (228, 182, 138)
-SKIN_SHADE = (138, 94, 66)
-SKIN_WARM = (214, 132, 96)
+SKIN = (186, 134, 92)
+SKIN_LIT = (222, 172, 126)
+SKIN_SHADE = (124, 80, 54)
+SKIN_WARM = (206, 118, 82)
 HAIR = (68, 62, 56)
 HAIR_LIT = (104, 96, 88)
 HAIR_DARK = (44, 40, 36)
@@ -172,7 +172,7 @@ def paint_hair(image):
 
         # One lock's own colour, and how far across it this pixel is: a lock is
         # lit down its middle and dark where it meets its neighbours.
-        lock = x // LOCK_PIXELS
+        lock = int(x // LOCK_PIXELS + (2.5 * noise(x // 71, 0.0, 23.0)))
         lock_tone = noise(lock, 0.0, 5.7)
         across = ((x % LOCK_PIXELS) / LOCK_PIXELS) - 0.5
         rounded = 1.0 - ((abs(across) * 2.0) ** 1.5)
@@ -339,16 +339,16 @@ def paint_brows(image):
     for side in (-1, 1):
         for step in range(22):
             t01 = step / 21.0
-            dx = 0.009 + (t01 * 0.064)
+            dx = 0.010 + (t01 * 0.056)
             # A straight brow that drops at the outer end, thickest a third of the
             # way along: a brow drawn as a row of dots is a row of dots.
             # An arch, not a line: it rises from the inner end to a peak just
             # outside the middle of the eye and falls away to the outer end, and
             # the outer end finishes lower than the inner one started. A brow
             # drawn as a taper is a bar, and a bar is not an eyebrow.
-            dz = 0.1800 + (0.0092 * math.sin(math.pi * (t01 ** 0.72))) - (0.0090 * t01)
-            half_width = 0.0058
-            half_height = 0.0062 - (0.0026 * t01)
+            dz = 0.1800 + (0.0066 * math.sin(math.pi * (t01 ** 0.72))) - (0.0072 * t01)
+            half_width = 0.0050
+            half_height = 0.0050 - (0.0022 * t01)
             ellipse(draw, side * dx, dz, half_width, half_height, (*BROW, 254))
 
     over(image, brows, 2.0)
@@ -476,7 +476,7 @@ def paint_moustache_shadow(image):
             )
 
     over(image, strands, 0.4)
-    over(image, Image.composite(strands, Image.new("RGBA", image.size, (0, 0, 0, 0)), mask), 0.5)
+    over(image, Image.composite(strands, Image.new("RGBA", image.size, (0, 0, 0, 0)), mask), 0.35)
 
 
 def build_face(path):
