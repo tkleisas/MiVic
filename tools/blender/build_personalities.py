@@ -564,6 +564,8 @@ expected_parts = {
     "Boot": 2,
     "Board": 2,
     "CollarTab": 2,
+    "Collar": 2,
+    "CollarEdge": 2,
     "Button": 5,
     "Star": 1,
     "Ribbon": 1,
@@ -698,20 +700,39 @@ def build_elder():
     parts.append(placket)
     paint(placket, tunic_dark, variation=0.03)
 
-    # The stand collar, with the two red tabs that make it a uniform.
-    collar = merge("Collar", [
-        _ring_geo((0.142, 0.140), 0.86, (0.84, 0.84), 0.062, power=0.60, segments=24),
-    ])
-    collar.location = (0.0, 0.0, SHOULDER + 0.006)
-    _wrap_uv(collar)
-    parts.append(collar)
-    paint(collar, tunic, variation=0.03)
-
+    # A fall collar, not a stand one. The tunic's collar turns down over the
+    # shoulders and is open at the throat, with the two tabs laid on it — and those
+    # tabs are the largest piece of colour on the chest, which is the thing that
+    # says "officer" from across a room. A stand collar with two small squares on it
+    # is a different garment entirely, which is what the portrait showed.
     for side in (-1, 1):
-        tab = box("CollarTab", (0.030, 0.016, 0.036), offset=(0.0, 0.0, 0.0))
-        tab.location = (side * 0.026, 0.066, SHOULDER + 0.038)
+        angle = (math.radians(-38.0), math.radians(side * 9.0), math.radians(side * -7.0))
+
+        flap = merge("Collar", [
+            _box_geo((0.092, 0.070, 0.013), offset=(0.0, 0.0, 0.0), taper=0.84),
+        ])
+        flap.location = (side * 0.032, 0.052, SHOULDER + 0.008)
+        flap.rotation_euler = angle
+        _wrap_uv(flap)
+        parts.append(flap)
+        paint(flap, tunic, variation=0.03)
+
+        # The tab, with its gold edging as a thin strip along the outer side.
+        tab = merge("CollarTab", [
+            _box_geo((0.074, 0.052, 0.011), offset=(0.0, 0.0, 0.0), taper=0.88),
+        ])
+        tab.location = (side * 0.034, 0.060, SHOULDER + 0.014)
+        tab.rotation_euler = angle
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
+
+        edge = merge("CollarEdge", [
+            _box_geo((0.076, 0.007, 0.012), offset=(0.0, 0.0, 0.0)),
+        ])
+        edge.location = (side * 0.034, 0.024, SHOULDER + 0.014)
+        edge.rotation_euler = angle
+        parts.append(edge)
+        paint(edge, gold, variation=0.02)
 
         # A shoulder board on each shoulder, laid along it and tipped outward.
         board = merge("Board", [
