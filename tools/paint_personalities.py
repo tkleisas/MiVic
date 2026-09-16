@@ -170,16 +170,24 @@ def paint_hair(image):
         hairline = face_uv.hairline_at(u)
         edge = hairline * HEIGHT
 
+        # The same key as the face. The hair was lit by a band of sheen over the
+        # crown and by nothing else, so it read as a flat grey cap however good its
+        # locks were: a surface with no dark side has no lit side either.
+        grid_u = face_uv.unwrap_u(u)
+        across = (grid_u - 0.25) / 0.25 if grid_u < 0.5 else (0.75 - grid_u) / 0.25
+        key = 1.0 - (0.30 * min(1.0, abs(across)) ** 1.4) - (0.20 * max(0.0, across))
+
         # One lock's own colour, and how far across it this pixel is: a lock is
         # lit down its middle and dark where it meets its neighbours.
         # Locks of uneven width, and each one its own tone out of three: a head of
         # hair is not one colour with a highlight on it, it is dark strands and
         # grey ones lying together, and which is which changes lock by lock.
-        lock = int(x // LOCK_PIXELS + (4.0 * noise(x // 53, 0.0, 23.0)))
+        width = LOCK_PIXELS * (0.55 + (0.95 * noise(x // 37, 0.0, 19.0)))
+        lock = int(x / width)
         lock_tone = noise(lock, 0.0, 5.7)
         lock_grey = noise(lock, 3.3, 11.1)
-        across = ((x % LOCK_PIXELS) / LOCK_PIXELS) - 0.5
-        rounded = 1.0 - ((abs(across) * 2.0) ** 1.5)
+        across_lock = ((x % width) / width) - 0.5
+        rounded = 1.0 - ((abs(across_lock) * 2.0) ** 1.5)
 
         for y in range(HEIGHT):
             # A soft boundary rather than a cut: the hair mesh's own edge is stepped
@@ -204,7 +212,7 @@ def paint_hair(image):
             else:
                 base = HAIR
 
-            tone = 0.64 + (0.46 * lock_tone) + (0.32 * rounded) + (0.42 * sheen) - (0.20 * roots)
+            tone = (0.60 + (0.50 * lock_tone) + (0.34 * rounded) + (0.46 * sheen) - (0.20 * roots)) * key
 
             overlay_pixels[x, y] = (
                 min(255, int(base[0] * tone)),
