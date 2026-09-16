@@ -613,7 +613,7 @@ def build_elder():
     # The arms sit just outside the coat's shoulder, near enough to the body that
     # the coat reads as something he is wearing: a gesture is the only motion a
     # rigid-part figure has, and an arm out in the air has none to give it weight.
-    arm_x = (shoulders * 0.40) + 0.022
+    arm_x = (shoulders * 0.40) - 0.006
 
     # Sampled off the reference the brief was modelled from: an olive tunic with
     # gold buttons, and a man whose hair, brows and moustache are all one dark
@@ -676,7 +676,7 @@ def build_elder():
     paint(belt, belt_colour)
 
     trunk = _prism_geo((shoulders * 0.78, 0.30 * bulk), (1.10, 1.06), 0.22, offset=(0.0, 0.0, HIP + 0.155), power=0.52)
-    crown = _dome_geo(shoulders * 0.42, (1.0, 0.66, 0.62), segments=22, rings=8, offset=(0.0, 0.0, HIP + 0.28))
+    crown = _dome_geo(shoulders * 0.46, (1.0, 0.66, 0.78), segments=22, rings=8, offset=(0.0, 0.0, HIP + 0.25))
     chest = merge("Body", [trunk, crown])
     _wrap_uv(chest)
     parts.append(chest)
@@ -736,7 +736,7 @@ def build_elder():
             # being a tube parked beside it.
             _dome_geo(0.062 * bulk, (1.0, 1.0, 0.55), segments=12, rings=4),
         ])
-        upper.location = (side * arm_x, 0.0, SHOULDER + 0.010)
+        upper.location = (side * arm_x, 0.0, SHOULDER - 0.045)
         _wrap_uv(upper)
         parts.append(upper)
         paint(upper, tunic, variation=0.04)
