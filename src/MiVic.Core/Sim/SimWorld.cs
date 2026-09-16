@@ -2246,6 +2246,47 @@ public sealed class SimWorld
     }
 
     /// <summary>
+    /// True when a unit of this role may stand at this position, and why not when it may not.
+    /// <para>
+    /// A unit is asked a different question from a structure. A building needs a site that can
+    /// be founded and reached; a unit needs ground its own movement class can cross, and an
+    /// aircraft is asked almost nothing because it flies. The difference matters to an
+    /// <em>authored</em> force, where the author names a spot on the map: a placement that
+    /// quietly slid to the nearest legal cell would be a file that does not say what it does,
+    /// so the map either means the position or is refused with the reason.
+    /// </para>
+    /// </summary>
+    public bool CanPlaceUnit(UnitKind kind, WorldPos position, out string reason)
+    {
+        reason = string.Empty;
+
+        // The terrain layer, not the navigation grid: the grid clamps a position to its own
+        // edge, so a placement off the map would come back as the corner cell and be judged
+        // as ground. The structure rule asks it the same way, for the same reason.
+        if (TerrainTypes.IndexOfWorld(position.X, position.Z) < 0)
+        {
+            reason = "έξω από τον χάρτη";
+            return false;
+        }
+
+        if (UnitCatalog.Flies(kind))
+        {
+            return true;
+        }
+
+        UnitDefinition definition = UnitCatalog.Get(kind);
+        int cell = Navigation.IndexOfWorld(position);
+
+        if (cell < 0 || !TerrainTypes.IsPassable(cell, definition.Movement))
+        {
+            reason = "μη διαβατό έδαφος γι' αυτή τη μονάδα";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Radius of the patch of ground a base is judged on, in navigation cells.
     /// <para>
     /// Five cells, and the number comes from the base rather than from taste: the four
@@ -2802,7 +2843,7 @@ public sealed class SimWorld
     /// refusal a player reads does not depend on the order the entities happen to be stored in.
     /// </para>
     /// </summary>
-    private int StructureUnderSite(UnitKind kind, WorldPos site)
+    private int StructureUnderSite(UnitKind kind, WorldPos site, int ignoreSlot)
     {
         int radius = UnitCatalog.FootprintRadiusCells(kind);
         int cell = Navigation.IndexOfWorld(site);
@@ -2811,7 +2852,7 @@ public sealed class SimWorld
 
         for (int slot = 0; slot < Capacity; slot++)
         {
-            if (!IsAliveSlot(slot))
+            if (slot == ignoreSlot || !IsAliveSlot(slot))
             {
                 continue;
             }
@@ -2863,10 +2904,28 @@ public sealed class SimWorld
     /// <param name="site">Where the structure would stand.</param>
     /// <param name="reason">Empty when clear, otherwise what is standing there.</param>
     public bool IsSiteClear(UnitKind kind, WorldPos site, out string reason)
+        => IsSiteClear(kind, site, ignoreSlot: -1, out reason);
+
+    /// <summary>
+    /// The same question with one entity left out of it: the structure already standing on the
+    /// site being asked about.
+    /// <para>
+    /// A structure does occupy its own footprint — that is what makes a second building through
+    /// it a refusal — so an editor re-asking the question about a building it has just raised
+    /// would find that building in its own way, and the map file would be refused for containing
+    /// exactly what the author placed. The map editor is the caller that needs this; a player's
+    /// order never does, because a player orders a structure that is not there yet.
+    /// </para>
+    /// </summary>
+    /// <param name="kind">Role that would stand there, which is what decides the footprint.</param>
+    /// <param name="site">Where the structure would stand.</param>
+    /// <param name="ignoreSlot">A slot to leave out of the question, or -1 for none.</param>
+    /// <param name="reason">Empty when clear, otherwise what is standing there.</param>
+    public bool IsSiteClear(UnitKind kind, WorldPos site, int ignoreSlot, out string reason)
     {
         reason = string.Empty;
 
-        int blocker = StructureUnderSite(kind, site);
+        int blocker = StructureUnderSite(kind, site, ignoreSlot);
 
         if (blocker < 0)
         {

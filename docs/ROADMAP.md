@@ -941,6 +941,30 @@ loader would turn away is a file the editor does not write. `tools/probe/editor.
 limit the objective's deadline outruns is refused in the validator's sentence, and the honest
 value saves.
 
+**And the force is optionally the author's rather than the generator's.** The map carries two
+placement lists — structures and units, a role and an exact position each — and the `exactForce`
+flag that decides what they mean. Off, which is the default and what every map did before the flag
+existed, the mission's layout is generated and the placements are added to it: how the
+demonstration map's gun emplacement on the road has always worked. On, the placements are the
+*whole* force — nothing is generated for any team, so the map is exactly what is on it, which is
+the difference between putting a gun on a ridge and writing an order of battle. The mission is
+still attached and every team in play still gets the standard opening stockpile, because
+authoring the army is not the same decision as authoring the economy. The loader still asks the
+placement rules, and refuses a force with no command centre for a side the victory rule judges,
+because a side that can neither build nor be beaten is not a side; unlike a generated formation,
+an authored position is never nudged to the nearest legal cell — a file that names a spot means
+it, or is refused with the reason. The editor grows a **Μονάδα** tool and an **Ακριβής σύνθεση**
+checkbox for it, and `tools/probe/exact-force.probe` drives the path in CI: three headquarters and
+three units by name and coordinate, six placements standing as six entities, and the save.
+
+Two bugs the feature exposed, both older than it. A structure occupies its own footprint, so an
+editor re-asking the overlap question about a building it had just raised found that building in
+its own way and **refused to save any map with a structure on it** — `IsSiteClear` now takes a
+slot to leave out, and the editor passes the placement it is asking about. And a map's authored
+structure was raised with a health of zero, so the demonstration map's emplacement stood at nought
+hit points and one rifle round destroyed it; a structure now takes its role's own hit points
+unless the caller names the numbers its layout was balanced with.
+
 **Where the catalog stands, deliberately unchanged.** The campaign still ships as C#: the four
 missions' definitions are reviewed code, and moving them would be a migration of content rather
 than of capability — the format is proven able to carry them, and the editor (§10's remaining

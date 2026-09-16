@@ -293,9 +293,24 @@ the README was corrected to match what the client measures.
 | Check | Result |
 |---|---|
 | `dotnet build MiVic.sln` | Clean — 0 warnings, 0 errors |
-| `dotnet test MiVic.sln` | **712 passed** (643 core, 44 audio, 25 map) |
-| Probe suite, CI-style under `xvfb` | **32 / 32 pass** |
+| `dotnet test MiVic.sln` | **720 passed** (651 core, 44 audio, 25 map) |
+| Probe suite, CI-style under `xvfb` | **33 / 33 pass** |
 | `--selftest 600` on Linux | **PASS**, exit 0 |
 | `--inspect-models` | 0 failures, 0 missing |
 | Golden hashes | Regenerated once, deliberately, and annotated in the tests |
+
+## J. Found later, while adding the authored starting force
+
+Two bugs surfaced by a feature built after this audit — an optional authored order of battle for
+a map (`MapDefinition.Units` and `ExactForce`, the editor's **Μονάδα** tool, and
+`tools/probe/exact-force.probe`). Both are older than the feature and neither was found by
+reading the code, which is the point of recording them:
+
+| # | Finding | Fix | Found by |
+|---|---|---|---|
+| J1 | A structure occupies its own footprint, so the editor's `RevalidatePlacements` — which re-asks the overlap question about buildings it has already spawned — found every authored building in its own way. **The editor therefore refused to save any map with a structure on it**, and no probe had ever placed one successfully (`editor.probe`'s two placements are both refused, one on lava and one on water), so the path was never exercised. | `SimWorld.IsSiteClear` takes a slot to leave out; the editor passes the placement it is asking about. | Writing a probe that places three command centres and saves. |
+| J2 | A map's authored structure was raised with `health: 0`, taken literally, so the gun emplacement on the shipped `maps/demo-isthmus.map.json` stood at **nought hit points** and one rifle round destroyed it. Only the generated layout passed real numbers; the authored path passed none. | `Scenario.SpawnStructure` uses the role's own hit points when the caller names none. | Reading the saved map's structures back, where the HP column said `0`. |
+
+Verification for both: the full suite above, the three-placement probe, and the shipped
+demonstration map's emplacement now reporting **1400 hit points**.
 

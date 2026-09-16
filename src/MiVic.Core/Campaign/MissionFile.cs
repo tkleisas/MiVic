@@ -126,15 +126,20 @@ public static class MissionFile
         File.WriteAllText(path, JsonSerializer.Serialize(envelope, Options));
     }
 
-    /// <summary>The validator's verdict, in its own words, at the place the mission is authored.</summary>
-    internal static void Validate(MissionDefinition mission, string path)
+    /// <summary>
+    /// The validator's verdict, in its own words, at the place the mission is authored.
+    /// <paramref name="againstOpeningWorld"/> is false for a mission carried by a map whose
+    /// force the author wrote, where the world the opening checks would build is not the world
+    /// the map plays; see <see cref="TriggerSystem.Validate"/>.
+    /// </summary>
+    internal static void Validate(MissionDefinition mission, string path, bool againstOpeningWorld = true)
     {
         if (string.IsNullOrWhiteSpace(mission.Id))
         {
             throw new InvalidDataException($"'{path}' carries a mission with no id.");
         }
 
-        IReadOnlyList<string> problems = TriggerSystem.Validate(mission);
+        IReadOnlyList<string> problems = TriggerSystem.Validate(mission, againstOpeningWorld);
 
         if (problems.Count > 0)
         {

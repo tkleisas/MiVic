@@ -106,6 +106,18 @@ public static class Scenario
     /// <summary>Units per team in a skirmish, excluding structures.</summary>
     public const int UnitsPerFaction = 166;
 
+    /// <summary>
+    /// Opening stockpile for a team whose force a map authored rather than the generator.
+    /// The same amounts a campaign mission hands out, because authoring the order of battle
+    /// is not the same decision as authoring the economy — and a team with no materials
+    /// cannot use the ground its force was placed on.
+    /// </summary>
+    private const int ExactForceMaterials = 1_500;
+
+    private const int ExactForceEnergy = 300;
+
+    private const int ExactForceWater = 250;
+
     /// <summary>Half-extent of the map in millimetres.</summary>
     public const int MapHalfExtentMm = SimConstants.MapExtentMm / 2;
 
@@ -530,7 +542,19 @@ public static class Scenario
         WorldPos position,
         int health,
         List<SpawnedEntity> spawned)
-        => Spawn(world, faction, teamId, kind, world.LegalSpawnSite(position), speedMmPerTick: 0, health, spawned);
+    {
+        // A structure is raised with the role's own hit points unless the caller names a
+        // number. A scenario's base passes the values its layout was balanced with; a map's
+        // authored placement has no number to give and used to pass none, which meant zero hit
+        // points — a building destroyed by the first rifle round that touched it. An authored
+        // emplacement on the shipped demonstration map was standing at nought hit points.
+        if (health <= 0)
+        {
+            health = UnitCatalog.Get(kind).Health;
+        }
+
+        return Spawn(world, faction, teamId, kind, world.LegalSpawnSite(position), speedMmPerTick: 0, health, spawned);
+    }
 
     private static EntityId Spawn(
         SimWorld world,
@@ -662,7 +686,7 @@ public static class Scenario
     public static ScenarioSetup BuildMap(
         SimWorld world,
         MapDefinition map,
-        List<(StructurePlacement Placement, string Reason)>? refusals = null)
+        List<(string What, string Reason)>? refusals = null)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(map);
@@ -682,16 +706,58 @@ public static class Scenario
                 "Build it with the map's own seed.");
         }
 
+        if (!world.Roster.Equals(map.EffectiveMission.Roster))
+        {
+            throw new InvalidOperationException(
+                $"Map '{map.EffectiveMission.Id}' declares {map.EffectiveMission.Roster.TeamsInPlay} teams; " +
+                $"this world was built with {world.Roster.TeamsInPlay}. Build it with Scenario.NewWorld.");
+        }
+
         ApplyMapGround(world, map.TerrainEdits);
 
-        // 4. The mission, laid out on the edited land: the same layout a campaign mission
-        //    gets, searched for on the ground that now exists rather than the one the seed
-        //    used to generate.
-        ScenarioSetup setup = BuildMission(world, map.EffectiveMission);
+        var commandCentres = new List<EntityId>(3);
+        var spawned = new List<SpawnedEntity>(map.Structures.Count + map.Units.Count + 11);
+        var baseSites = new List<BaseSitePlacement>(3);
 
-        // 5. The author's placements, asked the same questions the player's construction
-        //    is asked — the ground under them is the edited ground, which is the point of
-        //    shaping it first.
+        if (map.ExactForce)
+        {
+            // The placements are the whole force: no generated base, no formation, for any
+            // team. The mission is still attached, because a map is played for its objectives,
+            // triggers and roster — what is skipped is the layout the mission would otherwise
+            // have generated, which is the entire point of naming the force yourself. Each
+            // team in play still gets the standard opening stockpile: an order of battle with
+            // an empty treasury is a battle it cannot fight, and deciding the army is not the
+            // same as deciding the economy.
+            world.AttachMission(map.EffectiveMission);
+
+            for (int team = 0; team < SimConstants.TeamCount; team++)
+            {
+                if (!world.Roster.IsInPlay(team))
+                {
+                    continue;
+                }
+
+                ref TeamState economy = ref world.TeamRef(team);
+                economy.Materials = ExactForceMaterials;
+                economy.Energy = ExactForceEnergy;
+                economy.Water = ExactForceWater;
+            }
+        }
+        else
+        {
+            // The mission, laid out on the edited land: the same layout a campaign mission
+            // gets, searched for on the ground that now exists rather than the one the seed
+            // used to generate.
+            ScenarioSetup generated = BuildMission(world, map.EffectiveMission);
+
+            commandCentres.AddRange(generated.CommandCentres);
+            spawned.AddRange(generated.Spawned);
+            baseSites.AddRange(generated.BaseSites);
+        }
+
+        // The author's structures, asked the same questions the player's construction is
+        // asked — the ground under them is the edited ground, which is the point of shaping
+        // it first.
         foreach (StructurePlacement placement in map.Structures)
         {
             var site = new WorldPos(placement.X, 0, placement.Z);
@@ -705,13 +771,52 @@ public static class Scenario
                         $"A placed {placement.Kind} at ({placement.X}, {placement.Z}) is refused: {reason}.");
                 }
 
-                refusals.Add((placement, reason));
+                refusals.Add((Describe(placement.Kind, placement.X, placement.Z), reason));
                 continue;
             }
 
-            SpawnStructure(world, world.FactionOfTeam(placement.Team), placement.Team, placement.Kind, site, health: 0, spawned: []);
+            EntityId id = SpawnStructure(
+                world, world.FactionOfTeam(placement.Team), placement.Team, placement.Kind, site, health: 0, spawned);
+
+            // A command centre the author placed is a command centre like any other: the
+            // client starts the camera and the "select your base" key on the setup's list, so
+            // an exact map whose headquarters was not registered would open looking at nothing.
+            if (placement.Kind == UnitKind.CommandCentre)
+            {
+                commandCentres.Add(id);
+            }
         }
 
-        return setup;
+        // The author's units, at the exact positions written. Unlike the scenario's own
+        // formations, nothing is nudged to the nearest legal cell: a file that names a
+        // position means it, and a map that cannot honour it says so instead of moving it.
+        foreach (UnitPlacement placement in map.Units)
+        {
+            var site = new WorldPos(placement.X, 0, placement.Z);
+
+            if (!world.CanPlaceUnit(placement.Kind, site, out string reason))
+            {
+                if (refusals is null)
+                {
+                    throw new InvalidDataException(
+                        $"A placed {placement.Kind} at ({placement.X}, {placement.Z}) is refused: {reason}.");
+                }
+
+                refusals.Add((Describe(placement.Kind, placement.X, placement.Z), reason));
+                continue;
+            }
+
+            UnitDefinition definition = UnitCatalog.Get(placement.Kind);
+
+            Spawn(
+                world, world.FactionOfTeam(placement.Team), placement.Team, placement.Kind, site,
+                definition.SpeedMmPerTick, definition.Health, spawned);
+        }
+
+        return new ScenarioSetup(commandCentres, spawned, baseSites);
     }
+
+    /// <summary>One refused placement, as the report and the exception both write it.</summary>
+    private static string Describe(UnitKind kind, int x, int z)
+        => $"{UnitCatalog.GreekName(kind)} ({x / WorldPos.MmPerMetre}m, {z / WorldPos.MmPerMetre}m)";
 }

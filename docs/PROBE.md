@@ -2203,6 +2203,29 @@ ok: Αποθηκεύτηκε: maps/authored-probe.map.json
 The save that was refused was refused by the editor: the validator's sentence is the report's
 content, and the file that leaves is one the loader will open.
 
+## Worked example: can an author set a map's exact force?
+
+`tools/probe/exact-force.probe` drives the authoring half of the map format: `editor exact on`
+makes the placements the whole starting force, `editor place` and `editor unit` name a role and a
+position, and `editor force` holds the invariant that makes the mode mean something — that what
+was placed is what stands. The coordinates are the sites the generator picks for this seed,
+because an authored headquarters still has to stand on ground a headquarters can be founded on:
+
+```
+ok: exact force on — Ακριβής σύνθεση: ό,τι τοποθετηθεί είναι όλη η δύναμη.
+ok: Κέντρο Διοίκησης placed at (x -248,4, z -117,2) m for team 0
+ok: Άρμα placed at (x -240, z -117) m for team 0
+check: PASS 'an exact force is the whole force' — 6 entities standing for 6 placements
+check: PASS 'the authored force is one the loader would take' — 6 placements, no problems
+ok: Αποθηκεύτηκε: maps/probe-exact-force.map.json
+```
+
+`editor force` is also where the two checks live, because the scripted transcript cannot compare a
+count it did not measure. `editor report` prints the counts a reader follows, and the saved file
+is the map format's v2: three `structures`, three `units`, `"exactForce": true`. Playing it back
+shows the point — six entities, no generated base and no formation: `team 0 soviet 4 alive, 1
+structure`, `team 1 chinese 1 alive`, `team 2 western 1 alive`.
+
 ## Worked example: what does a brown-out do, rank by rank?
 
 `tools/probe/power.probe`, against `--detection-demo`: the fixture's base loses its plant, the

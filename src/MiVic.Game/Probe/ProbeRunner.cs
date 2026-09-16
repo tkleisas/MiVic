@@ -6,7 +6,8 @@ using MiVic.Core.Numerics;
 using MiVic.Core.Pathfinding;
 using MiVic.Core.Replay;
 using MiVic.Core.Sim;
-using MiVic.Core.Terrain;using MiVic.Game.Data;
+using MiVic.Core.Terrain;
+using MiVic.Game.Data;
 using MiVic.Game.Sim;
 using MiVic.Game.Ui;
 using MiVic.Map;
@@ -2379,8 +2380,9 @@ public sealed class ProbeRunner
     private void EditorCommand(ProbeCommand command)
     {
         const string Usage =
-            "editor tool none|raise|lower|paint|structure|delete | editor brush <radius> <strength-m> | " +
-            "editor paint <surface> | editor place <Kind> <x> <z> [team] | editor apply <x> <z> | " +
+            "editor tool none|raise|lower|paint|structure|unit|delete | editor brush <radius> <strength-m> | " +
+            "editor paint <surface> | editor place <Kind> <x> <z> [team] | editor unit <Kind> <x> <z> [team] | " +
+            "editor exact on|off | editor apply <x> <z> | " +
             "editor undo | editor key <Q|E|W|A|S|D|arrows> [frames] | editor wheel <notches> [frames] | " +
             "editor name <file> | editor save | editor report | editor mission limit <min>";
 
@@ -2444,6 +2446,70 @@ public sealed class ProbeRunner
                 Emit(placed
                     ? $"ok: {UnitCatalog.GreekName(kind)} placed at (x {x:0.#}, z {z:0.#}) m for team {team}"
                     : $"query: refused — {editor.Notice}");
+                break;
+            }
+
+            case "unit":
+            {
+                string name = command.Argument(1, "a unit role", Usage);
+                float x = command.Number(2, "an x in metres", Usage);
+                float z = command.Number(3, "a z in metres", Usage);
+                int team = (int)command.OptionalNumber(4, 0f, "a team", Usage);
+
+                if (!Enum.TryParse(name, ignoreCase: true, out UnitKind kind) || !UnitCatalog.TryGet(kind, out _) ||
+                    UnitCatalog.Get(kind).IsBuilding)
+                {
+                    throw new ProbeException($"'{name}' is not a unit — {Usage}");
+                }
+
+                editor.UsePlacement(kind, team);
+                bool placed = editor.PlaceUnit(kind, GroundMm(x, z));
+                Emit(placed
+                    ? $"ok: {UnitCatalog.GreekName(kind)} placed at (x {x:0.#}, z {z:0.#}) m for team {team}"
+                    : $"query: refused — {editor.Notice}");
+                break;
+            }
+
+            case "force":
+            {
+                MapDefinition definition = editor.ToDefinition();
+                IReadOnlyList<string> problems = MapFile.ForceProblems(definition);
+                int placed = editor.StructureCount + editor.UnitCount;
+
+                // The invariant an exact force is: what the author placed is what stands. A
+                // generated force adds its base and formation on top, so the same check is only
+                // asked of the mode that promises it.
+                if (editor.ExactForce)
+                {
+                    RecordCheck(
+                        "an exact force is the whole force",
+                        editor.World.World.AliveCount == placed,
+                        $"{editor.World.World.AliveCount} entities standing for {placed} placements");
+                }
+
+                RecordCheck(
+                    "the authored force is one the loader would take",
+                    problems.Count == 0,
+                    problems.Count == 0 ? $"{placed} placements, no problems" : problems[0]);
+
+                Emit($"query: force — {editor.StructureCount} structures, {editor.UnitCount} units, " +
+                    $"{(editor.ExactForce ? "authored" : "generated")}, {editor.World.World.AliveCount} standing, " +
+                    $"{editor.Invalid.Count} refusals" +
+                    (editor.Invalid.Count == 0 ? string.Empty : $" — {editor.Invalid[0].What}: {editor.Invalid[0].Reason}"));
+                break;
+            }
+
+            case "exact":
+            {
+                string mode = command.Argument(1, "on or off", Usage);
+
+                if (mode is not ("on" or "off"))
+                {
+                    throw new ProbeException($"'{mode}' is not on or off — {Usage}");
+                }
+
+                editor.UseExactForce(mode == "on");
+                Emit($"ok: exact force {mode} — {editor.Notice}");
                 break;
             }
 
@@ -2581,10 +2647,17 @@ public sealed class ProbeRunner
             }
 
             case "report":
+            {
+                IReadOnlyList<string> force = MapFile.ForceProblems(editor.ToDefinition());
+
                 Emit($"query: editor — {ProbeFormat.Count(editor.EditCount, "edit")}, " +
+                    $"{editor.StructureCount} structures and {editor.UnitCount} units placed, " +
+                    $"{(editor.ExactForce ? "authored" : "generated")} force, " +
                     $"{editor.World.World.AliveCount} entities standing, " +
-                    $"{(editor.Dirty ? "unsaved changes" : "clean")}");
+                    $"{(editor.Dirty ? "unsaved changes" : "clean")}" +
+                    $"{(force.Count == 0 ? string.Empty : $" — {force.Count} force problems: {force[0]}")}");
                 break;
+            }
 
             default:
                 throw new ProbeException($"'{what}' is not an editor verb — {Usage}");

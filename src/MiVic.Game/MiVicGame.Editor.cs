@@ -198,6 +198,10 @@ public partial class MiVicGame
                 editor.PlaceStructure(editor.PlacementKind, target);
                 break;
 
+            case EditorTool.Unit when pressed:
+                editor.PlaceUnit(editor.PlacementKind, target);
+                break;
+
             case EditorTool.Delete when pressed:
                 if (!editor.DeleteNearest(target))
                 {
@@ -209,8 +213,8 @@ public partial class MiVicGame
     }
 
     /// <summary>
-    /// The armed structure's ghost, standing where the ground allows and tinted by whether
-    /// it does: the same promise the build panel draws, asked here about the author's own
+    /// The armed placement's ghost, standing where the ground allows and tinted by whether it
+    /// does: the same promise the build panel draws, asked here about the author's own
     /// placement, in the colour of the side it will belong to.
     /// </summary>
     private void UpdateEditorPreview()
@@ -218,17 +222,25 @@ public partial class MiVicGame
         MapEditor editor = _editor!;
         SimWorld world = editor.World.World;
 
-        if (editor.Tool != EditorTool.Structure ||
+        if (editor.Tool is not (EditorTool.Structure or EditorTool.Unit) ||
             !TryPlacementTarget(CursorPosition, out WorldPos target))
         {
             _placementPreview?.Hide();
             return;
         }
 
-        bool allowed = world.CanPlaceStructure(editor.PlacementKind, target, out _) &&
-            world.IsSiteClear(editor.PlacementKind, target, out _);
+        bool placingStructure = editor.Tool == EditorTool.Structure;
 
-        WorldPos stand = world.Navigation.CentreOf(world.Navigation.IndexOfWorld(target));
+        // A structure is shown founded on the cell it will stand on. A unit keeps the cursor's
+        // own position, because that is the promise an authored unit makes: the file records
+        // the spot rather than the cell it happens to be nearest to.
+        WorldPos stand = placingStructure
+            ? world.Navigation.CentreOf(world.Navigation.IndexOfWorld(target))
+            : target;
+
+        bool allowed = placingStructure
+            ? world.CanPlaceStructure(editor.PlacementKind, stand, out _) && world.IsSiteClear(editor.PlacementKind, stand, out _)
+            : world.CanPlaceUnit(editor.PlacementKind, stand, out _);
 
         float x = stand.X / (float)WorldPos.MmPerMetre;
         float z = stand.Z / (float)WorldPos.MmPerMetre;

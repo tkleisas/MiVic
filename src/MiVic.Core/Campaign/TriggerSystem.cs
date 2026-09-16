@@ -460,7 +460,7 @@ public static class TriggerSystem
     /// the one part of a mission that is a coordinate rather than a sentence.
     /// </para>
     /// </summary>
-    public static IReadOnlyList<string> Validate(MissionDefinition mission)
+    public static IReadOnlyList<string> Validate(MissionDefinition mission, bool againstOpeningWorld = true)
     {
         ArgumentNullException.ThrowIfNull(mission);
 
@@ -656,6 +656,18 @@ public static class TriggerSystem
         // than only for one with a script or an objective: a match always declares a side, and
         // "does this side stand in anything" and "does it stand on anything" are questions about
         // the layout, so the last two layers always have something to ask.
+        //
+        // A map whose force the author wrote skips this half. The world these checks interrogate
+        // is <see cref="OpeningWorld"/>'s generated layout — the base the scenario would have
+        // searched for and the formation it would have spawned — and that layout is precisely
+        // what an exact force replaces. Asking it whether the mission is already decided would be
+        // answering about a battle nobody will fight; the authored force is asked its own
+        // questions by <see cref="MapDefinition"/>'s loader instead.
+        if (!againstOpeningWorld)
+        {
+            return problems;
+        }
+
         SimWorld opening = OpeningWorld(mission, out ScenarioSetup setup);
 
         CheckTheOpeningWorld(mission, opening, problems);

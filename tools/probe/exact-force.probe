@@ -1,0 +1,43 @@
+# Q: can a map author set the exact composition and position of buildings and units?
+# Q: does an exact force replace the generated base and formation rather than add to them?
+#
+#   MiVic.Game.exe --probe tools/probe/exact-force.probe --probe-out artifacts/probe/exact-force.txt
+#
+# The authoring half of the map format. `editor exact on` makes the placements the whole force,
+# `editor place` and `editor unit` name a role and a spot, and `editor force` holds the two
+# invariants that make the mode mean something: that what was placed is what stands, and that
+# the force is one the file loader would take.
+#
+# The coordinates are the sites the generator picks for this seed — read off `base-ground.probe`
+# and the editor's own structures — because an authored headquarters still has to stand on
+# ground a headquarters can be founded on. A generated base occupies that ground while the mode
+# is off, which is why `exact on` comes before the first placement.
+
+editor report
+
+# The generated world, before anything is authored: the mission's own layout, and no force
+# problems, because there is nothing authored to have a problem with.
+editor force
+
+# Exact first, then place: in generated mode the generator's own headquarters stands on the
+# ground an authored one would be founded on.
+editor exact on
+
+editor tool structure
+editor place CommandCentre -248.4 -117.2 0
+editor place CommandCentre 145.3 -98.5 1
+editor place CommandCentre -4.7 192.1 2
+
+editor tool unit
+editor unit Tank -240 -117 0
+editor unit Tank -240 -110 0
+editor unit Infantry -235 -117 0
+
+# Six placements, six entities standing: no generated base, no generated formation, and a force
+# the loader would take.
+editor force
+editor report
+
+editor name probe-exact-force
+editor save
+editor report

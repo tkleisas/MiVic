@@ -32,8 +32,18 @@ public static class MapFile
     /// <summary>File magic, as the envelope spells it.</summary>
     public const string Magic = "MiVicMap";
 
-    /// <summary>Envelope version. Bump whenever the layout changes.</summary>
-    public const int Version = 1;
+    /// <summary>
+    /// Envelope version. Bump whenever the layout changes.
+    /// <para>
+    /// Version 2 adds the authored force: <c>units</c>, and the <c>exactForce</c> flag that
+    /// makes the placements the whole starting force rather than an addition to the generated
+    /// one. A version-1 file has neither, and is refused the way any other version is —
+    /// <c>maps/demo-isthmus.map.json</c> was regenerated for this version, and an author's own
+    /// v1 map needs its version field changed and nothing else, because both new fields are
+    /// optional and default to "none" and "generated".
+    /// </para>
+    /// </summary>
+    public const int Version = 2;
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -124,7 +134,135 @@ public static class MapFile
             throw new InvalidDataException($"'{path}' carries no mission.");
         }
 
-        MissionFile.Validate(map.EffectiveMission, path);
+        // A map whose force the author wrote skips the mission's opening-world checks: those
+        // interrogate the generated layout this map replaces, so asking them would be
+        // answering about a battle nobody will fight. See TriggerSystem.Validate.
+        MissionFile.Validate(map.EffectiveMission, path, againstOpeningWorld: !map.ExactForce);
+
+        IReadOnlyList<string> problems = ForceProblems(map);
+
+        if (problems.Count > 0)
+        {
+            throw new InvalidDataException(
+                $"'{path}' carries a force this build refuses:{Environment.NewLine}  - " +
+                string.Join($"{Environment.NewLine}  - ", problems));
+        }
+    }
+
+    /// <summary>
+    /// What is wrong with a map's placements and, when the force is exact, with its order of
+    /// battle — the half of the check that needs no ground under it.
+    /// <para>
+    /// Exposed so the editor can ask the same question before it writes: a file the loader
+    /// would refuse is a file the editor does not write, and an author who is placing a force
+    /// should meet the requirement while the cursor is still on the map rather than at save.
+    /// The other half — is each placement on ground it can occupy — needs the terrain
+    /// generated and is asked by <see cref="Scenario.BuildMap"/>.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<string> ForceProblems(MapDefinition map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+
+        List<string> problems = [];
+        ValidatePlacements(map, problems);
+
+        if (map.ExactForce)
+        {
+            ValidateExactForce(map, problems);
+        }
+
+        return problems;
+    }
+
+    /// <summary>
+    /// The two lists are one concept split by what the placement rules ask: a role that is a
+    /// building is founded, a role that moves is placed. A file that puts one in the other's
+    /// list is refused rather than reinterpreted, because guessing would silently apply the
+    /// wrong rule to it.
+    /// </summary>
+    private static void ValidatePlacements(MapDefinition map, List<string> problems)
+    {
+        foreach (StructurePlacement placement in map.Structures)
+        {
+            if (!UnitCatalog.TryGet(placement.Kind, out UnitDefinition definition))
+            {
+                problems.Add($"a placed structure names a role this build does not have: {placement.Kind}.");
+            }
+            else if (!definition.IsBuilding)
+            {
+                problems.Add($"{UnitCatalog.GreekName(placement.Kind)} moves, so it belongs in 'units', not 'structures'.");
+            }
+
+            CheckPlacementTeam(map, placement.Team, problems);
+        }
+
+        foreach (UnitPlacement placement in map.Units)
+        {
+            if (!UnitCatalog.TryGet(placement.Kind, out UnitDefinition definition))
+            {
+                problems.Add($"a placed unit names a role this build does not have: {placement.Kind}.");
+            }
+            else if (definition.IsBuilding)
+            {
+                problems.Add($"{UnitCatalog.GreekName(placement.Kind)} is a structure, so it belongs in 'structures', not 'units'.");
+            }
+
+            CheckPlacementTeam(map, placement.Team, problems);
+        }
+    }
+
+    /// <summary>
+    /// What an authored order of battle owes the match it is played as.
+    /// <para>
+    /// The terrain half — whether each placement stands on ground it can occupy — cannot be
+    /// answered without generating the ground, so it is asked when the map is built, by
+    /// <see cref="Scenario.BuildMap"/>, through the same rules a player's construction is
+    /// refused by, and the editor reports those refusals live. What is asked here is the half a
+    /// list of coordinates can answer on its own. The headquarters requirement is the one only
+    /// an exact force can get wrong: the generator always laid one down, and a side with no
+    /// command centre can neither build nor be beaten.
+    /// </para>
+    /// </summary>
+    private static void ValidateExactForce(MapDefinition map, List<string> problems)
+    {
+        if (!map.HasAuthoredForce)
+        {
+            problems.Add("'exactForce' is set and nothing is placed: a map with no army on it is not a battle.");
+            return;
+        }
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            if (!map.EffectiveMission.Roster.IsInPlay(team) || !map.EffectiveMission.Roster.IsJudged(team))
+            {
+                continue;
+            }
+
+            bool hasHeadquarters = false;
+
+            foreach (StructurePlacement placement in map.Structures)
+            {
+                if (placement.Team == team && placement.Kind == UnitKind.CommandCentre)
+                {
+                    hasHeadquarters = true;
+                    break;
+                }
+            }
+
+            if (!hasHeadquarters)
+            {
+                problems.Add($"team {team} is judged but the map places no command centre for it.");
+            }
+        }
+    }
+
+    private static void CheckPlacementTeam(MapDefinition map, int team, List<string> problems)
+    {
+        if ((uint)team >= SimConstants.TeamCount || !map.EffectiveMission.Roster.IsInPlay(team))
+        {
+            problems.Add($"a placement names team {team}, which this map's match does not declare.");
+        }
     }
 
     /// <summary>The envelope the body sits in.</summary>

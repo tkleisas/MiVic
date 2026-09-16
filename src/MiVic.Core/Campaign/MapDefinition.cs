@@ -130,6 +130,28 @@ public readonly record struct StructurePlacement(
     int Team);
 
 /// <summary>
+/// One mobile unit the author placed on the edited ground: a vehicle or a soldier, at an
+/// exact position.
+/// <para>
+/// The same shape as <see cref="StructurePlacement"/> and deliberately a different type,
+/// because the two are asked different questions: a structure must stand on ground it can
+/// be founded on and must not overlap another, while a unit must stand on ground its own
+/// movement class can cross. A role that is a building belongs in <c>Structures</c> and a
+/// role that moves belongs here; the loader refuses the other way round rather than
+/// guessing which rule the author meant.
+/// </para>
+/// </summary>
+/// <param name="Kind">The role to place.</param>
+/// <param name="X">World position, in millimetres.</param>
+/// <param name="Z">World position, in millimetres.</param>
+/// <param name="Team">Which side it belongs to.</param>
+public readonly record struct UnitPlacement(
+    UnitKind Kind,
+    int X,
+    int Z,
+    int Team);
+
+/// <summary>
 /// A map: a seed, a list of edits over the ground that seed generates, and the mission the
 /// ground is shaped for. §10's edit list, as data.
 /// <para>
@@ -140,25 +162,57 @@ public readonly record struct StructurePlacement(
 /// <b>shape the terrain first, then place on it</b>, and an island is drawn before anything
 /// is put on the island because the island is what makes the placement legal.
 /// </para>
+/// <para>
+/// <b>The force is optionally the author's rather than the generator's.</b> By default a map
+/// lays out the mission's generated base and formation and then adds the author's placements,
+/// which is what every map did before this was a choice. With <see cref="ExactForce"/> the
+/// placements <em>are</em> the starting force: nothing is generated for any team, and what
+/// the file lists is what stands on the ground. That is the difference between "add a gun on
+/// the ridge" and "this is the order of battle". The mission's base coordinates and unit
+/// counts are ignored in that mode, and its objectives, triggers and roster are not — a map
+/// is still a mission, and an authored force still has to be able to win it.
+/// </para>
 /// </summary>
 /// <param name="Seed">The terrain's seed, which everything derived starts from.</param>
 /// <param name="TerrainEdits">Ground edits, in the order the author shaped them.</param>
 /// <param name="Structures">Structures placed on the edited ground.</param>
 /// <param name="Mission">The mission the map is: its roster, objectives and triggers.</param>
+/// <param name="ExactForce">
+/// True when <see cref="Structures"/> and <see cref="Units"/> are the whole starting force,
+/// so the scenario generates no base and no formation for any team. False by default, which
+/// generates the mission's layout and adds the placements to it.
+/// </param>
 public sealed record MapDefinition(
     ulong Seed,
     IReadOnlyList<TerrainEdit> TerrainEdits,
     IReadOnlyList<StructurePlacement> Structures,
-    MissionDefinition Mission)
+    MissionDefinition Mission,
+    bool ExactForce = false)
 {
+    /// <summary>
+    /// The mobile units the author placed, an empty list by default. Kept off the primary
+    /// constructor so a map that places none writes no field, exactly as a mission with no
+    /// triggers writes none.
+    /// </summary>
+    public IReadOnlyList<UnitPlacement> Units { get; init; } = [];
+
+    /// <summary>True when the author has placed any part of the starting force.</summary>
+    public bool HasAuthoredForce => Structures.Count > 0 || Units.Count > 0;
+
     /// <summary>
     /// Where a tolerant build reports its refused placements, or null to refuse by
     /// exception — the file load's choice. The editor's live world sets this before it
     /// builds, because the author is working and an invalid placement is a report rather
     /// than a refusal: the next edit may make it legal again.
+    /// <para>
+    /// A refusal is a description and a reason rather than the placement itself, because a
+    /// map places two shapes — a structure and a unit — that are refused for different
+    /// reasons, and the report a cursor is looking at should not have to know which list the
+    /// line came from.
+    /// </para>
     /// </summary>
     [JsonIgnore]
-    public List<(StructurePlacement Placement, string Reason)>? RefusalsSink { get; set; }
+    public List<(string What, string Reason)>? RefusalsSink { get; set; }
 
     /// <summary>
     /// The mission this map plays, with the map's own seed — the ground and the battle are

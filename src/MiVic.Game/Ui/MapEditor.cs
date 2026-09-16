@@ -27,8 +27,11 @@ public enum EditorTool : byte
     /// <summary>Place a structure at the click, asked the same rules a player's order is.</summary>
     Structure = 4,
 
-    /// <summary>Remove the structure nearest the click.</summary>
+    /// <summary>Remove the nearest placement — a structure or a unit.</summary>
     Delete = 5,
+
+    /// <summary>Place a mobile unit at the click, at the exact position.</summary>
+    Unit = 6,
 }
 
 /// <summary>What the editor's panels asked the client to do.</summary>
@@ -82,6 +85,7 @@ public sealed partial class MapEditor
     /// <summary>The map under authoring, as lists the author is building.</summary>
     private readonly List<TerrainEdit> _edits = [];
     private readonly List<StructurePlacement> _structures = [];
+    private readonly List<UnitPlacement> _units = [];
 
     private MissionDefinition _mission = null!;
     private ulong _seed;
@@ -109,7 +113,13 @@ public sealed partial class MapEditor
     public int BrushStrengthMm { get; private set; } = 2_000;
 
     /// <summary>The placements the current ground refuses, with its reasons — the report §10 asks for.</summary>
-    public IReadOnlyList<(StructurePlacement Placement, string Reason)> Invalid => _invalid;
+    public IReadOnlyList<(string What, string Reason)> Invalid => _invalid;
+
+    /// <summary>
+    /// True when the placements are the whole starting force rather than an addition to the
+    /// generated one: nothing is laid out for any team, so the map is exactly what is on it.
+    /// </summary>
+    public bool ExactForce { get; private set; }
 
     /// <summary>True once something has been authored that the file does not hold.</summary>
     public bool Dirty { get; private set; }
@@ -120,7 +130,13 @@ public sealed partial class MapEditor
     /// <summary>How many edits the author has made — the number the panel shows.</summary>
     public int EditCount => _edits.Count;
 
-    private readonly List<(StructurePlacement Placement, string Reason)> _invalid = [];
+    /// <summary>How many units the author has placed — the number the panel shows.</summary>
+    public int UnitCount => _units.Count;
+
+    /// <summary>How many structures the author has placed — the number the panel shows.</summary>
+    public int StructureCount => _structures.Count;
+
+    private readonly List<(string What, string Reason)> _invalid = [];
 
     /// <summary>A fresh map: the standard duel over new ground, nothing shaped yet.</summary>
     public void NewMap()
@@ -144,6 +160,8 @@ public sealed partial class MapEditor
 
         _edits.Clear();
         _structures.Clear();
+        _units.Clear();
+        ExactForce = false;
         Notice = "Νέος χάρτης.";
         Dirty = false;
         RebuildWorld();
@@ -159,6 +177,9 @@ public sealed partial class MapEditor
         _edits.AddRange(map.TerrainEdits);
         _structures.Clear();
         _structures.AddRange(map.Structures);
+        _units.Clear();
+        _units.AddRange(map.Units);
+        ExactForce = map.ExactForce;
         Notice = $"Ανοίχτηκε: {path}";
         Dirty = false;
         RebuildWorld();
@@ -194,8 +215,25 @@ public sealed partial class MapEditor
     /// <summary>Keeps the name the author typed in the panel's own field.</summary>
     public void SetFileName(string name) => MapFileName = name.Trim();
 
-    /// <summary>Arms a tool. Arming clears nothing else, because each answer is its own.</summary>
-    public void UseTool(EditorTool tool) => Tool = tool;
+    /// <summary>
+    /// Arms a tool. Arming clears nothing else, because each answer is its own — except the
+    /// role the placement tools share: a structure tool cannot place a unit and a unit tool
+    /// cannot place a structure, so arming one picks a role it can actually place rather than
+    /// leaving the previous tool's choice armed.
+    /// </summary>
+    public void UseTool(EditorTool tool)
+    {
+        Tool = tool;
+
+        if (tool == EditorTool.Structure && !UnitCatalog.Get(PlacementKind).IsBuilding)
+        {
+            PlacementKind = UnitKind.CommandCentre;
+        }
+        else if (tool == EditorTool.Unit && UnitCatalog.Get(PlacementKind).IsBuilding)
+        {
+            PlacementKind = UnitKind.Tank;
+        }
+    }
 
     /// <summary>Sets the brush's reach and the height step it moves the ground by.</summary>
     public void UseBrush(int radius, int strengthMm)
@@ -222,7 +260,31 @@ public sealed partial class MapEditor
         _seed,
         [.. _edits],
         [.. _structures],
-        _mission);
+        _mission,
+        ExactForce)
+    {
+        Units = [.. _units],
+    };
+
+    /// <summary>
+    /// Says whether the placements are the whole force or an addition to the generated one.
+    /// Rebuilds the live world, because the two modes are different worlds: the author should
+    /// see the difference the moment they ask for it.
+    /// </summary>
+    public void UseExactForce(bool exact)
+    {
+        if (ExactForce == exact)
+        {
+            return;
+        }
+
+        ExactForce = exact;
+        Notice = exact
+            ? "Ακριβής σύνθεση: ό,τι τοποθετηθεί είναι όλη η δύναμη."
+            : "Παραγόμενη σύνθεση: οι τοποθετήσεις προστίθενται σε ό,τι παράγει η αποστολή.";
+        Dirty = true;
+        RebuildWorld();
+    }
 
     /// <summary>
     /// One application of the armed terrain tool at a resolved sample. The edit is recorded
@@ -281,35 +343,114 @@ public sealed partial class MapEditor
     }
 
     /// <summary>
-    /// Removes the structure nearest a position: the placement leaves the list and the
-    /// entity leaves the world together, so the map and the picture of it cannot disagree.
+    /// Places a unit at the exact position, asked the ground rule for its own movement class.
+    /// Unlike the scenario's formations, the position is not nudged towards the nearest legal
+    /// cell: what the author clicked is what the file says, and a spot the unit cannot stand
+    /// on is refused where they are looking rather than silently moved.
+    /// </summary>
+    public bool PlaceUnit(UnitKind kind, WorldPos site)
+    {
+        if (!World.World.CanPlaceUnit(kind, site, out string reason))
+        {
+            Notice = $"{UnitCatalog.GreekName(kind)}: {reason}";
+            return false;
+        }
+
+        var placement = new UnitPlacement(kind, site.X, site.Z, PlacementTeam);
+        _units.Add(placement);
+        SpawnUnit(placement);
+        RevalidatePlacements();
+        Dirty = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Removes the nearest placement — a structure or a unit, whichever is closer — since
+    /// the map and the picture of it cannot be allowed to disagree and a unit the author
+    /// cannot delete is a unit they would have to edit the file to be rid of.
     /// </summary>
     public bool DeleteNearest(WorldPos site)
     {
         long best = long.MaxValue;
-        int bestIndex = -1;
+        int bestStructure = -1;
+        int bestUnit = -1;
 
         for (int i = 0; i < _structures.Count; i++)
         {
             StructurePlacement candidate = _structures[i];
-            long dx = candidate.X - site.X;
-            long dz = candidate.Z - site.Z;
-            long distanceSquared = (dx * dx) + (dz * dz);
 
-            if (distanceSquared < best)
+            if (DistanceSquared(candidate.X, candidate.Z, site) < best)
             {
-                best = distanceSquared;
-                bestIndex = i;
+                best = DistanceSquared(candidate.X, candidate.Z, site);
+                bestStructure = i;
+                bestUnit = -1;
             }
         }
 
-        if (bestIndex < 0)
+        for (int i = 0; i < _units.Count; i++)
         {
-            return false;
+            UnitPlacement candidate = _units[i];
+
+            if (DistanceSquared(candidate.X, candidate.Z, site) < best)
+            {
+                best = DistanceSquared(candidate.X, candidate.Z, site);
+                bestUnit = i;
+                bestStructure = -1;
+            }
         }
 
-        StructurePlacement removed = _structures[bestIndex];
+        if (bestStructure >= 0)
+        {
+            StructurePlacement removed = _structures[bestStructure];
+            _structures.RemoveAt(bestStructure);
+            DespawnNearest(removed.Kind, removed.Team, removed.X, removed.Z);
+            RevalidatePlacements();
+            Dirty = true;
+            return true;
+        }
 
+        if (bestUnit >= 0)
+        {
+            UnitPlacement removed = _units[bestUnit];
+            _units.RemoveAt(bestUnit);
+            DespawnNearest(removed.Kind, removed.Team, removed.X, removed.Z);
+            RevalidatePlacements();
+            Dirty = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static long DistanceSquared(int x, int z, WorldPos site)
+    {
+        long dx = x - site.X;
+        long dz = z - site.Z;
+
+        return (dx * dx) + (dz * dz);
+    }
+
+    /// <summary>
+    /// Takes the entity the placement put in the world back out again, matched by role, team
+    /// and position rather than by an id the list does not carry.
+    /// </summary>
+    private void DespawnNearest(UnitKind kind, int team, int x, int z)
+    {
+        int slot = SlotOf(kind, team, x, z);
+
+        if (slot >= 0)
+        {
+            World.World.Despawn(new EntityId(slot, World.World.GetRefBySlot(slot).Generation));
+        }
+    }
+
+    /// <summary>
+    /// The live slot of a placement's own entity, matched by role, team and position, or -1 when
+    /// it is not standing. The editor's lists carry no ids on purpose — they are the file's own
+    /// shape — so an entity is found the way the file finds it: by what it is and where.
+    /// </summary>
+    private int SlotOf(UnitKind kind, int team, int x, int z)
+    {
         for (int slot = 0; slot < World.World.Capacity; slot++)
         {
             if (!World.World.IsAliveSlot(slot))
@@ -319,20 +460,16 @@ public sealed partial class MapEditor
 
             ref Entity entity = ref World.World.GetRefBySlot(slot);
 
-            if (entity.Kind == removed.Kind &&
-                entity.TeamId == removed.Team &&
-                Math.Abs(entity.Position.X - removed.X) < 20_000 &&
-                Math.Abs(entity.Position.Z - removed.Z) < 20_000)
+            if (entity.Kind == kind &&
+                entity.TeamId == team &&
+                Math.Abs(entity.Position.X - x) < 20_000 &&
+                Math.Abs(entity.Position.Z - z) < 20_000)
             {
-                World.World.Despawn(new EntityId(slot, entity.Generation));
-                break;
+                return slot;
             }
         }
 
-        _structures.RemoveAt(bestIndex);
-        RevalidatePlacements();
-        Dirty = true;
-        return true;
+        return -1;
     }
 
     /// <summary>Undoes the last edit or placement, by rebuilding the world from what remains.</summary>
@@ -345,6 +482,10 @@ public sealed partial class MapEditor
         else if (_structures.Count > 0)
         {
             _structures.RemoveAt(_structures.Count - 1);
+        }
+        else if (_units.Count > 0)
+        {
+            _units.RemoveAt(_units.Count - 1);
         }
         else
         {
@@ -365,18 +506,41 @@ public sealed partial class MapEditor
         {
             var site = new WorldPos(placement.X, 0, placement.Z);
 
-            if (!World.World.CanPlaceStructure(placement.Kind, site, out string reason))
-            {
-                _invalid.Add((placement, reason));
-                continue;
-            }
+            // The placement's own entity is left out of the overlap question: it is standing on
+            // the site the question is about, and a structure occupies its own footprint. Without
+            // this every authored building was reported as the thing in its own way, so the save
+            // refused a map the author had every right to write.
+            int own = SlotOf(placement.Kind, placement.Team, placement.X, placement.Z);
 
-            if (!World.World.IsSiteClear(placement.Kind, site, out reason))
+            if (!World.World.CanPlaceStructure(placement.Kind, site, out string reason) ||
+                !World.World.IsSiteClear(placement.Kind, site, own, out reason))
             {
-                _invalid.Add((placement, reason));
+                _invalid.Add((Describe(placement.Kind, placement.X, placement.Z), reason));
             }
         }
+
+        foreach (UnitPlacement placement in _units)
+        {
+            var site = new WorldPos(placement.X, 0, placement.Z);
+
+            if (!World.World.CanPlaceUnit(placement.Kind, site, out string reason))
+            {
+                _invalid.Add((Describe(placement.Kind, placement.X, placement.Z), reason));
+            }
+        }
+
+        // And the half that needs no ground under it: a placement on the wrong side of the
+        // structure/unit divide, a team the match does not declare, an exact force with no
+        // headquarters. Recomputed here so the report and the save stay in step with the
+        // placements rather than only with the last rebuild.
+        foreach (string problem in MapFile.ForceProblems(ToDefinition()))
+        {
+            _invalid.Add(("σύνθεση δύναμης", problem));
+        }
     }
+
+    private static string Describe(UnitKind kind, int x, int z)
+        => $"{UnitCatalog.GreekName(kind)} ({x / WorldPos.MmPerMetre}m, {z / WorldPos.MmPerMetre}m)";
 
     /// <summary>Raises one placed structure in the live world.</summary>
     private void SpawnPlacement(StructurePlacement placement)
@@ -389,6 +553,20 @@ public sealed partial class MapEditor
             placement.Kind,
             World.World.LegalSpawnSite(new WorldPos(placement.X, 0, placement.Z)),
             Fix32.Zero,
+            definition.Health);
+    }
+
+    /// <summary>Raises one placed unit in the live world, at the position it was placed on.</summary>
+    private void SpawnUnit(UnitPlacement placement)
+    {
+        UnitDefinition definition = UnitCatalog.Get(placement.Kind);
+
+        World.World.Spawn(
+            World.World.FactionOfTeam(placement.Team),
+            placement.Team,
+            placement.Kind,
+            new WorldPos(placement.X, 0, placement.Z),
+            Fix32.FromInt(definition.SpeedMmPerTick),
             definition.Health);
     }
 
@@ -405,6 +583,15 @@ public sealed partial class MapEditor
         _invalid.Clear();
 
         World = new SimBridge(map);
+
+        // The half of the force rule that needs no ground under it: an exact map owes every
+        // judged side a headquarters, and a placement has to be on the right side of the
+        // structure/unit divide. Reported here so the author meets it while placing, and so
+        // the save refuses a file the loader would refuse.
+        foreach (string problem in MapFile.ForceProblems(map))
+        {
+            _invalid.Add(("σύνθεση δύναμης", problem));
+        }
     }
 
     /// <summary>Says where the author's brush is, as the terrain sees it: the sample a world position resolves to, or -1.</summary>
@@ -465,6 +652,19 @@ public sealed partial class MapEditor
             }
 
             ImGui.Separator();
+
+            // The one decision that changes what the map is rather than what is on it: whether
+            // the placements are the whole force or an addition to the generated one.
+            bool exact = ExactForce;
+
+            if (ImGui.Checkbox("Ακριβής σύνθεση — μόνο ό,τι τοποθετηθεί", ref exact))
+            {
+                UseExactForce(exact);
+            }
+
+            ImGui.TextDisabled($"Κτίρια {StructureCount} · Μονάδες {UnitCount}");
+
+            ImGui.Separator();
             ImGui.Text("Εργαλεία:");
 
             foreach ((EditorTool tool, string label) in Tools)
@@ -476,7 +676,7 @@ public sealed partial class MapEditor
                     UseTool(tool);
                 }
 
-                if (tool is EditorTool.None or EditorTool.Structure or EditorTool.Delete)
+                if (tool is EditorTool.None or EditorTool.Structure or EditorTool.Unit or EditorTool.Delete)
                 {
                     ImGui.NewLine();
                 }
@@ -527,13 +727,16 @@ public sealed partial class MapEditor
                 }
             }
 
-            if (Tool == EditorTool.Structure)
+            if (Tool is EditorTool.Structure or EditorTool.Unit)
             {
-                if (ImGui.BeginCombo("Κτίριο", UnitCatalog.GreekName(PlacementKind)))
+                bool placingStructure = Tool == EditorTool.Structure;
+                string role = placingStructure ? "Κτίριο" : "Μονάδα";
+
+                if (ImGui.BeginCombo(role, UnitCatalog.GreekName(PlacementKind)))
                 {
                     foreach (UnitDefinition definition in UnitCatalog.All)
                     {
-                        if (!definition.IsBuilding)
+                        if (definition.IsBuilding != placingStructure)
                         {
                             continue;
                         }
@@ -569,11 +772,9 @@ public sealed partial class MapEditor
                 ImGui.Separator();
                 ImGui.TextColored(new NVec4(0.95f, 0.55f, 0.45f, 1f), "Το έδαφος αρνείται:");
 
-                foreach ((StructurePlacement placement, string reason) in _invalid)
+                foreach ((string what, string reason) in _invalid)
                 {
-                    ImGui.BulletText(
-                        $"{UnitCatalog.GreekName(placement.Kind)} ({placement.X / (float)WorldPos.MmPerMetre:0}m, " +
-                        $"{placement.Z / (float)WorldPos.MmPerMetre:0}m): {reason}");
+                    ImGui.BulletText($"{what}: {reason}");
                 }
             }
 
@@ -614,6 +815,7 @@ public sealed partial class MapEditor
         (EditorTool.Delete, "Διαγραφή"),
         (EditorTool.Lower, "Κάθοδος"),
         (EditorTool.Structure, "Κτίριο"),
+        (EditorTool.Unit, "Μονάδα"),
     ];
 
     /// <summary>The surfaces a brush may paint: the ground a battle is fought over, and the ore an economy works.</summary>
@@ -645,6 +847,7 @@ public sealed partial class MapEditor
         EditorTool.Lower => "Κάθοδος",
         EditorTool.Paint => "Χρώμα",
         EditorTool.Structure => "Κτίριο",
+        EditorTool.Unit => "Μονάδα",
         EditorTool.Delete => "Διαγραφή",
         _ => tool.ToString(),
     };

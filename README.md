@@ -148,7 +148,7 @@ so a test can never touch a player's real campaign.
 | `--paperclip-demo` | start the Operation Paperclip demonstration: a side the victory rule does not judge |
 | `--generator-demo` | a derelict factory on neutral ground emitting its wardens on a fixed cadence (ROADMAP §9) |
 | `--menu` | open the front-end menu even when another option drives the client, for screenshots of it |
-| `--editor` | the map editor: raise and lower with a brush, paint surfaces, place structures, save and test-play (ROADMAP §10) |
+| `--editor` | the map editor: raise and lower with a brush, paint surfaces, place structures **and units**, set an exact starting force, save and test-play (ROADMAP §10) |
 | `--profile <dir>` | where the campaign's progress and saved matches live, instead of the platform default |
 | `--record <file>` | log every external command and save the match as a replay |
 | `--replay <file>` | verify a replay headlessly and exit (0 = the match was reproduced) |
@@ -157,7 +157,7 @@ so a test can never touch a player's real campaign.
 | `--probe-out <file>` | where a probe writes its transcript (default `probe-report.txt`) |
 | `--mission <id>` | start a campaign mission |
 | `--mission-file <path>` | play a mission authored as a file (the `MissionFile` format; the loader runs the script validator and refuses one that cannot be won) |
-| `--map-file <path>` | play an authored map: a seed, edits over the ground it generates, and the mission the ground is shaped for (`MapFile`; the passes are re-derived and the placements asked the placement rules) |
+| `--map-file <path>` | play an authored map: a seed, edits over the ground it generates, the starting force, and the mission the ground is shaped for (`MapFile`; the passes are re-derived and the placements asked the placement rules) |
 | `--mission-list` | list the campaign |
 | `--render-audio <dir>` | export one WAV per faction theme and exit |
 | `--render-sfx <dir>` | export one WAV per sound effect and exit |
@@ -313,6 +313,42 @@ and a live objectives panel (`--mission-list` prints them):
 Objectives are declarative predicates evaluated twice a second, not scripted
 callbacks, so a mission is as deterministic and replayable as a skirmish. A
 mission replaces the last-team-standing rule: the objectives decide the outcome.
+
+### Authoring a map's force
+
+A mission's starting force is **generated**: the scenario searches for each
+team's base, lays out a command centre, a power plant, a factory and (for a
+side that gets one) a design bureau, and spawns a formation whose composition is
+a fixed ratio — three tanks, an artillery piece, an anti-air vehicle, an
+aircraft and six infantry per twelve.
+
+A **map** can replace that with an authored one. `MapDefinition` carries two
+placement lists — `structures` and `units`, one role and one exact position
+each — and an `exactForce` flag:
+
+- **`exactForce` false** (the default, and what every map did before the flag
+  existed): the mission's generated layout is laid out, and the authored
+  placements are added to it.
+- **`exactForce` true**: the placements **are** the starting force. Nothing is
+  generated for any team, so the map is exactly what is on it. The mission is
+  still attached — its objectives, triggers and roster are what the map is
+  played for — and each team in play still gets the standard opening stockpile,
+  because authoring the order of battle is not the same decision as authoring
+  the economy.
+
+In the editor (`--editor`) a **Μονάδα** tool places units at the cursor and the
+**Ακριβής σύνθεση** checkbox switches the mode; the panel counts what has been
+placed, and the save refuses a force the loader would refuse. The rules are the
+same ones a player's construction is asked: a structure needs ground it can be
+founded on and must not overlap another, a unit needs ground its own movement
+class can cross, and the loader checks that every judged side has a command
+centre — a side that can neither build nor be beaten is not a side. Unlike the
+generated formations, an authored position is never nudged to the nearest legal
+cell: a file that names a spot means it, or it is refused with the reason.
+
+`tools/probe/exact-force.probe` drives the whole path headlessly: three
+headquarters and three units placed by name and coordinate, an invariant check
+that six placements are six entities standing, and a save.
 
 ### Particles
 
