@@ -319,8 +319,8 @@ def paint_form(image):
 
     # The sockets, which the warp cut into the skull and the light has to find.
     for side in (-1, 1):
-        ellipse(draw, side * 0.037, 0.1605, 0.028, 0.0175, (*SHADOW, 172))
-        ellipse(draw, side * 0.030, 0.176, 0.026, 0.0080, (*SHADOW, 128))
+        ellipse(draw, side * 0.042, 0.1605, 0.029, 0.0175, (*SHADOW, 172))
+        ellipse(draw, side * 0.034, 0.176, 0.027, 0.0080, (*SHADOW, 128))
 
     # The temples, the jaw and the jowls an old man carries.
     for side in (-1, 1):
@@ -375,7 +375,7 @@ def eye_outline(side, lift=0.0):
     outer one is blunter, and the upper lid's peak is not at the middle but towards
     the outer end. `lift` moves the whole shape up the lid.
     """
-    cx = side * 0.037
+    cx = side * 0.042
     z = 0.164 + lift
 
     return [
@@ -448,7 +448,7 @@ def brow_outline(side):
 
     for step in range(20):
         t01 = step / 19.0
-        dx = 0.010 + (t01 * 0.058)
+        dx = 0.014 + (t01 * 0.062)
         dz = 0.1800 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
         half = 0.0054 - (0.0026 * (t01 ** 0.85))
 
@@ -473,7 +473,7 @@ def paint_brows(image):
     for side in (-1, 1):
         for step in range(7):
             t01 = 0.12 + (step * 0.13)
-            dx = 0.010 + (t01 * 0.058)
+            dx = 0.014 + (t01 * 0.062)
             dz = 0.1800 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
             half = 0.0054 - (0.0026 * (t01 ** 0.85))
             hair_draw.line(
@@ -563,8 +563,8 @@ def moustache_outline(side):
         (side * 0.000, 0.1130),
         (side * 0.017, 0.1125),
         (side * 0.032, 0.1085),
-        (side * 0.044, 0.1010),
-        (side * 0.050, 0.0910),
+        (side * 0.049, 0.1010),
+        (side * 0.056, 0.0910),
         (side * 0.046, 0.0805),
         (side * 0.033, 0.0790),
         (side * 0.017, 0.0830),
@@ -625,7 +625,7 @@ def paint_moustache_bed(image):
             t01 = step / 25.0
             ellipse(
                 detail_draw,
-                side * (0.002 + (t01 * 0.052)),
+                side * (0.002 + (t01 * 0.058)),
                 0.1045 - (t01 * 0.021),
                 0.0010,
                 0.0068,
