@@ -175,6 +175,27 @@ public sealed partial class MiVicGame : IProbeHost
         GraphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
         GraphicsDevice.BlendState = BlendState.Opaque;
 
+        // A scene is photographed as a scene. `shot` renders what the screen is showing, and
+        // while a cutscene is up that is the room rather than the battlefield behind it. Without
+        // this the probe of a briefing saved a photograph of a skirmish and reported its draw
+        // calls — a transcript that would pass while the scene itself drew nothing, which is how
+        // the first version of this scene shipped an invisible room past its own screenshot.
+        if (Screen == GameScreen.Cutscene && _cutscene is not null)
+        {
+            GraphicsDevice.RasterizerState = RasterizerState.CullNone;
+            _cutscene.Draw(GraphicsDevice.Viewport.AspectRatio);
+
+            _drawCalls = _cutscene.DrawCalls;
+            _instancesSubmitted = _cutscene.DrawCalls;
+
+            // The scene only. The letterbox and the subtitle are ImGui, and a probe command runs
+            // between ImGui frames: opening one here and drawing into it renders once and then
+            // faults on the next command, which was measured rather than feared. The line being
+            // read is in the transcript, and a captioned frame comes from --screenshot.
+            GraphicsDevice.SetRenderTarget(null);
+            return ProbeStats();
+        }
+
         // The ghost of a placement is staged for the frame being composed, exactly as it is on
         // a played frame: the same update, from the same cursor, so a photographed preview is
         // the preview the player would have seen.

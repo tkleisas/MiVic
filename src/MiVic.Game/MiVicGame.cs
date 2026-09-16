@@ -1001,6 +1001,27 @@ public sealed partial class MiVicGame : XnaGame
             SelectPlayerHeadquarters();
         }
 
+        // A scene named on the command line opens on it, for the same reason every other
+        // fixture exists: a cutscene has to be photographable and scriptable from outside
+        // without a person sitting through it. A name this build does not carry is an error
+        // rather than a silent fall-through into a battle.
+        if (_options.IsCutscene)
+        {
+            // A probe or a screenshot leaves the scene standing where the script left it. A
+            // played launch goes back to the front end, because a fixture that ends on a frozen
+            // last frame is a trap rather than a scene.
+            Action? after = _options.IsProbe || _options.ScreenshotPath is not null
+                ? null
+                : () => _screen = GameScreen.Menu;
+
+            if (!PlayCutscene(_options.CutsceneId!, after))
+            {
+                throw new ArgumentException(
+                    $"There is no cutscene '{_options.CutsceneId}'. This build carries: " +
+                    string.Join(", ", Cutscenes.Select(scene => scene.Id)));
+            }
+        }
+
         // The probe is loaded last, because its first command may ask about any of the
         // above: the world, the models, the camera, the renderer.
         LoadProbe();
@@ -1114,7 +1135,7 @@ public sealed partial class MiVicGame : XnaGame
         // left the game or had to place it somewhere to be rid of it — and the comment beside
         // the click path had claimed for some time that Escape cancelled the pending ability,
         // which it did not.
-        if (Pressed(keyboard, Keys.Escape) && !_options.IsSelfTest)
+        if (Pressed(keyboard, Keys.Escape) && !_options.IsSelfTest && Screen != GameScreen.Cutscene)
         {
             if (_pendingBridge || _pendingAbility != AbilityId.None || _pendingStructure != UnitKind.None)
             {
@@ -1166,6 +1187,18 @@ public sealed partial class MiVicGame : XnaGame
             // sixty times a second. The editor met this bug first and fixed it in its own
             // path; the menu and the pause panel never got the same fix.
             RememberInput(keyboard, mouse);
+
+            base.Update(gameTime);
+            return;
+        }
+
+        // A scene owns the frame while it is showing. There is no world behind it — the camera,
+        // the light and the clock are the director's — so the battle the client was launched
+        // with is left exactly where it was rather than being advanced behind the letterbox.
+        if (Screen == GameScreen.Cutscene && _cutscene is not null)
+        {
+            _imgui?.Update(gameTime);
+            UpdateCutscene(gameTime);
 
             base.Update(gameTime);
             return;
@@ -1399,17 +1432,26 @@ public sealed partial class MiVicGame : XnaGame
             GraphicsDevice.SetRenderTarget(_screenshotTarget);
         }
 
-        GraphicsDevice.Clear(BackgroundColor);
+        bool inCutscene = Screen == GameScreen.Cutscene && _cutscene is not null;
+
+        GraphicsDevice.Clear(inCutscene ? CutsceneBackground : BackgroundColor);
         GraphicsDevice.DepthStencilState = DepthStencilState.Default;
         GraphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
         GraphicsDevice.BlendState = BlendState.Opaque;
 
-        DrawScene();
-        DrawWorldLabels();
-
-        if (_options.FontSample && _worldLabels is not null)
+        if (inCutscene)
         {
-            _worldLabels.DrawSample("Σοβιετικοί Κινέζοι Δυτικοί", new Vector2(60f, 520f), 3f, Color.White);
+            DrawCutscene(_cutscene!);
+        }
+        else
+        {
+            DrawScene();
+            DrawWorldLabels();
+
+            if (_options.FontSample && _worldLabels is not null)
+            {
+                _worldLabels.DrawSample("Σοβιετικοί Κινέζοι Δυτικοί", new Vector2(60f, 520f), 3f, Color.White);
+            }
         }
 
         _imgui!.Render();

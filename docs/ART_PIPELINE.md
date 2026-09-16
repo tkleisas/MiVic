@@ -58,10 +58,27 @@ in parallel:
 | `build_buildings.py` | headquarters, factory, power plant, nuclear plant, design bureau, gun emplacement, anti-aircraft emplacement |
 | `build_props.py` | woodland: six tree species, drawn instanced |
 | `build_bridge.py` | the bridge block, and one panel of its rail |
+| `build_sets.py` | cutscene sets: the rooms a scene is staged in |
+| `build_personalities.py` | cutscene figures: the recognisable, unnamed archetypes a scene is played by |
 
-The last two are not roles: a tree and a bridge have no faction and no slot in `ModelCatalog`, so
-they are loaded by the renderer that draws them (`ForestRenderer`, `BridgeRenderer`) rather than
+The last four are not roles: a tree, a bridge, a study and a personality have no faction and no
+slot in `ModelCatalog`, so they are loaded by the renderer that draws them (`ForestRenderer`,
+`BridgeRenderer`, `CutsceneAssets`) rather than
 resolved through the catalogue.
+
+`preview_model.py` is not a generator and writes no committed file. It draws one `.glb` from
+several sides with the Workbench engine and vertex colours — the same flat colours, from an
+orthographic camera — and it exists because the game is a slow judge of a face: three metres from
+a camera, lit by the room, framed by the set, and a two-minute rebuild and probe run away from
+every answer. A part that is buried inside another part, or a feature built on the wrong axis, is
+visible in the preview as itself instead of inferred from a finished frame.
+
+    blender --background --python tools/blender/preview_model.py -- \
+        src/MiVic.Game/Content/Models/Generated/personality_elder.glb \
+        --out artifacts/preview --views front,right,three-quarter --zoom 0.30
+
+`--zoom` keeps the top of the model where it is and moves the bottom up, which is the framing a
+head wants: the head is at the top of every figure.
 
 A bridge is **one block repeated**: the whole of a crossing — two cells or twenty-four — is the
 same 120-triangle block placed once per cell of the span, and a hole blown in a crossing is a block

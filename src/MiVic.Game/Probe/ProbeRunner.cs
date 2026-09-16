@@ -7,6 +7,7 @@ using MiVic.Core.Pathfinding;
 using MiVic.Core.Replay;
 using MiVic.Core.Sim;
 using MiVic.Core.Terrain;
+using MiVic.Game.Cutscene;
 using MiVic.Game.Data;
 using MiVic.Game.Sim;
 using MiVic.Game.Ui;
@@ -390,6 +391,9 @@ public sealed class ProbeRunner
             case "editor":
                 EditorCommand(command);
                 break;
+            case "cutscene":
+                CutsceneCommand(command);
+                break;
             case "strike":
                 StrikeStructure(command);
                 break;
@@ -433,7 +437,7 @@ public sealed class ProbeRunner
                     "structure, structures, sites, bridges, block, blast, arm, hover, click, hud, " +
                     "range, power, capacity, queue, detect, exposure, armour, order, ability, " +
                     "triggers, messages, objectives, map, save, restore, rewind, checkpoints, flip, " +
-                    "editor, strike, place, expect, validate");
+                    "editor, cutscene, strike, place, expect, validate");
         }
     }
 
@@ -2377,6 +2381,116 @@ public sealed class ProbeRunner
     /// world and the report it keeps. A save the editor refuses while the ground refuses a
     /// placement is recorded here as the refusal it is, rather than as an error.
     /// </summary>
+    /// <summary>
+    /// Drives a playing cutscene: where it is, and the four things a viewer can do to it.
+    /// <para>
+    /// A scene is verified the way everything else here is — by asking the client that is
+    /// drawing it. <c>state</c> reports what is standing in the room as part counts, which is
+    /// how a scene that renders an empty set is caught as a number rather than as a photograph
+    /// somebody has to look at.
+    /// </para>
+    /// </summary>
+    private void CutsceneCommand(ProbeCommand command)
+    {
+        const string Usage =
+            "cutscene state | cutscene advance <ms> | cutscene seek <ms> | cutscene next | cutscene skip | cutscene restart";
+
+        CutsceneDirector? director = _host.Cutscene;
+
+        if (director is null)
+        {
+            throw new ProbeException($"no cutscene is playing — {Usage}");
+        }
+
+        string what = command.Argument(0, "a cutscene verb", Usage);
+
+        switch (what)
+        {
+            case "state":
+            {
+                (Vector3 position, Vector3 target) = director.CameraAt(director.ElapsedMilliseconds);
+                var cast = new List<string>(director.DrawnModels.Count);
+
+                foreach ((string asset, int parts, bool posed) in director.DrawnModels)
+                {
+                    cast.Add($"{asset} {ProbeFormat.Count(parts, "part")}{(posed ? " posed" : string.Empty)}");
+                }
+
+                Emit(
+                    $"query: cutscene {director.Scene.Id} — {director.ElapsedMilliseconds / 1000.0:0.0}s of " +
+                    $"{director.Scene.ScriptMilliseconds / 1000.0:0.0}s, line {director.LineIndex}/{director.Scene.Lines.Count}, " +
+                    $"{ProbeFormat.Count(director.ShownLines.Count, "line")} said, " +
+                    $"{(director.IsFinished ? "finished" : "playing")}");
+                Emit($"query:   set        {director.Scene.Set}, {(cast.Count > 0 ? cast[0] : "nothing")}");
+                Emit($"query:   cast       {(cast.Count > 1 ? string.Join("; ", cast.Skip(1)) : "nobody")}");
+                Emit($"query:   camera     {ProbeFormat.Point(position)} looking at {ProbeFormat.Point(target)}");
+                Emit($"query:   line       '{(director.VisibleText.Length > 0 ? director.VisibleText : "(nothing)")}'");
+
+                // Two invariants a transcript can hold. A scene that renders nothing, and a
+                // scene that finished without saying everything it was written to say, are both
+                // silent failures: the first is an empty frame, the second a briefing that ends
+                // in the middle of a sentence.
+                int partCount = 0;
+
+                foreach ((string _, int count, bool _) in director.DrawnModels)
+                {
+                    partCount += count;
+                }
+
+                RecordCheck(
+                    "the scene has a set and a cast to draw",
+                    director.DrawnModels.Count >= 2 && partCount > 0,
+                    $"{ProbeFormat.Count(director.DrawnModels.Count, "model")}, {ProbeFormat.Count(partCount, "part")}");
+
+                RecordCheck(
+                    "a finished scene has said every line",
+                    !director.IsFinished || director.ShownLines.Count == director.Scene.Lines.Count,
+                    $"{director.ShownLines.Count} of {director.Scene.Lines.Count} lines said, " +
+                    $"{(director.IsFinished ? "finished" : "playing")}");
+                break;
+            }
+
+            case "advance":
+            {
+                int milliseconds = (int)command.Whole(1, "a duration in ms", Usage, 0, 600_000);
+                director.Advance(milliseconds);
+                Emit($"ok: advanced {ProbeFormat.Count(milliseconds, "ms")} — line {director.LineIndex}, " +
+                    $"{(director.IsFinished ? "finished" : "playing")}");
+                break;
+            }
+
+            case "next":
+                director.SkipLine();
+                Emit($"ok: next line — {director.LineIndex}/{director.Scene.Lines.Count}");
+                break;
+
+            case "skip":
+                director.Finish();
+                RecordCheck(
+                    "skipping says every line anyway",
+                    director.ShownLines.Count == director.Scene.Lines.Count,
+                    $"{director.ShownLines.Count} of {director.Scene.Lines.Count} lines said");
+                break;
+
+            case "restart":
+                director.Restart();
+                Emit("ok: restarted");
+                break;
+
+            case "seek":
+            {
+                int milliseconds = (int)command.Whole(1, "a moment in ms", Usage, 0, 600_000);
+                director.Seek(milliseconds);
+                Emit($"ok: sought {ProbeFormat.Count(milliseconds, "ms")} — line {director.LineIndex}, " +
+                    $"{(director.IsFinished ? "finished" : "playing")}");
+                break;
+            }
+
+            default:
+                throw new ProbeException($"'{what}' is not a cutscene verb — {Usage}");
+        }
+    }
+
     private void EditorCommand(ProbeCommand command)
     {
         const string Usage =

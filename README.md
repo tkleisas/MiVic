@@ -41,6 +41,8 @@ the SDK's default, which would look like a release.
 | **Μάχη.** Βολές, καπνός, θραύσματα. | **Γραμμή βολής.** Όλα τα όπλα του παιχνιδιού, με βλήματα στον αέρα. |
 | ![A ground burst with its shockwave ring](docs/images/explosions.png) | ![Every model on one sheet](docs/images/models.png) |
 | **Έκρηξη.** Κύκλος κύματος κρούσης, χώμα, θραύσματα. | **Τα μοντέλα.** Όλα, παραγόμενα από σενάριο Blender. |
+| ![The briefing: a man at a desk in a study, with a Greek subtitle](docs/images/briefing.png) | |
+| **Η ενημέρωση.** Μια σκηνή με κάμερα, υπότιτλους και δικό της θέμα. | |
 
 Όλες οι εικόνες παράγονται από το ίδιο το παιχνίδι, χωρίς να παιχτεί χέρι:
 
@@ -49,6 +51,7 @@ $exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
 & $exe --combat-demo  --screenshot docs/images/firefight.png  --screenshot-frame 22
 & $exe --fire-demo    --screenshot docs/images/firing-line.png --screenshot-frame 50
 & $exe --model-gallery docs/images/models.png
+python3 tools/render_cutscene.py --cutscene m1_briefing --out artifacts/cutscene
 ```
 
 ## Factions / Παρατάξεις
@@ -159,6 +162,7 @@ so a test can never touch a player's real campaign.
 | `--mission-file <path>` | play a mission authored as a file (the `MissionFile` format; the loader runs the script validator and refuses one that cannot be won) |
 | `--map-file <path>` | play an authored map: a seed, edits over the ground it generates, the starting force, and the mission the ground is shaped for (`MapFile`; the passes are re-derived and the placements asked the placement rules) |
 | `--mission-list` | list the campaign |
+| `--cutscene <id>` | play a scripted scene and carry on (see [Cutscenes](#cutscenes)) |
 | `--render-audio <dir>` | export one WAV per faction theme and exit |
 | `--render-sfx <dir>` | export one WAV per sound effect and exit |
 | `--no-audio` | no music or sound effects |
@@ -349,6 +353,65 @@ cell: a file that names a spot means it, or it is refused with the reason.
 `tools/probe/exact-force.probe` drives the whole path headlessly: three
 headquarters and three units placed by name and coordinate, an invariant check
 that six placements are six entities standing, and a save.
+
+### Cutscenes
+
+A mission can open on a **scripted scene**: a set, the figures standing in it, a
+camera that moves between framings, and a monologue. Starting `m1_bridgehead`
+from the menu plays its briefing first and starts the match when the scene ends;
+`--cutscene <id>` plays one on its own, and `--menu` still opens the front end.
+
+A scene is a file — `src/MiVic.Game/Content/Cutscenes/*.cutscene.json`, versioned
+and validated like a mission or a map. It carries a set model, a cast, a camera
+track in millimetres and milliseconds, and the lines in Greek with a duration
+each. The loader refuses what a director could not play: no lines, a camera that
+runs backwards, a line spoken by somebody who is not standing in the room.
+
+The figures are **recognisable and unnamed**. The campaign is an alternate
+history, and its statesmen are archetypes — a greatcoat, a moustache, a pipe —
+who are never captioned and never name themselves or each other. That is a rule
+of the fiction rather than a naming preference, and the asset names, the file
+names and the script all keep it. Two Blender generators make the art:
+`build_sets.py` (a room, open on the side the camera looks from) and
+`build_personalities.py` (the figure).
+
+The figure is built on the same parts contract as the soldiers, so the head and
+arms can turn — and **round where a soldier is square**: cylindrical limbs, a
+trunk that widens into a domed shoulder line, a coat that flares to a rounded hem,
+and a head that is one warped surface rather than a stack of boxes. A soldier is
+read at forty metres as a helmet and a shoulder line, and every corner he has
+survives that; a personality is the whole frame at three metres, where every
+corner is a corner.
+
+The head is a sphere grid with a face warped into it — a brow shelf with sockets
+cut under it, a nose that runs from between the brows to a tip and then turns back
+in, cheeks, lips, a chin, the jaw narrowing towards it — and the eyes, brows,
+moustache and ears are domes set into those features, each its own colour because
+there is no texture on this renderer. The hair is the same surface pushed out,
+with the hairline cut around the head: high over the brow and falling towards the
+nape, which is what says "old" without a caption. The features are placed from the
+head's own curve rather than by eye, because a moustache at the brow's height is a
+moustache on the forehead.
+
+`tools/blender/preview_model.py` draws a model from four sides in the Workbench
+engine, with vertex colours and an orthographic camera: the same flat colours the
+renderer stores, without the rebuild-probe-wait cycle that a scene render costs.
+
+There are **no voices**: the words are typed on screen in Greek over the
+faction's own procedural score (a briefing is scored by its own side). The
+motion is deliberately small — a slow turn of the head, the breath of the arms
+— because the figures are rigid parts with no skeleton, and a diorama that
+gestures honestly reads better than one that pretends to perform. Space ends the
+line being read, Esc skips the scene, and every line is also the transcript's.
+
+`tools/probe/cutscene.probe` drives the whole thing in CI: it advances the
+scene's clock explicitly so two runs photograph the same two moments, asserts
+that the scene has something to draw and that a finished scene has said every
+line it was written to say, and saves two frames. `tools/render_cutscene.py`
+turns the same scene into MP4, GIF and a contact sheet with the subtitles burned
+in: the frames come from the probe, which seeks rather than waits, and the words
+are composited afterwards because the game puts them on screen through ImGui,
+which a headless probe cannot draw.
 
 ### Particles
 

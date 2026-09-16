@@ -42,6 +42,12 @@
     <None Include="Content\Models\**\*.glb" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Content\Models\**\*.gltf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Content\Models\**\*.bin" CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Cutscenes are content the client finds for itself — a mission's briefing is not named on
+      the command line — so they ship beside the executable the way the fonts do, and the
+      catalogue scans this folder rather than a path a caller supplied.
+    -->
+    <None Include="Content\Cutscenes\*.cutscene.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ImGui.NET" Version="1.91.6.1" />

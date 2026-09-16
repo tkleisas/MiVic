@@ -273,6 +273,16 @@ public sealed record LaunchOptions
     /// </summary>
     public bool Editor { get; init; }
 
+    /// <summary>
+    /// A cutscene to play on launch, by id, and then the client carries on as usual. It exists
+    /// for the same reason every other fixture does: a scene has to be photographable and
+    /// scriptable from outside without a person sitting through it.
+    /// </summary>
+    public string? CutsceneId { get; init; }
+
+    /// <summary>True when a cutscene was named on the command line.</summary>
+    public bool IsCutscene => CutsceneId is not null;
+
     /// <summary>Directory the campaign's progress and saves live in, instead of the platform default.</summary>
     public string? ProfilePath { get; init; }
 
@@ -306,6 +316,7 @@ public sealed record LaunchOptions
           --watch <αρχείο>      Αναπαραγωγή καταγεγραμμένου αγώνα
           --mission <id>        Εκκίνηση αποστολής εκστρατείας
           --mission-list        Λίστα αποστολών
+          --cutscene <id>       Αναπαραγωγή σκηνής και συνέχεια
           --duel                Δύο παρατάξεις: Σοβιετικοί εναντίον Δυτικών
           --rivals              Δύο παρατάξεις: Σοβιετικοί εναντίον Κινέζων
           --particle-demo       Επίδειξη σωματιδίων (εκρήξεις, καπνός)
@@ -668,6 +679,10 @@ public sealed record LaunchOptions
                 case "--rivals":
                     // Two factions, and the enemy is the one that is normally the ally.
                     options = options with { Match = ScenarioKind.Rivals };
+                    break;
+
+                case "--cutscene":
+                    options = options with { CutsceneId = NextValue(args, ref i, arg), ShowHelp = false };
                     break;
 
                 case "--mission-list":

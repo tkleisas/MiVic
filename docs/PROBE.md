@@ -2226,6 +2226,34 @@ is the map format's v2: three `structures`, three `units`, `"exactForce": true`.
 shows the point — six entities, no generated base and no formation: `team 0 soviet 4 alive, 1
 structure`, `team 1 chinese 1 alive`, `team 2 western 1 alive`.
 
+## Worked example: does the campaign's briefing play?
+
+`tools/probe/cutscene.probe`, against `--cutscene m1_briefing`: the scene's clock is the probe's,
+not the wall clock's, so two runs advance it by exactly the same amount and photograph the same
+two moments. `cutscene state` reports what is standing in the room as model and part counts,
+which is how a scene that renders an empty frame is caught as a number rather than as a
+photograph:
+
+```
+query: cutscene m1_briefing — 0,0s of 27,3s, line 0/5, 0 lines said, playing
+query:   set        set_study, set_study 50 parts
+query:   cast       personality_elder 46 parts posed
+query:   camera     (1.1, 1.6, -2.8) m looking at (0.0, 1.5, 1.2) m
+check: PASS 'the scene has a set and a cast to draw' — 2 models, 96 parts
+...
+query: cutscene m1_briefing — 5,4s of 27,3s, line 1/5, 1 line said, playing
+query:   line       'Οι Δυτικοί έστησαν φυλάκιο βόρεια της γραμμής. […]'
+check: PASS 'a finished scene has said every line' — 1 of 5 lines said, playing
+```
+
+The first version of this scene passed the part-count check and still drew an empty room: the
+set's parts were submitted with transforms that had never been filled in, so all fifty collapsed
+to the origin. The check that would have caught it is the photograph the script saves —
+`artifacts/probe/cutscene-open.png` — which is why the probe writes one. The director also
+reports its own draw calls now (96 for this scene: fifty for the room and forty-six for the
+man, of which fourteen are the face), so a frame that drew nothing is visible in
+the `shot` line as well as in the pixels.
+
 ## Worked example: what does a brown-out do, rank by rank?
 
 `tools/probe/power.probe`, against `--detection-demo`: the fixture's base loses its plant, the

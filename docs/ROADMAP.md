@@ -101,6 +101,43 @@ ties a title to a *situation*. "Come and take our weapons" and "Who dares wins" 
 different games from each other, and the difference has to be in the map, the forces
 and the objective kinds — not only in the briefing text.
 
+**Built: the briefing the campaign opens on.** A mission can be introduced by a
+scripted scene rather than by a paragraph in the HUD: a set, the figures standing in
+it, a camera that moves between framings, and a monologue typed on screen over the
+faction's own score. `m1_bridgehead` has one, played from the menu before the match
+and reachable on its own with `--cutscene`. A scene is a versioned file, so the words
+are content an author edits rather than a string in the client, and the loader refuses
+one a director could not play.
+
+**The rule the fiction keeps, and why it is written down:** the figures are the era's
+personalities — a greatcoat, a moustache, a pipe — and they are **never named**. No
+line of dialogue says who anybody is, no asset or file is named after a person, and
+nobody is captioned. The campaign is an alternate history and the recognition belongs
+to the player; putting invented words in a real mouth, and labelling them, is a
+different and worse thing than staging an archetype. Keep that when adding the next
+one.
+
+**What is deliberately not built yet:** voices (the project has no recorded audio at
+all, and text over a procedural score needs none), mid-mission scenes raised from a
+trigger, debriefs, and more than one figure speaking. The figures are rigid parts with
+no skeleton, so a scene gestures — a slow turn of the head, the breath of the arms —
+and does not perform; skinning is the tier that would change that, and it is a project
+of its own.
+
+**The face, and why it is a surface and not a stack of boxes.** A soldier's head is a
+box with a helmet on it, which is what a soldier is at forty metres. At three metres the
+same head read as a mask: eyes, nose and moustache were separate blocks sitting on a
+faceted ball, and every one of them was visibly a block. The personality's head is
+therefore **one warped sphere grid** — a brow shelf with sockets cut under it, a nose
+that runs to a tip and turns back in, cheeks, lips, a chin, a jaw that narrows towards
+it — with the eyes, brows, moustache and ears as domes set into those features, each
+its own colour because the renderer has no textures. The hair is the same surface pushed
+out with the hairline cut around the head. The features are placed from the head's own
+curve — `BROW_Z`, `EYE_Z`, `LIP_Z` are that curve sampled — because a moustache placed
+by eye lands on the forehead. This is the cheap tier between "parts-rigged figure" and
+"skinned figure": the geometry carries the likeness and the parts contract still drives
+the animation.
+
 ---
 
 ## 3. Procedural sound

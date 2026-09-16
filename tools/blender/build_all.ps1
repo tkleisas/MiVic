@@ -18,7 +18,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$generators = @("build_vehicles.py", "build_figures.py", "build_buildings.py", "build_props.py", "build_bridge.py")
+$generators = @(
+    "build_vehicles.py", "build_figures.py", "build_buildings.py", "build_props.py", "build_bridge.py",
+    # The cutscene family: the sets a scene stands in, and the personalities who stand in them.
+    # Named for what they are built as rather than for who they evoke — see the module notes.
+    "build_sets.py", "build_personalities.py"
+)
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 Push-Location $root

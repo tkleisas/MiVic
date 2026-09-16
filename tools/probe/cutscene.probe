@@ -1,0 +1,45 @@
+# Q: does the campaign's briefing play — the set, the man, the light, the camera and the words?
+#
+#   MiVic.Game.exe --cutscene m1_briefing --probe tools/probe/cutscene.probe --probe-out artifacts/probe/cutscene.txt
+#
+# The scene, driven without a viewer. `cutscene state` reports what is standing in the room as
+# model and part counts, which is how a scene that renders an empty frame is caught as a number
+# rather than as a photograph somebody has to look at — the first version of this scene drew the
+# man and an invisible room, because the set's part transforms were never filled in.
+#
+# The clock is the probe's, not the wall clock's: a probe process drives the director explicitly,
+# so two runs of this script advance the scene by exactly the same amount and the two shots are
+# the same two moments.
+#
+# The checks are the two failures a transcript can hold: a scene with nothing to draw, and a
+# scene that finished without saying everything it was written to say.
+
+cutscene state
+shot artifacts/probe/cutscene-open.png
+
+# Line one, and the frame it is read in.
+cutscene advance 1200
+cutscene state
+
+# The camera's first move, and the second line.
+cutscene advance 4200
+cutscene state
+shot artifacts/probe/cutscene-line2.png
+
+# The end of the script: six more lines' worth of time than there is script left.
+cutscene advance 30000
+cutscene state
+
+# Skipping is not the same road as waiting, so it is asked separately: every line must still be
+# counted as said, because a viewer who skips has still been told.
+cutscene restart
+cutscene state
+cutscene skip
+cutscene state
+
+# Seeking is how a scene is photographed frame by frame: the camera track, the line being read
+# and the lines already said all come back out of the script, so a frame is a function of a
+# moment rather than of how long somebody waited.
+cutscene seek 11500
+cutscene state
+shot artifacts/probe/cutscene-line3.png

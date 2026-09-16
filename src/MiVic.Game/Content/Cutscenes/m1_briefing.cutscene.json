@@ -1,0 +1,76 @@
+{
+  "cutscene": "MiVicCutscene",
+  "version": 1,
+  "body": {
+    "id": "m1_briefing",
+    "kind": "Briefing",
+    "missionId": "m1_bridgehead",
+    "faction": "Soviet",
+    "set": "set_study",
+    "music": "bridge",
+    "camera": [
+      {
+        "milliseconds": 0,
+        "x": 1050,
+        "y": 1620,
+        "z": -2800,
+        "targetX": 0,
+        "targetY": 1450,
+        "targetZ": 1200
+      },
+      {
+        "milliseconds": 7000,
+        "x": 620,
+        "y": 1580,
+        "z": -1500,
+        "targetX": 0,
+        "targetY": 1420,
+        "targetZ": 1450
+      },
+      {
+        "milliseconds": 21000,
+        "x": 260,
+        "y": 1540,
+        "z": -600,
+        "targetX": 0,
+        "targetY": 1380,
+        "targetZ": 1600
+      }
+    ],
+    "figures": [
+      {
+        "asset": "personality_elder",
+        "x": 0,
+        "z": 1700,
+        "facingDegrees": 0
+      }
+    ],
+    "lines": [
+      {
+        "speaker": "personality_elder",
+        "greekText": "Κάθισε. Δεν θα κρατήσει πολύ.",
+        "milliseconds": 2800
+      },
+      {
+        "speaker": "personality_elder",
+        "greekText": "Οι Δυτικοί έστησαν φυλάκιο βόρεια της γραμμής. Το ξέρουμε εδώ και δύο εβδομάδες.",
+        "milliseconds": 6000
+      },
+      {
+        "speaker": "personality_elder",
+        "greekText": "Το κέντρο διοίκησής τους κρατά την άμυνά τους όρθια. Χτύπησέ το, και η γραμμή λυγίζει.",
+        "milliseconds": 6500
+      },
+      {
+        "speaker": "personality_elder",
+        "greekText": "Οι Κινέζοι καλύπτουν την ανατολική πλευρά. Μην τους ζητήσεις τίποτα — θα έρθουν μόνοι τους.",
+        "milliseconds": 6000
+      },
+      {
+        "speaker": "personality_elder",
+        "greekText": "Ο κόσμος δεν κρίνεται από τα λόγια. Κρίνεται από ό,τι στέκεται ακόμη όρθιο το πρωί.",
+        "milliseconds": 6000
+      }
+    ]
+  }
+}

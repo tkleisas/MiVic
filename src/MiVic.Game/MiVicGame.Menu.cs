@@ -46,7 +46,7 @@ public partial class MiVicGame
     /// <summary>True while the pause panel is open, which stops the clock rather than the world.</summary>
     private bool _paused;
 
-    private GameScreen Screen => _options.Menu || _options.Editor ? _screen : GameScreen.Battle;
+    private GameScreen Screen => _options.Menu || _options.Editor || _options.IsCutscene ? _screen : GameScreen.Battle;
 
     /// <summary>
     /// Reads the campaign record, or starts a fresh one when the file cannot be read.
@@ -106,6 +106,13 @@ public partial class MiVicGame
                     // and written now, so a crash the second later leaves an empty one.
                     _progress.Reset();
                     _progress.Save(MiVicPaths.ProgressFile);
+                }
+
+                // A mission with a briefing opens on it and starts when it ends; one without
+                // starts straight away, which is every mission the campaign had before scenes.
+                if (PlayBriefing(command.MissionId))
+                {
+                    break;
                 }
 
                 StartMatch(new SimBridge(MissionCatalog.Require(command.MissionId)));
@@ -308,5 +315,8 @@ public partial class MiVicGame
 
         /// <summary>The map editor: an authored map being shaped.</summary>
         Editor = 2,
+
+        /// <summary>A scripted scene, played on its own before a mission or for its own sake.</summary>
+        Cutscene = 3,
     }
 }

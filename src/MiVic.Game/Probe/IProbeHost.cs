@@ -33,6 +33,9 @@ public interface IProbeHost
     /// <summary>The editor session, or null when none has been asked for.</summary>
     MapEditor? Editor { get; }
 
+    /// <summary>The cutscene being played, or null when none is.</summary>
+    Cutscene.CutsceneDirector? Cutscene { get; }
+
     /// <summary>The model catalogue, which is what <c>model</c> and <c>parts</c> describe.</summary>
     ModelCatalog Catalog { get; }
 
