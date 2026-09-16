@@ -255,12 +255,13 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         # underside that turns back in. A gaussian across the whole thing is a
         # smear, and a smear with paint on it is what the first four versions of
         # this face were.
-        bridge = math.exp(-((dx / 0.185) ** 2))
-        rise = 0.056 * math.exp(-(((v - 0.556) / 0.082) ** 2))
+        narrow = 0.105 + (0.105 * max(0.0, min(1.0, (v - 0.470) / 0.110)))
+        bridge = math.exp(-((dx / narrow) ** 2))
+        rise = 0.060 * math.exp(-(((v - 0.552) / 0.086) ** 2))
         y += rise * bridge * max(0.15, ny)
 
         tip = math.exp(-(((dx / 0.150) ** 2) + (((v - 0.578) / 0.030) ** 2)))
-        y += 0.020 * tip * max(0.15, ny)
+        y += 0.026 * tip * max(0.15, ny)
 
         for side in (-1.0, 1.0):
             wing = math.exp(-((((dx - (side * 0.225)) / 0.100) ** 2) + (((v - 0.604) / 0.040) ** 2)))
@@ -269,8 +270,8 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
             crease = math.exp(-((((dx - (side * 0.355)) / 0.070) ** 2) + (((v - 0.606) / 0.052) ** 2)))
             y -= 0.012 * crease * front
 
-        under = math.exp(-(((v - 0.632) / 0.018) ** 2)) * math.exp(-((dx / 0.30) ** 2))
-        y -= 0.015 * under * front
+        under = math.exp(-(((v - 0.634) / 0.016) ** 2)) * math.exp(-((dx / 0.26) ** 2))
+        y -= 0.019 * under * front
 
         # The fine planes a face is actually made of, which a grid this size can
         # now hold: the crease above each lid, the philtrum under the nose, the

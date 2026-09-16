@@ -345,15 +345,15 @@ def paint_form(image):
     # The nose: a shadow down the far side and beside each wing, a lit bridge,
     # and the two dark nostrils under the tip. It is the largest thing on this
     # face in the reference and it is what the light is arranged around.
-    ellipse(draw, 0.0115, 0.118, 0.0060, 0.026, (*SHADOW, 200))
-    ellipse(draw, -0.0090, 0.120, 0.0080, 0.023, (*SKIN_WARM, 140))
+    ellipse(draw, 0.0125, 0.124, 0.0056, 0.030, (*SHADOW, 210))
+    ellipse(draw, -0.0098, 0.126, 0.0072, 0.027, (*SKIN_WARM, 150))
     for side in (-1, 1):
         # The wing, the crease behind it, and the nostril under the tip.
         ellipse(draw, side * 0.0245, 0.1080, 0.0080, 0.0062, (*SHADOW, 215))
         ellipse(draw, side * 0.0360, 0.1060, 0.0058, 0.0090, (*SHADOW, 170))
         ellipse(draw, side * 0.0130, 0.1045, 0.0046, 0.0034, (40, 24, 18, 240))
 
-    ellipse(draw, 0.0, 0.126, 0.0050, 0.026, (*SKIN_LIT, 190))
+    ellipse(draw, 0.0, 0.130, 0.0044, 0.030, (*SKIN_LIT, 210))
     ellipse(draw, 0.0, 0.1180, 0.0098, 0.0052, (*SKIN_LIT, 140))
 
     over(image, shade, 16.0)
