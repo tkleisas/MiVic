@@ -195,7 +195,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
 
         # The crown itself comes to a point rather sooner than the parietal does.
         if crown_taper and v < 0.14:
-            radius *= 0.55 + (0.45 * (v / 0.14) ** 0.6)
+            radius *= 0.70 + (0.30 * (v / 0.14) ** 0.6)
 
         # The second flattens the plan from a circle into a rounded rectangle, so
         # the face is a face and not the front of a ball.
@@ -230,7 +230,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
             crown = math.exp(-(((v - 0.20) / 0.22) ** 2))
             x += side * 0.008 * crown * (abs(dx) ** 0.5)
 
-            zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.660) / 0.155) ** 2)))
+            zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.640) / 0.165) ** 2)))
             x += side * 0.040 * zygomatic
             y += 0.011 * zygomatic * front
 
@@ -253,7 +253,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         x *= 1.0 - (0.03 * middle)
 
         if v > 0.78:
-            taper = 1.0 - (0.28 * ((v - 0.78) / 0.22) ** 1.3)
+            taper = 1.0 - (0.34 * ((v - 0.78) / 0.22) ** 1.3)
             x *= taper
             y *= 0.72 + (0.28 * taper)
 
@@ -364,6 +364,13 @@ def _hair_shell(segments=36, rings=18):
         x *= thickness
         y *= thickness
         z = cz + ((z - cz) * 1.02)
+
+        # Flat across the top. The portrait's hair is brushed back and lies level
+        # over the crown, so its head is already two thirds of its full width at the
+        # very top; a shell that follows the skull's dome comes to a point there.
+        crown_fill = 1.0 + (0.55 * math.exp(-((v / 0.14) ** 2)))
+        x *= crown_fill
+        y *= crown_fill
 
         sweep = math.exp(-(((v - 0.08) / 0.34) ** 2))
         back = max(0.0, -y) / 0.11
