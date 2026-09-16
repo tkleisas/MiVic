@@ -27,7 +27,7 @@ CENTRE_Z = 0.150
 #: difference between a head and an egg, and a painter working from the ellipsoid
 #: instead of from these puts every feature in the wrong place — the face's width
 #: at a given height is not a sine of it.
-RADIUS_POWER = 0.97
+RADIUS_POWER = 0.62
 PLAN_POWER = 2.0
 
 #: How hard the front is expanded. 1 is a linear map; smaller is more face and a

@@ -181,7 +181,11 @@ def _head_surface(segments=36, rings=26):
         # The first keeps the crown and the temples *full* instead of letting them
         # fall away — a sine reaches its width at one height and curves off either
         # side of it, and a skull holds its width across the whole parietal.
-        radius = math.sin(phi) ** 0.97
+        radius = math.sin(phi) ** 0.62
+
+        # The crown itself comes to a point rather sooner than the parietal does.
+        if v < 0.14:
+            radius *= 0.55 + (0.45 * (v / 0.14) ** 0.6)
 
         # The second flattens the plan from a circle into a rounded rectangle, so
         # the face is a face and not the front of a ball.
@@ -206,21 +210,36 @@ def _head_surface(segments=36, rings=26):
         # three the surface is smooth all the way round and reads as a ball, which
         # is what every version of this head did before this one.
         for side in (-1.0, 1.0):
-            temple = math.exp(-((((dx - (side * 0.78)) / 0.34) ** 2) + (((v - 0.34) / 0.20) ** 2)))
-            x -= side * 0.019 * temple
+            # Measured off the reference rather than guessed: its cranium is at
+            # three quarters of full width two rows below the crown, its temples
+            # pinch in at the eye line, and its cheekbones flare back out below
+            # them. Mine was a smooth cone from the crown to the jaw.
+            temple = math.exp(-(((v - 0.520) / 0.075) ** 2))
+            x -= side * 0.012 * temple * (abs(dx) ** 0.5)
 
-            zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.590) / 0.085) ** 2)))
-            x += side * 0.015 * zygomatic
+            crown = math.exp(-(((v - 0.20) / 0.22) ** 2))
+            x += side * 0.008 * crown * (abs(dx) ** 0.5)
+
+            zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.600) / 0.070) ** 2)))
+            x += side * 0.020 * zygomatic
             y += 0.011 * zygomatic * front
 
             corner = math.exp(-((((abs(dx) - 0.70) / 0.30) ** 2) + (((v - 0.800) / 0.090) ** 2)))
             x += math.copysign(0.010 * corner, dx) if abs(dx) > 1e-9 else 0.0
 
         # Below the corner of the jaw the bone turns in towards the chin.
+        # Measured, not guessed. The reference's skull is at full width high up
+        # over the parietal, narrows gradually to about five sixths of that at the
+        # temples and the jaw, and holds that to the chin — it never comes to a
+        # point. Mine was widest at the cheekbones and tapered to nothing below,
+        # which is what made the lower third of the face a long blank.
+        middle = max(0.0, min(1.0, (v - 0.44) / 0.28))
+        x *= 1.0 - (0.17 * middle)
+
         if v > 0.58:
-            taper = 1.0 - (0.58 * ((v - 0.58) / 0.42) ** 1.35)
+            taper = 1.0 - (0.06 * ((v - 0.58) / 0.42) ** 1.4)
             x *= taper
-            y *= 0.58 + (0.42 * taper)
+            y *= 0.72 + (0.28 * taper)
 
         # Brow ridge: a shelf over the eyes, and the sockets cut in under it.
         brow = math.exp(-(((v - 0.405) / 0.075) ** 2))
