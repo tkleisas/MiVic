@@ -230,7 +230,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
             crown = math.exp(-(((v - 0.20) / 0.22) ** 2))
             x += side * 0.008 * crown * (abs(dx) ** 0.5)
 
-            zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.600) / 0.070) ** 2)))
+            zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.660) / 0.155) ** 2)))
             x += side * 0.040 * zygomatic
             y += 0.011 * zygomatic * front
 
@@ -253,7 +253,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         x *= 1.0 - (0.03 * middle)
 
         if v > 0.78:
-            taper = 1.0 - (0.20 * ((v - 0.78) / 0.22) ** 1.3)
+            taper = 1.0 - (0.28 * ((v - 0.78) / 0.22) ** 1.3)
             x *= taper
             y *= 0.72 + (0.28 * taper)
 

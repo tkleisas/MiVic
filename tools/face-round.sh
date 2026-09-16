@@ -97,7 +97,7 @@ for panel, label in zip(panels, labels):
 # it runs from 0.17 to 0.83 of the frame — and every measurement taken before this
 # used a crop that ran on past the chin into the neck, which made every row a
 # fraction of the neck's width and produced two rounds of numbers not to be trusted.
-front.crop((int(w * 0.36), int(h * 0.17), int(w * 0.64), int(h * 0.83))) \
+front.crop((int(w * 0.28), int(h * 0.17), int(w * 0.72), int(h * 0.83))) \
     .save("artifacts/probe/face-chin-crop.png")
 
 strip.save("artifacts/probe/round.png")
