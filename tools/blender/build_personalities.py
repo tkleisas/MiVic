@@ -164,9 +164,9 @@ def _grid_mesh(name, segments, rings, warp, keep=None):
     return _link(name, verts, faces, uvs)
 
 
-def _head_surface(segments=36, rings=26):
+def _head_surface(segments=36, rings=26, crown_taper=True):
     """One face, as a function of where you are on a head."""
-    half_x, half_y, half_z = 0.096, 0.117, 0.130
+    half_x, half_y, half_z = 0.089, 0.116, 0.136
     centre_z = 0.150
 
     def warp(u, v):
@@ -184,7 +184,7 @@ def _head_surface(segments=36, rings=26):
         radius = math.sin(phi) ** 0.62
 
         # The crown itself comes to a point rather sooner than the parietal does.
-        if v < 0.14:
+        if crown_taper and v < 0.14:
             radius *= 0.55 + (0.45 * (v / 0.14) ** 0.6)
 
         # The second flattens the plan from a circle into a rounded rectangle, so
@@ -298,7 +298,7 @@ def _head_surface(segments=36, rings=26):
 
 def _hair_shell(segments=36, rings=18):
     """The hair, as the same head with a bigger radius and the face left open."""
-    warp = _head_surface(segments, rings)
+    warp = _head_surface(segments, rings, crown_taper=False)
     half_scale = 1.13
 
     def warped(u, v):
@@ -310,6 +310,18 @@ def _hair_shell(segments=36, rings=18):
         y *= half_scale
         z = cz + ((z - cz) * 1.02)
         y -= 0.004 * (1.0 - v)
+
+        # Standing up. The reference's hair is a mass lifted off the skull and
+        # brushed back, not a cap painted on it, and a cap is what this was: the
+        # shell sat 2 per cent outside the head and followed every curve of it.
+        # The lift is strongest over the crown and fades back down the sides, and
+        # the front is lifted more than the nape, which is what "brushed up" means.
+        lift = math.exp(-(((v - 0.02) / 0.34) ** 2))
+        z += 0.024 * lift
+        y -= 0.010 * lift * max(0.0, math.sin(math.pi * v) * math.sin(2.0 * math.pi * u))
+
+        # and it stands off the skull rather than on it
+        z += 0.014 * max(0.0, 0.6 - v)
         return (x, y, z)
 
     def keep(u, v):

@@ -19,7 +19,11 @@ CUTSCENES=src/MiVic.Game/bin/Debug/net9.0/Content/Cutscenes
 
 "$BLENDER" --background --python tools/blender/build_personalities.py -- --out "$CONTENT" 2>&1 |
     grep -E 'wrote |Error|Traceback|line [0-9]' || true
-python3 tools/paint_personalities.py --out "$CONTENT" 2>&1 | grep -E 'wrote |Error' || true
+
+if ! python3 tools/paint_personalities.py --out "$CONTENT"; then
+    echo "the painter failed — the texture was not regenerated" >&2
+    exit 1
+fi
 
 mkdir -p "$CUTSCENES"
 cat > "$CUTSCENES/zz_face.cutscene.json" <<'JSON'

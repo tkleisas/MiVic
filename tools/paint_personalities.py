@@ -146,8 +146,19 @@ def paint_skin(image):
             )
 
 
+LOCK_PIXELS = 15
+
+
 def paint_hair(image):
-    """Hair above the hairline, with strands and the sheen of light on it."""
+    """Hair above the hairline, as locks rather than as a noise field.
+
+    A head of hair is a few hundred separate locks laid side by side, each one
+    catching the light along its own length and dark between itself and the next.
+    Noise gives the opposite: a field that is statistically right and reads as
+    static, because nothing in it is a thing. So the locks are explicit — a fixed
+    width in the map, each with its own tone from a hash of its index, lit down the
+    middle and dark at both edges, and dark again where it leaves the forehead.
+    """
     pixels = image.load()
     overlay = Image.new("RGB", image.size, HAIR)
     overlay_pixels = overlay.load()
@@ -159,9 +170,16 @@ def paint_hair(image):
         hairline = face_uv.hairline_at(u)
         edge = hairline * HEIGHT
 
+        # One lock's own colour, and how far across it this pixel is: a lock is
+        # lit down its middle and dark where it meets its neighbours.
+        lock = x // LOCK_PIXELS
+        lock_tone = noise(lock, 0.0, 5.7)
+        across = ((x % LOCK_PIXELS) / LOCK_PIXELS) - 0.5
+        rounded = 1.0 - ((abs(across) * 2.0) ** 1.5)
+
         for y in range(HEIGHT):
             # A soft boundary rather than a cut: the hair mesh's own edge is stepped
-            # by its grid, and a hard painted edge would draw attention to it.
+            # by its grid, and a hard painted edge draws attention to it.
             depth = (edge - y) / 14.0
 
             if depth <= 0.0:
@@ -169,15 +187,14 @@ def paint_hair(image):
 
             mask_pixels[x, y] = int(min(255.0, depth * 255.0))
 
-            # Strands running from the forehead back over the crown: in the map
-            # that is the crown-to-chin direction, so the noise is stretched along
-            # y and left fine across x, which is what a combed head looks like.
-            strand = (0.62 * noise(x * 0.035, y * 0.55, 5.7)) + (0.38 * noise(x * 0.02, y * 1.9, 9.3))
+            # The sheen over the crown, and the roots dark where the hair leaves
+            # the forehead — which is what makes it read as combed back rather than
+            # as a cap.
             sheen = math.exp(-(((y - (edge - 70.0)) / 52.0) ** 2))
             roots = math.exp(-(((y - edge) / 26.0) ** 2))
 
-            base = HAIR_DARK if strand < 0.45 else HAIR
-            tone = 0.80 + (0.44 * strand) + (0.50 * sheen) - (0.22 * roots)
+            base = HAIR_DARK if lock_tone < 0.45 else HAIR
+            tone = 0.52 + (0.72 * lock_tone) + (0.40 * rounded) + (0.55 * sheen) - (0.26 * roots)
 
             overlay_pixels[x, y] = (
                 min(255, int(base[0] * tone)),
@@ -196,10 +213,10 @@ def layer():
 def over(image, painted, radius=0.0):
     """Composites a transparent layer, optionally softened, onto the face.
 
-    Softening blurs the alpha as well as the colour, which is the whole reason
-    these are RGBA layers and not a colour image with a separate mask: a soft edge
-    on a shape is a soft edge on its own coverage, not a translucent wash of the
-    layer's black background over the whole face.
+    Softening blurs the alpha as well as the colour, which is the whole reason these
+    are RGBA layers and not a colour image with a separate mask: a soft edge on a
+    shape is a soft edge on its own coverage, not a translucent wash of the layer's
+    black background over the whole face.
     """
     if radius > 0.0:
         painted = painted.filter(ImageFilter.GaussianBlur(radius))
@@ -325,7 +342,11 @@ def paint_brows(image):
             dx = 0.009 + (t01 * 0.064)
             # A straight brow that drops at the outer end, thickest a third of the
             # way along: a brow drawn as a row of dots is a row of dots.
-            dz = 0.1810 - (0.010 * (t01 ** 2.4))
+            # An arch, not a line: it rises from the inner end to a peak just
+            # outside the middle of the eye and falls away to the outer end, and
+            # the outer end finishes lower than the inner one started. A brow
+            # drawn as a taper is a bar, and a bar is not an eyebrow.
+            dz = 0.1800 + (0.0092 * math.sin(math.pi * (t01 ** 0.72))) - (0.0090 * t01)
             half_width = 0.0058
             half_height = 0.0062 - (0.0026 * t01)
             ellipse(draw, side * dx, dz, half_width, half_height, (*BROW, 254))
@@ -407,15 +428,15 @@ def moustache_outline(side):
     — it is the mouth that is hidden, not the moustache that is vague.
     """
     return [
-        (side * 0.000, 0.1075),
-        (side * 0.022, 0.1070),
-        (side * 0.043, 0.1030),
-        (side * 0.057, 0.0965),
-        (side * 0.064, 0.0880),
-        (side * 0.058, 0.0790),
-        (side * 0.041, 0.0800),
-        (side * 0.021, 0.0850),
-        (side * 0.000, 0.0880),
+        (side * 0.000, 0.1130),
+        (side * 0.017, 0.1125),
+        (side * 0.032, 0.1085),
+        (side * 0.044, 0.1010),
+        (side * 0.050, 0.0910),
+        (side * 0.046, 0.0805),
+        (side * 0.033, 0.0790),
+        (side * 0.017, 0.0830),
+        (side * 0.000, 0.0855),
     ]
 
 
@@ -443,19 +464,19 @@ def paint_moustache_shadow(image):
     for side in (-1, 1):
         polygon(mask_draw, moustache_outline(side), 255)
 
-        for step in range(26):
-            t01 = step / 25.0
+        for step in range(30):
+            t01 = step / 29.0
             ellipse(
                 mask_draw,
                 side * (0.003 + (t01 * 0.056)),
                 0.1055 - (t01 * 0.023),
-                0.0011,
-                0.0070,
-                90,
+                0.0012,
+                0.0075,
+                145,
             )
 
     over(image, strands, 0.4)
-    over(image, Image.composite(strands, Image.new("RGBA", image.size, (0, 0, 0, 0)), mask), 0.6)
+    over(image, Image.composite(strands, Image.new("RGBA", image.size, (0, 0, 0, 0)), mask), 0.5)
 
 
 def build_face(path):
@@ -474,7 +495,7 @@ def build_face(path):
     # Quantised. A face is a few hundred distinct colours and an adaptive palette
     # holds them all; the 24-bit version of this image is ten times the size for
     # differences no one can see on a head two hundred pixels tall.
-    image = image.quantize(colors=256, method=Image.MEDIANCUT, dither=Image.FLOYDSTEINBERG)
+    image = image.quantize(colors=256, method=Image.MEDIANCUT, dither=Image.NONE)
     image.save(path, optimize=True)
     return path
 

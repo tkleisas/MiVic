@@ -18,7 +18,7 @@ only applies below the mouth, where the only thing painted is a chin.
 
 import math
 
-HALF_X = 0.096
+HALF_X = 0.089
 HALF_Y = 0.117
 HALF_Z = 0.130
 CENTRE_Z = 0.150
@@ -143,7 +143,7 @@ def hairline(u):
     around = min(abs(u - 0.25), 1.0 - abs(u - 0.25)) * 2.0
 
     peak = math.exp(-((around / 0.09) ** 2))
-    return 0.29 + (0.42 * (around ** 0.8)) - (0.13 * math.exp(-(((around - 0.30) / 0.15) ** 2))) + (0.025 * peak)
+    return 0.255 + (0.48 * (around ** 0.75)) - (0.13 * math.exp(-(((around - 0.30) / 0.15) ** 2))) + (0.025 * peak)
 
 
 def hairline_at(texture_u):
