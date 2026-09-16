@@ -35,10 +35,10 @@ HEIGHT = 1536
 
 # The same palette the generator paints the head's vertex colours with, so the
 # painted face and the shaded skull agree where the texture ends.
-SKIN = (196, 128, 104)
-SKIN_LIT = (222, 158, 132)
+SKIN = (208, 124, 101)
+SKIN_LIT = (234, 152, 128)
 SKIN_SHADE = (138, 90, 72)
-SKIN_WARM = (214, 118, 92)
+SKIN_WARM = (226, 112, 88)
 HAIR = (50, 45, 40)
 HAIR_LIT = (76, 70, 63)
 HAIR_DARK = (30, 27, 24)
