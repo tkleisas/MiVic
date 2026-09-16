@@ -415,6 +415,31 @@ def _pin_uv(obj, uv):
     return obj
 
 
+def _wrap_uv(obj, metres_per_tile=0.34):
+    """Wraps a part in a cylindrical projection, so cloth tiles on a body.
+
+    A tunic is a surface of revolution about the spine and a sleeve is one about
+    the arm, so a projection around the part's own z is the projection that does
+    not stretch: the texture goes round the body once and up it as many times as
+    the garment is tiles tall.
+    """
+    mesh = obj.data
+    layer = mesh.uv_layers.get("UVMap") or mesh.uv_layers.new(name="UVMap")
+
+    for poly in mesh.polygons:
+        for loop in poly.loop_indices:
+            vertex = mesh.vertices[mesh.loops[loop].vertex_index].co
+            # Three tiles round the body against one up it. Around a chest is
+            # about 1.4 m and a tile is 0.22 m, so a single wrap stretches the
+            # weave six to one and the tunic comes out corduroy.
+            layer.data[loop].uv = (
+                math.atan2(vertex.y, vertex.x) / (2.0 * math.pi) * 2.0,
+                vertex.z / metres_per_tile,
+            )
+
+    return obj
+
+
 def _face_dome(name, radius, width, height, depth, at, droop=0.0, sweep=0.0, rings=5):
     """A dome that bulges out of the face, sized in the face's own axes.
 
@@ -512,6 +537,7 @@ def build_elder():
             _cyl_geo(0.098 * bulk, HIP - KNEE, segments=10, axis="z", offset=(0.0, 0.0, -(HIP - KNEE) * 0.5)),
         ])
         thigh.location = (side * leg_half, 0.0, HIP)
+        _wrap_uv(thigh)
         parts.append(thigh)
         paint(thigh, trouser)
 
@@ -520,6 +546,7 @@ def build_elder():
         ])
         shin.parent = thigh
         shin.location = (0.0, 0.0, -(HIP - KNEE))
+        _wrap_uv(shin)
         parts.append(shin)
         paint(shin, trouser)
 
@@ -538,18 +565,21 @@ def build_elder():
     skirt = merge("Tunic", [
         _prism_geo((shoulders * 0.80, 0.29 * bulk), (0.94, 0.96), 0.42, offset=(0.0, 0.0, HIP - 0.30), power=0.52),
     ])
+    _wrap_uv(skirt)
     parts.append(skirt)
     paint(skirt, tunic, variation=0.09)
 
     belt = merge("Belt", [
         _prism_geo((shoulders * 0.77, 0.30 * bulk), (1.0, 1.0), 0.055, offset=(0.0, 0.0, HIP + 0.10), power=0.52),
     ])
+    _wrap_uv(belt)
     parts.append(belt)
     paint(belt, belt_colour)
 
     trunk = _prism_geo((shoulders * 0.78, 0.30 * bulk), (1.16, 1.06), 0.24, offset=(0.0, 0.0, HIP + 0.155), power=0.52)
     crown = _dome_geo(shoulders * 0.52, (1.0, 0.62, 0.26), segments=20, rings=6, offset=(0.0, 0.0, HIP + 0.35))
     chest = merge("Body", [trunk, crown])
+    _wrap_uv(chest)
     parts.append(chest)
     paint(chest, tunic, variation=0.09)
 
@@ -566,6 +596,7 @@ def build_elder():
         _prism_geo((0.138, 0.136), (0.94, 0.94), 0.048, offset=(0.0, 0.0, 0.0), power=0.60, segments=18),
     ])
     collar.location = (0.0, 0.0, SHOULDER - 0.008)
+    _wrap_uv(collar)
     parts.append(collar)
     paint(collar, tunic, variation=0.03)
 
@@ -605,6 +636,7 @@ def build_elder():
             _dome_geo(0.062 * bulk, (1.0, 1.0, 0.55), segments=12, rings=4),
         ])
         upper.location = (side * arm_x, 0.0, SHOULDER + 0.010)
+        _wrap_uv(upper)
         parts.append(upper)
         paint(upper, tunic, variation=0.04)
 
@@ -619,6 +651,7 @@ def build_elder():
         if side == 1:
             fore.rotation_euler = (math.radians(-58.0), 0.0, 0.0)
 
+        _wrap_uv(fore)
         parts.append(fore)
         paint(fore, tunic, variation=0.04)
 
@@ -659,6 +692,7 @@ def build_elder():
         _frustum_geo((0.100, 0.108), (0.86, 0.86), 0.062, offset=(0.0, 0.0, 0.015)),
     ])
     collar.parent = neck
+    _wrap_uv(collar)
     parts.append(collar)
     paint(collar, tunic)
 

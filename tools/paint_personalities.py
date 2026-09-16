@@ -534,6 +534,52 @@ def build_face(path):
     return path
 
 
+CLOTH = (146, 142, 92)
+CLOTH_DARK = (108, 104, 64)
+CLOTH_LIGHT = (176, 172, 118)
+
+
+def build_cloth(path):
+    """The tunic's cloth: a woven field, seamless, that tiles round a body.
+
+    Separate from the face, because a face is one of a kind and cloth is a surface
+    that repeats. It is generated rather than drawn for the same reason everything
+    else here is: the seams have to meet when it wraps, and a hand-drawn tile is a
+    promise about its own edges that nothing checks.
+    """
+    image = Image.new("RGB", (512, 512), CLOTH)
+    pixels = image.load()
+
+    for y in range(512):
+        for x in range(512):
+            # A plain weave: two threads crossing, one over and one under, at a
+            # scale that survives being tiled a few centimetres across.
+            warp = math.sin(x * math.pi / 8.0)
+            weft = math.sin(y * math.pi / 8.0)
+            over = 1.0 if (warp * weft) >= 0.0 else 0.0
+
+            thread = (0.5 * warp * over) + (0.5 * weft * (1.0 - over))
+            slub = noise(x / 37.0, y / 23.0, 5.0) - 0.5
+            fibre = (noise(x * 0.9, y * 0.9, 11.0) - 0.5) * 0.07
+
+            tone = 1.0 + (0.030 * thread) + (0.055 * slub) + (fibre * 0.5)
+            base = CLOTH_DARK if (slub < -0.18) else CLOTH
+
+            pixels[x, y] = (
+                min(255, max(0, int(base[0] * tone))),
+                min(255, max(0, int(base[1] * tone))),
+                min(255, max(0, int(base[2] * tone))),
+            )
+
+    # Softened before it is quantised. This renderer has no mipmaps, so a tunic
+    # seen across a room minifies a 512-pixel tile into a couple of hundred pixels
+    # with nothing to average it: every fine thread becomes a moire stripe, and the
+    # tunic came out corduroy twice before this was the reason.
+    image = image.filter(ImageFilter.GaussianBlur(1.1))
+    image.quantize(colors=64, method=Image.MEDIANCUT, dither=Image.NONE).save(path, optimize=True)
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description="Paint the cutscene personality textures.")
     parser.add_argument("--out", required=True, help="Directory to write the PNGs into.")
@@ -542,6 +588,9 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     path = build_face(os.path.join(args.out, "personality_elder.png"))
     print(f"wrote {os.path.basename(path)}  ({os.path.getsize(path) / 1024:.1f} KB)")
+
+    cloth = build_cloth(os.path.join(args.out, "personality_elder_cloth.png"))
+    print(f"wrote {os.path.basename(cloth)}  ({os.path.getsize(cloth) / 1024:.1f} KB)")
     print("done: 1 personality texture")
 
 

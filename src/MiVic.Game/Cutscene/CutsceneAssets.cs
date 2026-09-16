@@ -95,12 +95,18 @@ public sealed class CutsceneAssets : IDisposable
         }
 
         ModelData data = GltfLoader.LoadModel(path, Raw);
-        Texture2D? texture = LoadTexture(asset);
+        Texture2D? face = LoadTexture(asset, string.Empty);
+        Texture2D? cloth = LoadTexture(asset, "_cloth");
         var parts = new CutscenePart[data.Parts.Count];
 
         for (int i = 0; i < parts.Length; i++)
         {
             ModelPart part = data.Parts[i];
+
+            // A figure is not one material. A face is one of a kind and a tunic is
+            // a surface that repeats, so they are two images, and which part gets
+            // which is decided by what the part is rather than by the file.
+            Texture2D? texture = IsCloth(part.Name) ? cloth ?? face : face;
             InstancedRenderer.Mesh mesh = _renderer.CreateMesh(part.Mesh, texture);
             _owned.Add(mesh);
 
@@ -123,9 +129,20 @@ public sealed class CutsceneAssets : IDisposable
     /// model's name is a rule that can be checked by looking in the folder.
     /// </para>
     /// </summary>
-    private Texture2D? LoadTexture(string asset)
+    /// <summary>Whether a part is made of cloth, and so samples the cloth map.</summary>
+    private static bool IsCloth(string part) =>
+        part.StartsWith("Tunic", StringComparison.Ordinal)
+        || part.StartsWith("Collar", StringComparison.Ordinal)
+        || part.StartsWith("Belt", StringComparison.Ordinal)
+        || part.StartsWith("Arm", StringComparison.Ordinal)
+        || part.StartsWith("Forearm", StringComparison.Ordinal)
+        || part.StartsWith("Leg", StringComparison.Ordinal)
+        || part.StartsWith("Shin", StringComparison.Ordinal)
+        || part == "Body";
+
+    private Texture2D? LoadTexture(string asset, string suffix)
     {
-        string path = Path.Combine(_baseDirectory, ModelRoot, Folder, asset + ".png");
+        string path = Path.Combine(_baseDirectory, ModelRoot, Folder, asset + suffix + ".png");
 
         if (!File.Exists(path))
         {
