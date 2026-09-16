@@ -349,37 +349,10 @@ def _hair_shell(segments=36, rings=18):
         # comb-back: a receding hairline is the shape that says "old" without a caption.
         cz = 0.150
 
-        # Hair lies on a skull. It is not a mass standing off it and it is not a
-        # shell the same thickness everywhere — the first is a toupee and the
-        # second is a moulding, and both of them were tried here. What this man has
-        # is hair combed back from a high forehead that is *thinner over the crown*
-        # than at the sides and the nape, because that is what a receding head of
-        # hair does: it goes on top first.
-        thickness = 1.030 + (0.055 * (1.0 - math.exp(-(((v - 0.02) / 0.30) ** 2))))
-        x *= thickness
-        y *= thickness
-        z = cz + ((z - cz) * 1.01)
-        y -= 0.004 * (1.0 - v)
-
-        return (x, y, z)
-
-    return warp
-
-
-def _hair_shell(segments=36, rings=18):
-    """The hair, as the same head with a bigger radius and the face left open."""
-    warp = _head_surface(segments, rings, crown_taper=False)
-
-    def warped(u, v):
-        x, y, z = warp(u, v)
-        # Push the shell out from the head's centre, and sweep the back up into a
-        # comb-back: a receding hairline is the shape that says "old" without a caption.
-        cz = 0.150
-
         # Thick over the crown, thin at the hairline and the temples. A shell the
         # same thickness everywhere is a moulding, and that is exactly what this
         # read as; hair lies on the skull at the edges and stands off it on top.
-        thickness = 1.035 + (0.075 * math.exp(-(((v - 0.03) / 0.26) ** 2)))
+        thickness = 1.045 + (0.105 * (1.0 - math.exp(-(((v - 0.02) / 0.30) ** 2))))
         x *= thickness
         y *= thickness
         z = cz + ((z - cz) * 1.02)
@@ -602,6 +575,33 @@ expected_parts = {
 }
 
 
+def check_no_duplicate_definitions():
+    """Refuses to build if this file defines the same function twice.
+
+    It did: there were two complete `_hair_shell` functions, the second silently
+    overrode the first, and every change written into the first — including the one
+    that took the toupee off — went into code that nothing called. The part-count
+    guard catches a duplicate *part*; this catches the duplicate *source* that
+    produces one, and it would have caught the hair two rounds after it happened.
+    """
+    import re
+
+    source = open(os.path.abspath(__file__), encoding="utf-8").read()
+    seen = {}
+
+    for name in re.findall(r"^def ([A-Za-z_][A-Za-z0-9_]*)", source, re.MULTILINE):
+        seen[name] = seen.get(name, 0) + 1
+
+    duplicates = sorted(name for name, count in seen.items() if count > 1)
+
+    if duplicates:
+        raise RuntimeError(
+            "this file defines the same function more than once: "
+            + ", ".join(duplicates)
+            + ". The last definition wins and the others are dead code."
+        )
+
+
 def build_elder():
     """The man at the desk: an old soldier in a plain tunic, a moustache and a pipe.
 
@@ -612,6 +612,8 @@ def build_elder():
     survives that. A personality is the whole frame at three metres, and at three
     metres every corner is a corner.
     """
+    check_no_duplicate_definitions()
+
     root = bpy.data.objects.new("elder", None)
     bpy.context.collection.objects.link(root)
 
