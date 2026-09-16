@@ -631,10 +631,10 @@ def build_elder():
     # gold buttons, and a man whose hair, brows and moustache are all one dark
     # grey-brown. An old soldier, not a white-haired one — the first version got
     # that wrong and painted him with the hair of a man twenty years older.
-    tunic = (0.44, 0.43, 0.22, 0.60)
-    tunic_lit = (0.52, 0.51, 0.28, 0.60)
-    tunic_dark = (0.33, 0.32, 0.16, 0.34)
-    trouser = (0.38, 0.37, 0.20, 0.30)
+    tunic = (0.24, 0.25, 0.18, 0.60)
+    tunic_lit = (0.30, 0.31, 0.23, 0.60)
+    tunic_dark = (0.17, 0.18, 0.13, 0.34)
+    trouser = (0.21, 0.22, 0.16, 0.30)
     boot = (0.10, 0.10, 0.10, 0.05)
     belt_colour = (0.14, 0.11, 0.08, 0.10)
     collar_red = (0.46, 0.08, 0.06, 0.00)
