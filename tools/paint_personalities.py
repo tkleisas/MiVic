@@ -262,6 +262,17 @@ def paint_form(image):
     crease beside it at 0.69, the mouth at 0.76 — read through the same ellipsoid,
     so a shadow sits in the hollow it is shading.
     """
+    blush = layer()
+    draw = ImageDraw.Draw(blush)
+
+    for side in (-1, 1):
+        ellipse(draw, side * 0.052, 0.104, 0.026, 0.020, (206, 96, 74, 96))
+        ellipse(draw, side * 0.070, 0.120, 0.014, 0.020, (198, 96, 78, 72))
+
+    ellipse(draw, 0.0, 0.112, 0.016, 0.014, (206, 100, 78, 104))
+    ellipse(draw, 0.0, 0.030, 0.022, 0.010, (198, 100, 80, 62))
+    over(image, blush, 12.0)
+
     shade = layer()
     draw = ImageDraw.Draw(shade)
 
@@ -310,6 +321,14 @@ def paint_form(image):
     ellipse(draw, 0.0, 0.1180, 0.0098, 0.0052, (*SKIN_LIT, 140))
 
     over(image, shade, 16.0)
+
+    # Skin in shadow goes grey-blue; skin shaded by turning a brown down is mud.
+    cool = layer()
+    draw = ImageDraw.Draw(cool)
+    ellipse(draw, 0.0, 0.020, 0.045, 0.020, (86, 96, 118, 44))
+    for side in (-1, 1):
+        ellipse(draw, side * 0.072, 0.150, 0.020, 0.040, (88, 98, 120, 38))
+    over(image, cool, 14.0)
 
 
 def paint_eyes(image):
