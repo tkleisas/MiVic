@@ -237,6 +237,12 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
             corner = math.exp(-((((abs(dx) - 0.70) / 0.30) ** 2) + (((v - 0.800) / 0.090) ** 2)))
             x += math.copysign(0.010 * corner, dx) if abs(dx) > 1e-9 else 0.0
 
+            # The jowls. An old heavy face carries its soft tissue at the corners of
+            # the jaw, and without them a wide jaw is only a wide jaw.
+            jowl = math.exp(-((((abs(dx) - 0.66) / 0.26) ** 2) + (((v - 0.860) / 0.055) ** 2)))
+            x += math.copysign(0.011 * jowl, dx) if abs(dx) > 1e-9 else 0.0
+            y += 0.009 * jowl * front
+
         # Below the corner of the jaw the bone turns in towards the chin.
         # Measured, not guessed. The reference's skull is at full width high up
         # over the parietal, narrows gradually to about five sixths of that at the
@@ -247,7 +253,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         x *= 1.0 - (0.03 * middle)
 
         if v > 0.58:
-            taper = 1.0 - (0.13 * ((v - 0.58) / 0.42) ** 1.3)
+            taper = 1.0 - (0.04 * ((v - 0.58) / 0.42) ** 1.3)
             x *= taper
             y *= 0.72 + (0.28 * taper)
 
