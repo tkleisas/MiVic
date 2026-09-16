@@ -19,16 +19,16 @@ only applies below the mouth, where the only thing painted is a chin.
 import math
 
 HALF_X = 0.100
-HALF_Y = 0.118
-HALF_Z = 0.134
+HALF_Y = 0.117
+HALF_Z = 0.130
 CENTRE_Z = 0.150
 
 #: The skull's two shape exponents, which `_head_surface` also uses. They are the
 #: difference between a head and an egg, and a painter working from the ellipsoid
 #: instead of from these puts every feature in the wrong place — the face's width
 #: at a given height is not a sine of it.
-RADIUS_POWER = 0.62
-PLAN_POWER = 3.2
+RADIUS_POWER = 0.86
+PLAN_POWER = 2.0
 
 #: How hard the front is expanded. 1 is a linear map; smaller is more face and a
 #: more crushed back of the head.
@@ -142,7 +142,7 @@ def hairline(u):
     """
     around = min(abs(u - 0.25), 1.0 - abs(u - 0.25)) * 2.0
 
-    return 0.34 + (0.32 * (around ** 0.9)) - (0.16 * math.exp(-(((around - 0.30) / 0.15) ** 2)))
+    return 0.29 + (0.34 * (around ** 0.9)) - (0.13 * math.exp(-(((around - 0.30) / 0.15) ** 2)))
 
 
 def hairline_at(texture_u):

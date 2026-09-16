@@ -166,7 +166,7 @@ def _grid_mesh(name, segments, rings, warp, keep=None):
 
 def _head_surface(segments=36, rings=26):
     """One face, as a function of where you are on a head."""
-    half_x, half_y, half_z = 0.100, 0.118, 0.134
+    half_x, half_y, half_z = 0.100, 0.117, 0.130
     centre_z = 0.150
 
     def warp(u, v):
@@ -181,12 +181,12 @@ def _head_surface(segments=36, rings=26):
         # The first keeps the crown and the temples *full* instead of letting them
         # fall away — a sine reaches its width at one height and curves off either
         # side of it, and a skull holds its width across the whole parietal.
-        radius = math.sin(phi) ** 0.62
+        radius = math.sin(phi) ** 0.86
 
         # The second flattens the plan from a circle into a rounded rectangle, so
         # the face is a face and not the front of a ball.
         cosine, sine = math.cos(theta), math.sin(theta)
-        squircle = (abs(cosine) ** 3.2 + abs(sine) ** 3.2) ** (-1.0 / 3.2)
+        squircle = (abs(cosine) ** 2.0 + abs(sine) ** 2.0) ** (-1.0 / 2.0)
 
         nx = radius * cosine * squircle
         ny = radius * sine * squircle
@@ -206,19 +206,19 @@ def _head_surface(segments=36, rings=26):
         # three the surface is smooth all the way round and reads as a ball, which
         # is what every version of this head did before this one.
         for side in (-1.0, 1.0):
-            temple = math.exp(-((((dx - (side * 0.86)) / 0.30) ** 2) + (((v - 0.40) / 0.10) ** 2)))
-            x -= side * 0.006 * temple
+            temple = math.exp(-((((dx - (side * 0.82)) / 0.36) ** 2) + (((v - 0.36) / 0.18) ** 2)))
+            x -= side * 0.014 * temple
 
-            zygomatic = math.exp(-((((dx - (side * 0.60)) / 0.24) ** 2) + (((v - 0.630) / 0.080) ** 2)))
-            x += side * 0.011 * zygomatic
-            y += 0.009 * zygomatic * front
+            zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.620) / 0.085) ** 2)))
+            x += side * 0.015 * zygomatic
+            y += 0.011 * zygomatic * front
 
             corner = math.exp(-((((abs(dx) - 0.70) / 0.30) ** 2) + (((v - 0.800) / 0.090) ** 2)))
-            x += math.copysign(0.013 * corner, dx) if abs(dx) > 1e-9 else 0.0
+            x += math.copysign(0.010 * corner, dx) if abs(dx) > 1e-9 else 0.0
 
         # Below the corner of the jaw the bone turns in towards the chin.
-        if v > 0.80:
-            taper = 1.0 - (0.34 * ((v - 0.80) / 0.20) ** 1.3)
+        if v > 0.70:
+            taper = 1.0 - (0.46 * ((v - 0.70) / 0.30) ** 1.5)
             x *= taper
             y *= 0.66 + (0.34 * taper)
 
@@ -236,16 +236,16 @@ def _head_surface(segments=36, rings=26):
         if abs(dx) < 0.34:
             across = math.exp(-((dx / 0.205) ** 2))
             if v < 0.58:
-                profile = 0.027 * math.exp(-(((v - 0.545) / 0.110) ** 2))
+                profile = 0.032 * math.exp(-(((v - 0.545) / 0.115) ** 2))
             else:
-                profile = 0.043 * math.exp(-(((v - 0.618) / 0.048) ** 2))
+                profile = 0.055 * math.exp(-(((v - 0.618) / 0.055) ** 2))
             y += profile * across * max(0.15, ny)
 
         # The wings of the nose, either side of the tip, and the crease beside
         # them that a nose sits in.
         for side in (-1.0, 1.0):
-            wing = math.exp(-((((dx - (side * 0.225)) / 0.115) ** 2) + (((v - 0.648) / 0.050) ** 2)))
-            y += 0.012 * wing * front
+            wing = math.exp(-((((dx - (side * 0.245)) / 0.125) ** 2) + (((v - 0.650) / 0.055) ** 2)))
+            y += 0.016 * wing * front
 
             fold = math.exp(-((((dx - (side * 0.400)) / 0.115) ** 2) + (((v - 0.690) / 0.075) ** 2)))
             y -= 0.009 * fold * front
@@ -277,7 +277,7 @@ def _head_surface(segments=36, rings=26):
 def _hair_shell(segments=36, rings=18):
     """The hair, as the same head with a bigger radius and the face left open."""
     warp = _head_surface(segments, rings)
-    half_scale = 1.05
+    half_scale = 1.13
 
     def warped(u, v):
         x, y, z = warp(u, v)
@@ -331,6 +331,23 @@ def _capped_mesh(name, segments, rings, warp, cap):
             faces.append((here, below, ((ring + 1) * segments) + nxt, (ring * segments) + nxt))
 
     return _link(name, verts, faces, uvs)
+
+
+def _pin_uv(obj, uv):
+    """Gives a part one texture coordinate for all of its vertices.
+
+    The parts of a figure share one texture, and a part that carries no layout of
+    its own samples the corner of it — which is the back of the head, so the
+    moustache was coming out the colour of hair in shadow. Pinning it to the place
+    on the map that was painted for it is the whole fix.
+    """
+    mesh = obj.data
+    attribute = mesh.uv_layers.get("UVMap") or mesh.uv_layers.new(name="UVMap")
+
+    for loop in range(len(mesh.loops)):
+        attribute.data[loop].uv = (uv[0], 1.0 - uv[1])
+
+    return obj
 
 
 def _face_dome(name, radius, width, height, depth, at, droop=0.0, sweep=0.0, rings=5):
@@ -483,13 +500,13 @@ def build_elder():
     collar = merge("Collar", [
         _prism_geo((0.138, 0.136), (0.94, 0.94), 0.048, offset=(0.0, 0.0, 0.0), power=0.60, segments=18),
     ])
-    collar.location = (0.0, 0.0, SHOULDER + 0.012)
+    collar.location = (0.0, 0.0, SHOULDER - 0.008)
     parts.append(collar)
     paint(collar, tunic, variation=0.03)
 
     for side in (-1, 1):
         tab = box("CollarTab", (0.030, 0.016, 0.036), offset=(0.0, 0.0, 0.0))
-        tab.location = (side * 0.030, 0.062, SHOULDER + 0.036)
+        tab.location = (side * 0.030, 0.062, SHOULDER + 0.016)
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
 
@@ -602,7 +619,10 @@ def build_elder():
     hair = _capped_mesh("Hair", 72, 22, warped, face_uv.hairline)
     hair.parent = head
     parts.append(hair)
-    paint(hair, hair_colour, variation=0.0)
+
+    # White, like the head: the hair samples its own painted region, and a vertex
+    # colour on top of that is a second coat of paint.
+    paint(hair, (1.0, 1.0, 1.0, 0.0), variation=0.0)
 
     # The face — eyes, brows, the fold beside a nostril, the lip — is a texture, not
     # geometry. Modelled out of domes it read as a mask at three metres, which is
@@ -618,8 +638,9 @@ def build_elder():
         ear.parent = head
         ear.rotation_euler = (0.0, math.radians(side * 90.0), 0.0)
         ear.location = (side * 0.098, -0.010, EAR_Z)
+        _pin_uv(ear, face_uv.face_uv_across(side * 0.086, EAR_Z))
         parts.append(ear)
-        paint(ear, FLESH, variation=0.0)
+        paint(ear, (1.0, 1.0, 1.0, 0.0), variation=0.0)
 
     # The pipe: a thin stem out of the corner of the mouth and a small bowl at the
     # far end of it. Measured against the head, not against a hand.
