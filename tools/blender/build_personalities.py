@@ -720,8 +720,14 @@ def build_elder():
     for side in (-1, 1):
         angle = (math.radians(-30.0), math.radians(side * 22.0), math.radians(side * -14.0))
 
+        # The collar has a cross-section, not just a shape: it stands up the neck,
+        # folds over, and falls down the chest. Two boxes in one part — the stand at
+        # the back of the fold and the fall in front of it — which is the last thing
+        # the flap was missing. The fall is unchanged from the version that measures
+        # right, so the fold can only add to it.
         flap = merge("Collar", [
             _box_geo((0.106, 0.082, 0.015), offset=(0.0, 0.0, 0.0), taper=0.70),
+            _box_geo((0.098, 0.024, 0.020), offset=(0.0, 0.030, 0.020), taper=0.94),
         ])
         flap.location = (side * 0.030, 0.040, SHOULDER + 0.058)
         flap.rotation_euler = angle
