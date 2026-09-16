@@ -398,6 +398,38 @@ A measurement without a look gives a hat; a look without a measurement gives a h
 the right shape with the wrong proportions, which is what the twenty rounds before the
 profile produced.
 
+### 2.4 A metric that measured the wrong space, and a replacement that does not work
+
+The moustache went white and three consecutive measurements said it was improving. The
+metric was `measure_figure.py paint`, which reports the mean luma and standard deviation
+of the **texture**, and the reference it was compared against is a flat painting with its
+own shading baked in. A lit render is not a texture. A texture can be correctly mid-grey
+and still be lit to white by the one lamp in the room, and a standard deviation rewards
+any variation at all — including a moustache washed out until it has plenty. Mean 111.9
+against a target of 124.8, contrast 20.1 against 40.8, reported as progress, while the
+thing looked wrong.
+
+So the obvious correction was an appearance metric: measure the **render**, over the
+feature's region, located from the model's own geometry rather than from a box placed by
+hand. The region comes from `figure_spec`'s crown-to-chin span, so if the head moves in
+frame the band moves with it; and the quantity is a *ratio* — the moustache's brightness
+against the forehead's, in one frame under one light — because a ratio is what survives
+the lighting, and "the moustache went white" means precisely that this ratio rises
+towards one.
+
+It was built, and **it does not work.** Tested against the failure it was designed for, a
+deliberately brightened moustache that is visibly wrong, it reported a ratio of 0.799
+against a reference of 0.862 and passed. The reason is the region: a band across the
+moustache's rows and the middle of the face contains the moustache, the mouth, the crease
+under the lip and a good deal of lit skin, and the moustache is a minority of its own
+band. Diluted by everything around it, a washed-out moustache moves the average by less
+than the tolerance.
+
+It is not in the code. What would work is a mask of the moustache *as drawn* — which is a
+segmentation problem, and the same one that made the painted portrait unusable as a
+reference baseline in §2.2. Two separate attempts to measure this figure have now failed
+on the same missing piece: knowing which pixels are the feature.
+
 ## 3. Terrain with per-unit difficulty
 
 **Implemented.** `TerrainLayer` classifies nine surface types on the navigation
