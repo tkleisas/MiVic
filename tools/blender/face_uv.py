@@ -142,8 +142,16 @@ def hairline(u):
     """
     around = min(abs(u - 0.25), 1.0 - abs(u - 0.25)) * 2.0
 
-    peak = math.exp(-((around / 0.09) ** 2))
-    return 0.255 + (0.48 * (around ** 0.75)) - (0.13 * math.exp(-(((around - 0.30) / 0.15) ** 2))) + (0.025 * peak)
+    # The corners matter more than the middle. A hairline that only rises towards
+    # the sides is a bowl cut: the hair comes down over the temples and the
+    # forehead is a slot. What the reference has is the opposite — the hair is
+    # *higher* at the temples than at the middle, which is the two corners that
+    # make a receding hairline, with the forelock left low between them.
+    return (
+        0.30
+        + (0.42 * (around ** 1.1))
+        - (0.17 * math.exp(-(((around - 0.30) / 0.17) ** 2)))
+    )
 
 
 def hairline_at(texture_u):
