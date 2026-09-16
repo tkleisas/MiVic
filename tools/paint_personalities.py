@@ -449,7 +449,7 @@ def brow_outline(side):
     for step in range(20):
         t01 = step / 19.0
         dx = 0.014 + (t01 * 0.062)
-        dz = 0.1800 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
+        dz = 0.1890 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
         half = 0.0054 - (0.0026 * (t01 ** 0.85))
 
         top.append((side * dx, dz + half))
@@ -474,7 +474,7 @@ def paint_brows(image):
         for step in range(7):
             t01 = 0.12 + (step * 0.13)
             dx = 0.014 + (t01 * 0.062)
-            dz = 0.1800 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
+            dz = 0.1890 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
             half = 0.0054 - (0.0026 * (t01 ** 0.85))
             hair_draw.line(
                 [at(side * dx, dz + half), at(side * dx + (side * 0.0016), dz + half + 0.0022)],
@@ -653,9 +653,9 @@ MARKERS = [
     ("eye inner", lambda side: (side * 0.0266, 0.1636)),
     ("eye centre", lambda side: (side * 0.0370, 0.1640)),
     ("eye outer", lambda side: (side * 0.0474, 0.1636)),
-    ("brow inner", lambda side: (side * 0.0100, 0.1800)),
-    ("brow peak", lambda side: (side * 0.0330, 0.1868)),
-    ("brow outer", lambda side: (side * 0.0680, 0.1724)),
+    ("brow inner", lambda side: (side * 0.0140, 0.1890)),
+    ("brow peak", lambda side: (side * 0.0370, 0.1958)),
+    ("brow outer", lambda side: (side * 0.0760, 0.1814)),
     ("nose tip", lambda side: (0.0, 0.1110)),
     ("nose wing", lambda side: (side * 0.0245, 0.0990)),
     ("nostril", lambda side: (side * 0.0130, 0.0955)),
