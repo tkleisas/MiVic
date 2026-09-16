@@ -563,6 +563,7 @@ expected_parts = {
     "ShinRight": 1,
     "Boot": 2,
     "Board": 2,
+    "BoardEdge": 4,
     "CollarTab": 2,
     "Collar": 2,
     "CollarEdge": 2,
@@ -734,14 +735,31 @@ def build_elder():
         parts.append(edge)
         paint(edge, gold, variation=0.02)
 
-        # A shoulder board on each shoulder, laid along it and tipped outward.
+        # A shoulder board: a strip that runs from the collar out over the shoulder,
+        # narrowing towards the collar, tipped down the slope of the shoulder and
+        # edged in the regiment's red. It was a flat plank of one width at one
+        # height, which is a board lying on a shelf rather than on a man.
         board = merge("Board", [
-            _box_geo((0.052, 0.132, 0.015), offset=(0.0, 0.0, 0.0), taper=0.72),
+            _box_geo((0.054, 0.148, 0.013), offset=(0.0, 0.0, 0.0), taper=0.66),
         ])
-        board.location = (side * shoulders * 0.30, -0.008, HIP + 0.512)
-        board.rotation_euler = (0.0, math.radians(side * 14.0), 0.0)
+        board.location = (side * shoulders * 0.28, -0.010, HIP + 0.508)
+        board.rotation_euler = (0.0, math.radians(side * 26.0), 0.0)
+        _wrap_uv(board)
         parts.append(board)
         paint(board, gold, variation=0.03)
+
+        for edge in (-1, 1):
+            piping = merge("BoardEdge", [
+                _box_geo((0.010, 0.150, 0.014), offset=(0.0, 0.0, 0.0), taper=0.66),
+            ])
+            piping.location = (
+                side * (shoulders * 0.28 - (edge * 0.024)),
+                -0.010,
+                HIP + 0.508,
+            )
+            piping.rotation_euler = (0.0, math.radians(side * 26.0), 0.0)
+            parts.append(piping)
+            paint(piping, collar_red, variation=0.02)
 
     # A gold star on the left breast: the one bright note on the chest.
     star = merge("Star", [
