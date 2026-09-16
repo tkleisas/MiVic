@@ -575,15 +575,19 @@ def moustache_outline(side):
     — it is the mouth that is hidden, not the moustache that is vague.
     """
     return [
-        (side * 0.000, 0.1040),
-        (side * 0.017, 0.1035),
-        (side * 0.032, 0.0995),
-        (side * 0.050, 0.0905),
-        (side * 0.058, 0.0790),
-        (side * 0.048, 0.0670),
-        (side * 0.032, 0.0600),
-        (side * 0.016, 0.0590),
-        (side * 0.000, 0.0588),
+        # Read off a pixel ruler laid over the portrait, then converted with its own
+        # scale (1202 px to the metre, crown y=29 to chin y=345, head centre x=220).
+        # The previous nine points were estimates, and two of them were wrong in
+        # opposite directions from what I had assumed: the outer tip is further out
+        # than I had it, 72 mm from the centre against 58, and it hangs lower, at 70 mm
+        # up the head against 79. A moustache tapers towards its ends and the ends drop.
+        (side * 0.000, 0.1021),
+        (side * 0.033, 0.0987),
+        (side * 0.055, 0.0870),
+        (side * 0.072, 0.0704),
+        (side * 0.058, 0.0605),
+        (side * 0.025, 0.0588),
+        (side * 0.000, 0.0605),
     ]
 
 
