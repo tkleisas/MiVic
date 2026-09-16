@@ -272,6 +272,26 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         under = math.exp(-(((v - 0.632) / 0.018) ** 2)) * math.exp(-((dx / 0.30) ** 2))
         y -= 0.015 * under * front
 
+        # The fine planes a face is actually made of, which a grid this size can
+        # now hold: the crease above each lid, the philtrum under the nose, the
+        # dimple in the chin, and the hollow at each temple.
+        for side in (-1.0, 1.0):
+            lid = math.exp(-((((dx - (side * 0.36)) / 0.20) ** 2) + (((v - 0.452) / 0.020) ** 2)))
+            y -= 0.004 * lid * front
+
+            wing_groove = math.exp(-((((dx - (side * 0.300)) / 0.045) ** 2) + (((v - 0.620) / 0.045) ** 2)))
+            y -= 0.006 * wing_groove * front
+
+        philtrum = math.exp(-(((dx / 0.055) ** 2) + (((v - 0.665) / 0.026) ** 2)))
+        y -= 0.005 * philtrum * front
+
+        dimple = math.exp(-(((dx / 0.075) ** 2) + (((v - 0.862) / 0.022) ** 2)))
+        y -= 0.005 * dimple * front
+
+        for side in (-1.0, 1.0):
+            hollow = math.exp(-((((abs(dx) - 0.70) / 0.22) ** 2) + (((v - 0.430) / 0.070) ** 2)))
+            y -= 0.007 * hollow * front
+
         # Lips, with the crease between them, and a chin under both.
         mouth = math.exp(-(((v - 0.691) / 0.043) ** 2)) * math.exp(-((dx / 0.42) ** 2))
         y += 0.008 * mouth * front
@@ -703,7 +723,7 @@ def build_elder():
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
 
-    head = _grid_mesh("Head", 52, 36, _head_surface(52, 36))
+    head = _grid_mesh("Head", 88, 62, _head_surface(88, 62))
     head.parent = neck
     parts.append(head)
 
@@ -714,7 +734,7 @@ def build_elder():
 
     # The hair is capped at the hairline rather than cut at it: the head's own
     # surface, pushed out, running from the crown down to a curve.
-    warped, _ = _hair_shell(76, 30)
+    warped, _ = _hair_shell(88, 34)
     hair = _capped_mesh("Hair", 72, 22, warped, face_uv.hairline)
     hair.parent = head
     parts.append(hair)
