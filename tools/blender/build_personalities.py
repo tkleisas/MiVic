@@ -352,7 +352,7 @@ def _hair_shell(segments=36, rings=18):
         # Thick over the crown, thin at the hairline and the temples. A shell the
         # same thickness everywhere is a moulding, and that is exactly what this
         # read as; hair lies on the skull at the edges and stands off it on top.
-        thickness = 1.045 + (0.105 * (1.0 - math.exp(-(((v - 0.02) / 0.30) ** 2))))
+        thickness = 1.050 + (0.150 * (1.0 - math.exp(-(((v - 0.02) / 0.30) ** 2))))
         x *= thickness
         y *= thickness
         z = cz + ((z - cz) * 1.02)
