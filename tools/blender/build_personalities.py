@@ -231,7 +231,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
             x += side * 0.008 * crown * (abs(dx) ** 0.5)
 
             zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.600) / 0.070) ** 2)))
-            x += side * 0.020 * zygomatic
+            x += side * 0.030 * zygomatic
             y += 0.011 * zygomatic * front
 
             corner = math.exp(-((((abs(dx) - 0.70) / 0.30) ** 2) + (((v - 0.800) / 0.090) ** 2)))
@@ -244,10 +244,10 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         # point. Mine was widest at the cheekbones and tapered to nothing below,
         # which is what made the lower third of the face a long blank.
         middle = max(0.0, min(1.0, (v - 0.44) / 0.28))
-        x *= 1.0 - (0.05 * middle)
+        x *= 1.0 - (0.03 * middle)
 
         if v > 0.58:
-            taper = 1.0 - (0.02 * ((v - 0.58) / 0.42) ** 1.4)
+            taper = 1.0 - (0.13 * ((v - 0.58) / 0.42) ** 1.3)
             x *= taper
             y *= 0.72 + (0.28 * taper)
 
