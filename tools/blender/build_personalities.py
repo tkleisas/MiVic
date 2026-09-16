@@ -675,7 +675,7 @@ def build_elder():
     parts.append(belt)
     paint(belt, belt_colour)
 
-    trunk = _prism_geo((shoulders * 0.78, 0.30 * bulk), (1.10, 1.06), 0.22, offset=(0.0, 0.0, HIP + 0.155), power=0.52)
+    trunk = _prism_geo((shoulders * 0.78, 0.33 * bulk), (1.10, 1.08), 0.22, offset=(0.0, 0.0, HIP + 0.155), power=0.52)
     crown = _dome_geo(shoulders * 0.46, (1.0, 0.66, 0.78), segments=22, rings=8, offset=(0.0, 0.0, HIP + 0.25))
     chest = merge("Body", [trunk, crown])
     _wrap_uv(chest)
@@ -694,14 +694,14 @@ def build_elder():
     collar = merge("Collar", [
         _ring_geo((0.142, 0.140), 0.86, (0.84, 0.84), 0.062, power=0.60, segments=24),
     ])
-    collar.location = (0.0, 0.0, SHOULDER - 0.012)
+    collar.location = (0.0, 0.0, SHOULDER + 0.006)
     _wrap_uv(collar)
     parts.append(collar)
     paint(collar, tunic, variation=0.03)
 
     for side in (-1, 1):
         tab = box("CollarTab", (0.030, 0.016, 0.036), offset=(0.0, 0.0, 0.0))
-        tab.location = (side * 0.026, 0.064, SHOULDER + 0.020)
+        tab.location = (side * 0.026, 0.066, SHOULDER + 0.038)
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
 
@@ -780,7 +780,7 @@ def build_elder():
     # is the one feature that is geometry, because it stands off the lip. Geometry
     # is in the neck's space. ---------------------------------------------------
     neck = merge("Neck", [
-        _cyl_geo(0.058, 0.17, segments=14, axis="z", offset=(0.0, 0.0, 0.01)),
+        _cyl_geo(0.066, 0.15, segments=16, axis="z", offset=(0.0, 0.0, 0.01)),
     ])
     neck.location = (0.0, 0.0, HEAD_BASE - 0.075)
     parts.append(neck)
