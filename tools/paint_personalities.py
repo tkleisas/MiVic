@@ -29,6 +29,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "blender"))
 
 import face_uv  # noqa: E402
+import figure_spec  # noqa: E402
 
 WIDTH = 2048
 HEIGHT = 1536
@@ -367,23 +368,18 @@ def paint_form(image):
     over(image, cool, 14.0)
 
 
-#: Where the eye is. One definition, because the outline and the iris and the lids
-#: were using two: the outline had been moved in and down and the iris had not, so
-#: every eye on this face was a pupil floating off its own socket with white showing
-#: underneath it.
-EYE_X = 0.030
-EYE_Z = 0.152
-
-#: The brow's line, the tip of the nose and the mouth, each named once. Every one of
-#: these was written twice — once in the painter and once in the marker list — and the
-#: eye had drifted between its own two halves because only one of them was edited.
-#: Naming them is the fix and it is better than a check, because a check tells you
-#: afterwards and a name cannot disagree with itself.
-BROW_Z = 0.1770
-BROW_ARCH = 0.0070
-BROW_FALL = 0.0076
-NOSE_TIP_Z = 0.1110
-MOUTH_Z = 0.0798
+#: Where the features are now comes from figure_spec, which the mesh generator reads
+#: too. It used to be defined here as well, with different numbers: this file had the eye
+#: at 0.152 and the generator had it at 0.164, so the sockets cut into the head's surface
+#: sat twelve millimetres above the eyes painted on it. Neither number was wrong where it
+#: stood; they were only wrong together. See tools/blender/figure_spec.py.
+EYE_X = figure_spec.EYE_X
+EYE_Z = figure_spec.EYE_Z
+BROW_Z = figure_spec.BROW_Z
+BROW_ARCH = figure_spec.BROW_ARCH
+BROW_FALL = figure_spec.BROW_FALL
+NOSE_TIP_Z = figure_spec.NOSE_TIP_Z
+MOUTH_Z = figure_spec.MOUTH_Z
 
 
 def eye_outline(side, lift=0.0):

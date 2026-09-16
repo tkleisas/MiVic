@@ -49,6 +49,7 @@ from build_vehicles import MATERIALS, box, clear_scene, cylinder, dome, export, 
 from build_vehicles import paint  # noqa: E402
 from build_vehicles import _box_geo, _cyl_geo, _dome_geo, _frustum_geo, _link, _spin_geo, merge  # noqa: E402
 import face_uv  # noqa: E402
+import figure_spec  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -68,17 +69,27 @@ SHOULDER = 1.36
 # neck, and at 1.43 and 1.40 the collar is over the man's mouth.
 HEAD_BASE = 1.506
 
-# Where the head's own warp put its features. `_head_surface` runs `v` from 0 at
-# the crown to 1 under the chin along `z = 0.150 + cos(pi * v) * 0.139`, so these
-# are that curve read at the brow ridge, the eye sockets, the nose and the lip.
-# Everything stuck on the face afterwards hangs off them: a moustache at the
-# brow's height is a moustache on the forehead.
-BROW_Z = 0.180      # v = 0.43
-EYE_Z = 0.164       # the eye line: 45 % of the way down the head
-NOSE_TIP_Z = 0.121  # 62 % down
-LIP_Z = 0.095       # 72 % down, under the nose
-EAR_Z = 0.146       # v = 0.53
-MOUTH_Z = 0.077     # 79 % down, the crease between the lips
+# Where the head's features are comes from figure_spec, which the painter reads too.
+#
+# This block used to hold its own copies — a brow at 0.180, an eye at 0.164, a nose tip
+# at 0.121 — and the painter held different ones, and the warp below used bare `v`
+# literals that were a third set again. None of the three was read by anything that
+# could disagree with it, so the sockets cut into the surface drifted twelve millimetres
+# above the eyes painted on it and nothing said so. These are now the same numbers the
+# paint is drawn to, and `figure_spec.v` converts them to the `v` the surface runs along.
+BROW_Z = figure_spec.BROW_Z
+EYE_Z = figure_spec.EYE_Z
+NOSE_TIP_Z = figure_spec.NOSE_TIP_Z
+LIP_Z = figure_spec.LIP_Z
+EAR_Z = figure_spec.EAR_Z
+MOUTH_Z = figure_spec.MOUTH_Z
+
+# The same three heights as `v`, which is what the warp below actually indexes by. Named
+# here rather than written into the warp as literals, which is how they came to disagree:
+# a number in a comment and a number in an expression do not drift together.
+BROW_V = figure_spec.v(BROW_Z)
+EYE_V = figure_spec.v(EYE_Z)
+NOSE_TIP_V = figure_spec.v(NOSE_TIP_Z)
 
 FLESH = (0.80, 0.63, 0.47, 0.00)
 FLESH_SHADE = (0.60, 0.45, 0.33, 0.00)
@@ -258,11 +269,11 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
             y *= 0.72 + (0.28 * taper)
 
         # Brow ridge: a shelf over the eyes, and the sockets cut in under it.
-        brow = math.exp(-(((v - 0.405) / 0.075) ** 2))
+        brow = math.exp(-(((v - BROW_V) / 0.075) ** 2))
         y += 0.016 * brow * front
 
         for side in (-1.0, 1.0):
-            socket = math.exp(-((((dx - (side * 0.40)) / 0.30) ** 2) + (((v - 0.466) / 0.082) ** 2)))
+            socket = math.exp(-((((dx - (side * 0.40)) / 0.30) ** 2) + (((v - EYE_V) / 0.082) ** 2)))
             y -= 0.024 * socket
 
         # The nose. Not a ridge with a bulge on it: a bridge that narrows towards
@@ -276,7 +287,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         rise = 0.060 * math.exp(-(((v - 0.574) / 0.086) ** 2))
         y += rise * bridge * max(0.15, ny)
 
-        tip = math.exp(-(((dx / 0.150) ** 2) + (((v - 0.600) / 0.030) ** 2)))
+        tip = math.exp(-(((dx / 0.150) ** 2) + (((v - NOSE_TIP_V) / 0.030) ** 2)))
         y += 0.026 * tip * max(0.15, ny)
 
         for side in (-1.0, 1.0):
