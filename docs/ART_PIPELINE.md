@@ -430,6 +430,28 @@ segmentation problem, and the same one that made the painted portrait unusable a
 reference baseline in §2.2. Two separate attempts to measure this figure have now failed
 on the same missing piece: knowing which pixels are the feature.
 
+### 2.5 Reverting the source does not revert the build
+
+Worth writing down because it cost an hour and looks like a code fault. After a shader
+technique was added, tested and then reverted with `git checkout`, **every** cutscene in
+the project began failing with exit 1 and no output at all — including probes that had
+passed earlier the same day and had nothing to do with the change. The source was clean,
+the content was clean, the tests passed, and the game would not render a scene.
+
+The cause was the compiled effect. `bin/Release` and `obj/Release` still held the `.mgfx`
+built from the reverted shader, and `dotnet build` did not consider the file out of date.
+Deleting those two directories and rebuilding fixed it on the first try, and the probe came
+back 16 of 16.
+
+Two lessons, and the second is the one to keep:
+
+* **A silent exit 1 with no stderr is a load failure, not a logic failure.** Everything
+  that reports its own errors — the probes, the self-test, the tests — was fine; the thing
+  that died was loading the effect.
+* **When a revert seems to have broken something unrelated, suspect the build output
+  before the source.** The symptom was project-wide and correlated with nothing in the
+  diff, which is the signature of a stale artefact rather than a code change.
+
 ## 3. Terrain with per-unit difficulty
 
 **Implemented.** `TerrainLayer` classifies nine surface types on the navigation
