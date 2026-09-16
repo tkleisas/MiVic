@@ -353,7 +353,7 @@ def paint_form(image):
         ellipse(draw, side * 0.0360, 0.0970, 0.0058, 0.0090, (*SHADOW, 170))
         ellipse(draw, side * 0.0130, 0.0955, 0.0046, 0.0034, (40, 24, 18, 240))
 
-    ellipse(draw, 0.0, 0.121, 0.0044, 0.030, (*SKIN_LIT, 210))
+    ellipse(draw, 0.0, NOSE_TIP_Z + 0.010, 0.0044, 0.030, (*SKIN_LIT, 210))
     ellipse(draw, 0.0, 0.1090, 0.0098, 0.0052, (*SKIN_LIT, 140))
 
     over(image, shade, 16.0)
@@ -373,6 +373,17 @@ def paint_form(image):
 #: underneath it.
 EYE_X = 0.030
 EYE_Z = 0.152
+
+#: The brow's line, the tip of the nose and the mouth, each named once. Every one of
+#: these was written twice — once in the painter and once in the marker list — and the
+#: eye had drifted between its own two halves because only one of them was edited.
+#: Naming them is the fix and it is better than a check, because a check tells you
+#: afterwards and a name cannot disagree with itself.
+BROW_Z = 0.1770
+BROW_ARCH = 0.0070
+BROW_FALL = 0.0076
+NOSE_TIP_Z = 0.1110
+MOUTH_Z = 0.0798
 
 
 def eye_outline(side, lift=0.0):
@@ -457,7 +468,7 @@ def brow_outline(side):
     for step in range(20):
         t01 = step / 19.0
         dx = 0.010 + (t01 * 0.052)
-        dz = 0.1770 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
+        dz = BROW_Z + (BROW_ARCH * math.sin(math.pi * (t01 ** 0.72))) - (BROW_FALL * t01)
         half = 0.0054 - (0.0026 * (t01 ** 0.85))
 
         top.append((side * dx, dz + half))
@@ -482,7 +493,7 @@ def paint_brows(image):
         for step in range(7):
             t01 = 0.12 + (step * 0.13)
             dx = 0.010 + (t01 * 0.052)
-            dz = 0.1770 + (0.0070 * math.sin(math.pi * (t01 ** 0.72))) - (0.0076 * t01)
+            dz = BROW_Z + (BROW_ARCH * math.sin(math.pi * (t01 ** 0.72))) - (BROW_FALL * t01)
             half = 0.0054 - (0.0026 * (t01 ** 0.85))
             hair_draw.line(
                 [at(side * dx, dz + half), at(side * dx + (side * 0.0016), dz + half + 0.0022)],
@@ -661,13 +672,13 @@ MARKERS = [
     ("eye inner", lambda side: (side * (EYE_X - 0.0110), EYE_Z - 0.0004)),
     ("eye centre", lambda side: (side * EYE_X, EYE_Z)),
     ("eye outer", lambda side: (side * (EYE_X + 0.0104), EYE_Z - 0.0004)),
-    ("brow inner", lambda side: (side * 0.0100, 0.1770)),
-    ("brow peak", lambda side: (side * 0.0320, 0.1838)),
-    ("brow outer", lambda side: (side * 0.0640, 0.1694)),
-    ("nose tip", lambda side: (0.0, 0.1110)),
+    ("brow inner", lambda side: (side * 0.0100, BROW_Z)),
+    ("brow peak", lambda side: (side * 0.0320, BROW_Z + BROW_ARCH - (BROW_FALL * 0.32))),
+    ("brow outer", lambda side: (side * 0.0640, BROW_Z + (BROW_ARCH * 0.10) - BROW_FALL)),
+    ("nose tip", lambda side: (0.0, NOSE_TIP_Z)),
     ("nose wing", lambda side: (side * 0.0245, 0.0990)),
     ("nostril", lambda side: (side * 0.0130, 0.0955)),
-    ("mouth", lambda side: (0.0, 0.0798)),
+    ("mouth", lambda side: (0.0, MOUTH_Z)),
     ("lip", lambda side: (0.0, 0.0600)),
     ("chin", lambda side: (0.0, 0.0300)),
     ("temple", lambda side: (side * 0.0580, 0.0980)),
