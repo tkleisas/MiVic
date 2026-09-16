@@ -39,9 +39,9 @@ SKIN = (176, 134, 104)
 SKIN_LIT = (212, 172, 138)
 SKIN_SHADE = (116, 84, 66)
 SKIN_WARM = (198, 118, 92)
-HAIR = (62, 56, 50)
-HAIR_LIT = (88, 82, 74)
-HAIR_DARK = (38, 34, 30)
+HAIR = (50, 45, 40)
+HAIR_LIT = (76, 70, 63)
+HAIR_DARK = (30, 27, 24)
 BROW = (58, 48, 40)
 EYE_WHITE = (222, 216, 208)
 IRIS = (74, 52, 34)
@@ -231,7 +231,7 @@ def paint_hair(image):
             else:
                 base = HAIR
 
-            tone = (0.56 + (0.34 * lock_tone) + (0.30 * clump) + (0.30 * rounded) + (0.46 * sheen) - (0.20 * roots)) * key * length_light
+            tone = (0.72 + (0.22 * lock_tone) + (0.22 * clump) + (0.18 * rounded) + (0.46 * sheen) - (0.16 * roots)) * key * length_light
 
             overlay_pixels[x, y] = (
                 min(255, int(base[0] * tone)),
