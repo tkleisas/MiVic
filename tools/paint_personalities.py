@@ -563,12 +563,12 @@ def moustache_outline(side):
         (side * 0.000, 0.1040),
         (side * 0.017, 0.1035),
         (side * 0.032, 0.0995),
-        (side * 0.049, 0.0920),
-        (side * 0.056, 0.0820),
-        (side * 0.046, 0.0715),
-        (side * 0.033, 0.0700),
-        (side * 0.017, 0.0740),
-        (side * 0.000, 0.0765),
+        (side * 0.050, 0.0905),
+        (side * 0.058, 0.0790),
+        (side * 0.048, 0.0670),
+        (side * 0.032, 0.0600),
+        (side * 0.016, 0.0590),
+        (side * 0.000, 0.0588),
     ]
 
 
@@ -638,7 +638,7 @@ def paint_moustache_bed(image):
     # rather than floating above it.
     bed = layer()
     bed_draw = ImageDraw.Draw(bed)
-    ellipse(bed_draw, 0.0, 0.0730, 0.0400, 0.0045, (*SHADOW, 140))
+    ellipse(bed_draw, 0.0, 0.0620, 0.0400, 0.0045, (*SHADOW, 140))
     over(image, bed, 1.5)
 
     over(image, mass, 0.5)

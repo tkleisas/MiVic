@@ -349,26 +349,21 @@ def _hair_shell(segments=36, rings=18):
         # comb-back: a receding hairline is the shape that says "old" without a caption.
         cz = 0.150
 
-        # Thick over the crown, thin at the hairline and the temples. A shell the
-        # same thickness everywhere is a moulding, and that is exactly what this
-        # read as; hair lies on the skull at the edges and stands off it on top.
-        thickness = 1.050 + (0.150 * (1.0 - math.exp(-(((v - 0.02) / 0.30) ** 2))))
+        # Combed back, not up, and thick over the crown rather than at the sides.
+        # The portrait's hair leaves the forehead, rises a little and sweeps away
+        # over the top: the volume is *behind* the front of the head, not balanced
+        # on it. Lifting without that sweep is a toupee, which is what the last
+        # attempt at this became, and lying flat is a cap, which is what it is now.
+        thickness = 1.050 + (0.165 * math.exp(-(((v - 0.05) / 0.30) ** 2)))
         x *= thickness
         y *= thickness
         z = cz + ((z - cz) * 1.02)
-        y -= 0.004 * (1.0 - v)
 
-        # Standing up. The reference's hair is a mass lifted off the skull and
-        # brushed back, not a cap painted on it, and a cap is what this was: the
-        # shell sat 2 per cent outside the head and followed every curve of it.
-        # The lift is strongest over the crown and fades back down the sides, and
-        # the front is lifted more than the nape, which is what "brushed up" means.
-        lift = math.exp(-(((v - 0.02) / 0.34) ** 2))
-        z += 0.024 * lift
-        y -= 0.010 * lift * max(0.0, math.sin(math.pi * v) * math.sin(2.0 * math.pi * u))
+        sweep = math.exp(-(((v - 0.08) / 0.34) ** 2))
+        back = max(0.0, -y) / 0.11
+        y -= 0.024 * sweep * back
+        z += 0.013 * sweep
 
-        # and it stands off the skull rather than on it
-        z += 0.014 * max(0.0, 0.6 - v)
         return (x, y, z)
 
     def keep(u, v):
