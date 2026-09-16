@@ -172,8 +172,12 @@ def paint_hair(image):
 
         # One lock's own colour, and how far across it this pixel is: a lock is
         # lit down its middle and dark where it meets its neighbours.
-        lock = int(x // LOCK_PIXELS + (2.5 * noise(x // 71, 0.0, 23.0)))
+        # Locks of uneven width, and each one its own tone out of three: a head of
+        # hair is not one colour with a highlight on it, it is dark strands and
+        # grey ones lying together, and which is which changes lock by lock.
+        lock = int(x // LOCK_PIXELS + (4.0 * noise(x // 53, 0.0, 23.0)))
         lock_tone = noise(lock, 0.0, 5.7)
+        lock_grey = noise(lock, 3.3, 11.1)
         across = ((x % LOCK_PIXELS) / LOCK_PIXELS) - 0.5
         rounded = 1.0 - ((abs(across) * 2.0) ** 1.5)
 
@@ -193,8 +197,14 @@ def paint_hair(image):
             sheen = math.exp(-(((y - (edge - 70.0)) / 52.0) ** 2))
             roots = math.exp(-(((y - edge) / 26.0) ** 2))
 
-            base = HAIR_DARK if lock_tone < 0.45 else HAIR
-            tone = 0.52 + (0.72 * lock_tone) + (0.40 * rounded) + (0.55 * sheen) - (0.26 * roots)
+            if lock_grey > 0.72:
+                base = HAIR_LIT
+            elif lock_tone < 0.42:
+                base = HAIR_DARK
+            else:
+                base = HAIR
+
+            tone = 0.62 + (0.52 * lock_tone) + (0.34 * rounded) + (0.45 * sheen) - (0.20 * roots)
 
             overlay_pixels[x, y] = (
                 min(255, int(base[0] * tone)),
@@ -202,7 +212,7 @@ def paint_hair(image):
                 min(255, int(base[2] * tone)),
             )
 
-    image.paste(overlay, (0, 0), blur(mask, 2.0))
+    image.paste(overlay, (0, 0), blur(mask, 4.5))
 
 
 def layer():
@@ -476,6 +486,10 @@ def paint_moustache_shadow(image):
             )
 
     over(image, strands, 0.4)
+    # The strands inside it are lighter than the mass, so the moustache reads as
+    # hair rather than as a shadow under the nose.
+    lighter = Image.new("RGBA", image.size, (126, 114, 102, 255))
+    image.paste(lighter, (0, 0), blur(Image.composite(mask, Image.new("L", image.size, 0), mask), 0.5))
     over(image, Image.composite(strands, Image.new("RGBA", image.size, (0, 0, 0, 0)), mask), 0.35)
 
 
