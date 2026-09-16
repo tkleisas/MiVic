@@ -79,7 +79,7 @@ public sealed partial class MiVicGame
     private void BeginCutscene(CutsceneDefinition scene, Action? next)
     {
         _cutscene?.Dispose();
-        _cutscene = new CutsceneDirector(scene, _renderer!, AppContext.BaseDirectory);
+        _cutscene = new CutsceneDirector(scene, _renderer!, GraphicsDevice, AppContext.BaseDirectory);
         _cutsceneNext = next;
         _screen = GameScreen.Cutscene;
         _paused = false;

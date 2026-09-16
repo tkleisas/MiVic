@@ -1,6 +1,7 @@
 using MiVic.Game.Rendering;
 using MiVic.Game.Rendering.Gltf;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 
 namespace MiVic.Game.Cutscene;
 
@@ -59,13 +60,16 @@ public sealed class CutsceneAssets : IDisposable
         CentreOnOwnBounds: false);
 
     private readonly InstancedRenderer _renderer;
+    private readonly GraphicsDevice _device;
     private readonly string _baseDirectory;
     private readonly Dictionary<string, CutsceneModel> _cache = [];
     private readonly List<InstancedRenderer.Mesh> _owned = [];
+    private readonly List<Texture2D> _textures = [];
 
-    public CutsceneAssets(InstancedRenderer renderer, string baseDirectory)
+    public CutsceneAssets(InstancedRenderer renderer, GraphicsDevice device, string baseDirectory)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+        _device = device ?? throw new ArgumentNullException(nameof(device));
         _baseDirectory = baseDirectory ?? throw new ArgumentNullException(nameof(baseDirectory));
     }
 
@@ -91,12 +95,13 @@ public sealed class CutsceneAssets : IDisposable
         }
 
         ModelData data = GltfLoader.LoadModel(path, Raw);
+        Texture2D? texture = LoadTexture(asset);
         var parts = new CutscenePart[data.Parts.Count];
 
         for (int i = 0; i < parts.Length; i++)
         {
             ModelPart part = data.Parts[i];
-            InstancedRenderer.Mesh mesh = _renderer.CreateMesh(part.Mesh);
+            InstancedRenderer.Mesh mesh = _renderer.CreateMesh(part.Mesh, texture);
             _owned.Add(mesh);
 
             parts[i] = new CutscenePart(part.Name, mesh, part.LocalTransform, part.ParentIndex);
@@ -105,6 +110,32 @@ public sealed class CutsceneAssets : IDisposable
         var model = new CutsceneModel(asset, parts, data.ModelTransform);
         _cache[asset] = model;
         return model;
+    }
+
+    /// <summary>
+    /// The model's texture, if one was painted for it, or null if it is drawn in
+    /// flat material colour.
+    /// <para>
+    /// Found by the model's own name rather than declared by the glTF material. The
+    /// generators write geometry and vertex colours and nothing else, and a material
+    /// graph in a generator file is a second place for the art to be, and one that
+    /// cannot be read without opening Blender. A file next to the model with the
+    /// model's name is a rule that can be checked by looking in the folder.
+    /// </para>
+    /// </summary>
+    private Texture2D? LoadTexture(string asset)
+    {
+        string path = Path.Combine(_baseDirectory, ModelRoot, Folder, asset + ".png");
+
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        using FileStream stream = File.OpenRead(path);
+        Texture2D texture = Texture2D.FromStream(_device, stream);
+        _textures.Add(texture);
+        return texture;
     }
 
     /// <summary>

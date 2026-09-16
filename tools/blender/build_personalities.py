@@ -48,6 +48,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_vehicles import MATERIALS, box, clear_scene, cylinder, dome, export, join  # noqa: E402
 from build_vehicles import paint  # noqa: E402
 from build_vehicles import _box_geo, _cyl_geo, _dome_geo, _frustum_geo, _link, merge  # noqa: E402
+import face_uv  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -120,6 +121,7 @@ def _grid_mesh(name, segments, rings, warp, keep=None):
     """
     index = {}
     verts = []
+    uvs = []
     faces = []
 
     def vertex(ring, seg):
@@ -130,6 +132,12 @@ def _grid_mesh(name, segments, rings, warp, keep=None):
             v = ring / rings
             index[key] = len(verts)
             verts.append(warp(u, v))
+
+            # The grid's own coordinates are the texture's, remapped so the face
+            # gets the middle of the map and most of its width: a face is a fifth
+            # of the way round a head, and a linear map spends four fifths of the
+            # texture on hair and the back of a skull nobody looks at.
+            uvs.append((face_uv.wrap_u(u), v))
 
         return index[key]
 
@@ -153,12 +161,12 @@ def _grid_mesh(name, segments, rings, warp, keep=None):
             else:
                 faces.append((a, b, c, d))
 
-    return _link(name, verts, faces)
+    return _link(name, verts, faces, uvs)
 
 
 def _head_surface(segments=36, rings=26):
     """One face, as a function of where you are on a head."""
-    half_x, half_y, half_z = 0.104, 0.116, 0.139
+    half_x, half_y, half_z = 0.107, 0.117, 0.133
     centre_z = 0.150
 
     def warp(u, v):
@@ -179,7 +187,7 @@ def _head_surface(segments=36, rings=26):
         # The jaw narrows towards the chin, which is what makes a head a head
         # rather than an egg; the back of the skull keeps its width.
         if v > 0.62:
-            taper = 1.0 - (0.17 * ((v - 0.62) / 0.38) ** 1.3)
+            taper = 1.0 - (0.10 * ((v - 0.62) / 0.38) ** 1.25)
             x *= taper
             y *= 0.55 + (0.45 * taper)
 
@@ -251,16 +259,45 @@ def _hair_shell(segments=36, rings=18):
 
     def keep(u, v):
         # The hairline, measured around the head rather than across the face: 0 at
-        # the face, 1 at the nape. It starts a third of the way down the front —
-        # a high forehead, which is what the reference has — and falls to the nape
-        # at the back, so the head has hair on it and not a polished dome.
-        around = min(abs(u - 0.25), 1.0 - abs(u - 0.25)) * 2.0
-        # A high forehead that recedes steadily and never doubles back: a hairline
-        # with a corner in it renders as a staircase at this grid's resolution.
-        hairline = 0.26 + (0.34 * (around ** 0.55))
-        return v < hairline
+        # the face, 1 at the nape. `face_uv.hairline` is the same function, and the
+        # painter paints to it — one definition, because two would end in two
+        # different hairlines with a band of forehead between them.
+        return v < face_uv.hairline(u)
 
     return warped, keep
+
+
+def _capped_mesh(name, segments, rings, warp, cap):
+    """A grid from the pole down to a boundary that follows a curve.
+
+    `_grid_mesh` keeps whole quads, so its boundary is a staircase: the hairline it
+    drew stepped across the forehead in four-millimetre risers, which at three
+    metres is a visible zigzag and the single most obviously synthetic thing on the
+    head. Here the grid runs from the crown to the boundary *by construction* — `v`
+    is a fraction of `cap(u)` rather than of the whole sphere — so the edge is the
+    curve itself, at whatever resolution the curve is sampled at, and no quad is
+    ever thrown away.
+    """
+    verts = []
+    uvs = []
+    faces = []
+
+    for ring in range(rings + 1):
+        for seg in range(segments):
+            u = seg / segments
+            v = (ring / rings) * cap(u)
+            verts.append(warp(u, v))
+            uvs.append((face_uv.wrap_u(u), v))
+
+    for ring in range(rings):
+        for seg in range(segments):
+            nxt = (seg + 1) % segments
+            here = (ring * segments) + seg
+            below = ((ring + 1) * segments) + seg
+
+            faces.append((here, below, ((ring + 1) * segments) + nxt, (ring * segments) + nxt))
+
+    return _link(name, verts, faces, uvs)
 
 
 def _face_dome(name, radius, width, height, depth, at, droop=0.0, sweep=0.0, rings=5):
@@ -353,10 +390,6 @@ def build_elder():
     gold = (0.74, 0.58, 0.22, 0.00)
     hair_colour = (0.22, 0.18, 0.15, 0.03)
     hair_dark = (0.14, 0.11, 0.09, 0.03)
-    eye_white = (0.82, 0.80, 0.76, 0.00)
-    iris_colour = (0.20, 0.14, 0.09, 0.00)
-    lip_colour = (0.68, 0.44, 0.38, 0.00)
-    mouth_colour = (0.15, 0.06, 0.06, 0.00)
 
     # ---- legs: tapered cylinders, two parts each so a stance can shift --------
     for side, tag in ((-1, "Left"), (1, "Right")):
@@ -484,8 +517,10 @@ def build_elder():
         paint(hand, FLESH, variation=0.03)
 
     # ---- head: one sculpted surface, not a stack of boxes. The features are the
-    # warp of the grid; the eyes, brows and moustache are set into it as their own
-    # parts so they can be their own colour. Geometry is in the neck's space. ----
+    # warp of the grid, and the rest of the face is the texture the head samples —
+    # the two together are what a face is read from at three metres. The moustache
+    # is the one feature that is geometry, because it stands off the lip. Geometry
+    # is in the neck's space. ---------------------------------------------------
     neck = merge("Neck", [
         _cyl_geo(0.058, 0.17, segments=14, axis="z", offset=(0.0, 0.0, 0.01)),
     ])
@@ -513,62 +548,26 @@ def build_elder():
     head = _grid_mesh("Head", 36, 26, _head_surface(36, 26))
     head.parent = neck
     parts.append(head)
-    paint(head, FLESH, variation=0.0)
 
-    warped, keep = _hair_shell(56, 64)
-    hair = _grid_mesh("Hair", 56, 64, warped, keep)
+    # White, not flesh: the head's colour comes from its texture, and a vertex
+    # colour multiplied into a painted face darkens it twice over. The vertex
+    # colour multiplies the texel, so the one thing it must be is neutral.
+    paint(head, (1.0, 1.0, 1.0, 0.0), variation=0.0)
+
+    # The hair is capped at the hairline rather than cut at it: the head's own
+    # surface, pushed out, running from the crown down to a curve.
+    warped, _ = _hair_shell(72, 26)
+    hair = _capped_mesh("Hair", 72, 22, warped, face_uv.hairline)
     hair.parent = head
     parts.append(hair)
     paint(hair, hair_colour, variation=0.0)
 
+    # The face — eyes, brows, the fold beside a nostril, the lip — is a texture, not
+    # geometry. Modelled out of domes it read as a mask at three metres, which is
+    # what the first version of this head was; painted, it is what a face is made
+    # of. The warp still cuts the sockets and the ridge those features sit in, so a
+    # painted eye is an eye in a socket and not a decal on a ball.
     for side in (-1, 1):
-        # An eyeball in the socket the head was warped to make: a sclera with an
-        # iris a little proud of it. Two domes of two colours, because there is no
-        # texture on this renderer and a single dark bead reads as a hole.
-        sclera = _face_dome(
-            "Eye", 0.020, 1.05, 0.90, 0.50,
-            (side * 0.037, 0.082, EYE_Z - 0.006),
-        )
-        sclera.parent = head
-        parts.append(sclera)
-        paint(sclera, eye_white, variation=0.02)
-
-        iris = _face_dome(
-            "Iris", 0.0110, 1.0, 1.0, 0.80,
-            (side * 0.037, 0.091, EYE_Z - 0.006),
-            rings=4,
-        )
-        iris.parent = head
-        parts.append(iris)
-        paint(iris, iris_colour, variation=0.02)
-
-        # A brow riding the ridge, thick at the nose and swept out over the eye.
-        ridge = _face_dome(
-            "Brow", 0.032, 1.05, 0.30, 0.38,
-            (side * 0.043, 0.113, BROW_Z - 0.004),
-            droop=side * 7.0,
-            sweep=side * -13.0,
-            rings=4,
-        )
-        ridge.parent = head
-        parts.append(ridge)
-        paint(ridge, hair_dark, variation=0.03)
-
-        # Half a moustache: a wing that meets its pair at the parting, covers the
-        # upper lip and stops at the corner of the mouth.
-        sweep_part = _face_dome(
-            "Moustache", 0.032, 1.90, 0.46, 0.58,
-            (side * 0.024, 0.090, LIP_Z + 0.006),
-            droop=side * 10.0,
-            sweep=side * -7.0,
-            rings=4,
-        )
-        sweep_part.parent = head
-        parts.append(sweep_part)
-        paint(sweep_part, hair_dark, variation=0.03)
-
-        # An ear, flattened against the skull, now that the hair has left the side
-        # of the head alone.
         # An ear, flattened against the skull: the bulge turned outward, so the
         # dome's own X is its height and its own Y is its depth.
         ear = merge("Ear", [
@@ -579,27 +578,6 @@ def build_elder():
         ear.location = (side * 0.098, -0.010, EAR_Z)
         parts.append(ear)
         paint(ear, FLESH_SHADE, variation=0.0)
-
-    # The mouth: a dark slot at the lip line with a lower lip under it. The head's
-    # own warp makes lips, but a lip has no colour of its own and a mouth that is
-    # the same colour as the face is not a mouth.
-    mouth = _face_dome(
-        "Mouth", 0.030, 1.0, 0.16, 0.32,
-        (0.0, 0.074, MOUTH_Z),
-        rings=4,
-    )
-    mouth.parent = head
-    parts.append(mouth)
-    paint(mouth, mouth_colour, variation=0.0)
-
-    lip = _face_dome(
-        "Lip", 0.026, 1.0, 0.30, 0.26,
-        (0.0, 0.070, MOUTH_Z - 0.013),
-        rings=4,
-    )
-    lip.parent = head
-    parts.append(lip)
-    paint(lip, lip_colour, variation=0.0)
 
     # The pipe: a thin stem out of the corner of the mouth and a small bowl at the
     # far end of it. Measured against the head, not against a hand.

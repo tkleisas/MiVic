@@ -206,10 +206,32 @@ MATERIALS = {
 # --------------------------------------------------------------------------
 
 
-def _link(name, verts, faces):
+def _link(name, verts, faces, uvs=None):
+    """Builds an object from vertex and face lists, with texture coordinates if given.
+
+    `uvs` is parallel to `verts` — one coordinate per vertex, not per corner — which
+    is the whole reason the surface generators can carry a texture at all: a sphere
+    grid already knows its own u and v, so a face can be painted in the coordinates
+    it was generated in rather than unwrapped afterwards.
+    """
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(verts, [], faces)
     mesh.validate()
+
+    if uvs is not None and len(uvs) == len(mesh.vertices):
+        layer = mesh.uv_layers.new(name="UVMap")
+
+        # V is flipped here, once, and this is the only place it happens. The
+        # generators work in image order — v = 0 is the top of the texture, which is
+        # how a painter thinks — and Blender's own UV space puts v = 0 at the
+        # bottom. The exporter flips again on the way to glTF, so writing `1 - v`
+        # here is what makes the whole chain land the right way up. Without it the
+        # face renders upside down, which is how this was found.
+        for poly in mesh.polygons:
+            for loop in poly.loop_indices:
+                u, v = uvs[mesh.loops[loop].vertex_index]
+                layer.data[loop].uv = (u, 1.0 - v)
+
     obj = bpy.data.objects.new(name, mesh)
     bpy.context.collection.objects.link(obj)
     return obj

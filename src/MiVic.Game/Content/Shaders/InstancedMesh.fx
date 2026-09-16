@@ -40,6 +40,7 @@ struct VertexInput
     float4 Position : POSITION0;
     float3 Normal   : NORMAL0;
     float4 Color    : COLOR0;
+    float2 TexCoord : TEXCOORD0;
 };
 
 struct InstanceInput
@@ -65,6 +66,10 @@ struct VertexOutput
     // of a round. Three components rather than two because a round is drawn with a
     // cube and there is no vertex at the middle of one of its faces.
     float3 Local    : TEXCOORD1;
+
+    // Where this vertex sits on the mesh's texture, if it has one. Interpolated
+    // through to the pixel shader, which is the only place a texture is read.
+    float2 TexCoord : TEXCOORD2;
 };
 
 VertexOutput MainVS(VertexInput input, InstanceInput instance)
@@ -79,6 +84,7 @@ VertexOutput MainVS(VertexInput input, InstanceInput instance)
     output.Tint = instance.Color;
     output.WorldPos = worldPosition.xyz;
     output.Local = input.Position.xyz;
+    output.TexCoord = input.TexCoord;
     return output;
 }
 
@@ -250,6 +256,63 @@ technique Instanced
     {
         VertexShader = compile VS_SHADERMODEL MainVS();
         PixelShader  = compile PS_SHADERMODEL MainPS();
+    }
+};
+
+// -----------------------------------------------------------------------------
+// Textured: the lit technique with a texture multiplied into the material colour.
+//
+// This exists for faces. Everything else in the game is a shape whose colour is
+// enough to say what it is — a tank's silhouette is the tank — but a face is read
+// at three metres and what is read there is an iris, an eyelid, a lip, the fold
+// between a nose and a cheek. Those are paint, not geometry: modelling them out of
+// primitives costs thousands of triangles and still reads as a mask, which is
+// exactly what the first head did.
+//
+// Clamped rather than wrapped, because a face texture is an atlas and a wrapped
+// seam at the back of a skull is a stripe of eyebrow across the neck. The material
+// colour still multiplies, so the same texture serves a head lit by a window and a
+// head lit by a lamp without a second image.
+// -----------------------------------------------------------------------------
+
+texture MeshTexture;
+
+sampler2D MeshSampler = sampler_state
+{
+    Texture   = <MeshTexture>;
+    MinFilter = Linear;
+    MagFilter = Linear;
+    MipFilter = Linear;
+    AddressU  = Clamp;
+    AddressV  = Clamp;
+};
+
+float4 TexturedPS(VertexOutput input) : COLOR0
+{
+    float4 texel = tex2D(MeshSampler, input.TexCoord);
+    float3 base = SurfaceColor(input.Material, input.Tint.rgb) * texel.rgb;
+
+    float3 normal = normalize(input.Normal);
+    float hemi = saturate((normal.y * 0.5) + 0.5);
+    float3 ambient = AmbientColor.rgb * lerp(0.58, 1.30, hemi);
+
+    float lambert = saturate(dot(normal, LightDirection));
+    float wrap = (lambert * 0.6) + 0.4;
+    float3 lit = base * (ambient + (wrap * 0.68));
+
+    float distanceToCamera = length(input.WorldPos - CameraPosition);
+    float fogRange = max(FogEnd - FogStart, 0.001);
+    float fogAmount = saturate((distanceToCamera - FogStart) / fogRange) * FogColor.a;
+
+    return float4(lerp(lit, FogColor.rgb, fogAmount), input.Tint.a * texel.a);
+}
+
+technique Textured
+{
+    pass P0
+    {
+        VertexShader = compile VS_SHADERMODEL MainVS();
+        PixelShader  = compile PS_SHADERMODEL TexturedPS();
     }
 };
 
@@ -858,6 +921,7 @@ VertexOutput FoliageVS(VertexInput input, InstanceInput instance)
     output.Tint = instance.Color;
     output.WorldPos = worldPosition.xyz;
     output.Local = input.Position.xyz;
+    output.TexCoord = input.TexCoord;
     return output;
 }
 

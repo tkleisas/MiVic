@@ -129,6 +129,7 @@ public static class GltfLoader
         var normals = new List<Vector3>(4096);
         var colors = new List<Vector3>(4096);
         var masks = new List<float>(4096);
+        var textureCoordinates = new List<Vector2>(4096);
         var indices = new List<ushort>(8192);
 
         int[]? sceneNodes = root.Scenes is { Length: > 0 }
@@ -145,14 +146,14 @@ public static class GltfLoader
             // No scene graph: treat every node as a root.
             for (int i = 0; i < (root.Nodes?.Length ?? 0); i++)
             {
-                AppendNode(root, buffers, i, rootTransform, options, positions, normals, colors, masks, indices);
+                AppendNode(root, buffers, i, rootTransform, options, positions, normals, colors, masks, textureCoordinates, indices);
             }
         }
         else
         {
             foreach (int node in sceneNodes)
             {
-                AppendNode(root, buffers, node, rootTransform, options, positions, normals, colors, masks, indices);
+                AppendNode(root, buffers, node, rootTransform, options, positions, normals, colors, masks, textureCoordinates, indices);
             }
         }
 
@@ -161,7 +162,7 @@ public static class GltfLoader
             throw new InvalidDataException($"'{path}' contains no renderable triangle geometry.");
         }
 
-        return BuildMesh(positions, normals, colors, masks, indices, options);
+        return BuildMesh(positions, normals, colors, masks, textureCoordinates, indices, options);
     }
 
     /// <summary>
@@ -276,7 +277,8 @@ public static class GltfLoader
                         Channel(color.X),
                         Channel(color.Y),
                         Channel(color.Z),
-                        PaintMask(builder.Masks[v])));
+                        PaintMask(builder.Masks[v])),
+                    builder.TextureCoordinates[v]);
             }
 
             built[i] = new ModelPart(
@@ -307,6 +309,9 @@ public static class GltfLoader
 
         /// <summary>Faction paint mask per vertex: 1 team colour, 0 bare material.</summary>
         public List<float> Masks { get; } = new(512);
+
+        /// <summary>Texture coordinate per vertex, zero when the model carries none.</summary>
+        public List<Vector2> TextureCoordinates { get; } = new(512);
 
         public List<ushort> Indices { get; } = new(1024);
     }
@@ -362,6 +367,7 @@ public static class GltfLoader
                 builder.Normals,
                 builder.Colors,
                 builder.Masks,
+                builder.TextureCoordinates,
                 builder.Indices);
 
             if (builder.Positions.Count > 0)
@@ -570,6 +576,7 @@ public static class GltfLoader
         List<Vector3> normals,
         List<Vector3> colors,
         List<float> masks,
+        List<Vector2> textureCoordinates,
         List<ushort> indices,
         int depth = 0)
     {
@@ -589,7 +596,7 @@ public static class GltfLoader
 
         if (node.Mesh is int meshIndex && root.Meshes is not null && (uint)meshIndex < (uint)root.Meshes.Length)
         {
-            AppendMesh(root, buffers, root.Meshes[meshIndex], transform, options, positions, normals, colors, masks, indices);
+            AppendMesh(root, buffers, root.Meshes[meshIndex], transform, options, positions, normals, colors, masks, textureCoordinates, indices);
         }
 
         if (node.Children is null)
@@ -599,7 +606,7 @@ public static class GltfLoader
 
         foreach (int child in node.Children)
         {
-            AppendNode(root, buffers, child, transform, options, positions, normals, colors, masks, indices, depth + 1);
+            AppendNode(root, buffers, child, transform, options, positions, normals, colors, masks, textureCoordinates, indices, depth + 1);
         }
     }
 
@@ -632,6 +639,7 @@ public static class GltfLoader
         List<Vector3> normals,
         List<Vector3> colors,
         List<float> masks,
+        List<Vector2> textureCoordinates,
         List<ushort> indices)
     {
         if (mesh.Primitives is null)
@@ -677,6 +685,9 @@ public static class GltfLoader
             int colorAccessor = FindAttribute(primitive, "COLOR_0");
             float[]? rawColors = colorAccessor >= 0 ? ReadFloats(root, buffers, colorAccessor) : null;
             int colorComponents = colorAccessor >= 0 ? ComponentCount(GetAccessor(root, colorAccessor).Type) : 0;
+            int uvAccessor = FindAttribute(primitive, "TEXCOORD_0");
+            float[]? rawUvs = uvAccessor >= 0 ? ReadFloats(root, buffers, uvAccessor) : null;
+            int uvComponents = uvAccessor >= 0 ? ComponentCount(GetAccessor(root, uvAccessor).Type) : 0;
 
             float materialShade = MaterialShade(root, primitive.Material);
             ushort baseIndex = (ushort)positions.Count;
@@ -727,6 +738,13 @@ public static class GltfLoader
 
                 colors.Add(vertexColor * materialShade);
                 masks.Add(paintMask);
+
+                // A mesh with no texture coordinates gets zeroes rather than a
+                // generated layout: guessing a layout is how a texture ends up
+                // smeared across a model that was never meant to have one.
+                textureCoordinates.Add(rawUvs is not null && uvComponents >= 2
+                    ? new Vector2(rawUvs[v * uvComponents], rawUvs[(v * uvComponents) + 1])
+                    : Vector2.Zero);
             }
 
             if (primitive.Indices is int indexAccessor)
@@ -752,6 +770,7 @@ public static class GltfLoader
         List<Vector3> normals,
         List<Vector3> colors,
         List<float> masks,
+        List<Vector2> textureCoordinates,
         List<ushort> indices,
         ModelImportOptions options)
     {
@@ -828,7 +847,8 @@ public static class GltfLoader
             vertices[i] = new VertexPositionNormal(
                 position,
                 normals[i],
-                new Color(Channel(color.X), Channel(color.Y), Channel(color.Z), PaintMask(masks[i])));
+                new Color(Channel(color.X), Channel(color.Y), Channel(color.Z), PaintMask(masks[i])),
+                textureCoordinates[i]);
         }
 
         return new MeshData(vertices, [.. indices]);

@@ -59,16 +59,25 @@ public sealed class InstancedRenderer : IDisposable
     /// <summary>A mesh uploaded to the GPU, with its draw parameters cached.</summary>
     public sealed class Mesh : IDisposable
     {
-        internal Mesh(VertexBuffer vertices, IndexBuffer indices, int primitiveCount)
+        internal Mesh(VertexBuffer vertices, IndexBuffer indices, int primitiveCount, Texture2D? texture)
         {
             VertexBuffer = vertices;
             IndexBuffer = indices;
             PrimitiveCount = primitiveCount;
+            Texture = texture;
         }
 
         internal VertexBuffer VertexBuffer { get; }
 
         internal IndexBuffer IndexBuffer { get; }
+
+        /// <summary>
+        /// The image this mesh samples, or null for the great majority that are
+        /// drawn in flat material colour. It travels with the mesh rather than with
+        /// the pass because the parts of one figure are not all textured: a face is
+        /// painted and a tunic is not, and both are drawn in the same loop.
+        /// </summary>
+        public Texture2D? Texture { get; }
 
         /// <summary>Number of triangles in the mesh.</summary>
         public int PrimitiveCount { get; }
@@ -77,6 +86,7 @@ public sealed class InstancedRenderer : IDisposable
         {
             VertexBuffer.Dispose();
             IndexBuffer.Dispose();
+            Texture?.Dispose();
         }
     }
 
@@ -138,12 +148,20 @@ public sealed class InstancedRenderer : IDisposable
     private ParticleBlend _particleBlend = ParticleBlend.Alpha;
     private bool _particles;
     private bool _ghost;
+    private Texture2D? _boundTexture;
 
-    /// <summary>Uploads a CPU mesh and returns a handle that must be disposed.</summary>
-    public Mesh CreateMesh(MeshData data)
+    /// <summary>
+    /// Uploads a CPU mesh and returns a handle that must be disposed.
+    /// <para>
+    /// A texture is optional and is owned by the returned mesh: the caller hands
+    /// over the image and stops thinking about it. Meshes are cached and shared, so
+    /// the texture is uploaded once however many copies of the model are drawn.
+    /// </para>
+    /// </summary>
+    public Mesh CreateMesh(MeshData data, Texture2D? texture = null)
     {
         (VertexBuffer vertices, IndexBuffer indices) = data.Upload(_device);
-        return new Mesh(vertices, indices, data.PrimitiveCount);
+        return new Mesh(vertices, indices, data.PrimitiveCount, texture);
     }
 
     /// <summary>Begins a render pass for the given camera.</summary>
@@ -160,6 +178,7 @@ public sealed class InstancedRenderer : IDisposable
 
         _particles = false;
         _ghost = false;
+        _boundTexture = null;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -195,6 +214,7 @@ public sealed class InstancedRenderer : IDisposable
     {
         _particles = false;
         _ghost = false;
+        _boundTexture = null;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -253,6 +273,7 @@ public sealed class InstancedRenderer : IDisposable
     {
         _particles = false;
         _ghost = false;
+        _boundTexture = null;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -281,6 +302,7 @@ public sealed class InstancedRenderer : IDisposable
     {
         _particles = false;
         _ghost = false;
+        _boundTexture = null;
         _effect.CurrentTechnique = _effect.Techniques["Instanced"];
         _effect.CurrentTechnique.Passes[0].Apply();
     }
@@ -299,6 +321,18 @@ public sealed class InstancedRenderer : IDisposable
         if (count > instances.Length)
         {
             throw new ArgumentOutOfRangeException(nameof(count), count, "Count exceeds the instance array length.");
+        }
+
+        // The textured shader is a different technique, so a draw switches to it and
+        // back as it meets a textured mesh rather than requiring the caller to sort
+        // its parts by material. The comparison is by reference: a texture uploaded
+        // once is one object, and two parts of one figure share the same image.
+        if (!ReferenceEquals(_boundTexture, mesh.Texture) && !_particles && !_ghost)
+        {
+            _boundTexture = mesh.Texture;
+            _effect.CurrentTechnique = _effect.Techniques[mesh.Texture is null ? "Instanced" : "Textured"];
+            _effect.Parameters["MeshTexture"]?.SetValue(mesh.Texture);
+            _effect.CurrentTechnique.Passes[0].Apply();
         }
 
         EnsureInstanceCapacity(count);

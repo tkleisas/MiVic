@@ -1,6 +1,7 @@
 using MiVic.Core.Campaign;
 using MiVic.Game.Rendering;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 
 namespace MiVic.Game.Cutscene;
 
@@ -47,11 +48,15 @@ public sealed class CutsceneDirector : IDisposable
     private int _lineIndex;
     private bool _finished;
 
-    public CutsceneDirector(CutsceneDefinition scene, InstancedRenderer renderer, string baseDirectory)
+    public CutsceneDirector(
+        CutsceneDefinition scene,
+        InstancedRenderer renderer,
+        GraphicsDevice device,
+        string baseDirectory)
     {
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
-        _assets = new CutsceneAssets(renderer, baseDirectory);
+        _assets = new CutsceneAssets(renderer, device, baseDirectory);
 
         // The set stands still and is not posed; a figure is placed by the scene file, facing
         // the way the file turns it, and is posed every frame.

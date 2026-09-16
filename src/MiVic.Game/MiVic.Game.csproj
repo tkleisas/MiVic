@@ -42,6 +42,7 @@
     <None Include="Content\Models\**\*.glb" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Content\Models\**\*.gltf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Content\Models\**\*.bin" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Content\Models\**\*.png" CopyToOutputDirectory="PreserveNewest" />
     <!--
       Cutscenes are content the client finds for itself — a mission's briefing is not named on
       the command line — so they ship beside the executable the way the fonts do, and the
