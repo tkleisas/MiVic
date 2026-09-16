@@ -661,8 +661,8 @@ def paint_moustache_bed(image):
     )
 
     for side in (-1, 1):
-        for step in range(30):
-            t01 = step / 29.0
+        for step in range(120):
+            t01 = step / 119.0
 
             # Uneven, because hair is. These were thirty identical marks at even
             # spacing along one straight line, which is the teeth of a comb rather
@@ -672,8 +672,8 @@ def paint_moustache_bed(image):
             # position along the row, so the light does not come back as a gradient.
             jitter = noise(step, side + 2.0, 17.0)
             spread = t01 + ((jitter - 0.5) * 0.040)
-            length = 0.0068 * (0.45 + (1.15 * noise(step, 5.0, 29.0)))
-            tone = 148 + int(78 * noise(step, 9.0, 41.0))
+            length = 0.0175 * (0.40 + (1.25 * noise(step, 5.0, 29.0)))
+            tone = 96 + int(128 * noise(step, 9.0, 41.0))
 
             ellipse(
                 detail_draw,
@@ -681,7 +681,7 @@ def paint_moustache_bed(image):
                 0.0955 - (spread * 0.021) + ((jitter - 0.5) * 0.005),
                 0.0009,
                 length,
-                (tone, tone - 12, tone - 24, 104),
+                (tone, tone - 12, tone - 24, 150),
             )
 
     detail = Image.composite(detail, Image.new("RGBA", image.size, (0, 0, 0, 0)), shape)

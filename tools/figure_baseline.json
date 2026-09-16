@@ -43,5 +43,12 @@
     "gated_patches": [
       "forehead"
     ]
+  },
+  "paint": {
+    "moustache": [
+      124.8,
+      40.8
+    ],
+    "_note": "mean luma and standard deviation of the reference portrait's moustache, sampled inside the box the pixel ruler gave it: x 140..306, y 252..298. The reference side of this had to be a box read off a ruler, because the painter's outline describes the built moustache and not the painted one; the built side is the outline's own region, and both are recorded so the comparison is against something stated rather than remembered."
   }
 }

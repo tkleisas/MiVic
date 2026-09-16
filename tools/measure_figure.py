@@ -360,6 +360,67 @@ def cmd_render(args):
     return 0
 
 
+def cmd_paint(args):
+    """Measure the painted face map inside a feature's own declared region.
+
+    Two rounds were lost to measuring this with windows placed by hand. Local contrast
+    is a number — the portrait's moustache sits at a mean luma of 125 with a standard
+    deviation of 41 — but a strand is about one pixel wide on this map, so a window a
+    few pixels across samples the base tone and reports almost no variation whatever the
+    strands do. The region has to be the feature's, not a guess at where the feature is.
+
+    So the region is the painter's own outline, rasterised through the same mapping the
+    paint goes through. If the outline moves, this moves with it; there is one definition
+    of where the moustache is and both the paint and the measurement read it.
+    """
+    import paint_personalities as painter
+
+    with open(args.baseline, encoding="utf-8") as handle:
+        baseline = json.load(handle)
+
+    target = baseline.get("paint", {}).get(args.region)
+    if target is None:
+        print(f"the baseline has no paint region called {args.region!r}",
+              file=sys.stderr)
+        return 2
+
+    texture = Image.open(args.texture).convert("RGB")
+    outline = painter.moustache_outline
+    points = [painter.at(x, z) for side in (-1, 1) for x, z in outline(side)]
+
+    mask = Image.new("L", texture.size, 0)
+    ImageDraw.Draw(mask).polygon(points, fill=255)
+
+    pixels = texture.load()
+    sample = [pixels[x, y] for y in range(texture.height) for x in range(texture.width)
+              if mask.getpixel((x, y))]
+    if not sample:
+        print("the region is empty — the outline and the map disagree", file=sys.stderr)
+        return 1
+
+    luma = [(0.3 * r) + (0.59 * g) + (0.11 * b) for r, g, b in sample]
+    mean = sum(luma) / len(luma)
+    variance = sum((v - mean) ** 2 for v in luma) / len(luma)
+    contrast = variance ** 0.5
+
+    want_mean, want_contrast = target
+    print(f"region   {args.region}, from the painter's own outline")
+    print(f"texture  {os.path.relpath(args.texture, ROOT)}")
+    print(f"pixels   {len(sample)}")
+    print()
+    print(f"  {'':10s}{'reference':>11}{'built':>9}{'delta':>8}")
+    print(f"  {'mean':10s}{want_mean:>11.1f}{mean:>9.1f}{abs(mean - want_mean):>8.1f}")
+    print(f"  {'contrast':10s}{want_contrast:>11.1f}{contrast:>9.1f}"
+          f"{abs(contrast - want_contrast):>8.1f}")
+
+    if args.tolerance is not None and abs(contrast - want_contrast) > args.tolerance:
+        print()
+        print(f"FAIL  contrast {contrast:.1f} against {want_contrast:.1f}, "
+              f"over {args.tolerance:.1f}")
+        return 1
+    return 0
+
+
 # ----------------------------------------------------------------------------- check
 
 def cmd_check(args):
@@ -462,6 +523,17 @@ def main(argv=None):
     capture.add_argument("--tolerance-mean", type=float, default=None)
     capture.add_argument("--tolerance-worst", type=float, default=None)
     capture.set_defaults(func=cmd_capture)
+
+    paint = sub.add_parser("paint", help="measure the face map inside a feature's region")
+    paint.add_argument("--region", default="moustache")
+    paint.add_argument("--texture", default=os.path.join(
+        ROOT, "src", "MiVic.Game", "Content", "Models", "Generated",
+        "personality_elder.png"))
+    paint.add_argument("--baseline",
+                       default=os.path.join(ROOT, "tools", "figure_baseline.json"))
+    paint.add_argument("--tolerance", type=float, default=None,
+                       help="fail if the contrast is further than this from the target")
+    paint.set_defaults(func=cmd_paint)
 
     for name, handler, help_text in (
         ("render", cmd_render, "photograph the committed assets at the face framing"),
