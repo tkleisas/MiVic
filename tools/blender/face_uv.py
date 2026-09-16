@@ -18,7 +18,7 @@ only applies below the mouth, where the only thing painted is a chin.
 
 import math
 
-HALF_X = 0.089
+HALF_X = 0.082
 HALF_Y = 0.117
 HALF_Z = 0.130
 CENTRE_Z = 0.150
@@ -148,7 +148,7 @@ def hairline(u):
     # *higher* at the temples than at the middle, which is the two corners that
     # make a receding hairline, with the forelock left low between them.
     return (
-        0.30
+        0.272
         + (0.42 * (around ** 1.1))
         - (0.17 * math.exp(-(((around - 0.30) / 0.17) ** 2)))
     )

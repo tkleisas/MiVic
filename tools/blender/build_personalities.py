@@ -166,7 +166,7 @@ def _grid_mesh(name, segments, rings, warp, keep=None):
 
 def _head_surface(segments=36, rings=26, crown_taper=True):
     """One face, as a function of where you are on a head."""
-    half_x, half_y, half_z = 0.089, 0.116, 0.136
+    half_x, half_y, half_z = 0.082, 0.116, 0.136
     centre_z = 0.150
 
     def warp(u, v):
