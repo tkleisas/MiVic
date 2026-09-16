@@ -559,7 +559,7 @@ def paint_age(image):
     over(image, lines, 3.2)
 
 
-MOUSTACHE = (58, 50, 44)
+MOUSTACHE = (126, 114, 102)
 
 
 MOUSTACHE_TOP = 0.1065
@@ -622,16 +622,16 @@ def paint_moustache_bed(image):
             0.0500,
             0.0016,
             (
-                int(112 * tone),
-                int(100 * tone),
-                int(88 * tone),
+                int(168 * tone),
+                int(156 * tone),
+                int(144 * tone),
                 int(120 * (1.0 - (step / 13.0))),
             ),
         )
 
     detail_draw.line(
         [at(0.0, 0.1000), at(0.0, 0.0780)],
-        fill=(30, 25, 22, 190),
+        fill=(64, 56, 50, 150),
         width=3,
     )
 
