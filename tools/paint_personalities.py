@@ -367,6 +367,14 @@ def paint_form(image):
     over(image, cool, 14.0)
 
 
+#: Where the eye is. One definition, because the outline and the iris and the lids
+#: were using two: the outline had been moved in and down and the iris had not, so
+#: every eye on this face was a pupil floating off its own socket with white showing
+#: underneath it.
+EYE_X = 0.030
+EYE_Z = 0.152
+
+
 def eye_outline(side, lift=0.0):
     """One eye's silhouette: an almond with a corner at each end.
 
@@ -375,8 +383,8 @@ def eye_outline(side, lift=0.0):
     outer one is blunter, and the upper lid's peak is not at the middle but towards
     the outer end. `lift` moves the whole shape up the lid.
     """
-    cx = side * 0.030
-    z = 0.152 + lift
+    cx = side * EYE_X
+    z = EYE_Z + lift
 
     return [
         (cx - (side * 0.0104), z - 0.0004),
@@ -403,7 +411,7 @@ def paint_eyes(image):
     draw = ImageDraw.Draw(eyes)
 
     for side in (-1, 1):
-        x, z = side * 0.037, 0.164
+        x, z = side * EYE_X, EYE_Z
 
         polygon(draw, eye_outline(side), (*EYE_WHITE, 255))
 
@@ -420,7 +428,7 @@ def paint_eyes(image):
     draw = ImageDraw.Draw(lids)
 
     for side in (-1, 1):
-        x, z = side * 0.037, 0.164
+        x, z = side * EYE_X, EYE_Z
 
         # A heavy hooded lid, sitting on the top third of the eye and reaching the
         # outer corner: this is where the age is, more than in any line.
@@ -650,9 +658,9 @@ def paint_moustache_bed(image):
 #: the geometry built for it is visible as a crosshair beside a brow rather than as
 #: something to be argued about later.
 MARKERS = [
-    ("eye inner", lambda side: (side * 0.0190, 0.1516)),
-    ("eye centre", lambda side: (side * 0.0300, 0.1520)),
-    ("eye outer", lambda side: (side * 0.0404, 0.1516)),
+    ("eye inner", lambda side: (side * (EYE_X - 0.0110), EYE_Z - 0.0004)),
+    ("eye centre", lambda side: (side * EYE_X, EYE_Z)),
+    ("eye outer", lambda side: (side * (EYE_X + 0.0104), EYE_Z - 0.0004)),
     ("brow inner", lambda side: (side * 0.0100, 0.1770)),
     ("brow peak", lambda side: (side * 0.0320, 0.1838)),
     ("brow outer", lambda side: (side * 0.0640, 0.1694)),
