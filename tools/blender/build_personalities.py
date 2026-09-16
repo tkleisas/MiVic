@@ -548,6 +548,7 @@ def build_elder():
     belt_colour = (0.14, 0.11, 0.08, 0.10)
     collar_red = (0.46, 0.08, 0.06, 0.00)
     gold = (0.74, 0.58, 0.22, 0.00)
+    moustache_colour = (0.20, 0.16, 0.13, 0.00)
     hair_colour = (0.22, 0.18, 0.15, 0.03)
     hair_dark = (0.14, 0.11, 0.09, 0.03)
 

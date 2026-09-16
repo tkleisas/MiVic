@@ -240,9 +240,12 @@ def paint_hair(image):
         length = 6.0 + (13.0 * (stray - 0.82) / 0.18)
         fringe_draw.line([(x, edge - 3), (x, edge + length)], fill=int(150 + (100 * stray)), width=1)
 
-    mask = ImageChops.lighter(mask, fringe)
-
     image.paste(overlay, (0, 0), blur(mask, 4.5))
+
+    # The stray hairs are painted as themselves, in a hair colour, rather than by
+    # widening the mask the whole overlay goes through — which painted the
+    # overlay's flat fill across the forehead and gave the man two hairlines.
+    image.paste(overlay, (0, 0), blur(fringe, 1.0))
 
 
 def layer():
@@ -499,47 +502,59 @@ def moustache_outline(side):
     ]
 
 
-def paint_moustache_shadow(image):
-    """The moustache: the darkest, thickest thing on the face, with an edge."""
-    shadow = layer()
-    draw = ImageDraw.Draw(shadow)
+def paint_moustache_bed(image):
+    """The moustache: one shape, drawn once.
+
+    It was being drawn twice — a dark polygon and then a lighter wash over a mask
+    that had grown past it, so the figure wore two moustaches at once, one grey and
+    slightly below the other. Everything that touches this shape is clipped to the
+    shape now, and there is exactly one of it.
+    """
+    shape = Image.new("L", image.size, 0)
+    shape_draw = ImageDraw.Draw(shape)
 
     for side in (-1, 1):
-        polygon(draw, moustache_outline(side), (*MOUSTACHE, 255))
+        polygon(shape_draw, moustache_outline(side), 255)
 
-    # A parting down the middle and a shadow under the whole of it, so the mass has
-    # a middle and sits on the lip instead of floating over it.
-    ellipse(draw, 0.0, 0.1010, 0.0042, 0.0090, (34, 29, 25, 220))
-    ellipse(draw, 0.0, 0.0815, 0.0400, 0.0040, (*SHADOW, 150))
+    mass = layer()
+    draw = ImageDraw.Draw(mass)
+    draw.bitmap((0, 0), shape, fill=(*MOUSTACHE, 255))
 
-    over(image, shadow, 0.5)
+    # The parting down the middle, and the strands running out along each wing.
+    # Drawn into a layer that is masked by the shape, so a strand cannot lengthen
+    # the moustache or sit beside it.
+    detail = layer()
+    detail_draw = ImageDraw.Draw(detail)
 
-    # Strands inside it, at the scale of hair rather than of a gradient.
-    strands = layer()
-    draw = ImageDraw.Draw(strands)
-    mask = Image.new("L", image.size, 0)
-    mask_draw = ImageDraw.Draw(mask)
+    detail_draw.line(
+        [at(0.0, 0.1090), at(0.0, 0.0870)],
+        fill=(30, 25, 22, 190),
+        width=3,
+    )
 
     for side in (-1, 1):
-        polygon(mask_draw, moustache_outline(side), 255)
-
-        for step in range(30):
-            t01 = step / 29.0
+        for step in range(26):
+            t01 = step / 25.0
             ellipse(
-                mask_draw,
-                side * (0.003 + (t01 * 0.056)),
-                0.1055 - (t01 * 0.023),
-                0.0012,
-                0.0075,
-                145,
+                detail_draw,
+                side * (0.002 + (t01 * 0.052)),
+                0.1045 - (t01 * 0.021),
+                0.0010,
+                0.0068,
+                (110, 100, 90, 96),
             )
 
-    over(image, strands, 0.4)
-    # The strands inside it are lighter than the mass, so the moustache reads as
-    # hair rather than as a shadow under the nose.
-    lighter = Image.new("RGBA", image.size, (92, 82, 72, 255))
-    image.paste(lighter, (0, 0), blur(Image.composite(mask, Image.new("L", image.size, 0), mask), 0.5))
-    over(image, Image.composite(strands, Image.new("RGBA", image.size, (0, 0, 0, 0)), mask), 0.22)
+    detail = Image.composite(detail, Image.new("RGBA", image.size, (0, 0, 0, 0)), shape)
+
+    # A shadow just under the lip end of it, so the moustache sits on the mouth
+    # rather than floating above it.
+    bed = layer()
+    bed_draw = ImageDraw.Draw(bed)
+    ellipse(bed_draw, 0.0, 0.0820, 0.0400, 0.0045, (*SHADOW, 140))
+    over(image, bed, 1.5)
+
+    over(image, mass, 0.5)
+    over(image, detail, 0.5)
 
 
 def build_face(path):
@@ -550,7 +565,7 @@ def build_face(path):
     paint_hair(image)
     paint_form(image)
     paint_age(image)
-    paint_moustache_shadow(image)
+    paint_moustache_bed(image)
     paint_eyes(image)
     paint_brows(image)
     paint_mouth(image)
