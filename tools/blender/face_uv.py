@@ -148,7 +148,7 @@ def hairline(u):
     # *higher* at the temples than at the middle, which is the two corners that
     # make a receding hairline, with the forelock left low between them.
     return (
-        0.272
+        0.218
         + (0.42 * (around ** 1.1))
         - (0.17 * math.exp(-(((around - 0.30) / 0.17) ** 2)))
     )
