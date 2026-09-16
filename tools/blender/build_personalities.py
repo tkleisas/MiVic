@@ -626,21 +626,23 @@ def build_elder():
 
     # The stand collar, with the two red tabs that make it a uniform.
     collar = merge("Collar", [
-        _prism_geo((0.138, 0.136), (0.94, 0.94), 0.048, offset=(0.0, 0.0, 0.0), power=0.60, segments=18),
+        _prism_geo((0.140, 0.138), (0.82, 0.82), 0.062, offset=(0.0, 0.0, 0.0), power=0.60, segments=20),
     ])
-    collar.location = (0.0, 0.0, SHOULDER + 0.026)
+    collar.location = (0.0, 0.0, SHOULDER + 0.018)
     _wrap_uv(collar)
     parts.append(collar)
     paint(collar, tunic, variation=0.03)
 
     for side in (-1, 1):
         tab = box("CollarTab", (0.030, 0.016, 0.036), offset=(0.0, 0.0, 0.0))
-        tab.location = (side * 0.030, 0.062, SHOULDER + 0.050)
+        tab.location = (side * 0.028, 0.062, SHOULDER + 0.046)
         parts.append(tab)
         paint(tab, collar_red, variation=0.02)
 
         # A shoulder board on each shoulder, laid along it and tipped outward.
-        board = box("Board", (0.050, 0.130, 0.016), offset=(0.0, 0.0, 0.0))
+        board = merge("Board", [
+            _box_geo((0.052, 0.132, 0.015), offset=(0.0, 0.0, 0.0), taper=0.72),
+        ])
         board.location = (side * shoulders * 0.30, -0.008, HIP + 0.512)
         board.rotation_euler = (0.0, math.radians(side * 14.0), 0.0)
         parts.append(board)
