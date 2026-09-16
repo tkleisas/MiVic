@@ -274,10 +274,10 @@ def paint_form(image):
     draw = ImageDraw.Draw(blush)
 
     for side in (-1, 1):
-        ellipse(draw, side * 0.052, 0.104, 0.026, 0.020, (206, 96, 74, 96))
-        ellipse(draw, side * 0.070, 0.120, 0.014, 0.020, (198, 96, 78, 72))
+        ellipse(draw, side * 0.050, 0.106, 0.038, 0.032, (206, 96, 74, 52))
+        ellipse(draw, side * 0.072, 0.122, 0.022, 0.030, (198, 96, 78, 40))
 
-    ellipse(draw, 0.0, 0.112, 0.016, 0.014, (206, 100, 78, 104))
+    ellipse(draw, 0.0, 0.112, 0.022, 0.020, (206, 100, 78, 66))
     ellipse(draw, 0.0, 0.030, 0.022, 0.010, (198, 100, 80, 62))
     over(image, blush, 12.0)
 
@@ -417,11 +417,11 @@ def paint_mouth(image):
     draw = ImageDraw.Draw(mouth)
 
     # The upper lip, nearly all of which the moustache covers.
-    ellipse(draw, 0.0, 0.0880, 0.0165, 0.0032, (*LIP, 195))
+    ellipse(draw, 0.0, 0.0880, 0.0150, 0.0028, (*LIP, 150))
     # The crease.
     ellipse(draw, 0.0, 0.0798, 0.0192, 0.0015, (*LIP_DARK, 250))
     # The lower lip, and the shadow under it.
-    ellipse(draw, 0.0, 0.0738, 0.0175, 0.0038, (*LIP, 205))
+    ellipse(draw, 0.0, 0.0738, 0.0160, 0.0034, (*LIP, 165))
     ellipse(draw, 0.0, 0.0668, 0.0150, 0.0026, (*LIP_DARK, 185))
 
     over(image, mouth, 1.6)
@@ -469,7 +469,7 @@ def paint_age(image):
     over(image, lines, 3.2)
 
 
-MOUSTACHE = (62, 54, 48)
+MOUSTACHE = (54, 47, 42)
 
 
 MOUSTACHE_TOP = 0.1065
@@ -535,9 +535,9 @@ def paint_moustache_shadow(image):
     over(image, strands, 0.4)
     # The strands inside it are lighter than the mass, so the moustache reads as
     # hair rather than as a shadow under the nose.
-    lighter = Image.new("RGBA", image.size, (126, 114, 102, 255))
+    lighter = Image.new("RGBA", image.size, (104, 94, 84, 255))
     image.paste(lighter, (0, 0), blur(Image.composite(mask, Image.new("L", image.size, 0), mask), 0.5))
-    over(image, Image.composite(strands, Image.new("RGBA", image.size, (0, 0, 0, 0)), mask), 0.35)
+    over(image, Image.composite(strands, Image.new("RGBA", image.size, (0, 0, 0, 0)), mask), 0.22)
 
 
 def build_face(path):
