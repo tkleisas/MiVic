@@ -74,11 +74,11 @@ HEAD_BASE = 1.506
 # Everything stuck on the face afterwards hangs off them: a moustache at the
 # brow's height is a moustache on the forehead.
 BROW_Z = 0.180      # v = 0.43
-EYE_Z = 0.151       # v = 0.50
-NOSE_TIP_Z = 0.093  # v = 0.635
-LIP_Z = 0.068       # v = 0.70
+EYE_Z = 0.164       # the eye line: 45 % of the way down the head
+NOSE_TIP_Z = 0.121  # 62 % down
+LIP_Z = 0.095       # 72 % down, under the nose
 EAR_Z = 0.146       # v = 0.53
-MOUTH_Z = 0.048     # v = 0.76, the crease between the lips
+MOUTH_Z = 0.077     # 79 % down, the crease between the lips
 
 FLESH = (0.80, 0.63, 0.47, 0.00)
 FLESH_SHADE = (0.60, 0.45, 0.33, 0.00)
@@ -209,7 +209,7 @@ def _head_surface(segments=36, rings=26):
             temple = math.exp(-((((dx - (side * 0.82)) / 0.36) ** 2) + (((v - 0.36) / 0.18) ** 2)))
             x -= side * 0.014 * temple
 
-            zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.620) / 0.085) ** 2)))
+            zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.590) / 0.085) ** 2)))
             x += side * 0.015 * zygomatic
             y += 0.011 * zygomatic * front
 
@@ -227,7 +227,7 @@ def _head_surface(segments=36, rings=26):
         y += 0.016 * brow * front
 
         for side in (-1.0, 1.0):
-            socket = math.exp(-((((dx - (side * 0.40)) / 0.30) ** 2) + (((v - 0.495) / 0.085) ** 2)))
+            socket = math.exp(-((((dx - (side * 0.40)) / 0.30) ** 2) + (((v - 0.466) / 0.082) ** 2)))
             y -= 0.024 * socket
 
         # The nose: a bridge that narrows towards the brow, a tip, and the
@@ -236,31 +236,31 @@ def _head_surface(segments=36, rings=26):
         if abs(dx) < 0.34:
             across = math.exp(-((dx / 0.205) ** 2))
             if v < 0.58:
-                profile = 0.032 * math.exp(-(((v - 0.545) / 0.115) ** 2))
+                profile = 0.032 * math.exp(-(((v - 0.520) / 0.110) ** 2))
             else:
-                profile = 0.055 * math.exp(-(((v - 0.618) / 0.055) ** 2))
+                profile = 0.055 * math.exp(-(((v - 0.572) / 0.055) ** 2))
             y += profile * across * max(0.15, ny)
 
         # The wings of the nose, either side of the tip, and the crease beside
         # them that a nose sits in.
         for side in (-1.0, 1.0):
-            wing = math.exp(-((((dx - (side * 0.245)) / 0.125) ** 2) + (((v - 0.650) / 0.055) ** 2)))
+            wing = math.exp(-((((dx - (side * 0.245)) / 0.125) ** 2) + (((v - 0.610) / 0.055) ** 2)))
             y += 0.016 * wing * front
 
-            fold = math.exp(-((((dx - (side * 0.400)) / 0.115) ** 2) + (((v - 0.690) / 0.075) ** 2)))
+            fold = math.exp(-((((dx - (side * 0.400)) / 0.115) ** 2) + (((v - 0.650) / 0.072) ** 2)))
             y -= 0.009 * fold * front
 
         # Lips, with the crease between them, and a chin under both.
-        mouth = math.exp(-(((v - 0.735) / 0.045) ** 2)) * math.exp(-((dx / 0.42) ** 2))
+        mouth = math.exp(-(((v - 0.691) / 0.043) ** 2)) * math.exp(-((dx / 0.42) ** 2))
         y += 0.008 * mouth * front
-        y -= 0.011 * math.exp(-(((v - 0.762) / 0.017) ** 2)) * math.exp(-((dx / 0.34) ** 2))
+        y -= 0.011 * math.exp(-(((v - 0.716) / 0.016) ** 2)) * math.exp(-((dx / 0.34) ** 2))
 
-        chin = math.exp(-(((v - 0.900) / 0.062) ** 2)) * math.exp(-((dx / 0.48) ** 2))
+        chin = math.exp(-(((v - 0.880) / 0.060) ** 2)) * math.exp(-((dx / 0.48) ** 2))
         y += 0.018 * chin * front
 
         # The crease under the lower lip, which is what makes a chin a chin
         # instead of the place the jaw stops.
-        y -= 0.009 * math.exp(-(((v - 0.845) / 0.022) ** 2)) * math.exp(-((dx / 0.30) ** 2))
+        y -= 0.009 * math.exp(-(((v - 0.805) / 0.021) ** 2)) * math.exp(-((dx / 0.30) ** 2))
 
         # The neck opening: the underside converges on the neck rather than ending
         # in a flat lid.

@@ -85,24 +85,33 @@ def noise(x, y, salt=0.0):
 
 
 def paint_skin(image):
-    """Base tone, the shading of a head round a face, and grain."""
+    """Base tone, the light falling across a head, and grain.
+
+    The reference is lit from the upper left and carries a shadow down the whole of
+    its right side. Baking that in is what a painted face is for: it is the one
+    thing the renderer cannot do, because it lights a surface by its normal and
+    every normal across a cheekbone points almost the same way.
+    """
     pixels = image.load()
 
     for y in range(HEIGHT):
         v = y / HEIGHT
 
-        # Lit from above, falling into shadow under the jaw. A face lit evenly
-        # reads as paper, and the game's own light is already a hemisphere.
+        # Lit from above, falling into shadow under the jaw.
         light = 1.0 - (0.34 * max(0.0, (v - 0.52) / 0.48) ** 1.0)
-        light += 0.10 * max(0.0, (0.55 - v) / 0.55)
+        light += 0.08 * max(0.0, (0.55 - v) / 0.55)
 
         for x in range(WIDTH):
             u = x / WIDTH
+            grid_u = face_uv.unwrap_u(u)
 
-            # And darker towards the sides: what the shader calls the hemisphere
-            # term, baked in once so the texture has a form of its own.
-            side = abs(face_uv.unwrap_u(u) - 0.25) / 0.25
-            shade = light * (1.0 - (0.34 * min(1.0, side) ** 1.6))
+            # And from one side: the key comes from the model's own left, which is
+            # the left of the image, so the far cheek turns away and the near one
+            # catches it. A face lit from straight on is a mask.
+            across = (grid_u - 0.25) / 0.25 if grid_u < 0.5 else (0.75 - grid_u) / 0.25
+
+            shade = light * (1.0 - (0.30 * min(1.0, abs(across)) ** 1.7))
+            shade *= 1.0 - (0.16 * max(0.0, across))
 
             grain = 0.965 + (0.06 * noise(x // 5, y // 5, 3.1))
 
@@ -112,7 +121,6 @@ def paint_skin(image):
                 min(255, int(SKIN[1] * value)),
                 min(255, int(SKIN[2] * value)),
             )
-
 
 
 def paint_hair(image):
@@ -142,7 +150,7 @@ def paint_hair(image):
             sheen = math.exp(-(((y - (edge - 46.0)) / 34.0) ** 2))
 
             base = HAIR_DARK if strand < 0.45 else HAIR
-            tone = 0.74 + (0.50 * strand) + (0.50 * sheen)
+            tone = 0.86 + (0.26 * strand) + (0.42 * sheen)
 
             overlay_pixels[x, y] = (
                 min(255, int(base[0] * tone)),
@@ -185,35 +193,38 @@ def paint_form(image):
 
     # Cheekbones, catching the light, and the hollow under them.
     for side in (-1, 1):
-        ellipse(draw, side * 0.058, 0.096, 0.026, 0.022, (*SKIN_WARM, 40))
-        ellipse(draw, side * 0.046, 0.074, 0.019, 0.015, (*SHADOW, 112))
+        ellipse(draw, side * 0.058, 0.108, 0.026, 0.022, (*SKIN_WARM, 40))
+        ellipse(draw, side * 0.046, 0.086, 0.019, 0.015, (*SHADOW, 112))
 
     # The sockets, which the warp cut into the skull and the light has to find.
     for side in (-1, 1):
-        ellipse(draw, side * 0.037, 0.1485, 0.027, 0.0165, (*SHADOW, 148))
-        ellipse(draw, side * 0.030, 0.164, 0.026, 0.0080, (*SHADOW, 128))
+        ellipse(draw, side * 0.037, 0.1605, 0.027, 0.0165, (*SHADOW, 148))
+        ellipse(draw, side * 0.030, 0.176, 0.026, 0.0080, (*SHADOW, 128))
 
     # The temples, the jaw and the jowls an old man carries.
     for side in (-1, 1):
         ellipse(draw, side * 0.076, 0.182, 0.018, 0.026, (*SHADOW, 86))
-        ellipse(draw, side * 0.052, 0.050, 0.018, 0.016, (*SHADOW, 96))
-        ellipse(draw, side * 0.060, 0.080, 0.012, 0.017, (*SHADOW, 62))
+        ellipse(draw, side * 0.052, 0.062, 0.018, 0.016, (*SHADOW, 96))
+        ellipse(draw, side * 0.060, 0.092, 0.012, 0.017, (*SHADOW, 62))
 
     # The crease under the lip, and the shadow under the jaw.
-    ellipse(draw, 0.0, 0.0350, 0.024, 0.0075, (*SHADOW, 150))
-    ellipse(draw, 0.0, 0.0150, 0.028, 0.0065, (*SHADOW, 118))
+    ellipse(draw, 0.0, 0.0600, 0.024, 0.0075, (*SHADOW, 150))
+    ellipse(draw, 0.0, 0.0300, 0.028, 0.0065, (*SHADOW, 138))
+    ellipse(draw, 0.0, 0.0440, 0.013, 0.0090, (*SKIN_LIT, 90))
 
     # The nose: a shadow down the far side and beside each wing, a lit bridge,
     # and the two dark nostrils under the tip. It is the largest thing on this
     # face in the reference and it is what the light is arranged around.
-    ellipse(draw, 0.010, 0.104, 0.0055, 0.024, (*SHADOW, 150))
-    ellipse(draw, -0.008, 0.106, 0.0070, 0.022, (*SKIN_WARM, 118))
+    ellipse(draw, 0.0115, 0.116, 0.0060, 0.025, (*SHADOW, 190))
+    ellipse(draw, -0.0090, 0.118, 0.0080, 0.022, (*SKIN_WARM, 130))
     for side in (-1, 1):
-        ellipse(draw, side * 0.0245, 0.0930, 0.0076, 0.0064, (*SHADOW, 178))
-        ellipse(draw, side * 0.0340, 0.0895, 0.0060, 0.0088, (*SHADOW, 118))
-        ellipse(draw, side * 0.0130, 0.0905, 0.0044, 0.0032, (52, 30, 24, 215))
+        # The wing, the crease behind it, and the nostril under the tip.
+        ellipse(draw, side * 0.0250, 0.1060, 0.0080, 0.0068, (*SHADOW, 205))
+        ellipse(draw, side * 0.0350, 0.1020, 0.0064, 0.0095, (*SHADOW, 140))
+        ellipse(draw, side * 0.0135, 0.1035, 0.0048, 0.0034, (44, 26, 20, 235))
 
-    ellipse(draw, 0.0, 0.112, 0.0050, 0.024, (*SKIN_LIT, 150))
+    ellipse(draw, 0.0, 0.126, 0.0055, 0.025, (*SKIN_LIT, 175))
+    ellipse(draw, 0.0, 0.1085, 0.0105, 0.0060, (*SKIN_LIT, 110))
 
     over(image, shade, 18.0)
 
@@ -230,7 +241,7 @@ def paint_eyes(image):
     draw = ImageDraw.Draw(eyes)
 
     for side in (-1, 1):
-        x, z = side * 0.037, 0.152
+        x, z = side * 0.037, 0.164
 
         ellipse(draw, x, z, 0.0136, 0.0072, (*EYE_WHITE, 255))
 
@@ -247,14 +258,17 @@ def paint_eyes(image):
     draw = ImageDraw.Draw(lids)
 
     for side in (-1, 1):
-        x, z = side * 0.037, 0.152
+        x, z = side * 0.037, 0.164
 
         # A heavy hooded lid, sitting on the top third of the eye and reaching the
         # outer corner: this is where the age is, more than in any line.
-        ellipse(draw, x, z + 0.0116, 0.0168, 0.0046, (*LID, 232))
-        ellipse(draw, x, z + 0.0152, 0.0178, 0.0032, (*SHADOW, 186))
-        ellipse(draw, x, z + 0.0090, 0.0156, 0.0012, (52, 36, 26, 220))
-        ellipse(draw, x, z - 0.0096, 0.0138, 0.0011, (*LID, 165))
+        ellipse(draw, x, z + 0.0112, 0.0164, 0.0044, (*LID, 236))
+        # The crease above the lid, and the shadow it throws into the socket.
+        ellipse(draw, x, z + 0.0150, 0.0176, 0.0026, (74, 50, 38, 200))
+        ellipse(draw, x, z + 0.0176, 0.0186, 0.0030, (*SHADOW, 120))
+        # The lash line, which is what gives an eye an edge.
+        ellipse(draw, x, z + 0.0086, 0.0154, 0.0013, (40, 28, 22, 240))
+        ellipse(draw, x, z - 0.0092, 0.0136, 0.0011, (*LID, 175))
 
     over(image, lids, 1.1)
 
@@ -275,9 +289,9 @@ def paint_brows(image):
             dx = 0.009 + (t01 * 0.064)
             # A straight brow that drops at the outer end, thickest a third of the
             # way along: a brow drawn as a row of dots is a row of dots.
-            dz = 0.1875 - (0.011 * (t01 ** 2.4))
+            dz = 0.1810 - (0.010 * (t01 ** 2.4))
             half_width = 0.0058
-            half_height = 0.0066 - (0.0028 * t01)
+            half_height = 0.0062 - (0.0026 * t01)
             ellipse(draw, side * dx, dz, half_width, half_height, (*BROW, 254))
 
     over(image, brows, 2.0)
@@ -289,12 +303,12 @@ def paint_mouth(image):
     draw = ImageDraw.Draw(mouth)
 
     # The upper lip, nearly all of which the moustache covers.
-    ellipse(draw, 0.0, 0.0620, 0.0165, 0.0032, (*LIP, 195))
+    ellipse(draw, 0.0, 0.0880, 0.0165, 0.0032, (*LIP, 195))
     # The crease.
-    ellipse(draw, 0.0, 0.0538, 0.0192, 0.0015, (*LIP_DARK, 250))
+    ellipse(draw, 0.0, 0.0798, 0.0192, 0.0015, (*LIP_DARK, 250))
     # The lower lip, and the shadow under it.
-    ellipse(draw, 0.0, 0.0478, 0.0175, 0.0038, (*LIP, 205))
-    ellipse(draw, 0.0, 0.0408, 0.0150, 0.0026, (*LIP_DARK, 185))
+    ellipse(draw, 0.0, 0.0738, 0.0175, 0.0038, (*LIP, 205))
+    ellipse(draw, 0.0, 0.0668, 0.0150, 0.0026, (*LIP_DARK, 185))
 
     over(image, mouth, 1.6)
 
@@ -345,19 +359,19 @@ def paint_moustache_shadow(image):
     # One band under the nose, plus a wing either side of it dropping towards the
     # corner of the mouth. The geometry is what stands proud; this is what stops a
     # rim of skin showing between it and the lip.
-    ellipse(draw, 0.0, 0.0815, 0.0350, 0.0140, (*MOUSTACHE, 255))
+    ellipse(draw, 0.0, 0.0985, 0.0350, 0.0130, (*MOUSTACHE, 255))
 
     for side in (-1, 1):
         for dx, dz, half_width, half_height in (
-            (0.016, 0.0770, 0.0115, 0.0108),
-            (0.030, 0.0730, 0.0108, 0.0098),
-            (0.043, 0.0670, 0.0090, 0.0082),
-            (0.053, 0.0595, 0.0068, 0.0062),
-            (0.060, 0.0520, 0.0044, 0.0044),
+            (0.016, 0.0965, 0.0110, 0.0102),
+            (0.030, 0.0925, 0.0104, 0.0094),
+            (0.043, 0.0865, 0.0088, 0.0078),
+            (0.053, 0.0790, 0.0066, 0.0060),
+            (0.060, 0.0715, 0.0044, 0.0042),
         ):
             ellipse(draw, side * dx, dz, half_width, half_height, (*MOUSTACHE, 255))
 
-    over(image, shadow, 1.2)
+    over(image, shadow, 0.3)
 
 
 def build_face(path):
