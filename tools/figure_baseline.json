@@ -1,0 +1,47 @@
+{
+  "steps": 12,
+  "source": "face-chin-crop.png",
+  "mode": "frozen",
+  "box": null,
+  "note": "A frozen measurement of the figure itself: this is a regression gate, not a distance from a reference.",
+  "profile": [
+    0.6775067750677507,
+    0.7425474254742548,
+    0.7533875338753387,
+    0.7506775067750677,
+    0.7452574525745257,
+    0.94579945799458,
+    1.0,
+    0.8861788617886179,
+    0.94579945799458,
+    0.9512195121951219,
+    0.9349593495934959,
+    0.7642276422764228
+  ],
+  "widest_row": 6,
+  "patches": {
+    "forehead": [
+      195,
+      106,
+      76
+    ],
+    "cheek": [
+      175,
+      96,
+      70
+    ],
+    "chin": [
+      57,
+      38,
+      31
+    ]
+  },
+  "tolerances": {
+    "mean": 8.0,
+    "worst": 16.0,
+    "red_green": 12,
+    "gated_patches": [
+      "forehead"
+    ]
+  }
+}

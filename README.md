@@ -385,13 +385,27 @@ corner is a corner.
 
 The head is a sphere grid with a face warped into it — a brow shelf with sockets
 cut under it, a nose that runs from between the brows to a tip and then turns back
-in, cheeks, lips, a chin, the jaw narrowing towards it — and the eyes, brows,
-moustache and ears are domes set into those features, each its own colour because
-there is no texture on this renderer. The hair is the same surface pushed out,
-with the hairline cut around the head: high over the brow and falling towards the
-nape, which is what says "old" without a caption. The features are placed from the
-head's own curve rather than by eye, because a moustache at the brow's height is a
-moustache on the forehead.
+in, cheeks, jowls at the corners of the jaw, a chin, the jaw narrowing towards it.
+The surface carries the form and a **painted map carries the detail**: the figure
+samples three textures, a 2048×1536 face, a cloth map and a flat neutral one for
+the metal, assigned per part. Skin, hair, the eyes, the brows and the moustache are
+painted rather than modelled, because a pore is not a polygon and a moustache is
+hair rather than a shape — and the eyes are painted in one place from one set of
+coordinates, because the round they were painted in two produced a pupil floating
+off its own socket with the white showing under it.
+
+`tools/blender/face_uv.py` is the single definition of that mapping, imported by
+both the generator and the painter, so the hairline the mesh is cut along and the
+hairline the paint is drawn to are the same function rather than two that agree
+until somebody edits one. The hair is the same surface pushed out and combed back
+over the crown, flat across the top where the reference's is flat.
+
+The figure is checked by number as well as by eye: `tools/measure_figure.py`
+compares twelve silhouette widths from crown to chin, and one colour, against a
+committed baseline, and CI fails the build if it has drifted. Both kinds of check
+are kept because they fail in opposite directions — the profile constrains width
+and never form, and the eye catches form and cannot measure. See
+[`docs/ART_PIPELINE.md`](docs/ART_PIPELINE.md) §2.2.
 
 `tools/blender/preview_model.py` draws a model from four sides in the Workbench
 engine, with vertex colours and an orthographic camera: the same flat colours the

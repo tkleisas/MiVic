@@ -312,6 +312,81 @@ borrowed Quaternius files (`tank_heavy` for Soviet, `tank_light` for Chinese,
 entry gains a part spec. The current table is also the proof that distinct
 silhouettes cost nothing at runtime.
 
+### 2.2 Measuring the briefing figure
+
+The briefing figure is checked by number rather than by eye, with
+`tools/measure_figure.py` and a committed baseline of numbers in
+`tools/figure_baseline.json`. Three commands:
+
+```
+tools/measure_figure.py capture --image REF.png --box x0,y0,x1,y1   # a target to aim at
+tools/measure_figure.py capture --from-crop CROP.png                # freeze the figure now
+tools/measure_figure.py check                                       # render, measure, compare
+```
+
+`check` renders the committed `.glb` and `.png` through the real renderer at the face
+framing, cuts crown-to-chin, and compares twelve silhouette widths and one colour
+against the baseline. It exits non-zero outside tolerance, so it is a build gate, and
+CI runs it after the probes. Note that it does **not** need Blender: CI has none, and
+regenerating art during a check would defeat the point of checking the art that is in
+the repository.
+
+This exists because the same measurement was written from scratch roughly thirty times
+while the figure was being built, each time in a throwaway shell script, and three of
+those scripts were wrong in ways that produced confident, meaningless numbers:
+
+1. **The crop ran past the chin into the neck.** Every row was then a fraction of the
+   neck's width, so the profile said the jaw was too wide when it was too narrow. A
+   change to the model was made on that reading and committed, and made the figure
+   worse.
+2. **The crop was too narrow to hold the head.** The clipping then set the maximum the
+   profile was normalised to. This one is quiet: a frame that cut the head off at the
+   ears still scored a mean of 5.4 points and passed, because the clipped rows are the
+   ones defining the widest, and everything else stays roughly in proportion.
+3. **The background would not flood out.** The reference portrait's ground is a painted
+   gradient, and a flood fill carries a fixed colour threshold, so a fill seeded in the
+   light end stops where the ground has drifted more than that from its seed. The dark
+   half stayed in the picture and was measured as figure.
+
+All three are checks inside the tool now, rather than care taken by whoever happens to
+be measuring:
+
+- The crop is **crown to chin and the tool owns it** — `check` frames the head itself, so
+  the frame is a property of the tool rather than of the day.
+- A row whose silhouette **touches the edge of the frame** is reported, because a row
+  that was cut off is not a measurement of anything regardless of what it says.
+- `capture --image` **refuses** a reference it cannot segment, and refuses a profile
+  whose widest row is at the very top or bottom of the head — a crown is narrow and a
+  chin is narrow, so a profile widest at either end is the frame being measured rather
+  than the figure. This is what a background that will not come out looks like, and it
+  looks like a head.
+
+That last point is why the painted portrait is *not* the committed baseline. It cannot be
+segmented by this method: its ground is a gradient and its crown is grey, so a flood fill
+dies partway down and a warmth test loses the top of the head. Measured anyway it
+produced a head-shaped profile that was wrong. The baseline is therefore a **frozen
+measurement of the figure itself** — a regression gate that answers *has this moved?*
+rather than *is this close?* Both modes exist because both questions are worth asking and
+only one of them is always answerable; a reference capture is worth taking when the
+reference separates cleanly, and a screenshot with a flat backdrop will.
+
+### 2.3 The two instruments, and what each one cannot see
+
+The figure is also looked at, and the two ways of checking it fail in opposite
+directions, which is the reason both are kept:
+
+- **The profile** constrains width and never form. It sampled twelve rows and certified a
+  crown that had been flattened into a slab as correct, because a flat top and a rounded
+  one measure identically between two sample rows.
+- **The same-scale comparison** (`artifacts/preview/compare-portrait.png`, written by
+  `tools/face-round.sh --wide`) catches form and cannot measure. It is what caught the
+  slab, the moustache that covered the wrong part of the lip, and the eyes sitting in
+  two different places at once.
+
+A measurement without a look gives a hat; a look without a measurement gives a head of
+the right shape with the wrong proportions, which is what the twenty rounds before the
+profile produced.
+
 ## 3. Terrain with per-unit difficulty
 
 **Implemented.** `TerrainLayer` classifies nine surface types on the navigation

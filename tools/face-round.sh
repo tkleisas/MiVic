@@ -118,3 +118,12 @@ if wide:
 
 print("face-front-crop.png and body-crop.png written")
 PY
+
+# And measure what came out, against tools/figure_baseline.json.
+#
+# A round used to end with a picture and no number, which is how the same measurement
+# came to be written from scratch about thirty times and thrown away — three of those
+# scripts wrong in ways that produced confident, meaningless numbers, and one change to
+# the model made worse on the strength of them. This is the last thing a round does, so
+# a round that moves the figure off where it measured exits non-zero.
+python3 tools/measure_figure.py check --crop artifacts/probe/face-chin-crop.png --no-render

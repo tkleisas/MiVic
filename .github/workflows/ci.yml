@@ -68,6 +68,25 @@ jobs:
               }
           done
 
+      - name: Figure measurement
+        # Twelve widths from crown to chin and one colour, against a baseline committed
+        # as numbers. This renders the .glb and .png that are in the repository — no
+        # Blender and no reference image — and fails the build if the figure has moved
+        # away from where it measured.
+        #
+        # It exists because the same measurement was written from scratch about thirty
+        # times while the figure was being built, each in a throwaway script, and three
+        # of those were wrong in ways that looked like data: a crop that ran past the
+        # chin so the neck was the widest row, a crop too narrow to hold the head so the
+        # clipping set the maximum, and a background that would not flood out at all.
+        # All three are checks in the tool now rather than care taken by whoever is
+        # measuring, and each is a test the tool is expected to fail — the third is why
+        # `capture` refuses the painted portrait as a reference.
+        run: |
+          python3 -m pip install --quiet --break-system-packages pillow \
+            || python3 -m pip install --quiet pillow
+          python3 tools/measure_figure.py check
+
       - name: Self-test
         # The self-test is the client's own verdict on Greek text, the symbol
         # atlas, the health bars, the replay round-trip and the frame budget.
