@@ -545,11 +545,12 @@ def build_face(path):
     paint_brows(image)
     paint_mouth(image)
 
-    # Quantised. A face is a few hundred distinct colours and an adaptive palette
-    # holds them all; the 24-bit version of this image is ten times the size for
-    # differences no one can see on a head two hundred pixels tall.
-    image = image.quantize(colors=256, method=Image.MEDIANCUT, dither=Image.NONE)
-    image.save(path, optimize=True)
+    # Twenty-four bit, and no palette. A 256-colour adaptive palette seemed enough
+    # for a face and is not: it bands the one thing a face is made of, which is a
+    # smooth gradient, and the bands run across the cheeks and the forehead exactly
+    # where the light is. The full image is 1.9 MB against 0.8, which is a fair
+    # price for the head of the only figure in the game looked at from three metres.
+    image.save(path, optimize=True, compress_level=9)
     return path
 
 
