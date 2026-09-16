@@ -183,7 +183,9 @@ def paint_hair(image):
         # hair is not one colour with a highlight on it, it is dark strands and
         # grey ones lying together, and which is which changes lock by lock.
         width = LOCK_PIXELS * (0.55 + (0.95 * noise(x // 37, 0.0, 19.0)))
-        lock = int(x / width)
+        # Locks wander a little across the head, so the grid they are cut on does
+        # not line up with the middle of the forehead and draw a seam down it.
+        lock = int((x + (5.0 * math.sin(edge * 0.07))) / width)
         lock_tone = noise(lock, 0.0, 5.7)
         lock_grey = noise(lock, 3.3, 11.1)
         across_lock = ((x % width) / width) - 0.5
@@ -469,7 +471,7 @@ def paint_age(image):
     over(image, lines, 3.2)
 
 
-MOUSTACHE = (54, 47, 42)
+MOUSTACHE = (46, 40, 35)
 
 
 MOUSTACHE_TOP = 0.1065
@@ -535,7 +537,7 @@ def paint_moustache_shadow(image):
     over(image, strands, 0.4)
     # The strands inside it are lighter than the mass, so the moustache reads as
     # hair rather than as a shadow under the nose.
-    lighter = Image.new("RGBA", image.size, (104, 94, 84, 255))
+    lighter = Image.new("RGBA", image.size, (92, 82, 72, 255))
     image.paste(lighter, (0, 0), blur(Image.composite(mask, Image.new("L", image.size, 0), mask), 0.5))
     over(image, Image.composite(strands, Image.new("RGBA", image.size, (0, 0, 0, 0)), mask), 0.22)
 
