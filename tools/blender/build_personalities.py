@@ -186,7 +186,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         # way down — the parietal — and the temples are already turning in by the
         # middle. This is that, as a boost that peaks where the bone does.
         radius = math.sin(phi) ** 0.40
-        radius *= 1.0 + (0.42 * math.exp(-(((v - 0.34) / 0.40) ** 2)))
+        radius *= 1.0 + (0.24 * math.exp(-(((v - 0.34) / 0.40) ** 2)))
 
         # and the jaw holds its width to the corner rather than tapering from the
         # cheekbone down, which is the other thing the profile said
@@ -231,7 +231,7 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
             x += side * 0.008 * crown * (abs(dx) ** 0.5)
 
             zygomatic = math.exp(-((((dx - (side * 0.62)) / 0.26) ** 2) + (((v - 0.600) / 0.070) ** 2)))
-            x += side * 0.030 * zygomatic
+            x += side * 0.040 * zygomatic
             y += 0.011 * zygomatic * front
 
             corner = math.exp(-((((abs(dx) - 0.70) / 0.30) ** 2) + (((v - 0.800) / 0.090) ** 2)))
@@ -252,8 +252,8 @@ def _head_surface(segments=36, rings=26, crown_taper=True):
         middle = max(0.0, min(1.0, (v - 0.44) / 0.28))
         x *= 1.0 - (0.03 * middle)
 
-        if v > 0.58:
-            taper = 1.0 - (0.04 * ((v - 0.58) / 0.42) ** 1.3)
+        if v > 0.78:
+            taper = 1.0 - (0.20 * ((v - 0.78) / 0.22) ** 1.3)
             x *= taper
             y *= 0.72 + (0.28 * taper)
 
