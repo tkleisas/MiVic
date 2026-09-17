@@ -66,6 +66,9 @@ def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
+    parser.add_argument(
+        "--keep-standin", action="store_true",
+        help="export the base stand-in as well; it is deleted by default")
     args = parser.parse_args(argv)
 
     enable_mpfb()
@@ -87,6 +90,21 @@ def main():
     TargetService.reapply_macro_details(human)
     print("macro details reapplied: " + ", ".join(f"{k}={v}" for k, v in BODY.items()))
 
+    # The rig goes on **before** the assets, and that order is the whole story.
+    # `add_mhclo_asset` looks for a skeleton amongst the basemesh's nearest relatives and,
+    # finding one, runs `ClothesService.set_up_rigging`, which interpolates the weights
+    # from the basemesh, loads any custom weights, and calls
+    # `RigService.ensure_armature_modifier`. Finding none it does
+    # `clothes.parent = basemesh` and stops — plain object parenting, no armature
+    # modifier, no vertex groups. Added before the rig, the body proxy, eyes, eyebrows and
+    # teeth were in the glb as *unskinned* meshes: five meshes written by the exporter,
+    # five `MESH` objects in the scene, and only the base stand-in carrying JOINTS_0 and
+    # WEIGHTS_0 — so the skinned renderer drew the stand-in's robe and nothing else.
+    HumanService.add_builtin_rig(human, RIG)
+    armatures = [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]
+    for arm in armatures:
+        print(f"rig: {arm.name}, {len(arm.data.bones)} bones")
+
     for subdir, filename, asset_type in ASSETS:
         path = AssetService.find_asset_absolute_path(filename, asset_subdir=subdir)
         if path is None:
@@ -95,10 +113,28 @@ def main():
         HumanService.add_mhclo_asset(path, human, asset_type=asset_type)
         print(f"  added {asset_type}")
 
-    HumanService.add_builtin_rig(human, RIG)
-    armatures = [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]
-    for arm in armatures:
-        print(f"rig: {arm.name}, {len(arm.data.bones)} bones")
+    # The stand-in goes last, after everything has been fitted to it. In Blender the proxy
+    # is hidden *behind* the stand-in rather than replacing it: `_check_add_proxy` puts a
+    # `MASK` modifier on the basemesh and the proxy is fitted a hair outside it. Exporting
+    # with `export_apply=False` — which skinning requires, since the exporter must leave
+    # the armature modifier alone — discards that mask, so the stand-in exported at full
+    # strength and the first frame with a working proxy was still a mannequin in a robe.
+    # `base.obj` is never meant to be seen; the proxy is the body. So it is removed.
+    if not args.keep_standin:
+        bpy.data.objects.remove(human, do_unlink=True)
+
+    # What is actually in the scene at the moment of export. Every previous theory about
+    # the missing body was formed without looking at this list, and the question it
+    # settles is narrow and has two different fixes: either MPFB never made the proxy,
+    # eyes, eyebrows and teeth into *meshes*, or it made them and the exporter drops them.
+    print("scene before export:")
+    for obj in sorted(bpy.context.scene.objects, key=lambda o: o.name):
+        verts = len(obj.data.vertices) if obj.type == "MESH" else "-"
+        parent = obj.parent.name if obj.parent else "-"
+        mods = ",".join(f"{m.type}:{getattr(m, 'object', None).name if getattr(m, 'object', None) else '-'}"
+                        for m in obj.modifiers) or "none"
+        print(f"  {obj.type:9} {obj.name:24} verts={verts!s:8} parent={parent} "
+              f"parent_type={obj.parent_type} modifiers={mods}")
 
     os.makedirs(args.out, exist_ok=True)
     out = os.path.join(args.out, "makehuman_elder.glb")
