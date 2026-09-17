@@ -231,7 +231,7 @@ namespace MiVic.Game.Cutscene.Skinning
             {
                 _effect.Texture = _partTextureOverrides.TryGetValue(part.Name, out var overrideTexture)
                     ? overrideTexture
-                    : part.Texture; // always non-null (magenta fallback)
+                    : part.Texture; // never null: the loader's answer or the sidecar map
 
                 device.SetVertexBuffer(part.Vertices);
                 device.Indices = part.Indices;

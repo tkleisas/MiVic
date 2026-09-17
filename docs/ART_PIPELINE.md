@@ -452,6 +452,68 @@ Two lessons, and the second is the one to keep:
   before the source.** The symptom was project-wide and correlated with nothing in the
   diff, which is the signature of a stale artefact rather than a code change.
 
+### 2.6 The imported figure: three answers that were in the file, not in the reasoning
+
+`tools/blender/build_makehuman.py` builds the briefing figure from MakeHuman through
+MPFB. It took several wrong theories to get a body on screen, and every one of them was
+settled by opening the file — the glb, the scene, or MPFB's own source — rather than by
+working out what ought to be true. All three causes are recorded here because each one
+looks like a different bug and only one of them is ours.
+
+**The assets were added before the rig.** `HumanService.add_mhclo_asset` looks for a
+skeleton amongst the basemesh's nearest relatives. Finding one it runs
+`ClothesService.set_up_rigging`, which interpolates the weights from the basemesh, loads
+any custom weights, and calls `RigService.ensure_armature_modifier`. Finding none it does
+`clothes.parent = basemesh` and stops. There is no warning and no failure — plain object
+parenting is a legitimate outcome. So the proxy, the eyes, the eyebrows and the teeth were
+all added, all present in the scene as `MESH` objects, all extracted by the exporter into
+five primitives — and four of the five carried no `JOINTS_0`, no `WEIGHTS_0` and no
+`skin`. `SkinnedModel.Load` reads skinned meshes. It never saw them.
+
+That is why the frame was **byte-identical with and without the body proxy**. The proxy
+was not missing; it was present and unrigged, which renders as absent and reads as "the
+file does not contain it". The lesson is narrow and worth keeping: *a mesh that the
+exporter writes and the loader ignores is indistinguishable, from the outside, from a mesh
+that was never written.* The only way to tell them apart is to read the glb's attribute
+lists, which is one script and settles it.
+
+**The visible body is a proxy, and the stand-in is meant to be hidden rather than
+removed.** MakeHuman's `base.obj` is a low-poly form that the targets morph and the
+proxies fit to; `male_generic.proxy` is the nude body that is meant to be looked at. In
+Blender the proxy is hidden *behind* the stand-in — `_check_add_proxy` puts a `MASK`
+modifier on the basemesh and fits the proxy a hair outside it. Exporting with
+`export_apply=False` is required for skinning, since the exporter must leave the armature
+modifier alone, and it is exactly what throws that mask away. The first frame with a
+working proxy was therefore still a mannequin in a robe. The stand-in is deleted after
+everything has been fitted to it.
+
+**The body had no material, on purpose.** `_check_add_proxy` passes
+`material_type="NONE"`, because the proxy is not meant to have a material of its own: it
+inherits the body's. The call that does that is
+`HumanService.set_character_skin(mhmat, basemesh, bodyproxy=proxy, skin_type="GAMEENGINE")`.
+Without it the proxy exports with no material at all and the body renders as whatever the
+viewer falls back to — flat flesh, in our case, which looked like a deliberate choice and
+was an omission.
+
+**And with materials come textures of a second provenance.** A generated figure is written
+with geometry and vertex colours and no material at all, which is why its colour map is
+found *next to it* by name (`_cloth`, `_metal`). An imported figure — MakeHuman, or any
+third-party glb — brings its own materials and its own images inside the file.
+`SkinnedModel.Load` had been reading those embedded textures all along, and
+`CutsceneAssets` was overwriting them with the sidecar map. The rule is now the model's
+own material first, the sidecar as the fallback, which requires the loader to distinguish
+*no material* from *a texture that would not decode*: nothing is `null`, and unreadable is
+magenta. Two values, because one value cannot say both things.
+
+Finally, the instrument that ended it. The generator prints every object in the scene with
+its type, vertex count, parent, materials and modifiers immediately before the export.
+Five separate confident diagnoses this session were wrong, and the scene dump was right
+the first time it was asked:
+
+```
+MESH  Human.male_generic  verts=13652  parent=Human.rig  materials=... modifiers=ARMATURE:Human.rig,SUBSURF:-
+```
+
 ## 3. Terrain with per-unit difficulty
 
 **Implemented.** `TerrainLayer` classifies nine surface types on the navigation

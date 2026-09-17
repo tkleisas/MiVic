@@ -74,6 +74,7 @@ public sealed class CutsceneAssets : IDisposable
     private readonly List<InstancedRenderer.Mesh> _owned = [];
     private readonly List<SkinnedModel> _skinned = [];
     private readonly List<Texture2D> _textures = [];
+    private Texture2D? _missing;
 
     public CutsceneAssets(InstancedRenderer renderer, GraphicsDevice device, string baseDirectory)
     {
@@ -113,20 +114,30 @@ public sealed class CutsceneAssets : IDisposable
             if (candidate.JointCount > 0)
             {
                 // SkinnedEffect has no vertex-colour channel, so a rigged model is coloured
-                // by a texture exactly as a rigid one is. The same naming convention applies:
-                // one map for the face, one for the cloth, one for the metal.
+                // by a texture exactly as a rigid one is. Which texture, though, depends on
+                // where the model came from, and there are two provenances. A generated
+                // figure is written with geometry and vertex colours and no material at
+                // all, so its map is found next to it by name. An imported figure brings
+                // its own materials and its own textures inside the glb, and a naming
+                // convention cannot see those. So the model's own material is asked for
+                // first and the sidecar maps are the fallback.
                 Texture2D? rigFace = LoadTexture(asset, string.Empty);
                 Texture2D? rigCloth = LoadTexture(asset, "_cloth");
                 Texture2D? rigMetal = LoadTexture(asset, "_metal");
 
                 foreach (SkinnedMeshPart part in candidate.Parts)
                 {
+                    if (part.Texture != null)
+                    {
+                        continue;
+                    }
+
                     part.Texture = part.Name switch
                     {
                         var n when IsMetal(n) => rigMetal ?? rigFace,
                         var n when IsCloth(n) => rigCloth ?? rigFace,
                         _ => rigFace,
-                    };
+                    } ?? Missing();
                 }
 
                 _skinned.Add(candidate);
@@ -216,6 +227,24 @@ public sealed class CutsceneAssets : IDisposable
         Texture2D texture = TextureTools.MakeMipmapped(_device, flat);
         _textures.Add(texture);
         return texture;
+    }
+
+    /// <summary>
+    /// The colour of nothing bound, for a part that has no material of its own and no map
+    /// beside the model either. It is a content mistake, and this is what says so without
+    /// failing the whole scene — the same answer the loader gives for a texture that is
+    /// present and will not decode.
+    /// </summary>
+    private Texture2D Missing()
+    {
+        if (_missing == null)
+        {
+            _missing = new Texture2D(_device, 1, 1);
+            _missing.SetData(new[] { Color.Magenta });
+            _textures.Add(_missing);
+        }
+
+        return _missing;
     }
 
 

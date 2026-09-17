@@ -283,32 +283,53 @@ namespace MiVic.Game.Cutscene.Skinning
             return sum > 0.0001f ? w / sum : new Vector4(1, 0, 0, 0);
         }
 
+        /// <summary>
+        /// The primitive's own base-colour image, or null when it has none.
+        /// <para>
+        /// Null is an answer, not a failure. A generated model carries no material at all
+        /// and is coloured by a map found next to it; an imported one carries its own
+        /// textures inside the glb. The caller can only tell those apart if "nothing" and
+        /// "something that would not decode" are different values, so a texture that is
+        /// present and unreadable is magenta — the colour of nothing bound — and a
+        /// texture that is simply not there is null.
+        /// </para>
+        /// </summary>
         private static Texture2D LoadBaseColorTexture(GraphicsDevice device, MeshPrimitive prim,
             Dictionary<Image, Texture2D> textureCache)
         {
+            Image image;
             try
             {
-                var texture = prim.Material?.FindChannel("BaseColor")?.Texture;
-                var image = texture?.PrimaryImage;
-                if (image != null)
-                {
-                    if (textureCache.TryGetValue(image, out var shared))
-                        return shared;
+                image = prim.Material?.FindChannel("BaseColor")?.Texture?.PrimaryImage;
+            }
+            catch
+            {
+                image = null;
+            }
 
-                    ReadOnlyMemory<byte> bytes = image.Content.Content;
-                    if (bytes.Length > 0)
+            if (image == null)
+            {
+                return null;
+            }
+
+            if (textureCache.TryGetValue(image, out var shared))
+                return shared;
+
+            try
+            {
+                ReadOnlyMemory<byte> bytes = image.Content.Content;
+                if (bytes.Length > 0)
+                {
+                    using (var ms = new MemoryStream(bytes.ToArray()))
                     {
-                        using (var ms = new MemoryStream(bytes.ToArray()))
-                        {
-                            // Mipmaps keep small features (faces) visible at distance
-                            var loaded = TextureTools.MakeMipmapped(device, Texture2D.FromStream(device, ms));
-                            textureCache[image] = loaded;
-                            return loaded;
-                        }
+                        // Mipmaps keep small features (faces) visible at distance
+                        var loaded = TextureTools.MakeMipmapped(device, Texture2D.FromStream(device, ms));
+                        textureCache[image] = loaded;
+                        return loaded;
                     }
                 }
             }
-            catch { /* fall through to magenta placeholder */ }
+            catch { /* falls through to the magenta marker */ }
 
             var fallback = new Texture2D(device, 1, 1);
             fallback.SetData(new[] { Color.Magenta });

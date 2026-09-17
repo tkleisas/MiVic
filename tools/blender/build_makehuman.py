@@ -12,15 +12,32 @@ several rounds of guessing at signatures. What it says, and what this follows:
     defaults to zero, and `bake_targets` bakes whatever happens to be in the stack, so
     both were no-ops: every earlier build produced the base mesh and nothing else.
   * `gender` is 1.0 for male and 0.0 for female.
-  * Eyes, teeth and clothes are `.mhclo` assets, found with
+  * **The rig goes on before the assets are added.** `add_mhclo_asset` looks for a
+    skeleton amongst the basemesh's nearest relatives; finding one it runs
+    `ClothesService.set_up_rigging`, which interpolates weights and adds the armature
+    modifier, and finding none it does `clothes.parent = basemesh` and stops. Assets
+    added before the rig are in the file as *unskinned* meshes, which a skinned renderer
+    does not draw.
+  * The visible body is a **proxy**, `male_generic.proxy`. `base.obj` is a low-poly
+    stand-in that is never meant to be seen — it is what the targets morph and what the
+    proxies fit to. It is removed before export; see below.
+  * The skin is `HumanService.set_character_skin(mhmat, basemesh, bodyproxy=proxy)` with
+    `skin_type="GAMEENGINE"`, which assigns the basemesh's skin material to the proxy.
+    `_check_add_proxy` passes `material_type="NONE"` for the proxy on purpose: it is not
+    meant to have a material of its own, it inherits the body's.
+  * Eyes, teeth, eyebrows and clothes are `.mhclo` assets, found with
     `AssetService.find_asset_absolute_path` and applied with
     `HumanService.add_mhclo_asset(path, basemesh, asset_type=...)`.
   * The rig is `HumanService.add_builtin_rig(basemesh, rig_name)`; the names are the
     `rig.*.json` files under `data/rigs/standard`, so `game_engine` not `standard`.
 
+The asset root is *not* the extension root. Code is `extensions/blender_org/mpfb`, the
+asset pack is `.user/blender_org/mpfb/data`, and only the latter has `clothes/` in it.
+
 Run:
     /home/tkleisas/blender/blender-5.2.2-linux-x64/blender --background \\
-        --python tools/blender/build_makehuman.py -- --out <dir>
+        --python tools/blender/build_makehuman.py -- --out <dir> \\
+            [--garment male_casualsuit05 ...] [--skin old_caucasian_male]
 """
 
 import argparse
@@ -39,19 +56,18 @@ BODY = {
     "proportions": 0.42,  # 0.0 wide hips, 1.0 wide shoulders
 }
 
-#: Everything that goes on him. Subfolder under the asset root, filename, asset type.
-#:
-#: The body is first and it is a **proxy**. MakeHuman's `base.obj` is a low-poly stand-in
-#: that is never meant to be seen — it is what the targets morph and what the proxies fit
-#: to — and the visible nude body is `male_generic.proxy`. That is why every build so far
-#: was a figure in a robe: I was rendering the stand-in. `add_mhclo_asset` takes proxies as
-#: well as clothes and body parts, with `asset_type="Proxymeshes"`.
-ASSETS = [
+#: The body and its features. Subfolder under the asset root, filename, asset type.
+FEATURES = [
     ("proxymeshes/male_generic", "male_generic.proxy", "Proxymeshes"),
     ("eyes", "low-poly.mhclo", "Eyes"),
     ("eyebrows", "eyebrow001.mhclo", "Eyebrows"),
     ("teeth", "teeth_base.mhclo", "Teeth"),
 ]
+
+#: A skin whose face is the right age for the part. The pack ships this one and the
+#: name says what it is, which is why it was picked over the alternatives: an aged
+#: caucasian male. It carries its own diffuse map, embedded in the glb on export.
+SKIN = "old_caucasian_male"
 
 RIG = "game_engine"
 
@@ -62,10 +78,23 @@ def enable_mpfb():
     addon_utils.enable("bl_ext.blender_org.mpfb", default_set=True)
 
 
+def garment_path(AssetService, name):
+    """The `.mhclo` inside `clothes/<name>/`, or None.
+
+    Clothes live in a folder named after themselves, which is a convention of the
+    asset pack and not of the API, so it is resolved here rather than assumed.
+    """
+    return AssetService.find_asset_absolute_path(
+        name + ".mhclo", asset_subdir=os.path.join("clothes", name))
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
+    parser.add_argument("--skin", default=SKIN)
+    parser.add_argument("--garment", action="append", default=[],
+                        help="a folder under clothes/, repeatable")
     parser.add_argument(
         "--keep-standin", action="store_true",
         help="export the base stand-in as well; it is deleted by default")
@@ -101,17 +130,39 @@ def main():
     # five `MESH` objects in the scene, and only the base stand-in carrying JOINTS_0 and
     # WEIGHTS_0 — so the skinned renderer drew the stand-in's robe and nothing else.
     HumanService.add_builtin_rig(human, RIG)
-    armatures = [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]
-    for arm in armatures:
+    for arm in [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]:
         print(f"rig: {arm.name}, {len(arm.data.bones)} bones")
 
-    for subdir, filename, asset_type in ASSETS:
+    proxy = None
+    for subdir, filename, asset_type in FEATURES:
         path = AssetService.find_asset_absolute_path(filename, asset_subdir=subdir)
         if path is None:
             print(f"  skipped {asset_type}: {filename} not in the asset pack")
             continue
-        HumanService.add_mhclo_asset(path, human, asset_type=asset_type)
+        created = HumanService.add_mhclo_asset(path, human, asset_type=asset_type)
         print(f"  added {asset_type}")
+        if asset_type == "Proxymeshes":
+            proxy = created
+
+    # The skin is applied to the basemesh and inherited by the proxy. Without this the
+    # proxy has no material at all — which is what `material_type="NONE"` means — and the
+    # body renders as whatever flat colour the viewer falls back to.
+    skin_path = AssetService.find_asset_absolute_path(
+        args.skin + ".mhmat", asset_subdir=os.path.join("skins", args.skin))
+    if skin_path is None:
+        print(f"  no skin '{args.skin}' in the asset pack; body left untextured")
+    else:
+        HumanService.set_character_skin(skin_path, human, bodyproxy=proxy,
+                                       skin_type="GAMEENGINE")
+        print(f"  skin: {args.skin}")
+
+    for name in args.garment:
+        path = garment_path(AssetService, name)
+        if path is None:
+            print(f"  skipped garment {name}: not in the asset pack")
+            continue
+        HumanService.add_mhclo_asset(path, human, asset_type="clothes")
+        print(f"  garment: {name}")
 
     # The stand-in goes last, after everything has been fitted to it. In Blender the proxy
     # is hidden *behind* the stand-in rather than replacing it: `_check_add_proxy` puts a
@@ -133,8 +184,9 @@ def main():
         parent = obj.parent.name if obj.parent else "-"
         mods = ",".join(f"{m.type}:{getattr(m, 'object', None).name if getattr(m, 'object', None) else '-'}"
                         for m in obj.modifiers) or "none"
-        print(f"  {obj.type:9} {obj.name:24} verts={verts!s:8} parent={parent} "
-              f"parent_type={obj.parent_type} modifiers={mods}")
+        mats = ",".join(s.material.name for s in obj.material_slots if s.material) or "none"
+        print(f"  {obj.type:9} {obj.name:26} verts={verts!s:8} parent={parent} "
+              f"materials={mats} modifiers={mods}")
 
     os.makedirs(args.out, exist_ok=True)
     out = os.path.join(args.out, "makehuman_elder.glb")
