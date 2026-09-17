@@ -99,6 +99,20 @@ SKIN = "old_caucasian_male"
 
 RIG = "game_engine"
 
+#: What each garment is repainted to, as linear RGB. The pack's clothes are modern — a zip
+#: field jacket over a shirt with denim jeans, and ankle boots — and this figure is not.
+#: The geometry is what we came for and the colour is not, so the colour is replaced and
+#: the cloth's own light and shade are kept. The jacket is the closest thing in the pack
+#: to a tunic: hip length, a collar, and a closed front with a vertical line down the
+#: chest, which under one colour stops reading as an open jacket over a shirt and starts
+#: reading as a placket. Khaki for the cloth, near-black for the boots.
+UNIFORM = {
+    "male_casualsuit05": (0.430, 0.400, 0.275),
+    "male_elegantsuit01": (0.430, 0.400, 0.275),
+    "shoes03": (0.070, 0.062, 0.055),
+    "shoes04": (0.070, 0.062, 0.055),
+}
+
 
 def enable_mpfb():
     import addon_utils
@@ -180,6 +194,64 @@ def author_idle(armature, fps=24, last_frame=72):
     print(f"posed: Idle on {len(armature.pose.bones)} bones, frames 1-{last_frame} at {fps} fps")
 
 
+def _diagnose(proxy):
+    """Print what the face painter is about to measure against.
+
+    Written because the first run of the painter picked a point at x = 0.4786, z = 0.9612
+    as the most forward vertex of the head — off the midline and at hip height, which is a
+    hand — and then painted into a 1024-square image that is not the skin. Both are
+    questions about objects, so both are answered by printing the objects.
+    """
+    matrix = proxy.matrix_world
+    raw = [v.co for v in proxy.data.vertices]
+    world = [matrix @ co for co in raw]
+    print(f"diagnose: object {proxy.name!r}, {len(raw)} verts")
+    print(f"diagnose: matrix_world translation {tuple(round(c, 4) for c in matrix.translation)}, "
+          f"scale {tuple(round(c, 4) for c in matrix.to_scale())}")
+    print(f"diagnose: raw bbox z {min(c.z for c in raw):.4f}..{max(c.z for c in raw):.4f}")
+    print(f"diagnose: world bbox z {min(c.z for c in world):.4f}..{max(c.z for c in world):.4f}, "
+          f"y {min(c.y for c in world):.4f}..{max(c.y for c in world):.4f}, "
+          f"x {min(c.x for c in world):.4f}..{max(c.x for c in world):.4f}")
+    evaluated = proxy.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    if evaluated is not proxy:
+        mesh = evaluated.to_mesh()
+        posed = [evaluated.matrix_world @ v.co for v in mesh.vertices]
+        print(f"diagnose: evaluated bbox z {min(c.z for c in posed):.4f}..{max(c.z for c in posed):.4f}, "
+              f"y {min(c.y for c in posed):.4f}..{max(c.y for c in posed):.4f}")
+        print(f"diagnose: evaluated most-forward vertex y {min(c.y for c in posed):.4f}")
+        evaluated.to_mesh_clear()
+
+    print("diagnose: images loaded:")
+    for image in bpy.data.images:
+        print(f"    {image.name!r} size={tuple(image.size)} channels={image.channels}")
+
+    print("diagnose: meshes (outward fraction is the share of faces whose normal points "
+          "away from the object's own centre: below 0.5 means the mesh is inside out)")
+    for obj in sorted(bpy.context.scene.objects, key=lambda o: o.name):
+        if obj.type != "MESH":
+            continue
+        mesh = obj.data
+        centre = sum((v.co for v in mesh.vertices), Vector((0.0, 0.0, 0.0))) / len(mesh.vertices)
+        outward = 0
+        uv_min = [1e9, 1e9]
+        uv_max = [-1e9, -1e9]
+        uv_layer = mesh.uv_layers.active
+        for polygon in mesh.polygons:
+            to_face = (polygon.center - centre)
+            if to_face.length > 1e-9 and polygon.normal.dot(to_face.normalized()) > 0.0:
+                outward += 1
+        if uv_layer is not None:
+            for loop_uv in uv_layer.data:
+                uv_min[0] = min(uv_min[0], loop_uv.uv[0])
+                uv_min[1] = min(uv_min[1], loop_uv.uv[1])
+                uv_max[0] = max(uv_max[0], loop_uv.uv[0])
+                uv_max[1] = max(uv_max[1], loop_uv.uv[1])
+        fraction = outward / float(len(mesh.polygons)) if len(mesh.polygons) else 0.0
+        print(f"    {obj.name:26} faces={len(mesh.polygons):6} outward={fraction:5.2f} "
+              f"uv=[{uv_min[0]:.3f},{uv_min[1]:.3f}]..[{uv_max[0]:.3f},{uv_max[1]:.3f}] "
+              f"mats={','.join(s.material.name for s in obj.material_slots if s.material) or 'none'}")
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
@@ -193,7 +265,23 @@ def main():
     parser.add_argument(
         "--no-pose", action="store_true",
         help="leave the figure in the rest pose instead of authoring Idle")
+    parser.add_argument(
+        "--no-face", action="store_true",
+        help="leave the skin map alone instead of painting the moustache into it")
+    parser.add_argument(
+        "--no-dress", action="store_true",
+        help="leave the garments the colours the asset pack painted them")
+    parser.add_argument(
+        "--diagnose", action="store_true",
+        help="print what the face painter measures before it paints")
     args = parser.parse_args(argv)
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+    # Imported here, once, and not inside a branch: an `import` anywhere in a function binds
+    # the name for the whole function, so a conditional one is an UnboundLocalError waiting
+    # for the branch that does not run.
+    import mpfb_paint
 
     enable_mpfb()
 
@@ -256,8 +344,24 @@ def main():
         if path is None:
             print(f"  skipped garment {name}: not in the asset pack")
             continue
-        HumanService.add_mhclo_asset(path, human, asset_type="clothes")
+        dressed = HumanService.add_mhclo_asset(path, human, asset_type="clothes")
         print(f"  garment: {name}")
+
+        target = UNIFORM.get(name)
+        if target is None or args.no_dress:
+            continue
+
+        # One `mhclo` carries the whole outfit — `male_casualsuit05` is the jacket *and*
+        # the trousers, in one mesh with one map — so a single recolour dresses both, in
+        # the same cloth. That is what a period uniform was anyway: tunic and breeches in
+        # one khaki, which is why this reads better than the modern garment it replaces.
+        image = mpfb_paint.material_image(dressed)
+        if image is None:
+            print(f"    no single diffuse image on {name}; left as the pack painted it")
+            continue
+        texels = mpfb_paint.recolour(image, target)
+        print(f"    repainted {image.name} to "
+              f"({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f}), {texels} texels")
 
     # The stand-in goes last, after everything has been fitted to it. In Blender the proxy
     # is hidden *behind* the stand-in rather than replacing it: `_check_add_proxy` puts a
@@ -274,6 +378,35 @@ def main():
     if not args.no_pose:
         armature = next(o for o in bpy.context.scene.objects if o.type == "ARMATURE")
         author_idle(armature)
+
+    # The face is painted into the skin map, in the Blender session, before the export —
+    # so the edited image is what the exporter embeds and the figure needs no sidecar.
+    if proxy is not None and args.diagnose:
+        _diagnose(proxy)
+
+    if not args.no_face and proxy is not None:
+        import makehuman_face
+
+        # The head is found from the rig, not from a height fraction: the rest pose has the
+        # hands further forward than the face, so "most forward vertex of the whole body" is
+        # a knuckle. The head bone is at the base of the skull and the nose is 12 cm in
+        # front of it, which is well inside a sphere that the hands are outside of.
+        armature = next(o for o in bpy.context.scene.objects if o.type == "ARMATURE")
+        head_bone = armature.data.bones.get("head")
+        if head_bone is None:
+            print("  no 'head' bone on the rig; skipping the face")
+        else:
+            anchor = proxy.matrix_world.inverted() @ armature.matrix_world @ head_bone.head_local
+            nose, nose_index = makehuman_face.find_nose_tip(proxy, anchor)
+            box = makehuman_face.moustache_box(nose)
+            image = mpfb_paint.material_image(proxy)
+            if image is None:
+                print("  the body's material names no single skin image; nothing to paint")
+            else:
+                texels = makehuman_face.paint_skin(proxy, image, box)
+                print(f"  moustache: nose tip v{nose_index} at "
+                      f"({nose.x:.4f}, {nose.y:.4f}, {nose.z:.4f}), "
+                      f"lip z {box['lip_z']:.4f}, {texels} texels of {image.size[0]}x{image.size[1]}")
 
     # What is actually in the scene at the moment of export. Every previous theory about
     # the missing body was formed without looking at this list, and the question it
