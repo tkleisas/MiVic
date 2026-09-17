@@ -27,6 +27,20 @@ try
         return exitCode;
     }
 
+    // Skinned-model diagnostics. Unlike the part inspector above this one needs a
+    // graphics device, because it exercises the real load — inverse bind matrices, vertex
+    // skinning data and GPU upload — rather than parsing the file a second time by hand.
+    if (args.Length >= 1 && args[0] is "--inspect-skinned")
+    {
+        string directory = args.Length >= 2
+            ? args[1]
+            : Path.Combine(AppContext.BaseDirectory, "Content", "Models", "Generated");
+
+        var inspector = new MiVic.Game.Cutscene.Skinning.SkinnedModelInspector(directory);
+        inspector.Run();
+        return inspector.ExitCode;
+    }
+
     // ImGui draw-data diagnostics, also headless.
     if (args.Length >= 1 && args[0] is "--inspect-ui")
     {
