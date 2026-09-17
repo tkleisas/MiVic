@@ -40,7 +40,14 @@ BODY = {
 }
 
 #: Everything that goes on him. Subfolder under the asset root, filename, asset type.
+#:
+#: The body is first and it is a **proxy**. MakeHuman's `base.obj` is a low-poly stand-in
+#: that is never meant to be seen — it is what the targets morph and what the proxies fit
+#: to — and the visible nude body is `male_generic.proxy`. That is why every build so far
+#: was a figure in a robe: I was rendering the stand-in. `add_mhclo_asset` takes proxies as
+#: well as clothes and body parts, with `asset_type="Proxymeshes"`.
 ASSETS = [
+    ("proxymeshes/male_generic", "male_generic.proxy", "Proxymeshes"),
     ("eyes", "low-poly.mhclo", "Eyes"),
     ("eyebrows", "eyebrow001.mhclo", "Eyebrows"),
     ("teeth", "teeth_base.mhclo", "Teeth"),
@@ -95,11 +102,15 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     out = os.path.join(args.out, "makehuman_elder.glb")
-    bpy.ops.object.select_all(action="SELECT")
+    # The whole scene, not a selection. With `use_selection=True` and a `select_all`, the
+    # proxy, eyes, eyebrows and teeth were created and appeared in the file as four extra
+    # *nodes* — and exported no meshes at all, so the figure kept the base mesh's robe and
+    # the body proxy never reached a frame. Exporting everything removes the question of
+    # what MPFB put where.
     bpy.ops.export_scene.gltf(
         filepath=out,
         export_format="GLB",
-        use_selection=True,
+        use_selection=False,
         export_skins=True,
         export_animations=True,
         export_apply=False,
