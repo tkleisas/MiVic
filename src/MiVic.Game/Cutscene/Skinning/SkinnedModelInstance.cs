@@ -156,6 +156,42 @@ namespace MiVic.Game.Cutscene.Skinning
             _model.ComputeBoneMatrices(_poseOut, _boneMatrices);
         }
 
+        /// <summary>
+        /// Poses the figure at an absolute time in its clip rather than advancing it by a
+        /// frame delta.
+        /// <para>
+        /// MiVic's rule is that the simulation owns the state and presentation reads it. A
+        /// cutscene's clock is the director's — the same clock the camera moves on, that the
+        /// probes seek, and that makes two runs photograph the same moment. A figure posed
+        /// from that clock is the same figure on every machine at every frame rate; one
+        /// advanced by a delta is a function of how long somebody waited, which is the thing
+        /// this project has spent the most effort not doing.
+        /// </para>
+        /// </summary>
+        public void PoseAt(float seconds)
+        {
+            CurrentTime = seconds;
+            _previousTime = seconds;
+            _previousClip = null;
+            _blend = 1f;
+
+            if (CurrentClip == null)
+            {
+                _model.GetBindPose(_poseOut);
+            }
+            else
+            {
+                _model.SampleClip(CurrentClip, CurrentTime, _poseOut, CurrentLooping);
+            }
+
+            foreach (var (boneIndex, boneScale) in _boneScales)
+            {
+                _poseOut[boneIndex].S *= boneScale;
+            }
+
+            _model.ComputeBoneMatrices(_poseOut, _boneMatrices);
+        }
+
         public void Draw(GraphicsDevice device, Matrix world, Matrix view, Matrix projection)
         {
             device.RasterizerState = RasterizerState.CullClockwise; // glTF front faces are CCW

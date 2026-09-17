@@ -1,3 +1,4 @@
+using MiVic.Game.Cutscene.Skinning;
 using MiVic.Game.Rendering;
 using MiVic.Game.Rendering.Gltf;
 using Microsoft.Xna.Framework;
@@ -28,10 +29,17 @@ public readonly record struct CutscenePart(
 /// <param name="Asset">The name it was loaded by.</param>
 /// <param name="Parts">Every part, parents before children.</param>
 /// <param name="ModelTransform">Applied outside the parts, after their own transforms.</param>
+/// <param name="Skin">
+/// Set when the asset is a skinned mesh rather than a set of rigid parts. A rigged figure
+/// is a different kind of thing: its geometry is bound to a skeleton and its pose comes
+/// from a clip, so it has no parts to accumulate transforms through — <see cref="Parts"/>
+/// is empty for it and the director draws it through <c>SkinnedEffect</c> instead.
+/// </param>
 public readonly record struct CutsceneModel(
     string Asset,
     CutscenePart[] Parts,
-    Matrix ModelTransform);
+    Matrix ModelTransform,
+    SkinnedModel? Skin = null);
 
 /// <summary>
 /// Loads the models a cutscene stands on — sets and personalities — by name.
@@ -64,6 +72,7 @@ public sealed class CutsceneAssets : IDisposable
     private readonly string _baseDirectory;
     private readonly Dictionary<string, CutsceneModel> _cache = [];
     private readonly List<InstancedRenderer.Mesh> _owned = [];
+    private readonly List<SkinnedModel> _skinned = [];
     private readonly List<Texture2D> _textures = [];
 
     public CutsceneAssets(InstancedRenderer renderer, GraphicsDevice device, string baseDirectory)
@@ -92,6 +101,27 @@ public sealed class CutsceneAssets : IDisposable
         if (!File.Exists(path))
         {
             throw new InvalidDataException($"Cutscene asset '{asset}' is not in the build: no file at {path}.");
+        }
+
+        // Skinned or not cannot be told from the name, so it is asked. The cost is one
+        // extra parse for the assets that are not skinned — and only once, because the
+        // answer is cached with the model, and a cutscene loads two or three assets in a
+        // process. The parts path below stays the one that reports a real failure.
+        try
+        {
+            SkinnedModel candidate = SkinnedModel.Load(_device, path);
+            if (candidate.JointCount > 0)
+            {
+                _skinned.Add(candidate);
+                var rigged = new CutsceneModel(
+                    asset, [], Matrix.Identity, candidate);
+                _cache[asset] = rigged;
+                return rigged;
+            }
+        }
+        catch (Exception)
+        {
+            // Not a skinned file. Fall through to the parts loader.
         }
 
         ModelData data = GltfLoader.LoadModel(path, Raw);

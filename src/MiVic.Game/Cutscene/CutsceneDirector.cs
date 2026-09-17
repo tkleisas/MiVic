@@ -1,4 +1,5 @@
 using MiVic.Core.Campaign;
+using MiVic.Game.Cutscene.Skinning;
 using MiVic.Game.Rendering;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -39,6 +40,13 @@ public sealed class CutsceneDirector : IDisposable
     private readonly CutsceneDefinition _scene;
     private readonly InstancedRenderer _renderer;
     private readonly CutsceneAssets _assets;
+    /// <summary>
+    /// The clip a rigged figure stands in until a scene says otherwise. Authored assets name
+    /// their clips, and every Mixamo-derived one calls the standing-still loop "Idle"; a scene
+    /// will grow a per-figure clip field when there is more than one rigged figure to pose.
+    /// </summary>
+    private const string SkinnedIdleClip = "Idle";
+
     private readonly List<Actor> _actors = [];
     private readonly List<string> _shown = [];
     private readonly InstanceData[] _one = new InstanceData[1];
@@ -327,18 +335,56 @@ public sealed class CutsceneDirector : IDisposable
         }
 
         _renderer.End();
+
+        // Skinned figures are drawn after the instanced pass rather than between two of its
+        // draws. SkinnedEffect is a different effect with its own rasteriser, depth and blend
+        // state, so drawing it inside the pass would leave the instanced technique holding
+        // state the skinned one had changed. The room, the props and the rigid figures are
+        // all still in the instanced pass; only the rigged ones come out here.
+        foreach (Actor actor in _actors)
+        {
+            if (actor.Skin is null)
+            {
+                continue;
+            }
+
+            actor.Skin.Environment = environment;
+            actor.Skin.PoseAt(_total / 1000f);
+            actor.Skin.Draw(
+                _renderer.Device,
+                actor.Model.ModelTransform * actor.Entity,
+                view,
+                projection);
+
+            DrawCalls++;
+        }
     }
 
     public void Dispose() => _assets.Dispose();
 
-    private static Actor MakeActor(CutsceneModel model, Matrix entity, bool posed) => new()
+    private Actor MakeActor(CutsceneModel model, Matrix entity, bool posed)
     {
+        SkinnedModelInstance? skin = null;
+        if (model.Skin is not null)
+        {
+            skin = new SkinnedModelInstance(model.Skin);
+
+            // A rigged figure with no clip would stand in its bind pose, which is a T-pose
+            // and reads as a mannequin. Anything the asset has is better than that, and the
+            // stitched clip is chosen by name from the figure's own script.
+            skin.Play(SkinnedIdleClip);
+        }
+
+        return new Actor
+        {
         Model = model,
         Entity = entity,
         Locals = new Matrix[model.Parts.Length],
         World = new Matrix[model.Parts.Length],
-        Posed = posed,
-    };
+            Posed = posed,
+            Skin = skin,
+        };
+    }
 
     /// <summary>Types a line over at most its own duration, so it is never still typing when the next arrives.</summary>
     private static int TypingMilliseconds(in CutsceneLine line)
@@ -408,5 +454,12 @@ public sealed class CutsceneDirector : IDisposable
         public required Matrix[] World { get; init; }
 
         public required bool Posed { get; init; }
+
+        /// <summary>
+        /// The pose and the bone palette, for a figure that is rigged. Created once per
+        /// actor because the palette is per-instance state — two figures from one asset
+        /// are two poses — and null for everything made of rigid parts.
+        /// </summary>
+        public SkinnedModelInstance? Skin { get; init; }
     }
 }

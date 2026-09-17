@@ -16,6 +16,13 @@ namespace MiVic.Game.Rendering;
 public sealed class InstancedRenderer : IDisposable
 {
     private readonly GraphicsDevice _device;
+
+    /// <summary>
+    /// The device this renderer draws with. Exposed because a skinned figure is drawn
+    /// through MonoGame's own <c>SkinnedEffect</c> rather than through this renderer's
+    /// effect, and it has to be the same device or it is a different window.
+    /// </summary>
+    public GraphicsDevice Device => _device;
     private readonly Effect _effect;
     private readonly EffectParameter _viewProjectionParameter;
     private readonly EffectParameter _lightDirectionParameter;
