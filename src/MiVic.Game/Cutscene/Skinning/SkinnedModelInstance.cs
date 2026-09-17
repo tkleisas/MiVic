@@ -204,6 +204,13 @@ namespace MiVic.Game.Cutscene.Skinning
             _effect.View = view;
             _effect.Projection = projection;
             _effect.DiffuseColor = _tint;
+
+            // No vertex-colour channel here, and that is a real limit rather than an
+            // oversight: MonoGame's SkinnedEffect has no VertexColorEnabled — that is
+            // BasicEffect's — so a skinned model is coloured by its texture and nothing else.
+            // COLOR_0 is parsed and carried on the vertex because the data is in the file and
+            // a custom skinned shader is the only thing that could read it; today a generated
+            // rigged asset needs UVs and a painted map like every other model.
             // MiVic's LightDirection points *towards* the light — its shader takes
             // dot(normal, LightDirection) — and SkinnedEffect wants the direction the light
             // travels. Passing it straight through would light the figure from behind.

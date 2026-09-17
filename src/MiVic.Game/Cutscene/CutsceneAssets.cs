@@ -112,6 +112,23 @@ public sealed class CutsceneAssets : IDisposable
             SkinnedModel candidate = SkinnedModel.Load(_device, path);
             if (candidate.JointCount > 0)
             {
+                // SkinnedEffect has no vertex-colour channel, so a rigged model is coloured
+                // by a texture exactly as a rigid one is. The same naming convention applies:
+                // one map for the face, one for the cloth, one for the metal.
+                Texture2D? rigFace = LoadTexture(asset, string.Empty);
+                Texture2D? rigCloth = LoadTexture(asset, "_cloth");
+                Texture2D? rigMetal = LoadTexture(asset, "_metal");
+
+                foreach (SkinnedMeshPart part in candidate.Parts)
+                {
+                    part.Texture = part.Name switch
+                    {
+                        var n when IsMetal(n) => rigMetal ?? rigFace,
+                        var n when IsCloth(n) => rigCloth ?? rigFace,
+                        _ => rigFace,
+                    };
+                }
+
                 _skinned.Add(candidate);
                 var rigged = new CutsceneModel(
                     asset, [], Matrix.Identity, candidate);

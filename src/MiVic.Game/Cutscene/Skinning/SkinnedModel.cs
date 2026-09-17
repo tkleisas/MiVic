@@ -22,12 +22,25 @@ namespace MiVic.Game.Cutscene.Skinning
         public Vector4 BlendIndices;
         public Vector4 BlendWeight;
 
+        /// <summary>
+        /// COLOR_0, which the format this was ported from had no use for.
+        /// <para>
+        /// NoPasaranFC's players are coloured by a texture atlas and its vertex carried no
+        /// colour. MiVic's generated models are the other way round: the exporter writes
+        /// COLOR_0 and no material at all, so dropping the channel leaves a figure with no
+        /// colour anywhere — which is what happened, and it rendered magenta, the colour of
+        /// nothing bound.
+        /// </para>
+        /// </summary>
+        public Color Colour;
+
         public static readonly VertexDeclaration Declaration = new VertexDeclaration(
             new VertexElement(0, VertexElementFormat.Vector3, VertexElementUsage.Position, 0),
             new VertexElement(12, VertexElementFormat.Vector3, VertexElementUsage.Normal, 0),
             new VertexElement(24, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
             new VertexElement(32, VertexElementFormat.Vector4, VertexElementUsage.BlendIndices, 0),
-            new VertexElement(48, VertexElementFormat.Vector4, VertexElementUsage.BlendWeight, 0));
+            new VertexElement(48, VertexElementFormat.Vector4, VertexElementUsage.BlendWeight, 0),
+            new VertexElement(64, VertexElementFormat.Color, VertexElementUsage.Color, 0));
 
         public VertexDeclaration VertexDeclaration => Declaration;
     }
@@ -171,6 +184,7 @@ namespace MiVic.Game.Cutscene.Skinning
                     var uvs = prim.GetVertexAccessor("TEXCOORD_0")?.AsVector2Array();
                     var joints = prim.GetVertexAccessor("JOINTS_0")?.AsVector4Array();
                     var weights = prim.GetVertexAccessor("WEIGHTS_0")?.AsVector4Array();
+                    var colours = prim.GetVertexAccessor("COLOR_0")?.AsColorArray();
                     if (joints == null || weights == null)
                         throw new InvalidDataException("Mesh primitive is not skinned (missing JOINTS_0/WEIGHTS_0).");
 
@@ -184,7 +198,8 @@ namespace MiVic.Game.Cutscene.Skinning
                             Normal = normals != null ? ToXna(normals[i]) : Vector3.Up,
                             TextureCoordinate = uvs != null ? new Vector2(uvs[i].X, uvs[i].Y) : Vector2.Zero,
                             BlendIndices = new Vector4(joints[i].X, joints[i].Y, joints[i].Z, joints[i].W),
-                            BlendWeight = NormalizeWeights(new Vector4(weights[i].X, weights[i].Y, weights[i].Z, weights[i].W))
+                            BlendWeight = NormalizeWeights(new Vector4(weights[i].X, weights[i].Y, weights[i].Z, weights[i].W)),
+                            Colour = colours != null ? ToXna(colours[i]) : Color.White
                         };
                         boundsMin = Vector3.Min(boundsMin, verts[i].Position);
                         boundsMax = Vector3.Max(boundsMax, verts[i].Position);
@@ -408,5 +423,12 @@ namespace MiVic.Game.Cutscene.Skinning
             m.M41, m.M42, m.M43, m.M44);
 
         private static Vector3 ToXna(in Numerics.Vector3 v) => new Vector3(v.X, v.Y, v.Z);
+
+        private static Color ToXna(in System.Numerics.Vector4 v) =>
+            new Color(
+                (byte)Math.Clamp((int)(v.X * 255f + 0.5f), 0, 255),
+                (byte)Math.Clamp((int)(v.Y * 255f + 0.5f), 0, 255),
+                (byte)Math.Clamp((int)(v.Z * 255f + 0.5f), 0, 255),
+                (byte)Math.Clamp((int)(v.W * 255f + 0.5f), 0, 255));
     }
 }
