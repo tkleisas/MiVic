@@ -45,6 +45,7 @@ import os
 import sys
 
 import bpy
+from mathutils import Vector
 
 #: The man: male, old, heavy, average muscle, stocky proportions.
 BODY = {
@@ -54,6 +55,33 @@ BODY = {
     "muscle": 0.42,
     "height": 0.42,
     "proportions": 0.42,  # 0.0 wide hips, 1.0 wide shoulders
+}
+
+#: Where the bones point in a standing pose, as directions in Blender's armature space:
+#: +X is the figure's left, +Z is up. The rest pose is a wide A-pose — the arms hang
+#: about 48 degrees below horizontal, measured from the skeleton rather than estimated —
+#: and at a briefing distance that reads as a bind pose, not as a man standing in a room.
+#: So each bone is *aimed* at a direction instead of being rotated by guessed angles: the
+#: rotation that takes a bone from where it points to where it should point is one
+#: `rotation_difference`, and it cannot get a sign wrong.
+STANDING = {
+    "upperarm_l": (0.17, 0.0, -1.0),
+    "upperarm_r": (-0.17, 0.0, -1.0),
+    "lowerarm_l": (0.13, 0.10, -1.0),
+    "lowerarm_r": (-0.13, 0.10, -1.0),
+    "thigh_l": (-0.06, 0.0, -1.0),
+    "thigh_r": (0.06, 0.0, -1.0),
+    "calf_l": (0.02, 0.0, -1.0),
+    "calf_r": (-0.02, 0.0, -1.0),
+}
+
+#: What moves between the two ends of the idle loop, added to the directions above. Small
+#: enough to read as breathing rather than as an action, which is all a briefing needs.
+BREATHE = {
+    "upperarm_l": (0.02, 0.0, 0.0),
+    "upperarm_r": (-0.02, 0.0, 0.0),
+    "spine_02": (0.0, -0.02, 0.0),
+    "head": (0.0, -0.03, 0.0),
 }
 
 #: The body and its features. Subfolder under the asset root, filename, asset type.
@@ -88,6 +116,70 @@ def garment_path(AssetService, name):
         name + ".mhclo", asset_subdir=os.path.join("clothes", name))
 
 
+def aim_bone(armature, name, direction):
+    """Point a bone along `direction` (armature space), whatever the rest pose was.
+
+    Assigning `pose_bone.matrix` rather than a rotation is what makes this work through a
+    chain: Blender converts the armature-space matrix into the bone's local basis for us,
+    so a bone aimed after its parent has already moved still ends up where it was asked
+    to point. `view_layer.update()` between bones is what makes `head`/`tail` current.
+    """
+    pose_bone = armature.pose.bones.get(name)
+    if pose_bone is None:
+        return
+
+    bpy.context.view_layer.update()
+    head = pose_bone.head.copy()
+    current = pose_bone.tail - pose_bone.head
+    if current.length < 1e-6:
+        return
+
+    delta = current.normalized().rotation_difference(Vector(direction).normalized())
+    matrix = delta.to_matrix().to_4x4() @ pose_bone.matrix
+    matrix.translation = head
+    pose_bone.matrix = matrix
+    bpy.context.view_layer.update()
+
+
+def author_idle(armature, fps=24, last_frame=72):
+    """Pose the figure standing and keyframe it into an `Idle` action.
+
+    A clip rather than a static pose, because the director asks for `Idle` by name and a
+    figure with no clips falls back to the bind pose — which is the A-pose, and the A-pose
+    is the thing being fixed. Three keys: the standing pose, a breath, and the standing
+    pose again, so it loops without a seam.
+    """
+    bpy.context.view_layer.objects.active = armature
+    armature.select_set(True)
+    for pose_bone in armature.pose.bones:
+        pose_bone.rotation_mode = "QUATERNION"
+
+    armature.animation_data_create()
+    action = bpy.data.actions.new("Idle")
+    armature.animation_data.action = action
+
+    middle = last_frame // 2
+    for frame in (1, middle, last_frame):
+        breathing = frame == middle
+        for name, direction in STANDING.items():
+            target = Vector(direction)
+            if breathing:
+                target += Vector(BREATHE.get(name, (0.0, 0.0, 0.0)))
+            aim_bone(armature, name, target)
+
+        bpy.context.scene.frame_set(frame)
+        for pose_bone in armature.pose.bones:
+            pose_bone.keyframe_insert("rotation_quaternion", frame=frame)
+
+    armature.animation_data.action = action
+    bpy.context.scene.frame_start = 1
+    bpy.context.scene.frame_end = last_frame
+    bpy.context.scene.render.fps = fps
+    # Not `action.fcurves`: Blender 5 actions carry slots and layers, and the channel
+    # count is no longer on the action. What was keyed is visible in the export anyway.
+    print(f"posed: Idle on {len(armature.pose.bones)} bones, frames 1-{last_frame} at {fps} fps")
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
@@ -98,6 +190,9 @@ def main():
     parser.add_argument(
         "--keep-standin", action="store_true",
         help="export the base stand-in as well; it is deleted by default")
+    parser.add_argument(
+        "--no-pose", action="store_true",
+        help="leave the figure in the rest pose instead of authoring Idle")
     args = parser.parse_args(argv)
 
     enable_mpfb()
@@ -173,6 +268,12 @@ def main():
     # `base.obj` is never meant to be seen; the proxy is the body. So it is removed.
     if not args.keep_standin:
         bpy.data.objects.remove(human, do_unlink=True)
+
+    # Posed last, and on the rig rather than on the meshes, so the bind pose stays what
+    # the exporter needs and the pose travels as a clip.
+    if not args.no_pose:
+        armature = next(o for o in bpy.context.scene.objects if o.type == "ARMATURE")
+        author_idle(armature)
 
     # What is actually in the scene at the moment of export. Every previous theory about
     # the missing body was formed without looking at this list, and the question it
