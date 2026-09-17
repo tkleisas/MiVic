@@ -21,6 +21,11 @@ import sys
 
 import bpy
 
+#: MakeHuman's own macrodetail: race, gender and age in one file. This is the documented
+#: way to ask for a body, and the alternative — a dictionary of macro sliders — turned out
+#: not to shape anything at all.
+MACRO_DETAIL = "caucasian-male-old"
+
 #: The body, as MakeHuman's own macro sliders. These are the parameters the whole mesh is
 #: generated from, and the default of 0.5 everywhere is what produced a woman in a dress.
 #: ``gender`` runs 0 male to 1 female; age, weight and muscle run 0 to 1 low to high.
@@ -60,7 +65,7 @@ def main():
     from bl_ext.blender_org.mpfb.services.humanservice import HumanService
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    HumanService.create_human(macro_detail_dict=MACRO)
+    HumanService.create_human()
 
     human = bpy.data.objects.get("Human")
     if human is None:
@@ -68,12 +73,22 @@ def main():
     print(f"human: {len(human.data.vertices)} vertices, {len(human.data.polygons)} faces")
     print(f"build: {describe_macro()}")
 
-    # Passing the macros to create_human stores them; it does not shape the mesh. The
-    # vertices only move when the target stack is baked, which is why the first attempt
-    # with gender=0 produced the same woman in a dress as no macros at all.
+    # The body is a target stack, not a dictionary. `load_target` takes a **weight that
+    # defaults to zero**, so loading a target and baking changes nothing at all — which is
+    # why every earlier attempt produced the same mesh whatever the macro dictionary said.
+    # The macrodetail file below is MakeHuman's own "caucasian male old" and it does the
+    # whole body in one go: gender, age, muscle and weight are what a macrodetail is.
+    from bl_ext.blender_org.mpfb.services.locationservice import LocationService
     from bl_ext.blender_org.mpfb.services.targetservice import TargetService
+
+    target = os.path.join(LocationService.get_mpfb_data(), "targets", "macrodetails",
+                          MACRO_DETAIL + ".target.gz")
+    if not os.path.exists(target):
+        raise RuntimeError(f"no macrodetail target at {target}")
+
+    TargetService.load_target(human, target, weight=1.0)
     TargetService.bake_targets(human)
-    print("macros baked")
+    print(f"macrodetail loaded at full weight: {MACRO_DETAIL}")
 
     # The rig: MPFB's own standard skeleton, which is the whole reason to use this path
     # rather than the procedural one. Weights come with it.
