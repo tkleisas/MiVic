@@ -1,21 +1,24 @@
-"""Build a rigged, animatable human in the same metres and palette as the briefing figure.
+"""Rig the briefing figure: the measured man, given a skeleton and authored clips.
 
-Why this exists: the briefing figure is rigid parts, animated by per-part transforms in C#,
-and that is the end of what it can do — no elbow bends, no authored clip, no walk. NoPasaranFC
-already renders skinned glTF through MonoGame's SkinnedEffect and MiVic now ports it, so what
-was missing was an asset, and an asset is a thing Blender can make here.
+The first version of this built its own body out of boxes and tubes and looked like a
+mannequin made of boxes, because that is what it was. The figure that already exists —
+the head measured against the portrait, the uniform with its collar and boards, the painted
+map — already looks like a man and has no skeleton. So this rigs *that*, and the boxes are
+gone.
 
-Two decisions worth stating.
+Two things make it tractable that were not obvious from outside:
 
-*The armature is built from the figure's own constants.* HIP, SHOULDER, HEAD_BASE and the rest
-are already the joint positions — the rigid version needed them to place its parts — so the
-skeleton is those numbers rather than a second guess at where a human bends.
+  * The parts are **named**, and the names are the bones: ArmLeft, ForearmLeft, HandLeft,
+    LegLeft, ShinLeft, Head. So each part is weighted to its bone by name. There is no
+    distance heuristic to get wrong and no bone-heat solver to fail on geometry that is
+    made of separate primitives rather than a manifold surface.
+  * The parts are kept **separate** rather than joined. A rig does not need one mesh, and
+    keeping them means the runtime still has named parts — which is what the face/cloth/
+    metal texture assignment keys on, so the painted map survives the change of rig.
 
-*The weights are computed here rather than solved by Blender.* Bone heat weighting is the
-usual way and it fails on the geometry this project makes: limbs are separate primitives, and
-the solver needs a manifold surface to diffuse heat through. Distance to the bone segment is
-dull, deterministic, and good enough for a low-poly figure — and it cannot fail on a mesh it
-does not like.
+Bones are derived from the parts' own bounding boxes rather than from a second table of
+numbers, so the skeleton cannot drift from the body it drives: the arm bone is where the arm
+is, because it is measured from the arm.
 
 Run:  blender --background --python tools/blender/build_rigged.py -- --out <dir>
 """
@@ -30,161 +33,110 @@ import mathutils
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# The figure's own joint heights, in metres above the floor. Shared rather than repeated: a
-# skeleton that disagrees with the body it drives is a body that tears.
-HIP = 0.90
-SHOULDER = 1.36
-CHEST = 1.16
-NECK = 1.44
-HEAD_BASE = 1.506
-KNEE = 0.47
-ANKLE = 0.09
-SHOULDER_X = 0.185
-HIP_X = 0.085
+import build_personalities as figure  # noqa: E402
 
-FLESH = (0.80, 0.63, 0.47, 1.0)
-TUNIC = (0.24, 0.25, 0.18, 1.0)
+#: Which part drives which bone. The names are the contract the figure already keeps, so this
+#: is a translation rather than a guess. Two-ended parts (Boot, Ear) are split by their own
+#: position when there is one on each side.
+BONE_PARTS = [
+    ("Hips", "Tunic"),
+    ("Spine", "Body"),
+    ("Neck", "Neck"),
+    ("Head", "Head"),
+    ("UpperArmLeft", "ArmLeft"),
+    ("UpperArmRight", "ArmRight"),
+    ("LowerArmLeft", "ForearmLeft"),
+    ("LowerArmRight", "ForearmRight"),
+    ("HandLeft", "HandLeft"),
+    ("HandRight", "HandRight"),
+    ("UpperLegLeft", "LegLeft"),
+    ("UpperLegRight", "LegRight"),
+    ("LowerLegLeft", "ShinLeft"),
+    ("LowerLegRight", "ShinRight"),
+    ("FootLeft", "Boot"),
+    ("FootRight", "Boot"),
+]
 
+#: Parent of each bone, so the chain rotates as a chain.
+PARENTS = {
+    "Spine": "Hips", "Neck": "Spine", "Head": "Neck",
+    "UpperArmLeft": "Spine", "UpperArmRight": "Spine",
+    "LowerArmLeft": "UpperArmLeft", "LowerArmRight": "UpperArmRight",
+    "HandLeft": "LowerArmLeft", "HandRight": "LowerArmRight",
+    "UpperLegLeft": "Hips", "UpperLegRight": "Hips",
+    "LowerLegLeft": "UpperLegLeft", "LowerLegRight": "UpperLegRight",
+    "FootLeft": "LowerLegLeft", "FootRight": "LowerLegRight",
+}
 
-def clear_scene():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-
-
-def capsule(name, radius, start, end, colour, rings=6, segments=12):
-    """A tube between two points, capped. Limbs are tubes; this is the whole of a limb."""
-    a = mathutils.Vector(start)
-    b = mathutils.Vector(end)
-    direction = b - a
-    length = direction.length
-    if length < 1e-6:
-        raise ValueError(f"{name}: zero-length limb")
-
-    mesh = bpy.data.meshes.new(name)
-    obj = bpy.data.objects.new(name, mesh)
-    bpy.context.scene.collection.objects.link(obj)
-
-    vertices, faces = [], []
-    for ring in range(rings + 1):
-        t = ring / rings
-        centre = a + (direction * t)
-        # Taper towards the far end so a limb is not a pipe.
-        r = radius * (1.0 - (0.25 * t))
-        for segment in range(segments):
-            angle = 2.0 * math.pi * segment / segments
-            vertices.append((
-                centre.x + (r * math.cos(angle)),
-                centre.y + (r * math.sin(angle)),
-                centre.z,
-            ))
-
-    for ring in range(rings):
-        for segment in range(segments):
-            nxt = (segment + 1) % segments
-            base = ring * segments
-            faces.append((base + segment, base + nxt,
-                          base + segments + nxt, base + segments + segment))
-
-    mesh.from_pydata(vertices, [], faces)
-    mesh.update()
-    paint(obj, colour)
-
-    # Stand the limb along the line it was given rather than along Z.
-    rotate_to(obj, a, b)
-    return obj
+#: How far from a joint a vertex blends towards the parent bone, as a fraction of the limb.
+#: Rigid weights leave a hard crease at every joint; a little blending rounds it without
+#: needing the parts welded together.
+BLEND = 0.18
 
 
-def rotate_to(obj, a, b):
-    direction = (mathutils.Vector(b) - mathutils.Vector(a))
-    quat = mathutils.Vector((0.0, 0.0, 1.0)).rotation_difference(direction.normalized())
-    obj.rotation_mode = "QUATERNION"
-    obj.rotation_quaternion = quat
-    obj.location = mathutils.Vector(a)
+def parts_by_name():
+    """Every mesh part, keyed by the name stem the figure gave it."""
+    found = {}
+    for obj in bpy.context.scene.objects:
+        if obj.type != "MESH":
+            continue
+        stem = obj.name.split(".")[0]
+        found.setdefault(stem, []).append(obj)
+    return found
 
 
-def block(name, size, centre, colour):
-    """A box. The torso and the head are boxes in this pass; the measured head replaces the
-    box later, and a rig does not care which of the two it drives."""
-    mesh = bpy.data.meshes.new(name)
-    obj = bpy.data.objects.new(name, mesh)
-    bpy.context.scene.collection.objects.link(obj)
-
-    x, y, z = (s * 0.5 for s in size)
-    vertices = [(-x, -y, -z), (x, -y, -z), (x, y, -z), (-x, y, -z),
-                (-x, -y, z), (x, -y, z), (x, y, z), (-x, y, z)]
-    faces = [(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1),
-             (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]
-    mesh.from_pydata(vertices, [], faces)
-    mesh.update()
-    obj.location = centre
-    paint(obj, colour)
-    return obj
+def world_bounds(obj):
+    points = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
+    lo = mathutils.Vector((min(p.x for p in points),
+                           min(p.y for p in points),
+                           min(p.z for p in points)))
+    hi = mathutils.Vector((max(p.x for p in points),
+                           max(p.y for p in points),
+                           max(p.z for p in points)))
+    return lo, hi
 
 
-def paint(obj, colour):
-    mesh = obj.data
-    if not mesh.vertex_colors:
-        mesh.vertex_colors.new(name="Col")
-    layer = mesh.vertex_colors["Col"]
-    for loop in mesh.loops:
-        layer.data[loop.index].color = colour
+def pick(objects, side):
+    """The one of a pair that is on `side` (-1 left, +1 right), by its own position."""
+    if len(objects) == 1:
+        return objects[0]
+
+    def centre_x(obj):
+        lo, hi = world_bounds(obj)
+        return (lo.x + hi.x) * 0.5
+
+    ordered = sorted(objects, key=centre_x)
+    return ordered[0] if side < 0 else ordered[-1]
 
 
-def build_body():
-    """A man in the figure's own proportions, as one mesh of many primitives."""
-    pieces = [
-        block("Hips", (0.30, 0.20, 0.22), (0.0, 0.0, HIP - 0.02), TUNIC),
-        block("Chest", (0.36, 0.23, 0.30), (0.0, 0.0, CHEST + 0.06), TUNIC),
-        block("Neck", (0.10, 0.10, 0.10), (0.0, 0.0, NECK), FLESH),
-        block("Head", (0.20, 0.23, 0.27), (0.0, 0.0, HEAD_BASE + 0.13), FLESH),
-    ]
-
-    for side, tag in ((-1.0, "Left"), (1.0, "Right")):
-        pieces += [
-            capsule(f"UpperArm{tag}", 0.055,
-                    (side * SHOULDER_X, 0.0, SHOULDER),
-                    (side * (SHOULDER_X + 0.05), 0.0, SHOULDER - 0.28), TUNIC),
-            capsule(f"LowerArm{tag}", 0.048,
-                    (side * (SHOULDER_X + 0.05), 0.0, SHOULDER - 0.28),
-                    (side * (SHOULDER_X + 0.07), 0.04, SHOULDER - 0.54), TUNIC),
-            capsule(f"Hand{tag}", 0.042,
-                    (side * (SHOULDER_X + 0.07), 0.04, SHOULDER - 0.54),
-                    (side * (SHOULDER_X + 0.08), 0.05, SHOULDER - 0.64), FLESH),
-            capsule(f"UpperLeg{tag}", 0.070,
-                    (side * HIP_X, 0.0, HIP - 0.06),
-                    (side * HIP_X, 0.0, KNEE), TUNIC),
-            capsule(f"LowerLeg{tag}", 0.058,
-                    (side * HIP_X, 0.0, KNEE),
-                    (side * HIP_X, 0.0, ANKLE), TUNIC),
-            capsule(f"Foot{tag}", 0.048,
-                    (side * HIP_X, 0.0, ANKLE),
-                    (side * HIP_X, 0.16, ANKLE - 0.02), (0.10, 0.10, 0.10, 1.0)),
-        ]
-
-    return pieces
+def bone_for(parts, bone, part_name):
+    side = -1 if bone.endswith("Left") else (1 if bone.endswith("Right") else 0)
+    if part_name not in parts:
+        return None
+    return pick(parts[part_name], side)
 
 
-#: Bone name, head, tail, parent. The chain a human bends along, at the figure's own joints.
-def skeleton():
-    bones = [("Hips", (0, 0, HIP), (0, 0, CHEST), None),
-             ("Spine", (0, 0, CHEST), (0, 0, NECK), "Hips"),
-             ("Neck", (0, 0, NECK), (0, 0, HEAD_BASE + 0.06), "Spine"),
-             ("Head", (0, 0, HEAD_BASE + 0.06), (0, 0, HEAD_BASE + 0.30), "Neck")]
+def build_skeleton(parts):
+    """One bone per named part, measured from that part's own bounds.
 
-    for side, tag in ((-1.0, "Left"), (1.0, "Right")):
-        bones += [
-            (f"UpperArm{tag}", (side * SHOULDER_X, 0, SHOULDER),
-             (side * (SHOULDER_X + 0.05), 0, SHOULDER - 0.28), "Spine"),
-            (f"LowerArm{tag}", (side * (SHOULDER_X + 0.05), 0, SHOULDER - 0.28),
-             (side * (SHOULDER_X + 0.07), 0.04, SHOULDER - 0.54), f"UpperArm{tag}"),
-            (f"Hand{tag}", (side * (SHOULDER_X + 0.07), 0.04, SHOULDER - 0.54),
-             (side * (SHOULDER_X + 0.08), 0.05, SHOULDER - 0.64), f"LowerArm{tag}"),
-            (f"UpperLeg{tag}", (side * HIP_X, 0, HIP - 0.06), (side * HIP_X, 0, KNEE), "Hips"),
-            (f"LowerLeg{tag}", (side * HIP_X, 0, KNEE), (side * HIP_X, 0, ANKLE),
-             f"UpperLeg{tag}"),
-            (f"Foot{tag}", (side * HIP_X, 0, ANKLE), (side * HIP_X, 0.16, ANKLE - 0.02),
-             f"LowerLeg{tag}"),
-        ]
-
+    A limb bone runs from the top of its part to the bottom, which is where the joint is; the
+    head bone runs the other way, because a head is above its joint. Nothing here is a
+    constant, so the skeleton is the body.
+    """
+    bones = {}
+    for bone, part_name in BONE_PARTS:
+        obj = bone_for(parts, bone, part_name)
+        if obj is None:
+            raise RuntimeError(f"no part called {part_name!r} for bone {bone!r}")
+        lo, hi = world_bounds(obj)
+        centre_x = (lo.x + hi.x) * 0.5
+        centre_y = (lo.y + hi.y) * 0.5
+        if bone == "Head":
+            bones[bone] = (mathutils.Vector((centre_x, centre_y, lo.z)),
+                           mathutils.Vector((centre_x, centre_y, hi.z)), obj)
+        else:
+            bones[bone] = (mathutils.Vector((centre_x, centre_y, hi.z)),
+                           mathutils.Vector((centre_x, centre_y, lo.z)), obj)
     return bones
 
 
@@ -195,70 +147,75 @@ def build_armature(bones):
 
     bpy.context.view_layer.objects.active = rig
     bpy.ops.object.mode_set(mode="EDIT")
-    for name, head, tail, parent in bones:
-        bone = armature.edit_bones.new(name)
-        bone.head = head
-        bone.tail = tail
-        if parent:
-            bone.parent = armature.edit_bones[parent]
-            # Connected where they meet, so a chain rotates as a chain.
-            bone.use_connect = (mathutils.Vector(head)
-                                - armature.edit_bones[parent].tail).length < 1e-6
+
+    # Parents before children, so a parent always exists when a child asks for it.
+    ordered = sorted(bones, key=lambda b: 0 if PARENTS.get(b) is None else 1)
+    for _ in range(3):
+        for name in ordered:
+            if name in armature.edit_bones:
+                continue
+            parent = PARENTS.get(name)
+            if parent is not None and parent not in armature.edit_bones:
+                continue
+            head, tail, _ = bones[name]
+            bone = armature.edit_bones.new(name)
+            bone.head = head
+            bone.tail = tail
+            if parent is not None:
+                bone.parent = armature.edit_bones[parent]
+                bone.use_connect = False  # limbs meet at a point, not at a shared tail
     bpy.ops.object.mode_set(mode="OBJECT")
+
+    missing = [b for b in bones if b not in armature.bones]
+    if missing:
+        raise RuntimeError(f"bones never created: {missing}")
     return rig
 
 
-def distance_to_segment(point, a, b):
-    ab = b - a
-    length_squared = ab.dot(ab)
-    if length_squared < 1e-12:
-        return (point - a).length
-    t = max(0.0, min(1.0, (point - a).dot(ab) / length_squared))
-    return (point - (a + (ab * t))).length
+def weight(parts, bones, rig):
+    """Every part to exactly one bone.
 
+    *Every* part, not just the limbs: the first version assigned only the names in
+    BONE_PARTS and left the hair, the ears, the collar, the boards, the belt and the pipe
+    with no armature at all, so most of the uniform stood still while the body moved.
 
-def bind(body, rig, bones):
-    """Weight every vertex to the nearest two bones, by distance to the bone segment.
-
-    Two rather than one so that a shoulder or a knee blends across the joint instead of
-    tearing; the falloff is the reciprocal of distance, which is crude and monotone and has
-    no failure mode on geometry a heat solver would refuse.
+    And rigidly, with no blend across the joint. A blend sounds like an improvement and it
+    is for a welded mesh; on this figure the head is one dense surface of eleven thousand
+    triangles weighted to the head bone, and blending its lower edge towards the neck pulled
+    it into stacked slabs. Separate primitives want rigid weights; the joints are where the
+    primitives already meet.
     """
-    groups = {}
-    for name, _, _, _ in bones:
-        groups[name] = body.vertex_groups.new(name=name)
+    centres = {}
+    for bone, (head, tail, _) in bones.items():
+        centres[bone] = (head + tail) * 0.5
 
-    segments = [(name, mathutils.Vector(head), mathutils.Vector(tail))
-                for name, head, tail, _ in bones]
+    by_name = {}
+    for bone, part_name in BONE_PARTS:
+        side = -1 if bone.endswith("Left") else (1 if bone.endswith("Right") else 0)
+        obj = bone_for(parts, bone, part_name)
+        if obj is not None:
+            by_name[obj.name] = bone
 
-    for vertex in body.data.vertices:
-        world = body.matrix_world @ vertex.co
-        scored = sorted(
-            ((distance_to_segment(world, head, tail), name) for name, head, tail in segments),
-            key=lambda pair: pair[0],
-        )[:2]
+    for obj in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
+        if obj.name in by_name:
+            bone = by_name[obj.name]
+        else:
+            # Anything the table does not name — hair, ears, collar, boards, belt, the pipe
+            # — goes to the bone it sits on, measured from its own centre.
+            lo, hi = world_bounds(obj)
+            centre = (lo + hi) * 0.5
+            bone = min(centres, key=lambda b: (centre - centres[b]).length)
 
-        near, second = scored[0], scored[1]
-        first_weight = 1.0 / max(near[0], 1e-4)
-        second_weight = 1.0 / max(second[0], 1e-4)
+        group = obj.vertex_groups.new(name=bone)
+        group.add([v.index for v in obj.data.vertices], 1.0, "REPLACE")
 
-        # Only blend when the two are actually close, or a vertex on the torso picks up a
-        # fingertip at a third of its weight.
-        if second[0] > near[0] * 1.6:
-            second_weight = 0.0
-
-        total = first_weight + second_weight
-        groups[near[1]].add([vertex.index], first_weight / total, "REPLACE")
-        if second_weight > 0.0:
-            groups[second[1]].add([vertex.index], second_weight / total, "REPLACE")
-
-    body.parent = rig
-    modifier = body.modifiers.new(name="Armature", type="ARMATURE")
-    modifier.object = rig
+        obj.parent = rig
+        obj.matrix_parent_inverse = rig.matrix_world.inverted()
+        modifier = obj.modifiers.new(name="Armature", type="ARMATURE")
+        modifier.object = rig
 
 
 def key(rig, frame, pose):
-    """One keyframe: bone name to (euler degrees, location offset)."""
     for name, (rotation, offset) in pose.items():
         bone = rig.pose.bones[name]
         bone.rotation_mode = "XYZ"
@@ -269,75 +226,75 @@ def key(rig, frame, pose):
 
 
 def animate(rig):
-    """Two clips: a standing idle with a breath in it, and a seated pose.
-
-    Authored as keyframes rather than computed, because the point of a rig is that a human
-    can pose it — and a clip is the thing the engine now knows how to ask for by name.
-    """
+    """A standing idle with a breath in it, and a seated pose. Authored, not computed."""
     scene = bpy.context.scene
-
-    # Idle: three seconds of chest and head, looping on the first and last frame.
     scene.frame_start, scene.frame_end = 1, 90
-    action = bpy.data.actions.new("Idle")
-    rig.animation_data_create()
-    rig.animation_data.action = action
-    for frame, lean, turn in ((1, 0.0, 0.0), (45, 1.6, 2.5), (90, 0.0, 0.0)):
-        key(rig, frame, {
-            "Spine": ((lean, 0.0, 0.0), (0.0, 0.0, 0.0)),
-            "Head": ((-lean * 0.6, 0.0, turn), (0.0, 0.0, 0.0)),
-            "UpperArmLeft": ((0.0, 0.0, -2.0 - lean), (0.0, 0.0, 0.0)),
-            "UpperArmRight": ((0.0, 0.0, 2.0 + lean), (0.0, 0.0, 0.0)),
-        })
-    action.use_fake_user = True
 
-    # Sit: hips down onto a chair, thighs forward, knees folded. A chair seat is about 45 cm,
-    # so the hips drop half a metre and the whole chain follows.
-    action = bpy.data.actions.new("Sit_Chair_Idle")
-    rig.animation_data.action = action
-    for frame in (1, 90):
+    rig.animation_data_create()
+
+    idle = bpy.data.actions.new("Idle")
+    rig.animation_data.action = idle
+    for frame, lean, turn in ((1, 0.0, 0.0), (45, 1.8, 2.6), (90, 0.0, 0.0)):
         key(rig, frame, {
-            "Hips": ((0.0, 0.0, 0.0), (0.0, 0.45, 0.0)),
-            "UpperLegLeft": ((78.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
-            "UpperLegRight": ((78.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
-            "LowerLegLeft": ((-76.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
-            "LowerLegRight": ((-76.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
-            "FootLeft": ((10.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
-            "FootRight": ((10.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
-            "Spine": ((-6.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            "Spine": ((lean, 0.0, 0.0), (0, 0, 0)),
+            "Head": ((-lean * 0.6, 0.0, turn), (0, 0, 0)),
+            "UpperArmLeft": ((0.0, 0.0, -2.0 - lean), (0, 0, 0)),
+            "UpperArmRight": ((0.0, 0.0, 2.0 + lean), (0, 0, 0)),
         })
-    action.use_fake_user = True
+    idle.use_fake_user = True
+
+    # Seated at a desk: hips down onto the chair, thighs forward, knees folded under.
+    sit = bpy.data.actions.new("Sit_Chair_Idle")
+    rig.animation_data.action = sit
+    for frame in (1, 45, 90):
+        breathe = 0.0 if frame == 45 else 0.0
+        key(rig, frame, {
+            "Hips": ((0.0, 0.0, 0.0), (0.0, 0.46, 0.0)),
+            "UpperLegLeft": ((-80.0, 0.0, 0.0), (0, 0, 0)),
+            "UpperLegRight": ((-80.0, 0.0, 0.0), (0, 0, 0)),
+            "LowerLegLeft": ((72.0 + breathe, 0.0, 0.0), (0, 0, 0)),
+            "LowerLegRight": ((72.0 + breathe, 0.0, 0.0), (0, 0, 0)),
+            "FootLeft": ((-12.0, 0.0, 0.0), (0, 0, 0)),
+            "FootRight": ((-12.0, 0.0, 0.0), (0, 0, 0)),
+            "Spine": ((5.0, 0.0, 0.0), (0, 0, 0)),
+            "Head": ((-4.0, 0.0, 0.0), (0, 0, 0)),
+        })
+    sit.use_fake_user = True
 
 
 def main():
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
-    args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
+    args = parser.parse_args(argv)
 
-    clear_scene()
+    figure.clear_scene()
+    figure.build_elder()
 
-    pieces = build_body()
-    bpy.ops.object.select_all(action="DESELECT")
-    for piece in pieces:
-        piece.select_set(True)
-    bpy.context.view_layer.objects.active = pieces[0]
-    bpy.ops.object.join()
-    body = bpy.context.view_layer.objects.active
-    body.name = "Body"
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-    print(f"body: {len(body.data.vertices)} vertices, {len(body.data.polygons)} faces")
+    parts = parts_by_name()
+    print("parts: " + ", ".join(sorted(parts)))
 
-    bones = skeleton()
+    bones = build_skeleton(parts)
     rig = build_armature(bones)
     print(f"rig: {len(bones)} bones")
 
-    bind(body, rig, bones)
+    weight(parts, bones, rig)
     animate(rig)
 
-    out = os.path.join(args.out, "rigged_elder.glb")
-    bpy.ops.object.select_all(action="SELECT")
+    meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+    os.makedirs(args.out, exist_ok=True)
+    out = os.path.join(args.out, "personality_elder_rigged.glb")
+
+    bpy.ops.object.select_all(action="DESELECT")
+    rig.select_set(True)
+    for mesh in meshes:
+        mesh.select_set(True)
+    bpy.context.view_layer.objects.active = rig
+
     bpy.ops.export_scene.gltf(
         filepath=out,
         export_format="GLB",
+        use_selection=True,
         export_skins=True,
         export_animations=True,
         export_animation_mode="ACTIONS",
