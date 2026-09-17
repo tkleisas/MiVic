@@ -13,15 +13,19 @@ figure the briefing stands on:
     --python tools/blender/build_makehuman.py -- \
     --out src/MiVic.Game/Content/Models/Generated \
     --name personality_elder_skinned \
-    --hair short02 \
+    --hair short01 \
     --garment male_casualsuit05 \
-    --garment shoes03
+    --garment shoes03 \
+    --garment grinsegold_moustache
 ```
 
 `--name` is the asset name, and it is the name `m1_briefing.cutscene.json` asks for and
 the name it credits its lines to, because a cutscene's speaker must be standing in the
 room. The script defaults it to the same value; it is spelled out here so the command and
-the committed file cannot drift apart.
+the committed file cannot drift apart. The same is true of the garments and the hair:
+they are the script's defaults only in the sense that this command is the one that built
+the committed figure — a closed-front field jacket that a recolour and a placket turn
+into the tunic, ankle boots, and the moustache mesh from the bodyparts06 pack (see §1).
 
 **Run Blender by absolute path.** There is more than one Blender on this machine, and the
 one on `PATH` is not necessarily the one with the extension installed.
@@ -60,6 +64,23 @@ conclusion "the pack has no clothes" is wrong.
 Use `files.makehumancommunity.org`. The mirror `files2.makehumancommunity.org` serves the
 same file at roughly 17 KB/s, which is about ten minutes for the pack; the first host
 served 281 MB in 28 seconds.
+
+### The moustache comes from a second pack
+
+The system pack has no facial hair of any kind (see §2), and the painted moustache the
+first figure wore read as a smudge at briefing distance. The community pack
+**bodyparts06** ("a set of beards and moustaches") ships `grinsegold_moustache` — a
+proper chevron that covers the upper lip — and that is what the figure wears. The pack
+page is `static.makehumancommunity.org/assets/assetpacks/bodyparts06.html`; the zip is
+`files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip` (note the
+hyphen in `cc-by`; guessing `ccby` is a 404). Its `clothes/grinsegold_moustache` folder
+copies straight into the asset root's `clothes/` next to the suits, and MPFB treats it
+as a garment — "these end up as clothes in MPFB2", as the pack page warns.
+
+The pack is **CC-BY**, where the system assets are CC0: grinsegold is credited in the
+README's licence section, and the credit must survive any rebuild that keeps the mesh.
+(The mhclo's own header says AGPL, a MakeClothes default; the pack page's CC-BY is the
+licence the author published it under, and attribution covers both readings.)
 
 The pack is 287 MB unpacked and contains, as directory counts:
 
@@ -243,14 +264,45 @@ the map by `SKIN_GAIN = 0.78` takes that to 1.0 per cent.
 The lighting is the project's and is right for the models the project generated. A texture
 authored elsewhere is the thing that does not fit.
 
-### The moustache is painted into the skin map
+### The moustache is a mesh; the skin map is its backing
 
-`tools/blender/makehuman_face.py`. Paint rather than geometry: it needs a UV and nothing
-else, it cannot come loose from the skin, and it deforms with the face because it *is* the
-face. Geometry would need a position, a weight to the head bone and a material of its own.
+The figure's moustache is `grinsegold_moustache` (§1), fitted and rigged like any
+garment and then **edited**: `widen_moustache` in `build_makehuman.py` scales it
+15 per cent wider and drops its ends, because the asset ships a neat chevron and
+the reference's is wider than the mouth with hanging ends. Vertex weights are per
+index, so moving the vertices after rigging keeps the skinning.
 
-Every pixel is placed by measuring the mesh in front of it, because the mapping from the
-face to the texture is the pack's business:
+Two things keep it honest. Its diffuse is named `Moustache_black_diff.png` — not
+`diffuse` — and the first build's name-matcher missed it twice over: the recolour
+never ran, and the trim below concluded the texture was unread and **unlinked it**,
+so the glb exported an opaque flat blob with no texture at all. `material_image`
+now matches `("diffuse", "_diff")` and excludes the maps nothing reads (`_hn`,
+`normal`, `_ao`, `rough`). And the strands are painted black, so the mesh is
+repainted a dark grey — the first attempt at a mid grey read as ash, not hair.
+
+Under the mesh, `tools/blender/makehuman_face.py` still paints the skin, because a
+card moustache over bare lip shows skin through the gaps between its strands. The
+paint is the same measured rasteriser as before, now the colour of the mesh and
+wide enough to back it — and a second pass, `paint_shadow`, darkens the scalp above
+the brow line and the skin under the brows, because skin under hair is in shadow
+and a lit scalp reads as white streaks through the hair's cards.
+
+### Alpha is not carried
+
+The renderer draws every skinned part with `BlendState.Opaque` — and with an alpha
+channel in the texture, the hair, brows and moustache rendered their strands
+**white**, whatever the RGB held (measured dark everywhere: file, bytes, GPU). No
+amount of repainting touches that; the alpha channel itself was the artefact, found
+by bisecting the figure one part at a time (no hair, no eyes, no smoke, flat alpha —
+only the last changed anything). So the build flattens every worn texture's alpha to
+1 before export: the strand shape comes from the card geometry alone, which is what
+the renderer was drawing all along.
+
+A red herring worth recording: the MPFB materials do *not* carry a live clearcoat —
+`Coat Weight` is 0 and the `KHR_materials_clearcoat` extension in the glb is inert.
+The sheen visible in Blender previews is the Workbench studio light's own specular
+highlight, which `preview_figure.py` now switches off, because a preview that lies
+about shine gets reflections chased in the wrong renderer.
 
 * **Forward is −Y.** Measured: the most forward vertex of the head is on the midline at
   `x = 0.0`, which is what a nose is.
@@ -262,8 +314,26 @@ face to the texture is the pack's business:
   rasterised through their own UVs. No UV layout is hard-coded, so a different skin atlas
   needs no change here.
 
-The upper lip is taken as 24 mm below the nose tip, and the moustache is a wide ellipse
-with the ends dropped. That is the one constant in the file that is not read off the mesh.
+The upper lip is taken as 24 mm below the nose tip. The same nose tip anchors the pipe
+(§4a): the mouth is 30 mm below it and 14 mm behind it, which is the only anatomy the
+pipe's placement does not measure.
+
+### The face is shaped by targets, the hairline by hand
+
+`DETAIL_TARGETS` in `build_makehuman.py` loads nine `.target.gz` files with weights after
+the macros run — age, roundness, cheek volume and sag, chin width, nose breadth and
+bridge — because the reference is a heavier, older face than the macros alone make. Two
+traps from §2 apply: `load_target`'s weight defaults to zero, and the targets root is the
+*extension's* `data/targets`, next to `services/`, not the asset pack's root. The
+eyebrows are `eyebrow008`: the reference's brows are thick and straight, and 008 is the
+busiest of the twelve the pack ships.
+
+The hair is `short01` repainted a dark grey — `short02` read as a pale cap, `short04`'s
+sideburns reached the jaw. Its hairline ships as one straight tangent across the
+forehead, and the reference's steps forward at each temple, so `shape_hairline` pulls the
+edge verts down by a gaussian peaked at each temple, measured against the hairline the
+asset actually shipped with. Down is safe: the hair overlaps the forehead skin, so a
+lowered edge can never open a gap.
 
 ### What is worth exporting
 
@@ -290,13 +360,66 @@ figure exists at all and the project already commits a 3 MB face map for the gen
 22.29 MB → **8.83 MB**, of which the skin is 4.30. That number is a decision, not an
 accident, and it is written down here so the next person can disagree with it.
 
+The trim has one blind spot worth naming: it builds its keep-set from `material_image`,
+so an asset whose diffuse is not named `diffuse` — the moustache's `_diff` — was once
+trimmed *as unread* and exported as a flat blob. The matcher now knows `_diff`, but the
+pipe, placket, buttons and tabs are also kept out of the trim's object list on purpose:
+their colours are generated four-pixel images with no `diffuse` in their names.
+
+---
+
+## 4a. The pipe
+
+There is no pipe in any pack — the equipment packs are weapons, bags and tools — so
+`tools/blender/makehuman_pipe.py` authors one: a shank swept along a bent path and a bowl
+lathed from a profile, three solid-colour materials (briar, vulcanite, char) carried as
+4×4 generated images, because the skinned renderer samples a texture and a bare
+base-colour factor is not one. It hangs at the corner of the mouth, 11 mm off the
+midline, measured from the nose tip.
+
+Every vertex is weighted to the `head` bone alone: the pipe is smoked, not held, so it
+turns when the man turns his head and the `Idle` clip stays as small as it is. The build
+also drops an empty named `pipe_bowl` at the bowl's rim, bone-parented to the head, and
+the cutscene's smoke rises from that node's world transform each frame — analytic wisps,
+a pure function of the scene clock, so a probe that seeks still photographs the same
+smoke. `CutsceneDirector.DrawPipeSmoke` owns it; `cutscene state` in a probe reports the
+anchor and the wisp count.
+
+The bowl's tilt is a `Matrix.Rotation` about X — a forward pitch. The first version built
+it with `rotation_difference` from the X axis, which yaws the bowl 78° and leaves the
+chamber facing the camera: a pipe with its bowl turned on its side.
+
+## 4b. The tunic: placket, buttons and tabs
+
+`tools/blender/makehuman_uniform.py`. The reference tunic is buttoned to the collar, and
+the pack's jacket is cut open — paint cannot close a hole, and a recolour cannot hide one
+either. So the front is closed with geometry: a **placket**, a ribbon of the tunic's grey
+laid at the depth of the lapel edges from the collar to the belt, found by walking up the
+midline and watching the front surface jump backwards where the closed cloth ends and the
+throat begins. The **buttons** march down the placket, and the **collar tabs** — gold
+behind red, so the piping is the gold showing around the red — sit on the placket at the
+base of the collar. Pinned to the collar itself they disappeared behind the lapel from
+the front, which is the only angle a briefing is watched from.
+
+Two construction notes. A tab leans toward the midline, which is a *negative* rotation
+about Y on the figure's left — the first pass leaned them outwards. And material, UVs and
+weights must land on the finished mesh, in that order: written onto the empty mesh before
+`bm.to_mesh`, the UV layer has zero loops and the part exports white. The whole set rides
+`spine_03`, so the insignia moves when the man breathes.
+
+The jacket's own texture is flattened for the same reason the placket exists: at the
+default `detail` of 0.30 the recolour keeps a dark jacket over a pale shirt, which is a
+businessman. `DETAIL` drops it to 0.15 for the tunic, and one grey cloth plus gold
+buttons is a uniform.
+
 ---
 
 ## 4. The standing pose
 
 The rig's rest pose is a wide A-pose. Measured from the skeleton, the upper arms hang
 **48 degrees below horizontal**, which at briefing distance is a bind pose rather than a man
-standing in a room.
+standing in a room. The arms are aimed with a slight bend — elbows flexed, palms in —
+because arms aimed straight down read as a attention stance rather than a man at ease.
 
 So each bone is **aimed** at a direction in armature space, and Blender supplies the
 rotation that gets it there:
@@ -312,8 +435,20 @@ ends up pointing where it was asked to. `bpy.context.view_layer.update()` betwee
 what keeps `head`/`tail` current.
 
 The result is keyframed into an action named **`Idle`**, because `CutsceneDirector` asks for
-that clip by name and a figure with no clips falls back to the bind pose. Three keys —
-standing, a breath, standing again — so it loops without a seam. 159 channels, 3.0 s.
+that clip by name and a figure with no clips falls back to the bind pose. The loop is sixteen
+seconds, fifteen keys: stand, breathe, the left hand comes up and holds the pipe while he draws
+on it, then the right hand rises and makes the point of the briefing, and the loop closes where
+it opened. Each key blends between named pose sets (`STANDING`, `BREATHE`, `GRASP`, `GESTURE`)
+by weight, so a bone never snaps, and bones not in any set are aimed at their own captured rest
+direction — a weight of zero is exactly the figure that shipped before the gestures existed.
+
+Two traps were found by number and are worth keeping. **`frame_set` before aiming, never
+after**: setting the frame re-evaluates the action and overwrites the pose with the keys already
+in it, so a loop that aimed and *then* set the frame keyed the reverted pose — which is how the
+old three-key loop exported "stand, stand, stand" and called it breathing. And the gesture is
+checked numerically at build time: the build prints the fingertip position at the grasp's peak
+against the pipe's grip point, so a weak reach reads as millimetres of gap rather than as a
+screenshot somebody squints at. 159 channels, 16.0 s.
 
 ---
 
@@ -343,6 +478,15 @@ LIBGL_ALWAYS_SOFTWARE=1 DOTNET_ROLL_FORWARD=Major \
   ./src/MiVic.Game/bin/Release/net9.0/MiVic.Game \
   --cutscene zz_mh --probe artifacts/probe/mh.probe --probe-out artifacts/probe/mh.txt
 ```
+
+**`tools/blender/preview_figure.py`**, between the two. It draws the glb with Workbench's
+TEXTURE colour mode on a frame of `Idle` — `preview_model.py`'s vertex colours are the
+right tool for a tank and the wrong one for a figure whose face is a texture — and it
+measures the posed meshes, not the bind pose, so the frame lands on the man rather than
+his chest. One honest difference to remember: Workbench's studio light is darker than the
+briefing room's, so a colour that reads black in a preview can read grey in the game —
+the hair was dialled down twice from Workbench evidence before the probe said otherwise.
+Calibrate colours against the probe, shape against the preview.
 
 A cutscene camera is in **millimetres** and the world is in metres — the director divides by
 1000. So a figure standing at `z: 700` with its head at 1.50 m takes a camera at `y: 1500`,

@@ -50,9 +50,11 @@ from mathutils import Vector
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import makehuman_face  # noqa: E402
+import makehuman_pipe  # noqa: E402
+import makehuman_uniform  # noqa: E402
 import mpfb_paint  # noqa: E402
 
-#: The man: male, old, heavy, average muscle, stocky proportions.
+#: The body: male, old, heavy, average muscle, stocky proportions.
 BODY = {
     "gender": 1.0,        # 1.0 male, 0.0 female
     "age": 0.82,
@@ -62,6 +64,23 @@ BODY = {
     "proportions": 0.42,  # 0.0 wide hips, 1.0 wide shoulders
 }
 
+#: The face, pushed towards the reference with detail targets after the macros have
+#: run. The reference is a heavy, round, old face: full cheeks that have sagged into
+#: jowls, a broad strong nose, a wide chin. Each entry is a `.target.gz` under the
+#: targets root and a weight — `load_target` takes the weight as a keyword because it
+#: defaults to zero, and a target loaded at zero is a target that was never loaded.
+DETAIL_TARGETS = [
+    ("head/head-age-incr.target.gz", 0.55),
+    ("head/head-round.target.gz", 0.35),
+    ("cheek/l-cheek-volume-incr.target.gz", 0.45),
+    ("cheek/r-cheek-volume-incr.target.gz", 0.45),
+    ("cheek/l-cheek-trans-down.target.gz", 0.30),
+    ("cheek/r-cheek-trans-down.target.gz", 0.30),
+    ("chin/chin-width-incr.target.gz", 0.25),
+    ("nose/nose-width2-incr.target.gz", 0.30),
+    ("nose/nose-hump-incr.target.gz", 0.20),
+]
+
 #: Where the bones point in a standing pose, as directions in Blender's armature space:
 #: +X is the figure's left, +Z is up. The rest pose is a wide A-pose — the arms hang
 #: about 48 degrees below horizontal, measured from the skeleton rather than estimated —
@@ -70,10 +89,12 @@ BODY = {
 #: rotation that takes a bone from where it points to where it should point is one
 #: `rotation_difference`, and it cannot get a sign wrong.
 STANDING = {
-    "upperarm_l": (0.17, 0.0, -1.0),
-    "upperarm_r": (-0.17, 0.0, -1.0),
-    "lowerarm_l": (0.13, 0.10, -1.0),
-    "lowerarm_r": (-0.13, 0.10, -1.0),
+    "upperarm_l": (0.23, 0.03, -1.0),
+    "upperarm_r": (-0.23, 0.03, -1.0),
+    "lowerarm_l": (0.20, 0.20, -1.0),
+    "lowerarm_r": (-0.20, 0.20, -1.0),
+    "hand_l": (0.10, 0.12, -1.0),
+    "hand_r": (-0.10, 0.12, -1.0),
     "thigh_l": (-0.06, 0.0, -1.0),
     "thigh_r": (0.06, 0.0, -1.0),
     "calf_l": (0.02, 0.0, -1.0),
@@ -89,11 +110,80 @@ BREATHE = {
     "head": (0.0, -0.03, 0.0),
 }
 
+#: The pipe grasp: where the bones point while the hand is at the bowl, replacing the
+#: standing directions for the arm and tipping the head a few degrees towards it. The
+#: forearm folds up and in so the hand lands where the pipe is — at the figure's left,
+#: which is the corner of the mouth the pipe hangs from.
+GRASP = {
+    "upperarm_l": (0.10, -0.80, -0.35),
+    "lowerarm_l": (-0.60, 0.45, 0.65),
+    "hand_l": (-0.35, 0.25, 0.35),
+    "upperarm_r": (-0.30, 0.02, -1.0),
+    "head": (0.03, -0.06, 1.0),
+    "spine_02": (0.015, -0.02, 1.0),
+}
+
+#: A small answer from the free arm while the hand is at the pipe — he is making a
+#: point, not standing to attention with one arm raised.
+PUFF = {
+    "upperarm_r": (-0.30, -0.28, -0.85),
+    "lowerarm_r": (-0.35, -0.10, -0.80),
+}
+
+#: The explaining gesture: the right forearm comes up to chest height, open hand,
+#: as if laying out the front on an invisible map. GESTURE_B is the hand turned a
+#: touch outward at the second beat of it — the difference between a hand held up
+#: and a hand making a point.
+GESTURE = {
+    "upperarm_r": (-0.20, -0.45, -0.75),
+    "lowerarm_r": (-0.15, -0.75, 0.25),
+    "hand_r": (-0.05, -0.90, 0.20),
+}
+
+GESTURE_B = {
+    "hand_r": (0.30, -0.85, -0.10),
+    "lowerarm_r": (-0.10, -0.80, 0.15),
+}
+
+#: One loop of the scene, 16 s at 24 fps: stand, breathe, then the hand comes up to
+#: the pipe and holds while he draws on it; down; then the right hand rises and makes
+#: the point of the briefing; breathe out, and the loop closes where it opened. Each
+#: entry is (frame, weights); the weights blend between the standing directions and
+#: the gestures', so a bone never snaps, and the first and last keys are the same pose.
+IDLE_KEYS = [
+    (1, {}),
+    (60, {"breathe": 1.0}),
+    (120, {}),
+    (140, {"grasp": 0.6}),
+    (152, {"grasp": 1.0}),
+    (176, {"grasp": 1.0, "puff": 1.0}),
+    (224, {"grasp": 1.0, "puff": 0.3}),
+    (240, {"grasp": 0.5}),
+    (256, {}),
+    (284, {"gesture": 0.8}),
+    (300, {"gesture": 1.0}),
+    (316, {"gesture": 1.0, "gestureb": 1.0}),
+    (332, {"gesture": 0.6}),
+    (352, {"breathe": 1.0}),
+    (384, {}),
+]
+
+IDLE_LAST_FRAME = 384
+
+#: Every bone the loop poses. `head` and `spine_02` are here for the gesture; their
+#: standing direction is the rig's own rest, captured at build time, so a weight of
+#: zero is exactly the figure that shipped before the gesture existed.
+POSE_BONES = tuple(dict.fromkeys(list(STANDING) + list(GRASP) + list(PUFF)
+                                 + list(GESTURE) + list(GESTURE_B)))
+
 #: The body and its features. Subfolder under the asset root, filename, asset type.
+#: eyebrow008 because the reference's brows are thick, straight and dark, and it is
+#: the bushiest of the twelve the pack ships; 001 is a groomed line that reads as
+#: drawn-on at briefing distance.
 FEATURES = [
     ("proxymeshes/male_generic", "male_generic.proxy", "Proxymeshes"),
     ("eyes", "low-poly.mhclo", "Eyes"),
-    ("eyebrows", "eyebrow001.mhclo", "Eyebrows"),
+    ("eyebrows", "eyebrow008.mhclo", "Eyebrows"),
     ("teeth", "teeth_base.mhclo", "Teeth"),
 ]
 
@@ -125,19 +215,40 @@ TEXTURE_LIMIT = 1024
 #: is not, so the colour is replaced and the cloth's own light and shade are kept. The
 #: jacket is the closest thing in the pack to a tunic: hip length, a collar, and a closed
 #: front with a vertical line down the chest, which under one colour stops reading as an
-#: open jacket over a shirt and starts reading as a placket. Khaki for the cloth,
-#: near-black for the boots.
+#: open jacket over a shirt and starts reading as a placket. Brown for the cloth — the
+#: reference tunic is a warm khaki-brown, not the khaki of the first pass nor the grey of
+#: the second — and near-black for the boots.
 #:
-#: The hair is here for the same reason and one more: the pack's ten hair assets are all
-#: dark, and an old man's hair is not. Recolouring keeps the strands' own light and shade,
-#: which is what makes it read as hair rather than as a helmet.
+#: The hair, brows and moustache are one dark mass — the reference's hair is dark
+#: going grey only at the temples, and the strands' own white highlights survived a
+#: merely-dark target at the default detail, reading as grey streaks and speckle.
+#: So they are flattened (see DETAIL) to a dark brown-black, the same near-black the
+#: moustache wears.
 REPAINTED = {
-    "male_casualsuit05": (0.430, 0.400, 0.275),
-    "male_elegantsuit01": (0.430, 0.400, 0.275),
+    "male_casualsuit05": (0.360, 0.325, 0.255),
+    "male_elegantsuit01": (0.360, 0.325, 0.255),
     "shoes03": (0.070, 0.062, 0.055),
     "shoes04": (0.070, 0.062, 0.055),
-    "short02": (0.520, 0.500, 0.470),
-    "short04": (0.520, 0.500, 0.470),
+    "short01": (0.105, 0.095, 0.085),
+    "short02": (0.105, 0.095, 0.085),
+    "short04": (0.105, 0.095, 0.085),
+    "grinsegold_moustache": (0.085, 0.078, 0.070),
+    "eyebrow008": (0.075, 0.068, 0.060),
+}
+
+
+#: How much of the original light and shade each repainted asset keeps, where it
+#: is not the default 0.30. The tunic gets 0.15: its texture is a dark jacket over
+#: a pale shirt, and at 0.30 that survives as a dark suit and a white shirt — a
+#: businessman. At 0.15 the cloth flattens into one colour and the garment reads as
+#: what the reference wears: a uniform, buttoned to the collar. The hair, brows and
+#: moustache are flattened for their own reason, named above.
+DETAIL = {
+    "male_casualsuit05": 0.15,
+    "male_elegantsuit01": 0.15,
+    "short01": 0.15,
+    "grinsegold_moustache": 0.15,
+    "eyebrow008": 0.20,
 }
 
 
@@ -173,10 +284,72 @@ def add_worn(AssetService, HumanService, human, subdir, name, asset_type, label)
     if image is None:
         print(f"    no single diffuse image on {name}; left as the pack painted it")
         return worn
-    texels = mpfb_paint.recolour(image, target)
+    texels = mpfb_paint.recolour(image, target, detail=DETAIL.get(name, 0.30))
     print(f"    repainted {image.name} to "
           f"({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f}), {texels} texels")
     return worn
+
+
+def shape_hairline(hair, proxy, temple=0.042, sigma=0.014, depth=0.009, band=0.025):
+    """Give the hairline the reference's temple peaks.
+
+    A short back-and-sides cut ships with a hairline that is one straight
+    tangent across the forehead. The reference's is not: it steps forward at
+    each temple, two curves meeting in a point — the double tangent a combed-back
+    hairline makes. So the hair's edge verts are pulled down (and a touch
+    forward) by a gaussian peaked at each temple, measured against the
+    hairline the asset actually shipped with rather than a constant: the centre
+    of the forehead keeps its z, the temples gain `depth` millimetres of point.
+    Down is safe — the hair overlaps the forehead skin, so a lowered edge can
+    never open a gap.
+    """
+    import math as _math
+
+    # The forehead's front: the most forward skin in the band between the nose
+    # and the hairline, on this body roughly the 1.50–1.62 m window. Measured
+    # rather than assumed, but the window is this body's — a shorter figure
+    # would want it re-measured.
+    forehead_y = min(v.co.y for v in proxy.data.vertices
+                     if abs(v.co.x) < 0.05 and 1.50 < v.co.z < 1.62)
+    edge = [v.co.z for v in hair.data.vertices
+            if abs(v.co.x) < 0.02 and v.co.y < forehead_y + 0.03]
+    if not edge:
+        print("    hairline: no hair found over the forehead; left straight")
+        return 0
+    line_z = min(edge)
+
+    moved = 0
+    for vertex in hair.data.vertices:
+        if vertex.co.z > line_z + band or vertex.co.y > forehead_y + 0.04:
+            continue
+        bump = _math.exp(-((abs(vertex.co.x) - temple) / sigma) ** 2)
+        if bump < 0.05:
+            continue
+        vertex.co.z -= depth * bump
+        vertex.co.y -= depth * 0.4 * bump
+        moved += 1
+    return moved
+
+
+def widen_moustache(obj, widen=1.15, droop=0.008, reach=0.055, cover=1.6):
+    """Widen the moustache mesh, drop its ends and deepen it over the lip.
+
+    The grinsegold moustache is a good chevron but a neat one; the reference's is
+    wider than the mouth, its ends hang, and it hides the upper lip entirely —
+    no skin shows between the nose and the mouth line. So the bottom edge is
+    stretched down by `cover` from the mesh's own midline, as well as widened.
+    Vertex weights are per index, so moving the vertices after rigging keeps the
+    skinning — the mesh just covers more lip.
+    """
+    centre_z = sum(v.co.z for v in obj.data.vertices) / len(obj.data.vertices)
+    moved = 0
+    for vertex in obj.data.vertices:
+        vertex.co.x *= widen
+        vertex.co.z -= droop * min(1.0, abs(vertex.co.x) / reach) ** 2
+        if vertex.co.z < centre_z:
+            vertex.co.z = centre_z + (vertex.co.z - centre_z) * cover
+        moved += 1
+    return moved
 
 
 def aim_bone(armature, name, direction):
@@ -204,35 +377,71 @@ def aim_bone(armature, name, direction):
     bpy.context.view_layer.update()
 
 
-def author_idle(armature, fps=24, last_frame=72):
-    """Pose the figure standing and keyframe it into an `Idle` action.
+def author_idle(armature, fps=24, keys=IDLE_KEYS, last_frame=IDLE_LAST_FRAME):
+    """Pose the figure through the briefing loop and keyframe it into `Idle`.
 
     A clip rather than a static pose, because the director asks for `Idle` by name and a
     figure with no clips falls back to the bind pose — which is the A-pose, and the A-pose
-    is the thing being fixed. Three keys: the standing pose, a breath, and the standing
-    pose again, so it loops without a seam.
+    is the thing being fixed. The loop is one standing pose, a breath, the pipe grasp, and
+    back: the first and last keys are identical, so it loops without a seam. Each key aims
+    every posed bone at a direction blended from STANDING, BREATHE, GRASP and PUFF by the
+    key's weights; a bone whose direction is not in any of those rests at its own rest
+    direction, captured before anything moves it.
     """
     bpy.context.view_layer.objects.active = armature
     armature.select_set(True)
     for pose_bone in armature.pose.bones:
         pose_bone.rotation_mode = "QUATERNION"
 
+    rest = {}
+    for name in POSE_BONES:
+        bone = armature.data.bones.get(name)
+        if bone is not None:
+            rest[name] = (bone.tail_local - bone.head_local).normalized()
+
     armature.animation_data_create()
     action = bpy.data.actions.new("Idle")
     armature.animation_data.action = action
 
-    middle = last_frame // 2
-    for frame in (1, middle, last_frame):
-        breathing = frame == middle
-        for name, direction in STANDING.items():
-            target = Vector(direction)
-            if breathing:
-                target += Vector(BREATHE.get(name, (0.0, 0.0, 0.0)))
+    for frame, weights in keys:
+        # frame_set FIRST: it re-evaluates the action and overwrites the pose with
+        # the interpolation of the keys so far. Aiming after it poses on top of that;
+        # aiming before it — the order this loop shipped with — keyed the reverted
+        # pose, which is why three "breathe" keys once exported as three standings.
+        bpy.context.scene.frame_set(frame)
+
+        grasp = weights.get("grasp", 0.0)
+        puff = weights.get("puff", 0.0)
+        gesture = weights.get("gesture", 0.0)
+        gesture_b = weights.get("gestureb", 0.0)
+        breathe = weights.get("breathe", 0.0)
+
+        for name in POSE_BONES:
+            base = STANDING.get(name, rest.get(name))
+            if base is None:
+                continue
+
+            target = Vector(base)
+            if breathe:
+                target += Vector(BREATHE.get(name, (0.0, 0.0, 0.0))) * breathe
+            if grasp and name in GRASP:
+                target = target.lerp(Vector(GRASP[name]), grasp)
+            if puff and name in PUFF:
+                target = target.lerp(Vector(PUFF[name]), puff)
+            if gesture and name in GESTURE:
+                target = target.lerp(Vector(GESTURE[name]), gesture)
+            if gesture_b and name in GESTURE_B:
+                target = target.lerp(Vector(GESTURE_B[name]), gesture_b)
             aim_bone(armature, name, target)
 
-        bpy.context.scene.frame_set(frame)
         for pose_bone in armature.pose.bones:
             pose_bone.keyframe_insert("rotation_quaternion", frame=frame)
+
+        hand = armature.pose.bones.get("hand_l")
+        if hand is not None:
+            bpy.context.view_layer.update()
+            print(f"    key {frame}: weights {weights}, "
+                  f"hand_l tail {tuple(round(c, 3) for c in (armature.matrix_world @ hand.tail))}")
 
     armature.animation_data.action = action
     bpy.context.scene.frame_start = 1
@@ -240,7 +449,8 @@ def author_idle(armature, fps=24, last_frame=72):
     bpy.context.scene.render.fps = fps
     # Not `action.fcurves`: Blender 5 actions carry slots and layers, and the channel
     # count is no longer on the action. What was keyed is visible in the export anyway.
-    print(f"posed: Idle on {len(armature.pose.bones)} bones, frames 1-{last_frame} at {fps} fps")
+    print(f"posed: Idle on {len(armature.pose.bones)} bones, "
+          f"{len(keys)} keys over frames 1-{last_frame} at {fps} fps")
 
 
 def _diagnose(proxy):
@@ -332,6 +542,17 @@ def main():
     parser.add_argument(
         "--diagnose", action="store_true",
         help="print what the face painter measures before it paints")
+    parser.add_argument(
+        "--flatten-alpha", action="store_true",
+        help="force every worn texture's alpha to 1 — the game draws these parts opaque, "
+             "so this changes nothing on screen unless the alpha channel itself is the bug "
+             "being hunted")
+    parser.add_argument(
+        "--no-pipe", action="store_true",
+        help="do not add the pipe at the corner of the mouth")
+    parser.add_argument(
+        "--no-insignia", action="store_true",
+        help="do not add the collar tabs and buttons to the tunic")
     args = parser.parse_args(argv)
 
     if args.no_dress:
@@ -357,6 +578,22 @@ def main():
         HumanObjectProperties.set_value(name, value, entity_reference=human)
     TargetService.reapply_macro_details(human)
     print("macro details reapplied: " + ", ".join(f"{k}={v}" for k, v in BODY.items()))
+
+    # The detail targets shape the face the macros only sketch. They load onto the
+    # basemesh now — before the rig and the assets — so everything fitted afterwards
+    # follows the face they make. The targets root is the extension's own data, not
+    # the asset pack's: it sits next to `services/`, not next to `clothes/`.
+    import bl_ext.blender_org.mpfb as mpfb_ext
+    targets_root = os.path.join(os.path.dirname(mpfb_ext.__file__), "data", "targets")
+    applied = 0
+    for rel, weight in DETAIL_TARGETS:
+        path = os.path.join(targets_root, rel)
+        if not os.path.exists(path):
+            print(f"  skipped target {rel}: not under {targets_root}")
+            continue
+        TargetService.load_target(human, path, weight=weight)
+        applied += 1
+    print(f"detail targets: {applied} of {len(DETAIL_TARGETS)} applied")
 
     # The rig goes on **before** the assets, and that order is the whole story.
     # `add_mhclo_asset` looks for a skeleton amongst the basemesh's nearest relatives and,
@@ -384,6 +621,14 @@ def main():
         print(f"  added {asset_type}")
         if created is not None:
             worn.append(created)
+            # Features repaint too: the brows are the same dark mass as the hair.
+            stem = filename.split(".")[0]
+            target = REPAINTED.get(stem)
+            if target is not None:
+                image = mpfb_paint.material_image(created)
+                if image is not None:
+                    texels = mpfb_paint.recolour(image, target, detail=DETAIL.get(stem, 0.30))
+                    print(f"    repainted {image.name}, {texels} texels")
         if asset_type == "Proxymeshes":
             proxy = created
 
@@ -410,11 +655,20 @@ def main():
         added = add_worn(AssetService, HumanService, human, "hair", name, "Hair", "hair")
         if added is not None:
             worn.append(added)
+            if proxy is not None:
+                shaped = shape_hairline(added, proxy)
+                print(f"    hairline: temple peaks on {shaped} verts")
 
+    suit = None
     for name in args.garment:
         added = add_worn(AssetService, HumanService, human, "clothes", name, "clothes", "garment")
         if added is not None:
             worn.append(added)
+            if "moustache" in name:
+                moved = widen_moustache(added)
+                print(f"    widened moustache: {moved} verts")
+            if "suit" in name:
+                suit = added
 
     # The stand-in goes last, after everything has been fitted to it. In Blender the proxy
     # is hidden *behind* the stand-in rather than replacing it: `_check_add_proxy` puts a
@@ -437,29 +691,93 @@ def main():
     if proxy is not None and args.diagnose:
         _diagnose(proxy)
 
-    if not args.no_face and proxy is not None:
-        # The head is found from the rig, not from a height fraction: the rest pose has the
-        # hands further forward than the face, so "most forward vertex of the whole body" is
-        # a knuckle. The head bone is at the base of the skull and the nose is 12 cm in
-        # front of it, which is well inside a sphere that the hands are outside of.
-        armature = next(o for o in bpy.context.scene.objects if o.type == "ARMATURE")
+    # The nose tip anchors both the moustache paint and the pipe, so it is found
+    # once. The head is found from the rig, not from a height fraction: the rest
+    # pose has the hands further forward than the face, so "most forward vertex of
+    # the whole body" is a knuckle. The head bone is at the base of the skull and
+    # the nose is 12 cm in front of it, which is well inside a sphere that the
+    # hands are outside of.
+    nose = None
+    nose_index = -1
+    armature = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
+    if proxy is not None and armature is not None:
         head_bone = armature.data.bones.get("head")
         if head_bone is None:
-            print("  no 'head' bone on the rig; skipping the face")
+            print("  no 'head' bone on the rig; skipping the face, the pipe")
         else:
             anchor = proxy.matrix_world.inverted() @ armature.matrix_world @ head_bone.head_local
             nose, nose_index = makehuman_face.find_nose_tip(proxy, anchor)
-            box = makehuman_face.moustache_box(nose)
-            image = mpfb_paint.material_image(proxy)
-            if image is None:
-                print("  the body's material names no single skin image; nothing to paint")
-            else:
-                texels = makehuman_face.paint_skin(proxy, image, box)
-                print(f"  moustache: nose tip v{nose_index} at "
-                      f"({nose.x:.4f}, {nose.y:.4f}, {nose.z:.4f}), "
-                      f"lip z {box['lip_z']:.4f}, {texels} texels of {image.size[0]}x{image.size[1]}")
+
+    # The face is painted into the skin map, in the Blender session, before the export —
+    # so the edited image is what the exporter embeds and the figure needs no sidecar.
+    if not args.no_face and nose is not None:
+        box = makehuman_face.moustache_box(nose)
+        image = mpfb_paint.material_image(proxy)
+        if image is None:
+            print("  the body's material names no single skin image; nothing to paint")
+        else:
+            texels = makehuman_face.paint_skin(proxy, image, box)
+            print(f"  moustache: nose tip v{nose_index} at "
+                  f"({nose.x:.4f}, {nose.y:.4f}, {nose.z:.4f}), "
+                  f"lip z {box['lip_z']:.4f}, {texels} texels of {image.size[0]}x{image.size[1]}")
+            shadowed = makehuman_face.paint_shadow(proxy, image, makehuman_face.scalp_box(nose))
+            print(f"  scalp shadow: {shadowed} texels")
+
+    # The pipe rides the head bone at the corner of the mouth — smoked, not held, so it
+    # needs no animation of its own. Deliberately not in `worn`: its colours are
+    # generated four-pixel images with no 'diffuse' in their names, and the trim below
+    # would unlink them as unread.
+    if not args.no_pipe and proxy is not None and nose is not None:
+        armature = next(o for o in bpy.context.scene.objects if o.type == "ARMATURE")
+        pipe = makehuman_pipe.build_pipe(armature, nose)
+        print(f"  pipe: {len(pipe.data.vertices)} verts at the corner of the mouth")
+
+        # The gesture is aimed by number, not by eye: where the fingertips stand at the
+        # grasp's peak against the pipe's grip, so a weak reach reads as millimetres of
+        # gap instead of as a screenshot somebody squints at.
+        if not args.no_pose:
+            bpy.context.scene.frame_set(176)
+            bpy.context.view_layer.update()
+            hand = armature.pose.bones.get("hand_l")
+            if hand is not None:
+                tip = armature.matrix_world @ hand.tail
+                grip = nose + Vector((0.019, -0.006, -0.054))
+                print(f"  gesture: fingertips {tuple(round(c, 3) for c in tip)}, "
+                      f"grip {tuple(round(c, 3) for c in grip)}, "
+                      f"gap {(tip - grip).length * 1000:.0f} mm")
+            bpy.context.scene.frame_set(1)
+
+    # The tunic's insignia is measured off the suit the same way the pipe is measured
+    # off the face. Also not in `worn`, for the same reason as the pipe.
+    if not args.no_insignia and suit is not None:
+        armature = next(o for o in bpy.context.scene.objects if o.type == "ARMATURE")
+        makehuman_uniform.build_insignia(suit, armature)
+    elif not args.no_insignia:
+        print("  insignia: no suit among the garments; skipped")
 
     # The renderer reads base colour and nothing else, so nothing else is worth carrying.
+    # The renderer draws these parts with BlendState.Opaque, so an alpha channel is
+    # dead weight at best and a bug farm at worst: with one in the texture, the
+    # hair, brows and moustache rendered their strands WHITE no matter what the RGB
+    # held. Every worn texture's alpha is flattened to 1 — the strand shape then
+    # comes from the card geometry alone, which is what the renderer was already
+    # drawing. (`--flatten-alpha` remains as the off switch's ghost: it is now the
+    # default, and the flag is accepted and ignored so old commands keep working.)
+    if True:
+        import numpy as _np
+        flattened = 0
+        for obj in worn + ([proxy] if proxy else []):
+            for image in mpfb_paint.material_images(obj):
+                if image.channels != 4:
+                    continue
+                buffer = _np.empty(image.size[0] * image.size[1] * 4, dtype=_np.float32)
+                image.pixels.foreach_get(buffer)
+                buffer[3::4] = 1.0
+                image.pixels.foreach_set(buffer)
+                image.update()
+                flattened += 1
+        print(f"  flattened alpha on {flattened} image(s)")
+
     if not args.no_trim:
         keep = {image for image in (mpfb_paint.material_image(o) for o in worn) if image}
         skin_image = mpfb_paint.material_image(proxy) if proxy is not None else None

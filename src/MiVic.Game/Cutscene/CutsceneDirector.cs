@@ -47,9 +47,22 @@ public sealed class CutsceneDirector : IDisposable
     /// </summary>
     private const string SkinnedIdleClip = "Idle";
 
+    /// <summary>The node the pipe smoke rises from: an empty the asset carries, bone-parented
+    /// to the head. See tools/blender/makehuman_pipe.py.</summary>
+    private const string PipeBowlNode = "pipe_bowl";
+
+    // The smoke is analytic rather than simulated: a wisp is a pure function of the
+    // scene's clock, so a probe that seeks still photographs the same smoke. Eight wisps
+    // on a 0.55 s cadence, three seconds each, so two or three are always on the rise.
+    private const float SmokePeriodSeconds = 0.55f;
+    private const float SmokeLifeSeconds = 3.0f;
+    private const int SmokeWisps = 8;
+
     private readonly List<Actor> _actors = [];
     private readonly List<string> _shown = [];
     private readonly InstanceData[] _one = new InstanceData[1];
+    private readonly InstanceData[] _smoke = new InstanceData[SmokeWisps];
+    private InstancedRenderer.Mesh? _smokeMesh;
 
     private int _total;
     private int _lineElapsed;
@@ -294,6 +307,13 @@ public sealed class CutsceneDirector : IDisposable
     /// <summary>Draw calls the director issued on its last frame: one per part drawn.</summary>
     public int DrawCalls { get; private set; }
 
+    /// <summary>Where the pipe smoke rose from on the last frame, in world metres, or null
+    /// when no figure in the scene carries a `pipe_bowl` node.</summary>
+    public Vector3? LastSmokeAnchor { get; private set; }
+
+    /// <summary>Smoke wisps drawn on the last frame.</summary>
+    public int SmokeDrawn { get; private set; }
+
     /// <summary>Draws the scene with its own camera and its own light.</summary>
     public void Draw(float aspect)
     {
@@ -306,21 +326,36 @@ public sealed class CutsceneDirector : IDisposable
             0.05f,
             150f);
 
-        var environment = new InstancedRenderer.Environment(
-            // From the front, above and to the left of the camera. It used to come from
-            // +z, which is *behind* the man: the camera looks down +z, so a light
-            // pointing that way lit the back of his head and left his face and tunic in
-            // their own shadow. That is why a tunic the right olive rendered almost
-            // black, and why every paint correction to it did nothing.
-            LightDirection: Vector3.Normalize(new Vector3(0.42f, 0.52f, -0.74f)),
+        // The room is lit by the petrol lamp on the desk and nothing else. The light
+        // points at the lamp — front-right of the man, a little below his chin, which is
+        // the underlight a flame gives a face at night — and the whole room breathes with
+        // the flame: a deterministic flicker on the scene's own clock, so two probes of
+        // the same moment photograph the same light. It used to come from the front,
+        // above and to the left, in a bright room; see the note in the history of this
+        // file for what a dark tunic did under that.
+        float sceneSeconds = _total / 1000f;
+        float flame = 0.90f
+            + (0.06f * MathF.Sin(sceneSeconds * 8.7f))
+            + (0.03f * MathF.Sin(sceneSeconds * 23.3f))
+            + (0.02f * MathF.Sin(sceneSeconds * 39.7f));
 
-            // Warmer and dimmer than the battlefield, but not so dim that a room lit by one lamp
-            // has a wall of pure black in it: the lamp is the warm note, the window the cold one.
-            AmbientColor: new Color(112, 102, 86),
-            FogColor: new Color(9, 8, 7),
+        var environment = new InstancedRenderer.Environment(
+            // Nearly level with his face, not below it: an underlit flame threw hard
+            // bright edges off his brow and moustache. The lamp is on the desk at his
+            // right; the flame's height, not the fount's, is what lights a face.
+            LightDirection: Vector3.Normalize(new Vector3(-0.80f, 0.02f, -0.30f)),
+
+            // Dark and warm: a lamp-lit room at night, with the window a cold blue
+            // rectangle that does not reach the man. Not so dark that his face is a
+            // mask: the ambient is the room the lamp warms, not the absence of one.
+            AmbientColor: new Color(
+                (int)(54 * flame),
+                (int)(40 * flame),
+                (int)(28 * flame)),
+            FogColor: new Color(6, 4, 3),
             FogStart: 26f,
             FogEnd: 90f,
-            Time: _total / 1000f);
+            Time: sceneSeconds);
 
         _renderer.Begin(view, projection, position, environment);
 
@@ -363,9 +398,88 @@ public sealed class CutsceneDirector : IDisposable
 
             DrawCalls++;
         }
+
+        DrawPipeSmoke(view);
     }
 
-    public void Dispose() => _assets.Dispose();
+    /// <summary>
+    /// The pipe's smoke, drawn last so it lies over the man when it drifts in front of
+    /// him. Each wisp is a billboard born at the bowl on a fixed cadence: it rises,
+    /// widens and thins, all as a function of the scene clock — there is no integration
+    /// to drift and no state for a seek to lose.
+    /// </summary>
+    private void DrawPipeSmoke(in Matrix view)
+    {
+        Vector3? bowl = null;
+        foreach (Actor actor in _actors)
+        {
+            if (actor.Skin is null || !actor.Skin.TryGetNodeWorld(PipeBowlNode, out Matrix nodeWorld))
+            {
+                continue;
+            }
+
+            bowl = (nodeWorld * actor.Model.ModelTransform * actor.Entity).Translation;
+            break;
+        }
+
+        if (bowl is null)
+        {
+            LastSmokeAnchor = null;
+            SmokeDrawn = 0;
+            return;
+        }
+
+        LastSmokeAnchor = bowl;
+
+        _smokeMesh ??= _renderer.CreateMesh(MeshBuilder.Quad(1f, 1f));
+
+        float now = _total / 1000f;
+        Vector3 right = new(view.M11, view.M21, view.M31);
+        Vector3 up = new(view.M12, view.M22, view.M32);
+
+        int count = 0;
+        for (int k = 0; k < SmokeWisps; k++)
+        {
+            float age = now - ((now - (now % SmokePeriodSeconds)) - (k * SmokePeriodSeconds));
+            float t = age / SmokeLifeSeconds;
+            if (t < 0f || t >= 1f)
+            {
+                continue;
+            }
+
+            // A slow, thin rise with a sway that grows as the wisp does: pipe smoke
+            // hangs rather than billows.
+            Vector3 position = bowl.Value + new Vector3(
+                MathF.Sin((age * 1.9f) + (k * 2.39f)) * 0.012f * t,
+                (0.055f * age) + 0.005f,
+                MathF.Cos((age * 1.6f) + (k * 1.73f)) * 0.009f * t);
+            float size = MathHelper.Lerp(0.014f, 0.075f, t);
+            float alpha = 0.42f * (1f - t) * Math.Min(1f, age / 0.4f);
+
+            var transform = new Matrix(
+                right.X * size, right.Y * size, right.Z * size, 0f,
+                up.X * size, up.Y * size, up.Z * size, 0f,
+                0f, 0f, 0f, 0f,
+                position.X, position.Y, position.Z, 1f);
+            _smoke[count++] = new InstanceData(transform, new Vector4(0.60f, 0.58f, 0.55f, alpha));
+        }
+
+        if (count > 0)
+        {
+            _renderer.BeginParticles(InstancedRenderer.ParticleBlend.Alpha);
+            _renderer.Draw(_smokeMesh, _smoke, count);
+            _renderer.EndParticles();
+            DrawCalls++;
+        }
+
+        SmokeDrawn = count;
+    }
+
+    public void Dispose()
+    {
+        _smokeMesh?.Dispose();
+        _assets.Dispose();
+    }
 
     private Actor MakeActor(CutsceneModel model, Matrix entity, bool posed, string? clip = null)
     {

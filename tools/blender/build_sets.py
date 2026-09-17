@@ -99,8 +99,8 @@ def build_study():
     parts.append(slab("SkirtingLeft", (0.06, depth * 2, 0.16), (-half_width + 0.04, 0.0, 0.08), WALL_TRIM))
     parts.append(slab("SkirtingRight", (0.06, depth * 2, 0.16), (half_width - 0.04, 0.0, 0.08), WALL_TRIM))
 
-    # ---- the window, and the cold light it is the only source of ------------
-    parts.append(slab("WindowGlow", (1.35, 0.04, 1.35), (1.35, -depth + 0.02, 1.72), DAYLIGHT, variation=0.02))
+    # ---- the window, moonlit: the night outside a lamp-lit room ---------------
+    parts.append(slab("WindowGlow", (1.35, 0.04, 1.35), (1.35, -depth + 0.02, 1.72), (0.16, 0.20, 0.28, 0.00), variation=0.02))
     parts.append(slab("WindowSill", (1.55, 0.14, 0.08), (1.35, -depth + 0.09, 1.02), WALL_TRIM))
     parts.append(slab("WindowHead", (1.55, 0.14, 0.08), (1.35, -depth + 0.09, 2.42), WALL_TRIM))
     parts.append(slab("WindowJambLeft", (0.08, 0.14, 1.48), (0.61, -depth + 0.09, 1.72), WALL_TRIM))
@@ -108,12 +108,13 @@ def build_study():
     parts.append(slab("WindowBar", (1.35, 0.10, 0.05), (1.35, -depth + 0.08, 1.72), WALL_TRIM, variation=0.02))
 
     # ---- the wall map: a board and the coloured shapes pinned to it ---------
-    parts.append(slab("MapBoard", (1.60, 0.05, 1.05), (-1.35, -depth + 0.06, 1.80), WOOD_DARK))
-    parts.append(slab("MapSheet", (1.44, 0.02, 0.90), (-1.35, -depth + 0.10, 1.80), PAPER, variation=0.06))
-    parts.append(slab("MapLandA", (0.44, 0.02, 0.30), (-1.62, -depth + 0.13, 1.94), MAP_LAND, variation=0.05))
-    parts.append(slab("MapLandB", (0.30, 0.02, 0.22), (-1.05, -depth + 0.13, 1.62), MAP_LAND_ALT, variation=0.05))
-    parts.append(slab("MapArrow", (0.06, 0.02, 0.44), (-1.22, -depth + 0.14, 1.84), MAP_RED, variation=0.02))
-    parts.append(slab("MapArrowHead", (0.16, 0.02, 0.10), (-1.22, -depth + 0.14, 2.08), MAP_RED, variation=0.02))
+    # Pushed left of the bookcase: the books stand behind the desk now.
+    parts.append(slab("MapBoard", (1.60, 0.05, 1.05), (-1.52, -depth + 0.06, 1.80), WOOD_DARK))
+    parts.append(slab("MapSheet", (1.44, 0.02, 0.90), (-1.52, -depth + 0.10, 1.80), PAPER, variation=0.06))
+    parts.append(slab("MapLandA", (0.44, 0.02, 0.30), (-1.79, -depth + 0.13, 1.94), MAP_LAND, variation=0.05))
+    parts.append(slab("MapLandB", (0.30, 0.02, 0.22), (-1.22, -depth + 0.13, 1.62), MAP_LAND_ALT, variation=0.05))
+    parts.append(slab("MapArrow", (0.06, 0.02, 0.44), (-1.39, -depth + 0.14, 1.84), MAP_RED, variation=0.02))
+    parts.append(slab("MapArrowHead", (0.16, 0.02, 0.10), (-1.39, -depth + 0.14, 2.08), MAP_RED, variation=0.02))
 
     # ---- the desk, and what is on it ----------------------------------------
     parts.append(slab("Desk", (2.40, 1.05, 0.08), (0.0, -1.15, 0.77), WOOD))
@@ -128,14 +129,28 @@ def build_study():
     parts.append(slab("DeskTelephoneHandset", (0.26, 0.06, 0.05), (0.72, -1.02, 0.96), BAKELITE_DARK))
     parts.append(slab("DeskTray", (0.30, 0.22, 0.06), (0.72, -1.45, 0.84), LEATHER, variation=0.04))
 
-    # ---- the desk lamp: the room's warm light, and its brightest object -----
-    parts.append(cylinder("LampBase", 0.11, 0.04, segments=14, axis="z", offset=(-0.92, -1.44, 0.83)))
-    parts.append(cylinder("LampStem", 0.018, 0.42, segments=10, axis="z", offset=(-0.92, -1.44, 1.06)))
-    parts.append(cylinder("LampShade", 0.13, 0.16, segments=14, axis="z", offset=(-0.92, -1.44, 1.32)))
-    parts.append(slab("LampGlow", (0.16, 0.16, 0.02), (-0.92, -1.44, 1.23), GLOW, variation=0.02))
+    # ---- the desk lamp: a petrol lamp, because the room predates the grid -----
+    # A brass fount, a burner, and a glass chimney with the flame inside it. The
+    # chimney is pale glass with the glow baked in — a lit lamp is the brightest
+    # thing in the room, and the light it implies is the scene's (the director's
+    # environment flickers with it).
+    parts.append(dome("LampFount", 0.085, (0.085, 0.085, 0.10), segments=14, rings=5))
+    parts[-1].location = (-0.92, -1.44, 0.86)
+    parts.append(cylinder("LampStem", 0.020, 0.10, segments=10, axis="z", offset=(-0.92, -1.44, 0.99)))
+    parts.append(cylinder("LampBurner", 0.035, 0.05, segments=12, axis="z", offset=(-0.92, -1.44, 1.06)))
+    parts.append(cylinder("LampChimney", 0.042, 0.26, segments=14, axis="z", offset=(-0.92, -1.44, 1.20)))
+    parts.append(cylinder("LampGlow", 0.018, 0.07, segments=10, axis="z", offset=(-0.92, -1.44, 1.10)))
 
-    for part in parts[-4:]:
-        paint(part, GLOW if part.name == "LampGlow" else BRASS, variation=0.03)
+    for part in parts[-5:]:
+        if part.name == "LampGlow":
+            paint(part, GLOW, variation=0.02)
+        elif part.name == "LampChimney":
+            # The glass is opaque in this renderer, so the chimney carries the flame:
+            # painted lit, warm and bright, it is the lamp's glow rather than a fog
+            # that hides it.
+            paint(part, (0.95, 0.80, 0.52, 0.00), variation=0.03)
+        else:
+            paint(part, BRASS, variation=0.03)
 
     # ---- the chair, mostly hidden behind the desk ---------------------------
     parts.append(slab("ChairSeat", (0.54, 0.52, 0.09), (0.30, -1.95, 0.47), LEATHER))
@@ -148,6 +163,40 @@ def build_study():
         z = 0.32 + (shelf * 0.52)
         parts.append(slab("BookShelf", (0.36, 1.68, 0.05), (-2.24, -0.55, z), WOOD))
         parts.append(slab("Books", (0.26, 1.40, 0.30), (-2.26, -0.55, z + 0.19), BOOKS, variation=0.10))
+
+    # ---- the bookcase behind the desk, spine by spine ------------------------
+    # The camera's frame is the man with a wall of books behind him. These books
+    # are built one at a time — width, height and colour per spine — because a
+    # single textured slab reads as a photograph of books, not a shelf of them.
+    # The back panel is thin and stands at the rear: the first version of this
+    # was a solid box the full depth of the case, and the camera read a shelf of
+    # books as a wall of varnished wood.
+    parts.append(slab("BookcaseBack", (1.30, 0.05, 2.10), (0.0, -2.175, 1.05), WOOD_DARK))
+    parts.append(slab("BookcaseTop", (1.36, 0.34, 0.07), (0.0, -2.05, 2.13), WOOD_DARK))
+    parts.append(slab("BookcaseSideL", (0.06, 0.34, 2.10), (-0.65, -2.05, 1.05), WOOD_DARK))
+    parts.append(slab("BookcaseSideR", (0.06, 0.34, 2.10), (0.65, -2.05, 1.05), WOOD_DARK))
+
+    spine_colours = [
+        (0.32, 0.10, 0.08, 0.00),   # red cloth
+        (0.14, 0.18, 0.12, 0.00),   # green cloth
+        (0.22, 0.16, 0.10, 0.00),   # tan leather
+        (0.12, 0.12, 0.16, 0.00),   # blue-black
+        (0.36, 0.28, 0.14, 0.00),   # gilt tan
+    ]
+    book_seed = 7
+    for shelf in range(4):
+        z = 0.30 + (shelf * 0.50)
+        parts.append(slab("BookShelfBack", (1.24, 0.26, 0.045), (0.0, -2.05, z), WOOD))
+        x = -0.58
+        while x < 0.52:
+            book_seed = (book_seed * 1103515245 + 12345) & 0x7FFFFFFF
+            width = 0.030 + (book_seed % 1000) / 1000.0 * 0.028
+            height = 0.24 + ((book_seed >> 8) % 1000) / 1000.0 * 0.10
+            colour = spine_colours[book_seed % len(spine_colours)]
+            parts.append(slab("BookSpine", (width, 0.20, height),
+                              (x + width / 2, -2.07, z + 0.04 + height / 2), colour,
+                              variation=0.06))
+            x += width + 0.004
 
     # ---- the rug, and the bust on its plinth --------------------------------
     parts.append(slab("Rug", (2.70, 3.10, 0.02), (0.10, 0.35, 0.01), RUG, variation=0.05))

@@ -2425,6 +2425,8 @@ public sealed class ProbeRunner
                 Emit($"query:   cast       {(cast.Count > 1 ? string.Join("; ", cast.Skip(1)) : "nobody")}");
                 Emit($"query:   camera     {ProbeFormat.Point(position)} looking at {ProbeFormat.Point(target)}");
                 Emit($"query:   line       '{(director.VisibleText.Length > 0 ? director.VisibleText : "(nothing)")}'");
+                Emit($"query:   smoke      {ProbeFormat.Count(director.SmokeDrawn, "wisp")}" +
+                    (director.LastSmokeAnchor is { } anchor ? $" from {ProbeFormat.Point(anchor)}" : " — no pipe_bowl node"));
 
                 // Two invariants a transcript can hold. A scene that renders nothing, and a
                 // scene that finished without saying everything it was written to say, are both

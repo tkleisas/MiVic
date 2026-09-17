@@ -1,39 +1,39 @@
 {
   "steps": 12,
-  "source": "face-chin-crop.png",
+  "source": "figure-check-crop.png",
   "mode": "frozen",
   "box": null,
   "note": "A frozen measurement of the figure itself: this is a regression gate, not a distance from a reference.",
   "profile": [
-    0.6775067750677507,
-    0.7425474254742548,
-    0.7533875338753387,
-    0.7506775067750677,
-    0.7452574525745257,
-    0.94579945799458,
+    0.6124031007751938,
+    0.5839793281653747,
+    0.6459948320413437,
+    0.8708010335917312,
+    0.8630490956072352,
+    0.9483204134366925,
+    0.9560723514211886,
+    0.9612403100775194,
+    0.9974160206718347,
     1.0,
-    0.8807588075880759,
-    0.943089430894309,
-    0.9512195121951219,
-    0.9349593495934959,
-    0.7642276422764228
+    0.9819121447028424,
+    0.8656330749354005
   ],
-  "widest_row": 6,
+  "widest_row": 9,
   "patches": {
     "forehead": [
-      187,
-      103,
-      75
+      81,
+      41,
+      29
     ],
     "cheek": [
-      176,
-      96,
-      70
+      87,
+      44,
+      31
     ],
     "chin": [
-      57,
-      38,
-      31
+      43,
+      28,
+      23
     ]
   },
   "tolerances": {
@@ -43,12 +43,5 @@
     "gated_patches": [
       "forehead"
     ]
-  },
-  "paint": {
-    "moustache": [
-      124.8,
-      40.8
-    ],
-    "_note": "mean luma and standard deviation of the reference portrait's moustache, sampled inside the box the pixel ruler gave it: x 140..306, y 252..298. The reference side of this had to be a box read off a ruler, because the painter's outline describes the built moustache and not the painted one; the built side is the outline's own region, and both are recorded so the comparison is against something stated rather than remembered."
   }
 }

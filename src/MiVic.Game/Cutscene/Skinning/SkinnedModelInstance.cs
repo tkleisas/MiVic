@@ -116,6 +116,27 @@ namespace MiVic.Game.Cutscene.Skinning
         /// </summary>
         public InstancedRenderer.Environment Environment { get; set; }
 
+        /// <summary>
+        /// The model-space world transform of a named node at the current pose, if the
+        /// model has one. For marker nodes the asset carries — the pipe's bowl is an
+        /// empty parented to the head bone, so the smoke can rise from where the bowl
+        /// actually is this frame rather than from a constant somebody has to keep true.
+        /// </summary>
+        public bool TryGetNodeWorld(string nodeName, out Matrix world)
+        {
+            int index = _model.FindNodeIndex(nodeName);
+            if (index < 0)
+            {
+                world = Matrix.Identity;
+                return false;
+            }
+
+            Span<Matrix> worlds = stackalloc Matrix[_model.NodeCount];
+            _model.ComputeWorldMatrices(_poseOut, worlds);
+            world = worlds[index];
+            return true;
+        }
+
         public void Update(float deltaTime)
         {
             // One-shot finished: freeze was on the last frame; cross-fade back to the base loop.

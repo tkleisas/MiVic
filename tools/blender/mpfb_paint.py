@@ -37,25 +37,35 @@ def material_images(obj):
     return found
 
 
-def material_image(obj, prefer="diffuse"):
+def material_image(obj, prefer=("diffuse", "_diff")):
     """The base-colour image of this object's material, or None.
 
     `prefer` is matched against the image's own name, which is the asset pack's name for
-    it and the only label there is. When nothing matches and exactly one image is present,
-    that one is the answer; when several are present and none matches, this returns None
-    and says so, because picking one would be a coin toss that renders as a wrong garment.
+    it and the only label there is — and the packs do not agree on the label: the system
+    assets say `diffuse`, the community moustache says `_diff`. Names that mark a map the
+    renderer cannot read (`_hn`, `normal`, `_ao`, `rough`) are excluded, so a diffuse that
+    travels with its normal map is still one answer and not two. When nothing matches and
+    exactly one image is present, that one is the answer; when several are present and
+    none matches, this returns None and says so, because picking one would be a coin toss
+    that renders as a wrong garment.
     """
+    if isinstance(prefer, str):
+        prefer = (prefer,)
+
     images = material_images(obj)
     if not images:
         return None
 
-    matching = [i for i in images if prefer in i.name.lower()]
+    unread = ("_hn", "normal", "_ao", "rough", "_n.")
+    matching = [i for i in images
+                if any(p in i.name.lower() for p in prefer)
+                and not any(x in i.name.lower() for x in unread)]
     if len(matching) == 1:
         return matching[0]
     if len(images) == 1:
         return images[0]
 
-    print(f"  {obj.name}: {len(images)} images and {len(matching)} match '{prefer}': "
+    print(f"  {obj.name}: {len(images)} images and {len(matching)} match {prefer}: "
           + ", ".join(i.name for i in images))
     return None
 
@@ -83,6 +93,17 @@ def recolour(image, target, detail=0.30):
     luminance = rgb @ np.array(LUMA, dtype=np.float32)
     factor = (1.0 - detail) + detail * 2.0 * luminance
     painted = np.clip(np.array(target, dtype=np.float32)[None, :] * factor[:, None], 0.0, 1.0)
+
+    # An alpha-carded asset's background is not nothing: the skinned renderer draws
+    # every part opaque, so a transparent texel renders in whatever colour the texture
+    # carries there — and these textures carry white, which is white speckle all over
+    # the hair and pale blobs on the moustache. Paint the background the strand colour
+    # too: invisible where the card is transparent, and the right colour to fade from
+    # at its edge if anything ever blends it.
+    if pixels.shape[1] == 4:
+        alpha = pixels[:, 3:4]
+        painted = painted * alpha + np.array(target, dtype=np.float32)[None, :] * (1.0 - alpha)
+
     pixels[:, :3] = painted
 
     image.pixels.foreach_set(pixels.reshape(-1))
