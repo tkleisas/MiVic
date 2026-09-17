@@ -75,7 +75,7 @@ public sealed class CutsceneDirector : IDisposable
             Matrix entity = Matrix.CreateRotationY(MathHelper.ToRadians(figure.FacingDegrees))
                 * Matrix.CreateTranslation(figure.X / 1000f, 0f, figure.Z / 1000f);
 
-            _actors.Add(MakeActor(_assets.Load(figure.Asset), entity, posed: true));
+            _actors.Add(MakeActor(_assets.Load(figure.Asset), entity, posed: true, clip: figure.Clip));
         }
     }
 
@@ -362,7 +362,7 @@ public sealed class CutsceneDirector : IDisposable
 
     public void Dispose() => _assets.Dispose();
 
-    private Actor MakeActor(CutsceneModel model, Matrix entity, bool posed)
+    private Actor MakeActor(CutsceneModel model, Matrix entity, bool posed, string? clip = null)
     {
         SkinnedModelInstance? skin = null;
         if (model.Skin is not null)
@@ -372,7 +372,7 @@ public sealed class CutsceneDirector : IDisposable
             // A rigged figure with no clip would stand in its bind pose, which is a T-pose
             // and reads as a mannequin. Anything the asset has is better than that, and the
             // stitched clip is chosen by name from the figure's own script.
-            skin.Play(SkinnedIdleClip);
+            skin.Play(clip ?? SkinnedIdleClip);
         }
 
         return new Actor

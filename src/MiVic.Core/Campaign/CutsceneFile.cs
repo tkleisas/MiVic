@@ -279,6 +279,17 @@ public static class CutsceneFile
             {
                 problems.Add($"scene '{scene.Id}' turns figure {i} to {figure.FacingDegrees}°, which is not a heading.");
             }
+
+            // Null is a figure of rigid parts and is the ordinary case. A clip is matched
+            // against the asset's own clip names, so one that is empty or padded would never
+            // match anything and the figure would quietly stand in its bind pose — a T-pose
+            // on screen, and no error anywhere. This format refuses what cannot be played.
+            if (figure.Clip is { } clip && (clip.Length == 0 || clip != clip.Trim()))
+            {
+                problems.Add(
+                    $"scene '{scene.Id}' gives figure {i} a clip name that is empty or padded with "
+                    + "spaces; a clip is matched by its exact name.");
+            }
         }
     }
 

@@ -73,6 +73,51 @@ public sealed class CutsceneFileTests
     }
 
     [Fact]
+    public void AFigureWithAPaddedClipIsRefused()
+    {
+        // A clip is matched against the asset's own clip names, so " Idle " matches nothing
+        // and the figure stands in its bind pose — a T-pose on screen and no error anywhere.
+        CutsceneDefinition scene = Scene() with
+        {
+            Figures = [new CutsceneFigure("personality_elder", X: 0, Z: -1_700, FacingDegrees: 0, Clip: " Idle ")],
+        };
+
+        CutsceneFile.Save(scene, PathFor(scene.Id));
+
+        InvalidDataException refusal =
+            Assert.Throws<InvalidDataException>(() => CutsceneFile.Load(PathFor(scene.Id)));
+
+        Assert.Contains("padded", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AFigureKeepsTheClipItWasGiven()
+    {
+        CutsceneDefinition scene = Scene() with
+        {
+            Figures = [new CutsceneFigure("personality_elder", X: 0, Z: -1_700, FacingDegrees: 0,
+                                           Clip: "Sit_Chair_Idle")],
+        };
+
+        CutsceneFile.Save(scene, PathFor(scene.Id));
+
+        Assert.Equal("Sit_Chair_Idle", CutsceneFile.Load(PathFor(scene.Id)).Figures[0].Clip);
+    }
+
+    [Fact]
+    public void AFigureOfRigidPartsHasNoClip()
+    {
+        // The ordinary case, and it has to survive as null rather than as an empty string:
+        // null is a figure with no clips at all, and an empty name is a scene that meant to
+        // name one.
+        CutsceneDefinition scene = Scene();
+
+        CutsceneFile.Save(scene, PathFor(scene.Id));
+
+        Assert.Null(CutsceneFile.Load(PathFor(scene.Id)).Figures[0].Clip);
+    }
+
+    [Fact]
     public void ASceneWithNoLinesIsRefused()
     {
         CutsceneDefinition scene = Scene() with { Lines = [] };

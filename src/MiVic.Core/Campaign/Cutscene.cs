@@ -50,11 +50,19 @@ public readonly record struct CutsceneCameraKey(
 /// Which way it faces, in degrees clockwise from the way the model is authored. A figure
 /// authored facing the camera is left at zero.
 /// </param>
+/// <param name="Clip">
+/// Which animation clip a rigged figure plays, or null for a figure made of rigid parts.
+/// A rigid model has no clips and a rigged one stands in its bind pose without one — which
+/// is a T-pose, and reads as a mannequin — so this is how a scene says "sit down" rather
+/// than "stand there". The asset names its own clips; a Mixamo-derived rig calls the seated
+/// loop <c>Sit_Chair_Idle</c>.
+/// </param>
 public readonly record struct CutsceneFigure(
     string Asset,
     int X,
     int Z,
-    int FacingDegrees);
+    int FacingDegrees,
+    string? Clip = null);
 
 /// <summary>
 /// One line of the script: who says it, what the subtitle says, and how long it is on screen.
