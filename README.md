@@ -68,8 +68,10 @@ Design rationale and the alternate-history tech tree are in
 is in [docs/TERRAIN.md](docs/TERRAIN.md). What is planned but not built is in
 [docs/ROADMAP.md](docs/ROADMAP.md). How to interrogate a running client without looking
 at it — scripted queries, screenshots and checks in one process — is in
-[docs/PROBE.md](docs/PROBE.md). What a skeptical pass over the whole project found,
-including the defects it has since fixed, is in [docs/AUDIT.md](docs/AUDIT.md).
+[docs/PROBE.md](docs/PROBE.md). How to build a briefing figure with MakeHuman, including
+the installation, the API traps and how to check the result, is in
+[docs/MAKEHUMAN.md](docs/MAKEHUMAN.md). What a skeptical pass over the whole project
+found, including the defects it has since fixed, is in [docs/AUDIT.md](docs/AUDIT.md).
 
 ## Requirements
 
@@ -411,10 +413,34 @@ and never form, and the eye catches form and cannot measure. See
 engine, with vertex colours and an orthographic camera: the same flat colours the
 renderer stores, without the rebuild-probe-wait cycle that a scene render costs.
 
+**The briefing figures are imported, not generated.** The generated figure above is
+good at a uniform and a silhouette and was never good at a face, and a face is what
+a briefing is: three metres away, for eight seconds, with nothing else in the frame.
+`tools/blender/build_makehuman.py` builds those figures with **MakeHuman** through
+MPFB2 instead — a real skull, a real skin, and a skeleton with an `Idle` clip rather
+than rigid parts. `docs/MAKEHUMAN.md` is the guide: installation, the API calls and
+the traps in them, and how to check the result.
+
+What it does, in order: the body is a **proxy** fitted to a targeted basemesh; the
+skin is `old_caucasian_male`, scaled by 0.78 because the pack paints for MakeHuman's
+own lighting and the face otherwise arrives clipped; the pack's clothes are repainted
+into one khaki, which is what turns a zip field jacket and denim jeans into a tunic
+and breeches; the hair is repainted grey; and the moustache is **painted into the skin
+map**, placed by measuring the mesh rather than by assuming a UV layout — the head is
+found from the head bone, because in the rest pose the fingers reach further forward
+than the nose does. `base.obj` is a stand-in that is never meant to be seen and is
+deleted before export.
+
+An imported figure brings its own materials and its own images inside the glb, which
+is a second provenance for a model's colour: the generated figures have no material
+at all and are coloured by a map found next to them by name. The loader asks the
+model for its own texture first and falls back to the sidecar. The new path is used
+for cutscenes only; the soldiers keep the parts contract until it has proved out.
+
 There are **no voices**: the words are typed on screen in Greek over the
 faction's own procedural score (a briefing is scored by its own side). The
 motion is deliberately small — a slow turn of the head, the breath of the arms
-— because the figures are rigid parts with no skeleton, and a diorama that
+— because a briefing is a man standing still and talking, and a diorama that
 gestures honestly reads better than one that pretends to perform. Space ends the
 line being read, Esc skips the scene, and every line is also the transcript's.
 
