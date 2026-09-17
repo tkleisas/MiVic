@@ -109,3 +109,39 @@ def scale(image, gain):
     image.pixels.foreach_set(pixels.reshape(-1))
     image.update()
     return int(pixels.shape[0])
+
+
+def drop_unread_images(objects, keep):
+    """Unlink every image the renderer cannot sample, so the exporter does not embed it.
+
+    `SkinnedModel` asks a primitive for its `baseColorTexture` and `SkinnedEffect` has one
+    sampler slot, so a normal map, an ambient-occlusion map or a roughness map is bytes in
+    the file that nothing will ever read. MakeHuman's assets are authored for rendering and
+    carry all of them: the suit's normal map alone was **8.86 MB of a 22.29 MB glb**.
+
+    The node is removed rather than the image deleted, because the exporter follows
+    references: an unlinked image is simply not written.
+    """
+    removed = []
+    for obj in objects:
+        for slot in obj.material_slots:
+            material = slot.material
+            if material is None or not material.use_nodes or material.node_tree is None:
+                continue
+            for node in list(material.node_tree.nodes):
+                if node.type != "TEX_IMAGE" or node.image is None or node.image in keep:
+                    continue
+                removed.append(node.image)
+                material.node_tree.nodes.remove(node)
+    return removed
+
+
+def limit_size(image, limit):
+    """Downscale `image` in place if it is larger than `limit` on its longest side."""
+    width, height = image.size
+    if width <= limit and height <= limit:
+        return False
+
+    factor = limit / float(max(width, height))
+    image.scale(max(1, int(round(width * factor))), max(1, int(round(height * factor))))
+    return True

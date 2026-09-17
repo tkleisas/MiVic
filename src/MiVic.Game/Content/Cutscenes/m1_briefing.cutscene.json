@@ -39,35 +39,35 @@
     ],
     "figures": [
       {
-        "asset": "personality_elder",
+        "asset": "personality_elder_skinned",
         "x": 0,
         "z": 1700,
-        "facingDegrees": 0
+        "facingDegrees": 180
       }
     ],
     "lines": [
       {
-        "speaker": "personality_elder",
+        "speaker": "personality_elder_skinned",
         "greekText": "Κάθισε. Δεν θα κρατήσει πολύ.",
         "milliseconds": 2800
       },
       {
-        "speaker": "personality_elder",
+        "speaker": "personality_elder_skinned",
         "greekText": "Οι Δυτικοί έστησαν φυλάκιο βόρεια της γραμμής. Το ξέρουμε εδώ και δύο εβδομάδες.",
         "milliseconds": 6000
       },
       {
-        "speaker": "personality_elder",
+        "speaker": "personality_elder_skinned",
         "greekText": "Το κέντρο διοίκησής τους κρατά την άμυνά τους όρθια. Χτύπησέ το, και η γραμμή λυγίζει.",
         "milliseconds": 6500
       },
       {
-        "speaker": "personality_elder",
+        "speaker": "personality_elder_skinned",
         "greekText": "Οι Κινέζοι καλύπτουν την ανατολική πλευρά. Μην τους ζητήσεις τίποτα — θα έρθουν μόνοι τους.",
         "milliseconds": 6000
       },
       {
-        "speaker": "personality_elder",
+        "speaker": "personality_elder_skinned",
         "greekText": "Ο κόσμος δεν κρίνεται από τα λόγια. Κρίνεται από ό,τι στέκεται ακόμη όρθιο το πρωί.",
         "milliseconds": 6000
       }

@@ -51,8 +51,14 @@ $exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
 & $exe --combat-demo  --screenshot docs/images/firefight.png  --screenshot-frame 22
 & $exe --fire-demo    --screenshot docs/images/firing-line.png --screenshot-frame 50
 & $exe --model-gallery docs/images/models.png
-python3 tools/render_cutscene.py --cutscene m1_briefing --out artifacts/cutscene
+python3 tools/render_cutscene.py --cutscene m1_briefing --out artifacts/cutscene \
+    --width 1280 --height 720
 ```
+
+The cutscene command needs the size because the script's default is 960×540, and the
+image above is 1280×720. Note also that it runs the **Debug** build while the probes in
+[docs/PROBE.md](docs/PROBE.md) are run from Release; content is copied per configuration,
+so a model regenerated since the last Debug build will not be in a scene rendered from it.
 
 ## Factions / Παρατάξεις
 

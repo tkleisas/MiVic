@@ -2237,9 +2237,9 @@ photograph:
 ```
 query: cutscene m1_briefing — 0,0s of 27,3s, line 0/5, 0 lines said, playing
 query:   set        set_study, set_study 50 parts
-query:   cast       personality_elder 44 parts posed
+query:   cast       personality_elder_skinned 7 parts posed
 query:   camera     (1.1, 1.5, -2.8) m looking at (0.0, 1.5, 1.2) m
-check: PASS 'the scene has a set and a cast to draw' — 2 models, 94 parts
+check: PASS 'the scene has a set and a cast to draw' — 2 models, 57 parts
 ...
 query: cutscene m1_briefing — 5,4s of 27,3s, line 1/5, 1 line said, playing
 query:   line       'Οι Δυτικοί έστησαν φυλάκιο βόρεια της γραμμής. Το ξέρουμε εδώ και δύο εβδομάδες.'
@@ -2250,9 +2250,15 @@ The first version of this scene passed the part-count check and still drew an em
 set's parts were submitted with transforms that had never been filled in, so all fifty collapsed
 to the origin. The check that would have caught it is the photograph the script saves —
 `artifacts/probe/cutscene-open.png` — which is why the probe writes one. The director also
-reports its own draw calls now (94 for this scene: fifty for the room and forty-four for the
+reports its own draw calls now (57 for this scene: fifty for the room and seven for the
 man), so a frame that drew nothing is visible in
 the `shot` line as well as in the pixels.
+
+The cast's seven parts are the seven meshes of an imported figure — body, eyes, brows,
+teeth, hair, tunic, boots — and they were **nought** until the director counted a skinned
+model's meshes as well as a rigid model's parts. A rigged figure keeps its geometry on the
+skeleton rather than in `Parts`, so the count reported the cast as nothing and this check
+stopped counting the cast at all, which is the failure it exists to catch.
 
 ## Worked example: what does a brown-out do, rank by rank?
 

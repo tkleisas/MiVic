@@ -138,7 +138,12 @@ public sealed class CutsceneDirector : IDisposable
 
             foreach (Actor actor in _actors)
             {
-                models.Add((actor.Model.Asset, actor.Model.Parts.Length, actor.Posed));
+                // A skinned figure keeps its meshes on the skeleton rather than in `Parts`,
+                // so a count taken from `Parts` alone reports the cast as nought parts —
+                // and the check that reads this to catch an empty frame stops counting the
+                // cast at all, which is the failure it exists for.
+                int parts = actor.Model.Skin is { } skin ? skin.Parts.Count : actor.Model.Parts.Length;
+                models.Add((actor.Model.Asset, parts, actor.Posed));
             }
 
             return models;

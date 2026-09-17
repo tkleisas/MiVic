@@ -111,6 +111,13 @@ RIG = "game_engine"
 #: a window. The generated models are painted for this light and need no such correction.
 SKIN_GAIN = 0.78
 
+#: The longest side a bought texture is allowed to keep. MakeHuman's assets are authored
+#: for rendering and a 23 MB glb for one figure is not a game asset: the images were 20.65
+#: of 22.29 MB, and the geometry only 1.64. Cloth, hair and teeth all survive at 1024 —
+#: this is a figure seen whole, three metres away — and the skin is exempt because a face
+#: is the reason the figure exists at all.
+TEXTURE_LIMIT = 1024
+
 #: What each bought asset is repainted to, as linear RGB.
 #:
 #: The pack's clothes are modern — a zip field jacket over a shirt with denim jeans, and
@@ -298,6 +305,9 @@ def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
+    parser.add_argument(
+        "--name", default="personality_elder_skinned",
+        help="the .glb's name, which is the asset name a cutscene names")
     parser.add_argument("--skin", default=SKIN)
     parser.add_argument("--garment", action="append", default=[],
                         help="a folder under clothes/, repeatable")
@@ -307,6 +317,9 @@ def main():
     parser.add_argument(
         "--no-pose", action="store_true",
         help="leave the figure in the rest pose instead of authoring Idle")
+    parser.add_argument(
+        "--no-trim", action="store_true",
+        help="keep every image the pack loaded, including the ones nothing reads")
     parser.add_argument(
         "--no-face", action="store_true",
         help="leave the skin map alone instead of painting the moustache into it")
@@ -359,6 +372,8 @@ def main():
     for arm in [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]:
         print(f"rig: {arm.name}, {len(arm.data.bones)} bones")
 
+    #: Everything bought or fitted for this figure, for the texture trim at the end.
+    worn = []
     proxy = None
     for subdir, filename, asset_type in FEATURES:
         path = AssetService.find_asset_absolute_path(filename, asset_subdir=subdir)
@@ -367,6 +382,8 @@ def main():
             continue
         created = HumanService.add_mhclo_asset(path, human, asset_type=asset_type)
         print(f"  added {asset_type}")
+        if created is not None:
+            worn.append(created)
         if asset_type == "Proxymeshes":
             proxy = created
 
@@ -390,10 +407,14 @@ def main():
                 print(f"    scaled {skin_image.name} by {SKIN_GAIN}, {texels} texels")
 
     for name in args.hair:
-        add_worn(AssetService, HumanService, human, "hair", name, "Hair", "hair")
+        added = add_worn(AssetService, HumanService, human, "hair", name, "Hair", "hair")
+        if added is not None:
+            worn.append(added)
 
     for name in args.garment:
-        add_worn(AssetService, HumanService, human, "clothes", name, "clothes", "garment")
+        added = add_worn(AssetService, HumanService, human, "clothes", name, "clothes", "garment")
+        if added is not None:
+            worn.append(added)
 
     # The stand-in goes last, after everything has been fitted to it. In Blender the proxy
     # is hidden *behind* the stand-in rather than replacing it: `_check_add_proxy` puts a
@@ -438,6 +459,27 @@ def main():
                       f"({nose.x:.4f}, {nose.y:.4f}, {nose.z:.4f}), "
                       f"lip z {box['lip_z']:.4f}, {texels} texels of {image.size[0]}x{image.size[1]}")
 
+    # The renderer reads base colour and nothing else, so nothing else is worth carrying.
+    if not args.no_trim:
+        keep = {image for image in (mpfb_paint.material_image(o) for o in worn) if image}
+        skin_image = mpfb_paint.material_image(proxy) if proxy is not None else None
+        if skin_image is not None:
+            keep.add(skin_image)
+
+        dropped = mpfb_paint.drop_unread_images(worn + ([proxy] if proxy else []), keep)
+        print(f"  trimmed: dropped {len(set(dropped))} unread image(s) "
+              + ", ".join(sorted({i.name for i in dropped})) if dropped else "  trimmed: nothing to drop")
+
+        shrunk = []
+        for image in sorted(keep, key=lambda i: i.name):
+            if image is skin_image:
+                continue
+            before = tuple(image.size)
+            if mpfb_paint.limit_size(image, TEXTURE_LIMIT):
+                shrunk.append(f"{image.name} {before[0]}x{before[1]}->{image.size[0]}x{image.size[1]}")
+        if shrunk:
+            print("  trimmed: " + "; ".join(shrunk))
+
     # What is actually in the scene at the moment of export. Every previous theory about
     # the missing body was formed without looking at this list, and the question it
     # settles is narrow and has two different fixes: either MPFB never made the proxy,
@@ -453,7 +495,7 @@ def main():
               f"materials={mats} modifiers={mods}")
 
     os.makedirs(args.out, exist_ok=True)
-    out = os.path.join(args.out, "makehuman_elder.glb")
+    out = os.path.join(args.out, args.name + ".glb")
     # The whole scene, not a selection. With `use_selection=True` and a `select_all`, the
     # proxy, eyes, eyebrows and teeth were created and appeared in the file as four extra
     # *nodes* — and exported no meshes at all, so the figure kept the base mesh's robe and

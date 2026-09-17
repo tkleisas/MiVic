@@ -5,16 +5,23 @@ This is how to install it, how to run the generator, and — more usefully — t
 that cost time to establish and are not obvious from the outside.
 
 `tools/blender/build_makehuman.py` is the generator. It is the only file that needs to run;
-everything else here is why it says what it says.
+everything else here is why it says what it says. This is the command that produces the
+figure the briefing stands on:
 
 ```bash
 /home/tkleisas/blender/blender-5.2.2-linux-x64/blender --background \
     --python tools/blender/build_makehuman.py -- \
-    --out artifacts/skinned \
+    --out src/MiVic.Game/Content/Models/Generated \
+    --name personality_elder_skinned \
     --hair short02 \
     --garment male_casualsuit05 \
     --garment shoes03
 ```
+
+`--name` is the asset name, and it is the name `m1_briefing.cutscene.json` asks for and
+the name it credits its lines to, because a cutscene's speaker must be standing in the
+room. The script defaults it to the same value; it is spelled out here so the command and
+the committed file cannot drift apart.
 
 **Run Blender by absolute path.** There is more than one Blender on this machine, and the
 one on `PATH` is not necessarily the one with the extension installed.
@@ -210,6 +217,8 @@ the figure wears.
   fill would throw away the weave, the seams and the folds that make a garment read as
   cloth. Each texel keeps its luminance as a multiplier on the target.
 * **`scale(image, gain)`** — for art calibrated against another renderer. See below.
+* **`drop_unread_images(objects, keep)`** and **`limit_size(image, limit)`** — what is worth
+  exporting at all. See the end of this section.
 
 ### The palette
 
@@ -255,6 +264,31 @@ face to the texture is the pack's business:
 
 The upper lip is taken as 24 mm below the nose tip, and the moustache is a wide ellipse
 with the ends dropped. That is the one constant in the file that is not read off the mesh.
+
+### What is worth exporting
+
+The figure came out at **22.29 MB**, which is not a game asset — the whole rest of the
+project's models are 15 MB. The breakdown is the argument for what was cut:
+
+| | |
+|---|---|
+| images | 20.65 MB |
+| geometry | 1.64 MB |
+
+And of the images, one was **8.86 MB**: `male_casualsuit05_normal`, a normal map. The
+renderer cannot sample it. `SkinnedModel` asks a primitive for its `baseColorTexture` and
+`SkinnedEffect` has one sampler slot, so an ambient-occlusion map, a normal map or a
+roughness map is bytes nothing will ever read.
+
+So `drop_unread_images` unlinks every image that is not a base colour — the node is removed
+rather than the image deleted, because the exporter follows references and an unlinked
+image is simply not written. Then `limit_size` caps the rest at `TEXTURE_LIMIT = 1024` on
+the longest side: cloth, hair and teeth all survive at 1024 for a figure seen whole at
+three metres. **The skin is exempt** and keeps its 2048, because a face is the reason the
+figure exists at all and the project already commits a 3 MB face map for the generated one.
+
+22.29 MB → **8.83 MB**, of which the skin is 4.30. That number is a decision, not an
+accident, and it is written down here so the next person can disagree with it.
 
 ---
 
@@ -313,6 +347,17 @@ LIBGL_ALWAYS_SOFTWARE=1 DOTNET_ROLL_FORWARD=Major \
 A cutscene camera is in **millimetres** and the world is in metres — the director divides by
 1000. So a figure standing at `z: 700` with its head at 1.50 m takes a camera at `y: 1500`,
 and half a metre in front of that face is `z: 200` looking at `targetZ: 700`.
+
+### Which build you are looking at
+
+The two configurations hold separate copies of the content, and they are not kept in step
+by anything except a build. `--probe` and `--inspect-skinned` are usually run from
+`bin/Release/…`; `tools/render_cutscene.py` and the README's screenshot commands are pinned
+to `bin/Debug/…`. A model is copied with `PreserveNewest`, so a figure regenerated after
+the last Debug build **is not in the Debug output** — and a cutscene rendered from Debug
+will show the figure as it was before the regeneration, correctly and without complaint.
+This cost one round of "the new figure did not appear in the render" that had nothing to
+do with the figure.
 
 ### And measure, do not look
 
