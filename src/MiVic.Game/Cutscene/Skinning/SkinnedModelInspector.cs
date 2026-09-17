@@ -66,7 +66,11 @@ public sealed class SkinnedModelInspector : Microsoft.Xna.Framework.Game
                 var names = new List<string>();
                 foreach (SkinnedMeshPart part in model.Parts)
                 {
-                    names.Add($"{part.Name}({part.PrimitiveCount * 3}v)");
+                    // The texture is named too, and measured rather than described: a part
+                    // that renders the wrong colour is either holding the wrong texture or
+                    // lighting the right one wrongly, and those are different bugs. Size and
+                    // mean texel tell the two apart without opening a renderer.
+                    names.Add($"{part.Name}({part.PrimitiveCount * 3}v, {Describe(part.Texture)})");
                 }
 
                 Console.WriteLine($"             {string.Join(", ", names)}");
@@ -104,5 +108,35 @@ public sealed class SkinnedModelInspector : Microsoft.Xna.Framework.Game
 
         Console.Out.Flush();
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// A texture as `<width>x<height> mean r,g,b`, or `null`.
+    /// <para>
+    /// The mean is read back off the GPU rather than described, because the question it
+    /// answers — "is the dark texture dark when it gets here?" — is about the bytes that
+    /// arrived, and every attempt to answer it from the file instead has been wrong.
+    /// </para>
+    /// </summary>
+    private static string Describe(Texture2D texture)
+    {
+        if (texture == null)
+        {
+            return "null";
+        }
+
+        var sample = new Microsoft.Xna.Framework.Color[texture.Width * texture.Height];
+        texture.GetData(sample);
+
+        long r = 0, g = 0, b = 0;
+        foreach (Microsoft.Xna.Framework.Color colour in sample)
+        {
+            r += colour.R;
+            g += colour.G;
+            b += colour.B;
+        }
+
+        long count = sample.Length;
+        return $"{texture.Width}x{texture.Height} mean {r / count},{g / count},{b / count}";
     }
 }

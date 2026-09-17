@@ -88,3 +88,24 @@ def recolour(image, target, detail=0.30):
     image.pixels.foreach_set(pixels.reshape(-1))
     image.update()
     return int(pixels.shape[0])
+
+
+def scale(image, gain):
+    """Multiply an image's colour by `gain`, leaving its contrast alone.
+
+    For art calibrated against another renderer. The pack's skin is painted for
+    MakeHuman's own lighting and is bright — mean (228, 176, 142) — and under this
+    project's ambient plus directional light the brightest parts of the face arrive at the
+    frame clipped, so the forehead comes out chalk at 254 and an old man's face looks
+    painted. Scaling the map is the local fix: the lighting is the project's and is not
+    wrong for the models the project generated, and a texture that was authored elsewhere
+    is the thing that does not fit.
+    """
+    pixels = _read(image)
+    if pixels.shape[1] < 3:
+        return 0
+
+    pixels[:, :3] = np.clip(pixels[:, :3] * gain, 0.0, 1.0)
+    image.pixels.foreach_set(pixels.reshape(-1))
+    image.update()
+    return int(pixels.shape[0])
