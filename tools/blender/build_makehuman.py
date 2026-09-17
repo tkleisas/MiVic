@@ -21,15 +21,20 @@ import sys
 
 import bpy
 
-#: Which optional targets to load, and how far, for an old man who has carried weight.
-#: Names come from MPFB's bundled `data/targets`; a target that is not there is skipped
-#: rather than fatal, because the bundled set is smaller than MakeHuman's full library.
-TARGETS = [
-    ("buttocks", 0.35),
-    ("cheek", 0.30),
-    ("arms", 0.25),
-    ("asym", 0.10),
-]
+#: The body, as MakeHuman's own macro sliders. These are the parameters the whole mesh is
+#: generated from, and the default of 0.5 everywhere is what produced a woman in a dress.
+#: ``gender`` runs 0 male to 1 female; age, weight and muscle run 0 to 1 low to high.
+MACRO = {
+    "gender": 1.0,
+    "age": 0.82,
+    "muscle": 0.42,
+    "weight": 0.72,
+    "proportions": 0.42,
+    "height": 0.42,
+    "cupsize": 0.0,
+    "firmness": 0.0,
+    "race": {"asian": 0.0, "caucasian": 1.0, "african": 0.0},
+}
 
 
 def enable_mpfb():
@@ -38,50 +43,9 @@ def enable_mpfb():
     addon_utils.enable("bl_ext.blender_org.mpfb", default_set=True)
 
 
-def list_targets():
-    from bl_ext.blender_org.mpfb.services.locationservice import LocationService
-
-    found = {}
-    for root in (LocationService.get_mpfb_data(), LocationService.get_user_data()):
-        folder = os.path.join(root or "", "targets")
-        if not os.path.isdir(folder):
-            continue
-        # One level down: the bundled set groups targets by body area, so a listing of the
-        # top folder finds directories and no targets at all.
-        for area in sorted(os.listdir(folder)):
-            sub = os.path.join(folder, area)
-            if not os.path.isdir(sub):
-                continue
-            for entry in sorted(os.listdir(sub)):
-                if entry.endswith(".target"):
-                    found.setdefault(entry[:-len(".target")], os.path.join(sub, entry))
-    return found
-
-
-def shape(human):
-    """Push the bundled targets a little way towards a heavier, older body.
-
-    Values are small on purpose. A target at 1.0 is the extreme of its slider and the
-    extremes of several at once is a caricature; this figure has to read as a man at three
-    metres, not as a caricature of one.
-    """
-    from bl_ext.blender_org.mpfb.services.locationservice import LocationService
-    from bl_ext.blender_org.mpfb.services.targetservice import TargetService
-
-    available = list_targets()
-    if not available:
-        return []
-
-    applied = []
-    for name, value in TARGETS:
-        if name not in available:
-            continue
-        try:
-            TargetService.load_target(human, available[name], value)
-            applied.append(f"{name}={value}")
-        except Exception as error:  # noqa: BLE001 - a missing slider is not fatal
-            print(f"  target {name} refused: {type(error).__name__}: {error}")
-    return applied
+def describe_macro():
+    """The sliders actually used, so a build log says what kind of body was asked for."""
+    return ", ".join(f"{k}={v}" for k, v in MACRO.items() if not isinstance(v, dict))
 
 
 def main():
@@ -96,16 +60,20 @@ def main():
     from bl_ext.blender_org.mpfb.services.humanservice import HumanService
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    HumanService.create_human()
+    HumanService.create_human(macro_detail_dict=MACRO)
 
     human = bpy.data.objects.get("Human")
     if human is None:
         raise RuntimeError("MPFB made no Human object")
     print(f"human: {len(human.data.vertices)} vertices, {len(human.data.polygons)} faces")
-    print(f"targets available: {len(list_targets())}")
+    print(f"build: {describe_macro()}")
 
-    applied = shape(human)
-    print(f"shaped by: {', '.join(applied) if applied else 'nothing'}")
+    # Passing the macros to create_human stores them; it does not shape the mesh. The
+    # vertices only move when the target stack is baked, which is why the first attempt
+    # with gender=0 produced the same woman in a dress as no macros at all.
+    from bl_ext.blender_org.mpfb.services.targetservice import TargetService
+    TargetService.bake_targets(human)
+    print("macros baked")
 
     # The rig: MPFB's own standard skeleton, which is the whole reason to use this path
     # rather than the procedural one. Weights come with it.
