@@ -339,6 +339,13 @@ public static class StateHash
             }
             Mix(ref hash, state.MoraleBonusRaw);
             Mix(ref hash, state.StructuresLost);
+            if (state.StructuresLostByKind is not null)
+            {
+                for (int i = 0; i < state.StructuresLostByKind.Length; i++)
+                {
+                    Mix(ref hash, state.StructuresLostByKind[i]);
+                }
+            }
             Mix(ref hash, (long)state.ApprovedMask);
             Mix(ref hash, (int)state.PrototypeKind);
             Mix(ref hash, state.PrototypeTicksRemaining);

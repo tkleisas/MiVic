@@ -1,0 +1,9 @@
+# Q: the winter does not kill the mission: survive the cold, and the map should say snow.
+#
+#   MiVic.Game.exe --mission k2_chosin --probe tools/probe/k2-chosin.probe --probe-out artifacts/probe/k2-chosin.txt
+
+objectives
+surfaces
+teams
+tick 2400
+objectives

@@ -43,3 +43,10 @@ cutscene state
 cutscene seek 11500
 cutscene state
 shot artifacts/probe/cutscene-line3.png
+
+# The pipe, held: mid-way through the talking beat the pipe is in his hand, and the
+# smoke's anchor should read at the hand, not the mouth — the number settles what the
+# frame can only suggest.
+cutscene seek 16000
+cutscene state
+shot artifacts/probe/cutscene-held.png

@@ -47,9 +47,18 @@ public sealed class CutsceneDirector : IDisposable
     /// </summary>
     private const string SkinnedIdleClip = "Idle";
 
-    /// <summary>The node the pipe smoke rises from: an empty the asset carries, bone-parented
-    /// to the head. See tools/blender/makehuman_pipe.py.</summary>
+    /// <summary>The joint the mouth pipe rides: a child of the head. See
+    /// tools/blender/makehuman_pipe.py.</summary>
+    private const string PipeMouthNode = "pipe_mouth";
+
+    /// <summary>The free joint the clip drives while the pipe is in his hand.</summary>
+    private const string PipeHeldNode = "pipe_held";
+
+    /// <summary>The bowl marker on the mouth pipe (bone-parented to the head).</summary>
     private const string PipeBowlNode = "pipe_bowl";
+
+    /// <summary>The bowl marker for the held pipe, placed against the palm at a hold frame.</summary>
+    private const string PipeBowlHeldNode = "pipe_bowl_held";
 
     // The smoke is analytic rather than simulated: a wisp is a pure function of the
     // scene's clock, so a probe that seeks still photographs the same smoke. Eight wisps
@@ -314,6 +323,11 @@ public sealed class CutsceneDirector : IDisposable
     /// <summary>Smoke wisps drawn on the last frame.</summary>
     public int SmokeDrawn { get; private set; }
 
+    /// <summary>The pipe markers found on the figure on the last frame, with their world
+    /// scale — the evidence for which pipe the smoke follows, and for the asset carrying
+    /// the markers at all.</summary>
+    public IReadOnlyList<string> SmokeMarkers { get; private set; } = [];
+
     /// <summary>Draws the scene with its own camera and its own light.</summary>
     public void Draw(float aspect)
     {
@@ -410,17 +424,52 @@ public sealed class CutsceneDirector : IDisposable
     /// </summary>
     private void DrawPipeSmoke(in Matrix view)
     {
+        // Two anchors ride the figure: pipe_mouth on the head, pipe_held driven by the
+        // clip. The clip swaps the pipes by scaling the hidden one's joint to zero, so
+        // the live anchor is the joint whose world matrix still has size. The bowl's
+        // position comes from the marker empties the asset carries — pipe_bowl on the
+        // head, pipe_bowl_held placed against the palm at a hold frame, because a
+        // bone-parented empty bakes its parent's evaluated transform into itself, and
+        // the held joint's rest is a scale of zero: the build places that marker where
+        // the hand holds the pipe, at a frame where the pipe is in it.
         Vector3? bowl = null;
+        float bowlScale = 0.05f;
+        var found = new List<string>(2);
         foreach (Actor actor in _actors)
         {
-            if (actor.Skin is null || !actor.Skin.TryGetNodeWorld(PipeBowlNode, out Matrix nodeWorld))
+            if (actor.Skin is null)
             {
                 continue;
             }
 
-            bowl = (nodeWorld * actor.Model.ModelTransform * actor.Entity).Translation;
-            break;
+            foreach (var (joint, marker) in new[]
+            {
+                (PipeMouthNode, PipeBowlNode),
+                (PipeHeldNode, PipeBowlHeldNode),
+            })
+            {
+                if (!actor.Skin.TryGetNodeWorld(joint, out Matrix jointWorld)
+                    || !actor.Skin.TryGetNodeWorld(marker, out Matrix markerWorld))
+                {
+                    continue;
+                }
+
+                float scale = new Vector3(jointWorld.M11, jointWorld.M12, jointWorld.M13).Length();
+                found.Add($"{marker}×{scale:0.00}");
+                if (scale > bowlScale)
+                {
+                    bowlScale = scale;
+                    bowl = (markerWorld * actor.Model.ModelTransform * actor.Entity).Translation;
+                }
+            }
+
+            if (found.Count > 0)
+            {
+                break;
+            }
         }
+
+        SmokeMarkers = found;
 
         if (bowl is null)
         {

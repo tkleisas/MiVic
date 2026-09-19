@@ -117,13 +117,32 @@ namespace MiVic.Game.Cutscene.Skinning
             return Clips.FirstOrDefault(c => string.Equals(c.Name, clipName, StringComparison.OrdinalIgnoreCase));
         }
 
-        /// <summary>Finds a skeleton node index by (prefix) name, or -1.</summary>
+        /// <summary>Finds a skeleton node index by name, or -1.</summary>
         public int FindNodeIndex(string nodeName)
         {
+            // Exact match first: a prefix match on "pipe_bowl" finds "pipe_bowl_held"
+            // when it sorts earlier, and the smoke then followed the hidden pipe.
+            for (int i = 0; i < _nodeNames.Length; i++)
+                if (string.Equals(_nodeNames[i], nodeName, StringComparison.OrdinalIgnoreCase))
+                    return i;
             for (int i = 0; i < _nodeNames.Length; i++)
                 if (_nodeNames[i].StartsWith(nodeName, StringComparison.OrdinalIgnoreCase))
                     return i;
             return -1;
+        }
+
+        /// <summary>Every node name containing `fragment`, for diagnostics.</summary>
+        public IReadOnlyList<string> NodeNamesMatching(string fragment)
+        {
+            var found = new List<string>();
+            foreach (string name in _nodeNames)
+            {
+                if (name.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+                {
+                    found.Add(name);
+                }
+            }
+            return found;
         }
 
         private static SkinnedModel LoadCore(GraphicsDevice device, ModelRoot gltf)

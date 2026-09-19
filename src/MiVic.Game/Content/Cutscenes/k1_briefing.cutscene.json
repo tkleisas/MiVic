@@ -1,0 +1,71 @@
+{
+  "cutscene": "MiVicCutscene",
+  "version": 1,
+  "body": {
+    "id": "k1_briefing",
+    "kind": "Briefing",
+    "missionId": "k1_yalu",
+    "faction": "Soviet",
+    "set": "set_study",
+    "music": "march",
+    "camera": [
+      {
+        "milliseconds": 0,
+        "x": 1050,
+        "y": 1500,
+        "z": -2800,
+        "targetX": 0,
+        "targetY": 1470,
+        "targetZ": 1200
+      },
+      {
+        "milliseconds": 7000,
+        "x": 620,
+        "y": 1440,
+        "z": -1500,
+        "targetX": 0,
+        "targetY": 1460,
+        "targetZ": 1450
+      },
+      {
+        "milliseconds": 21000,
+        "x": 260,
+        "y": 1380,
+        "z": -600,
+        "targetX": 0,
+        "targetY": 1440,
+        "targetZ": 1600
+      }
+    ],
+    "figures": [
+      {
+        "asset": "personality_elder_skinned",
+        "x": 0,
+        "z": 1810,
+        "facingDegrees": 180
+      }
+    ],
+    "lines": [
+      {
+        "speaker": "personality_elder_skinned",
+        "greekText": "Ο Γιάλου είναι πίσω μας. Η Κίνα απάντησε στην πρόκληση.",
+        "milliseconds": 6000
+      },
+      {
+        "speaker": "personality_elder_skinned",
+        "greekText": "Οι Δυτικοί περνούν, και το πέρασμα πρέπει να κρατήσει με έξι μονάδες για τριάντα δευτερόλεπτα.",
+        "milliseconds": 8000
+      },
+      {
+        "speaker": "personality_elder_skinned",
+        "greekText": "Οι Κινέζοι σύμμαχοι μάχονται στη δική τους πλευρά. Δεν είσαι μόνος σε αυτή τη γραμμή.",
+        "milliseconds": 7000
+      },
+      {
+        "speaker": "personality_elder_skinned",
+        "greekText": "Κράτα το πέρασμα, και η συμμαχία έχει αποδείξει τον εαυτό της.",
+        "milliseconds": 6000
+      }
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+# Q: the finale: full-scale war, their command centre down, ours standing.
+#
+#   MiVic.Game.exe --mission x10_fullscale --probe tools/probe/x10-fullscale.probe --probe-out artifacts/probe/x10-fullscale.txt
+
+objectives
+teams
+tick 400
+objectives
+expect "the front holds past the opening" 1.0 1.0 0.0
+structures 2
+order 4 move 0 200
+order 5 move 0 200
+order 6 move 0 200
+order 7 move 0 200
+order 8 move 0 200
+order 9 move 0 200
+order 16 move 0 200
+order 17 move 0 200
+order 18 move 0 200
+order 19 move 0 200
+order 20 move 0 200
+order 21 move 0 200
+order 22 move 0 200
+order 23 move 0 200
+order 24 move 0 200
+order 25 move 0 200
+order 26 move 0 200
+order 27 move 0 200
+tick 15000
+objectives
+teams

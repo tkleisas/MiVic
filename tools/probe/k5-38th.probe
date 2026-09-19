@@ -1,0 +1,41 @@
+# Q: the parallel breaks the way every honest version of this objective ends: the command
+# centre, by name, or not at all.
+#
+#   MiVic.Game.exe --mission k5_38th --probe tools/probe/k5-38th.probe --probe-out artifacts/probe/k5-38th.txt
+
+objectives
+teams
+
+# The orders go first: four hundred ticks of somebody else's war is four hundred ticks in
+# which the script's own slots die before it can reach them. The command centre is named
+# by `structures 2` — the only slot this mission is allowed to end on.
+structures 2
+order 4 attack 18
+order 5 attack 18
+order 6 attack 18
+order 7 attack 18
+order 8 attack 18
+order 9 attack 18
+order 10 attack 18
+order 11 attack 18
+order 12 attack 18
+order 13 attack 18
+order 14 attack 18
+order 15 attack 18
+order 16 attack 18
+order 17 attack 18
+order 18 attack 18
+order 19 attack 18
+order 20 attack 18
+order 21 attack 18
+order 22 attack 18
+order 23 attack 18
+order 24 attack 18
+order 25 attack 18
+order 26 attack 18
+order 27 attack 18
+tick 400
+objectives
+expect "the line is still up after the opening" 1.0 1.0 0.0
+tick 12000
+objectives

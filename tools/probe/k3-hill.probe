@@ -1,0 +1,33 @@
+# Q: the hill is taken and held through both waves, and the waves are seen arriving.
+#
+#   MiVic.Game.exe --mission k3_hill --probe tools/probe/k3-hill.probe --probe-out artifacts/probe/k3-hill.txt
+
+objectives
+triggers
+teams
+order 4 move 0 20
+order 5 move 0 20
+order 6 move 0 20
+order 7 move 0 20
+order 8 move 0 20
+order 9 move 0 20
+order 10 move 0 20
+order 11 move 0 20
+order 12 move 0 20
+order 13 move 0 20
+order 14 move 0 20
+order 15 move 0 20
+order 16 move 0 20
+order 17 move 0 20
+order 18 move 0 20
+order 19 move 0 20
+order 20 move 0 20
+order 21 move 0 20
+order 22 move 0 20
+order 23 move 0 20
+tick 3600
+triggers
+tick 3600
+triggers
+tick 5100
+objectives

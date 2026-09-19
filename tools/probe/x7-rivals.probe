@@ -1,0 +1,28 @@
+# Q: the other war, fought against the Κινέζοι alone: their command centre, by name.
+#
+#   MiVic.Game.exe --mission x7_rivals --probe tools/probe/x7-rivals.probe --probe-out artifacts/probe/x7-rivals.txt
+
+objectives
+teams
+tick 400
+objectives
+expect "the rivals are only circling after the opening" 1.0 1.0 0.0
+structures 1
+order 4 attack 18
+order 5 attack 18
+order 6 attack 18
+order 7 attack 18
+order 8 attack 18
+order 9 attack 18
+order 16 attack 18
+order 17 attack 18
+order 18 attack 18
+order 19 attack 18
+order 20 attack 18
+order 21 attack 18
+order 22 attack 18
+order 23 attack 18
+order 24 attack 18
+order 25 attack 18
+tick 12000
+objectives

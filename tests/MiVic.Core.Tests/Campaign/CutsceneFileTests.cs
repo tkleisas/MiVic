@@ -264,4 +264,97 @@ public sealed class CutsceneFileTests
         Assert.Contains(problems, problem => problem.Contains("line 0 is empty", StringComparison.Ordinal));
         Assert.Contains(problems, problem => problem.Contains("time to read", StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// The figure every briefing is addressed by: a greatcoat, a moustache and a pipe, never a
+    /// name. The asset is the imported MakeHuman elder; the set is the study the campaign's
+    /// first briefing already stood him in.
+    /// </summary>
+    private const string HostAsset = "personality_elder_skinned";
+
+    private const string StudySet = "set_study";
+
+    /// <summary>
+    /// The scenes the build ships. A test's own directory is not the game's, so the folder is
+    /// found by walking up for the solution — the road the score tests use to reach
+    /// <c>scores/</c>. <see cref="CutsceneFile.LoadAll"/> is the loader itself, so this also
+    /// refuses a shipped file a director could not play.
+    /// </summary>
+    private static IReadOnlyList<CutsceneDefinition> ShippedScenes()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+
+        while (directory is not null &&
+               !Directory.Exists(Path.Combine(directory.FullName, "src", "MiVic.Game", "Content", "Cutscenes")))
+        {
+            directory = directory.Parent;
+        }
+
+        if (directory is null)
+        {
+            throw new InvalidOperationException("no src/MiVic.Game/Content/Cutscenes up from the test's own directory.");
+        }
+
+        return CutsceneFile.LoadAll(Path.Combine(directory.FullName, "src", "MiVic.Game", "Content", "Cutscenes"));
+    }
+
+    /// <summary>
+    /// Every mission the campaign hands out opens on a briefing, and every briefing is the
+    /// host's: the same man, in the same room, speaking the lines himself. A mission without
+    /// one would fall straight through to its match, which is what the first twenty of the
+    /// campaign used to do — and the point of writing them down is that the rule survives the
+    /// next mission somebody adds.
+    /// </summary>
+    [Fact]
+    public void EveryCampaignMissionHasABriefingWithTheHost()
+    {
+        IReadOnlyList<CutsceneDefinition> scenes = ShippedScenes();
+
+        foreach (string missionId in CampaignCatalog.Soviet.MissionIds)
+        {
+            CutsceneDefinition? briefing = CutsceneFile.ForMission(scenes, missionId, CutsceneKind.Briefing);
+
+            Assert.True(briefing is not null, $"'{missionId}' is a campaign mission with no briefing.");
+
+            if (briefing is null)
+            {
+                continue;
+            }
+
+            Assert.Equal(StudySet, briefing.Set);
+            Assert.Equal(MiVic.Core.Sim.Faction.Soviet, briefing.Faction);
+            Assert.True(
+                briefing.HasFigure(HostAsset),
+                $"the briefing for '{missionId}' ('{briefing.Id}') is not the host's: it stands " +
+                $"{string.Join(", ", briefing.Figures.Select(figure => figure.Asset))}.");
+
+            foreach (CutsceneLine line in briefing.Lines)
+            {
+                Assert.True(
+                    line.Speaker is "" or HostAsset,
+                    $"'{briefing.Id}' gives a line to '{line.Speaker}'; the host is the only voice a briefing has.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// A scene belongs to a mission that exists, and no mission is briefed twice: two files
+    /// claiming one mission would make which one plays depend on the order the disk listed
+    /// them, which is the ambiguity <see cref="CutsceneFile.ForMission"/> resolves by id and
+    /// nothing would have warned an author about.
+    /// </summary>
+    [Fact]
+    public void TheShippedScenesBriefEachMissionOnce()
+    {
+        IReadOnlyList<CutsceneDefinition> briefings = ShippedScenes()
+            .Where(scene => scene.Kind == CutsceneKind.Briefing && scene.MissionId is { Length: > 0 })
+            .ToList();
+
+        foreach (string missionId in briefings.Select(scene => scene.MissionId!).Distinct(StringComparer.Ordinal))
+        {
+            int count = briefings.Count(scene => string.Equals(scene.MissionId, missionId, StringComparison.Ordinal));
+
+            Assert.True(count == 1, $"'{missionId}' has {count} briefings; a mission opens on one scene.");
+        }
+    }
 }

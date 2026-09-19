@@ -570,7 +570,7 @@ public sealed class DeterminismTests
     /// </summary>
     [Fact]
     public void GoldenScenarioHash_IsStable()
-        => Assert.Equal(17148397231897855551UL, HashScenario(20250101));
+        => Assert.Equal(13099228887772981823UL, HashScenario(20250101));
 
     /// <summary>
     /// A fixed defensive scene with the whole sensor chain in it: a Σοβιετικοί line of two gun
@@ -612,7 +612,7 @@ public sealed class DeterminismTests
     public void GoldenSensorScenarioHash_IsStable()
     {
         Assert.Equal(HashSensorScenario(20250101), HashSensorScenario(20250101));
-        Assert.Equal(3439057954535519016UL, HashSensorScenario(20250101));
+        Assert.Equal(15636855322428881704UL, HashSensorScenario(20250101));
     }
 
     /// <summary>

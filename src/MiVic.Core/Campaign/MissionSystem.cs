@@ -191,7 +191,10 @@ public static class MissionSystem
         {
             case ObjectiveKind.DestroyStructures:
             {
-                int destroyed = world.TeamRef(definition.TargetTeam).StructuresLost;
+                ref readonly TeamState target = ref world.TeamRef(definition.TargetTeam);
+                int destroyed = definition.Role == UnitKind.None
+                    ? target.StructuresLost
+                    : target.StructuresLostByKind is { } byKind ? byKind[(int)definition.Role] : 0;
                 state.Progress = destroyed;
                 return destroyed >= definition.TargetCount;
             }
@@ -248,6 +251,22 @@ public static class MissionSystem
                 // therefore has nothing that could ever satisfy it, and the validation test
                 // refuses to ship one.
                 return definition.DeadlineTick > 0 && world.Tick >= definition.DeadlineTick;
+            }
+
+            case ObjectiveKind.EscortArea:
+            {
+                // The same arrival, read from the escorts' end: the convoy is through when
+                // enough of it is inside at once. The deadline fails it rather than deciding
+                // it — a convoy that has not arrived by then never does, which is what the
+                // generic deadline check says for every objective that is not a denial.
+                int arrivals = CountUnitsInArea(world, definition.TargetTeam, definition);
+
+                if (arrivals > state.Progress)
+                {
+                    state.Progress = arrivals;
+                }
+
+                return arrivals >= definition.TargetCount;
             }
 
             case ObjectiveKind.Scripted:

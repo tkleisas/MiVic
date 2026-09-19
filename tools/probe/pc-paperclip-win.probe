@@ -1,0 +1,44 @@
+# Q: and stopped, the mission is won — the soviets reach the convoy's road in time, and the
+# home is held while they are away.
+#
+#   MiVic.Game.exe --mission pc_paperclip --probe tools/probe/pc-paperclip-win.probe --probe-out artifacts/probe/pc-paperclip-win.txt
+#
+# The mission is nine minutes, and the Δυτικοί rebuild through all of them, so the probe
+# plays the whole mission the way a player would: production from the first tick, a small
+# fast fist on the convoy's road, and everything else at home — because the intercept is six
+# unarmed people and three escorts, and the home is a rebuilt army.
+
+objectives
+units
+
+queue 0 Tank
+queue 0 Tank
+queue 0 Tank
+queue 0 Tank
+tick 60
+
+# The fist: six tanks and the aircraft, to the middle of the convoy's road — enough to
+# kill six unarmed people and their escort, no more than that needs.
+order 4 move 40 -20
+order 5 move 40 -20
+order 6 move 40 -20
+order 9 move 40 -20
+order 14 move 40 -20
+order 15 move 40 -20
+order 16 move 40 -20
+order 17 move 40 -20
+
+tick 2000
+queue 0 Tank
+queue 0 Tank
+queue 0 Tank
+queue 0 Tank
+tick 4000
+objectives
+expect "no scientist is through by the middle of it" 0.0 0.0 0.0
+queue 0 Tank
+queue 0 Tank
+queue 0 Tank
+queue 0 Tank
+tick 6800
+objectives

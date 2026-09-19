@@ -313,14 +313,22 @@ unreadable SDL window title it reported were found and fixed.
 
 ### The campaign
 
-Three missions, each exercising a different objective kind, with Greek briefings
-and a live objectives panel (`--mission-list` prints them):
+The Soviet campaign is twenty-one missions — Η Σοβιετική Εκστρατεία — played in four
+chapters and printed in unlock order by `--mission-list`. The chapters are data:
+`MissionsSoviet` writes them, `MissionCatalog` composes them, and `CampaignCatalog`
+says which of them the track hands out, in what order.
 
-| Mission | Objective |
-|---|---|
-| `m1_bridgehead` — Το Προγεφύρωμα | destroy the Western command centre |
-| `m2_ridge` — Η Κορυφογραμμή | hold the centre with six units for thirty seconds |
-| `m3_industry` — Η Βιομηχανία της Νίκης | reach tech tier 3 and stockpile 4000 materials, keeping your HQ alive |
+| Chapter | Missions | What it adds |
+|---|---|---|
+| Η Πτώση του Βερολίνου | `b1_vistula` … `b5_reichstag` | the base and the attack, the economy and the era, the ground itself, the emplacement and the fog, then the assault |
+| Επιχείρηση Συνδετήρας | `pc_paperclip` | the moving objective — people who are not an army |
+| Κορέα | `k1_yalu` … `k5_38th` | the ally: a side fighting its own war beside yours |
+| Η Σύγχρονη Εποχή | `m1_bridgehead` … `x10_fullscale` | the full-scale war, and the alliance that breaks |
+
+**Every mission opens on a briefing**, and every briefing is the host's: the same
+figure, in the same study, played from the menu before the match (see
+[Cutscenes](#cutscenes)). A test in `CutsceneFileTests` holds the rule to the shipped
+content, so the next mission somebody adds cannot quietly skip it.
 
 Objectives are declarative predicates evaluated twice a second, not scripted
 callbacks, so a mission is as deterministic and replayable as a skirmish. A
@@ -365,9 +373,12 @@ that six placements are six entities standing, and a save.
 ### Cutscenes
 
 A mission can open on a **scripted scene**: a set, the figures standing in it, a
-camera that moves between framings, and a monologue. Starting `m1_bridgehead`
-from the menu plays its briefing first and starts the match when the scene ends;
-`--cutscene <id>` plays one on its own, and `--menu` still opens the front end.
+camera that moves between framings, and a monologue. **Every mission of the campaign
+opens on one**: starting a mission from the menu plays its briefing first and starts
+the match when the scene ends; `--cutscene <id>` plays one on its own, and `--menu`
+still opens the front end. The host is the same man in every briefing — the imported
+elder in the study — because a briefing is the campaign speaking with one voice, and
+only the words change from chapter to chapter.
 
 A scene is a file — `src/MiVic.Game/Content/Cutscenes/*.cutscene.json`, versioned
 and validated like a mission or a map. It carries a set model, a cast, a camera

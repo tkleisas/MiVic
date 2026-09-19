@@ -1,0 +1,28 @@
+# Q: the border war is fought, and won by the buildings that were named.
+#
+#   MiVic.Game.exe --mission x5_border --probe tools/probe/x5-border.probe --probe-out artifacts/probe/x5-border.txt
+
+objectives
+teams
+tick 400
+objectives
+expect "the border holds past the opening" 1.0 1.0 0.0
+structures 2
+order 4 move 0 200
+order 5 move 0 200
+order 6 move 0 200
+order 7 move 0 200
+order 8 move 0 200
+order 9 move 0 200
+order 16 move 0 200
+order 17 move 0 200
+order 18 move 0 200
+order 19 move 0 200
+order 20 move 0 200
+order 21 move 0 200
+order 22 move 0 200
+order 23 move 0 200
+order 24 move 0 200
+order 25 move 0 200
+tick 13000
+objectives

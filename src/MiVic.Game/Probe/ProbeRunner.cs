@@ -110,6 +110,23 @@ public sealed class ProbeRunner
     private int _alliedTargets;
 
     /// <summary>
+    /// The side each team held at the end of the previous tick, and which teams moved on this
+    /// one.
+    /// <para>
+    /// A betrayal lands at the end of a tick, after everything that fights has already fought:
+    /// the trigger system runs last, so a gun that fired at a team which was an enemy when it
+    /// pulled the trigger is only re-labelled a gun firing at an ally once the tick is over. The
+    /// two ledgers below read the world at the end of the tick, so without this a betrayal would
+    /// report itself as friendly fire — a reading of a relationship that did not exist when the
+    /// weapon acted. A pair whose side moved under it is not counted; a weapon still holding an
+    /// ally on any later tick is, which is what keeps the check worth having.
+    /// </para>
+    /// </summary>
+    private readonly int[] _previousSides = new int[SimConstants.TeamCount];
+    private readonly bool[] _sideMoved = new bool[SimConstants.TeamCount];
+    private SimWorld? _sidesWorld;
+
+    /// <summary>
     /// The world's own firing state, one entry per slot, read every tick.
     /// <para>
     /// The event stream is not enough to account for damage. A shot that kills what it was aimed at
@@ -2426,7 +2443,8 @@ public sealed class ProbeRunner
                 Emit($"query:   camera     {ProbeFormat.Point(position)} looking at {ProbeFormat.Point(target)}");
                 Emit($"query:   line       '{(director.VisibleText.Length > 0 ? director.VisibleText : "(nothing)")}'");
                 Emit($"query:   smoke      {ProbeFormat.Count(director.SmokeDrawn, "wisp")}" +
-                    (director.LastSmokeAnchor is { } anchor ? $" from {ProbeFormat.Point(anchor)}" : " — no pipe_bowl node"));
+                    (director.LastSmokeAnchor is { } anchor ? $" from {ProbeFormat.Point(anchor)}" : " — nowhere") +
+                    $" [{(director.SmokeMarkers.Count > 0 ? string.Join(", ", director.SmokeMarkers) : "no pipe markers")}]");
 
                 // Two invariants a transcript can hold. A scene that renders nothing, and a
                 // scene that finished without saying everything it was written to say, are both
@@ -4032,6 +4050,8 @@ public sealed class ProbeRunner
 
         SimWorld world = _host.Simulation.World;
 
+        ObserveSides(world);
+
         // This tick's events are collected before any of them is accounted for, because whether
         // a hit is explained by hostile fire is a question about the whole tick: the events
         // arrive in slot order, so the shot that caused a hit on slot 3 may come from slot 500.
@@ -4044,13 +4064,16 @@ public sealed class ProbeRunner
             _tickEvents.Add(probeEvent);
             _events.Add(probeEvent);
 
-            if (probeEvent.Type == SimEventType.ShotFired && probeEvent.AimedAtAlly)
+            if (probeEvent.Type == SimEventType.ShotFired && probeEvent.AimedAtAlly &&
+                !PairMovedUnderIt(probeEvent.TeamId, probeEvent.TargetTeamId))
             {
-                // The verdict is the shot's own, stamped by the simulation on the tick it was
-                // fired — see SimEvent.AimedAtAlly for why it is carried rather than re-derived
-                // here: a ledger read after a side change cannot tell a friendly shot from a
-                // shot history has re-labelled, and the cooldown watch beside this loop cannot
+                // The verdict is the shot's own, stamped when the client read the tick — see
+                // SimEvent.AimedAtAlly for why it is carried rather than re-derived here: a
+                // ledger read after a side change cannot tell a friendly shot from a shot
+                // history has re-labelled, and the cooldown watch beside this loop cannot
                 // tell a shot from the search-retry wait a gun that just lost its enemy enters.
+                // The one exception is the tick a side changed on: there the stamp itself is
+                // reading the new relationship, and the shot belongs to the old one.
                 _shotsAtAllies++;
             }
 
@@ -4064,6 +4087,34 @@ public sealed class ProbeRunner
 
         AccountForTick(world);
     }
+
+    /// <summary>
+    /// Reads the sides at the end of this tick and marks the teams whose side moved since the
+    /// last one. A world identity change — a restore or a rewind — starts the watch over rather
+    /// than reading every team as having moved.
+    /// </summary>
+    private void ObserveSides(SimWorld world)
+    {
+        bool known = ReferenceEquals(_sidesWorld, world);
+
+        for (int team = 0; team < SimConstants.TeamCount; team++)
+        {
+            int side = world.SideOfTeam(team);
+            _sideMoved[team] = known && side != _previousSides[team];
+            _previousSides[team] = side;
+        }
+
+        _sidesWorld = world;
+    }
+
+    /// <summary>
+    /// True when either team of a pair had its side changed under it on this tick, which is the
+    /// one tick on which a hostile relationship read at the end of the tick is not the one the
+    /// weapon acted on.
+    /// </summary>
+    private bool PairMovedUnderIt(int a, int b)
+        => ((uint)a < SimConstants.TeamCount && _sideMoved[a]) ||
+           ((uint)b < SimConstants.TeamCount && _sideMoved[b]);
 
     /// <summary>
     /// Keeps the running tally of who fired at whom and who was hurt, which is what <c>teams</c>
@@ -4084,6 +4135,12 @@ public sealed class ProbeRunner
     /// Lava is the exception and it is asked about rather than assumed: it has no owner and burns
     /// whoever stands in it, so a unit hurt on a lava cell is counted as terrain damage and not as a
     /// shot nobody fired.
+    /// </para>
+    /// <para>
+    /// A betrayal is the second exception, and it is narrower: a team whose side moved on this tick
+    /// was an enemy when the weapons acted and is an ally by the time this runs, because the trigger
+    /// system runs after combat. A pair whose side moved under it is not counted by either ledger —
+    /// see <see cref="ObserveSides"/> — while an ally held on any later tick still is.
     /// </para>
     /// </summary>
     private void AccountForTick(SimWorld world)
@@ -4177,7 +4234,7 @@ public sealed class ProbeRunner
             {
                 int heldTeam = world.GetRefBySlot(entity.TargetSlot).TeamId;
 
-                if (!world.IsHostile(entity.TeamId, heldTeam))
+                if (!world.IsHostile(entity.TeamId, heldTeam) && !PairMovedUnderIt(entity.TeamId, heldTeam))
                 {
                     _alliedTargets++;
                 }
@@ -5107,7 +5164,10 @@ public sealed class ProbeRunner
             {
                 SimEventType.ShotFired => "shot",
                 SimEventType.UnitHit => "hit",
-                _ => "destroyed",
+                SimEventType.UnitDestroyed => "destroyed",
+                SimEventType.UnitSpawned => "spawned",
+                SimEventType.ConstructionComplete => "completed",
+                _ => Type.ToString().ToLowerInvariant(),
             };
 
             var text = new StringBuilder();

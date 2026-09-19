@@ -569,16 +569,18 @@ public sealed class ObjectiveValidationTests
     }
 
     /// <summary>
-    /// <b>The four missions this repository ships validate clean, and that is a test rather than a
+    /// <b>Every mission the campaign ships validates clean, and that is a test rather than a
     /// remark.</b>
     /// <para>
     /// The validator's first honest run has to pass on the content that exists, or it is a check
     /// nobody keeps: a mission the campaign ships is played, and a complaint about one of them is
-    /// either a bug in the mission or a bug in the check. It is also the reason the sweep reports
-    /// rather than assumes: m2 asks for six units at the middle of the map and its army opens in a
-    /// corner, m4's denial is 570 m from the enemy's base, and m3's tier and materials targets are
-    /// above what the side starts with — all of which are now <em>said</em> by the code rather than
-    /// checked by hand.
+    /// either a bug in the mission or a bug in the check. It sweeps the whole catalogue rather than
+    /// the four the game shipped first, because the chapters written since — Berlin, Paperclip,
+    /// Korea and the modern era's last six — are as much the campaign as those four. It is also the
+    /// reason the sweep reports rather than assumes: m2 asks for six units at the middle of the map
+    /// and its army opens in a corner, m4's denial is 570 m from the enemy's base, and m3's tier and
+    /// materials targets are above what the side starts with — all of which are now <em>said</em> by
+    /// the code rather than checked by hand.
     /// </para>
     /// </summary>
     [Fact]

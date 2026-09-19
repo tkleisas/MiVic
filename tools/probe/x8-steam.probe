@@ -1,0 +1,13 @@
+# Q: the pact breaks at two minutes, the front changes sides, and the mission survives it.
+#
+#   MiVic.Game.exe --mission x8_steam --probe tools/probe/x8-steam.probe --probe-out artifacts/probe/x8-steam.txt
+
+objectives
+triggers
+teams
+tick 2400
+triggers
+teams
+expect "the Κινέζοι are on the western side now" 1.0 1.0 0.0
+tick 2400
+objectives

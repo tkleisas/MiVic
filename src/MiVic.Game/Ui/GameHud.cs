@@ -617,7 +617,7 @@ public sealed class GameHud
             int count = CountUnits(world, faction);
             NVec4 color = ToVector4(FactionPalette.Primary(faction));
 
-            ImGui.TextColored(color, profile.GreekName);
+            ImGui.TextColored(color, world.Roster.GreekNameOf(team));
             ImGui.SameLine(150f);
             ImGui.Text($"{count,4}");
 

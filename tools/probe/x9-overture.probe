@@ -1,0 +1,22 @@
+# Q: the factory closes, by name — the industry's half of the overture.
+#
+#   MiVic.Game.exe --mission x9_overture --probe tools/probe/x9-overture.probe --probe-out artifacts/probe/x9-overture.txt
+
+objectives
+teams
+tick 400
+objectives
+expect "the overture is still being written after the opening" 1.0 1.0 0.0
+structures 2
+order 4 attack 32
+order 5 attack 32
+order 6 attack 32
+order 7 attack 32
+order 8 attack 32
+order 16 attack 32
+order 17 attack 32
+order 18 attack 32
+order 19 attack 32
+order 20 attack 32
+tick 8000
+objectives

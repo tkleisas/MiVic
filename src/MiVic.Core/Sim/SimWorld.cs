@@ -117,6 +117,7 @@ public sealed class SimWorld
         {
             _teams[team].TechTier = 1;
             _teams[team].AbilityReadyTick = new long[AbilityCatalog.Count];
+            _teams[team].StructuresLostByKind = new int[32];
             ResearchSystem.RefreshModifiers(ref _teams[team]);
         }
     }
@@ -926,6 +927,7 @@ public sealed class SimWorld
         if (UnitCatalog.Get(e.Kind).IsBuilding && (uint)e.TeamId < SimConstants.TeamCount)
         {
             _teams[e.TeamId].StructuresLost++;
+            _teams[e.TeamId].StructuresLostByKind[(int)e.Kind]++;
         }
 
         e.Alive = false;
@@ -3400,6 +3402,20 @@ public sealed class SimWorld
         if (team.IsResearching || TechCatalog.IsCompleted(team.TechMask, tech) || project.RequiredTier > team.TechTier)
         {
             return false;
+        }
+
+        // The era's own ceiling: a mission can say where its technology stops — 1945 does not
+        // reach era IV whatever the bureau can afford. The cap is measured by where a project
+        // takes the team: an advance is refused for the tier it would grant, anything else for
+        // the tier it must already have. Both the player's button and the AI's research pass
+        // through here, so one refusal covers both.
+        if (Mission is { MaxTechTier: > 0 } capped)
+        {
+            int destination = project.Effect == TechEffect.AdvanceTier ? project.Value : project.RequiredTier;
+            if (destination > capped.MaxTechTier)
+            {
+                return false;
+            }
         }
 
         if (project.Prerequisite != TechId.None && !TechCatalog.IsCompleted(team.TechMask, project.Prerequisite))

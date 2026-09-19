@@ -190,6 +190,17 @@ public struct TeamState
     /// </summary>
     public int StructuresLost;
 
+    /// <summary>
+    /// The same ledger as <see cref="StructuresLost"/>, broken down by what was lost:
+    /// one slot per <see cref="UnitKind"/>, allocated by the world the way
+    /// <see cref="AbilityReadyTick"/> is. An objective that asks for the command
+    /// centre rather than for anything with walls reads this — see
+    /// <see cref="ObjectiveDefinition.Role"/> — because "destroy their command
+    /// centre" and "destroy anything they own" are different missions, and a gun
+    /// emplacement the ally killed should not decide which one you are playing.
+    /// </summary>
+    public int[] StructuresLostByKind;
+
     /// <summary>True while a research project is running.</summary>
     public readonly bool IsResearching => ResearchTicksRemaining > 0;
 

@@ -1,0 +1,71 @@
+{
+  "cutscene": "MiVicCutscene",
+  "version": 1,
+  "body": {
+    "id": "b1_briefing",
+    "kind": "Briefing",
+    "missionId": "b1_vistula",
+    "faction": "Soviet",
+    "set": "set_study",
+    "music": "march",
+    "camera": [
+      {
+        "milliseconds": 0,
+        "x": 1050,
+        "y": 1500,
+        "z": -2800,
+        "targetX": 0,
+        "targetY": 1470,
+        "targetZ": 1200
+      },
+      {
+        "milliseconds": 7000,
+        "x": 620,
+        "y": 1440,
+        "z": -1500,
+        "targetX": 0,
+        "targetY": 1460,
+        "targetZ": 1450
+      },
+      {
+        "milliseconds": 21000,
+        "x": 260,
+        "y": 1380,
+        "z": -600,
+        "targetX": 0,
+        "targetY": 1440,
+        "targetZ": 1600
+      }
+    ],
+    "figures": [
+      {
+        "asset": "personality_elder_skinned",
+        "x": 0,
+        "z": 1810,
+        "facingDegrees": 180
+      }
+    ],
+    "lines": [
+      {
+        "speaker": "personality_elder_skinned",
+        "greekText": "Ο Βιστούλας είναι πίσω μας. Αύριο, η πρώτη γραμμή είναι ο δρόμος για το Βερολίνο.",
+        "milliseconds": 6000
+      },
+      {
+        "speaker": "personality_elder_skinned",
+        "greekText": "Οι Ναζί κρατούν ένα φυλάκιο απέναντι. Δεν θα το κρατήσουν όταν χτυπήσουμε κατά μέτωπο.",
+        "milliseconds": 7000
+      },
+      {
+        "speaker": "personality_elder_skinned",
+        "greekText": "Χτίσε, προχώρα, χτύπα. Το κέντρο διοίκησής τους είναι το κεφάλι αυτής της άμυνας.",
+        "milliseconds": 6000
+      },
+      {
+        "speaker": "personality_elder_skinned",
+        "greekText": "Κόψε το κεφάλι, και η γραμμή λυγίζει μόνη της.",
+        "milliseconds": 5000
+      }
+    ]
+  }
+}

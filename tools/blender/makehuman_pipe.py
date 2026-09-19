@@ -153,11 +153,14 @@ def _fill_uvs(mesh):
 
 
 def build_pipe(armature, nose_tip):
-    """Create the pipe at the mouth below `nose_tip`, weighted to `head`.
+    """Create the pipe — twice — at the mouth below `nose_tip`. Returns both objects.
 
-    The shank leaves the corner of the mouth — down, forward and a little to
-    the figure's left — and the bowl hangs at its end, tipped forward as a lit
-    pipe is. Returns the new object.
+    One pipe is smoked and one is held, and they are one mesh: `Human.pipe` rides the
+    `pipe_mouth` bone (a child of the head), `Human.pipe_held` rides the free
+    `pipe_held` bone the clip drives. The clip swaps their visibility with scale keys
+    on the frame the hand is on the bowl, where the two already coincide. Each gets a
+    marker empty at the bowl's rim — `pipe_bowl` and `pipe_bowl_held` — bone-parented,
+    so the cutscene's smoke can follow whichever pipe is the visible one.
     """
     mouth = Vector((nose_tip.x + MOUTH_OFF_MIDLINE,
                     nose_tip.y + MOUTH_BEHIND_NOSE,
@@ -175,9 +178,6 @@ def build_pipe(armature, nose_tip):
     bm.to_mesh(mesh)
     bm.free()
 
-    pipe = bpy.data.objects.new("Human.pipe", mesh)
-    bpy.context.collection.objects.link(pipe)
-
     # Three materials, assigned per face: vulcanite for the mouthpiece's last
     # centimetre, briar for the rest, char for the chamber floor.
     materials = [_solid_material("pipe_briar", BRIAR),
@@ -193,21 +193,32 @@ def build_pipe(armature, nose_tip):
         elif (centre - mouth).length < 0.012:
             polygon.material_index = 1      # vulcanite at the teeth
 
-    _fill_uvs(mesh)
+    made = []
+    for name, bone_name in (("Human.pipe", "pipe_mouth"), ("Human.pipe_held", "pipe_held")):
+        own_mesh = mesh if not made else mesh.copy()
+        pipe = bpy.data.objects.new(name, own_mesh)
+        bpy.context.collection.objects.link(pipe)
 
-    # Smoked, not held: every vertex rides the head bone, so the pipe turns
-    # when the man turns his head and needs no animation of its own.
-    group = pipe.vertex_groups.new(name="head")
-    group.add(list(range(len(mesh.vertices))), 1.0, "REPLACE")
-    pipe.parent = armature
-    modifier = pipe.modifiers.new("Armature", "ARMATURE")
-    modifier.object = armature
+        # Every vertex rides the pipe's own bone and nothing else.
+        group = pipe.vertex_groups.new(name=bone_name)
+        group.add(list(range(len(own_mesh.vertices))), 1.0, "REPLACE")
+        pipe.parent = armature
+        modifier = pipe.modifiers.new("Armature", "ARMATURE")
+        modifier.object = armature
 
-    # A marker for the smoke: an empty at the bowl's rim, bone-parented to the
-    # head. It exports as a node in the glb, and the cutscene reads that node's
-    # world transform each frame rather than trusting a constant — the bowl's
-    # place is the pipe's business, and this file is where the pipe is made.
+        made.append(pipe)
+
+    _fill_uvs(made[0].data)
+    _fill_uvs(made[1].data)
+
+    # A marker for the smoke at each pipe's bowl. The mouth pipe's marker rides the
+    # head, as it always has. The held one's rides the *hand*, and it is placed at a
+    # hold frame, not at bind: a bone-parented empty bakes its parent's evaluated
+    # transform into its own, and the held bone's bind is a scale of zero — placed at
+    # the frame the hand is on the pipe, the bake is honest. The director gates the
+    # two markers by the pipe joints' scales, so the smoke follows the visible pipe.
     bowl_top = bowl_centre + Matrix.Rotation(math.radians(12.0), 4, "X") @ Vector((0.0, 0.0, 0.018))
+
     marker = bpy.data.objects.new("pipe_bowl", None)
     bpy.context.collection.objects.link(marker)
     marker.parent = armature
@@ -215,4 +226,24 @@ def build_pipe(armature, nose_tip):
     marker.parent_bone = "head"
     marker.matrix_world = Matrix.Translation(bowl_top)
 
-    return pipe
+    # Where the bowl stands in the hand: the palm, plus the grip offset the clip
+    # drives the held bone by, plus the bowl's own offset from the bone turned by the
+    # clip's 140° stand-up. Measured at frame 312, the middle of the talking beat.
+    bpy.context.scene.frame_set(312)
+    bpy.context.view_layer.update()
+    hand = armature.pose.bones.get("hand_l")
+    if hand is not None:
+        grip = Vector((0.0, 0.015, 0.025))
+        stood_up = Matrix.Rotation(math.radians(-140.0), 4, "X") @ (bowl_top - mouth)
+        held_bowl = (armature.matrix_world @ hand.head) + grip + stood_up
+
+        marker = bpy.data.objects.new("pipe_bowl_held", None)
+        bpy.context.collection.objects.link(marker)
+        marker.parent = armature
+        marker.parent_type = "BONE"
+        marker.parent_bone = "hand_l"
+        marker.matrix_world = Matrix.Translation(held_bowl)
+
+    bpy.context.scene.frame_set(1)
+    bpy.context.view_layer.update()
+    return made

@@ -377,13 +377,19 @@ lathed from a profile, three solid-colour materials (briar, vulcanite, char) car
 base-colour factor is not one. It hangs at the corner of the mouth, 11 mm off the
 midline, measured from the nose tip.
 
-Every vertex is weighted to the `head` bone alone: the pipe is smoked, not held, so it
-turns when the man turns his head and the `Idle` clip stays as small as it is. The build
-also drops an empty named `pipe_bowl` at the bowl's rim, bone-parented to the head, and
-the cutscene's smoke rises from that node's world transform each frame — analytic wisps,
-a pure function of the scene clock, so a probe that seeks still photographs the same
-smoke. `CutsceneDirector.DrawPipeSmoke` owns it; `cutscene state` in a probe reports the
-anchor and the wisp count.
+Every vertex is weighted to the pipe's own bone alone — `pipe_mouth`, a child of the
+head, for the pipe in his teeth, and `pipe_held`, a free bone the clip drives, for the
+pipe in his hand (see §4 for the swap). The smoke's markers work the same split:
+`pipe_bowl` rides the head, and `pipe_bowl_held` rides the hand, placed at a hold frame
+rather than at bind — a bone-parented empty bakes its parent's *evaluated* transform
+into itself, and the held bone's bind is a scale of zero, so a marker placed at bind
+reads from inside his hip. The director gates the two by the pipe joints' scales, and
+the smoke follows whichever pipe is visible (`CutsceneDirector.DrawPipeSmoke`;
+`cutscene state` in a probe reports both markers and their scales). Two game-side notes
+from the same round: `SkinnedModel.FindNodeIndex` matches exact names before prefixes
+now, because `"pipe_bowl"` prefix-matched `pipe_bowl_held` and the smoke followed the
+hidden pipe; and the held bone is free rather than parented to the hand, because a
+child of the wrist would inherit its turn as a constant tilt.
 
 The bowl's tilt is a `Matrix.Rotation` about X — a forward pitch. The first version built
 it with `rotation_difference` from the X axis, which yaws the bowl 78° and leaves the
@@ -435,20 +441,29 @@ ends up pointing where it was asked to. `bpy.context.view_layer.update()` betwee
 what keeps `head`/`tail` current.
 
 The result is keyframed into an action named **`Idle`**, because `CutsceneDirector` asks for
-that clip by name and a figure with no clips falls back to the bind pose. The loop is sixteen
-seconds, fifteen keys: stand, breathe, the left hand comes up and holds the pipe while he draws
-on it, then the right hand rises and makes the point of the briefing, and the loop closes where
-it opened. Each key blends between named pose sets (`STANDING`, `BREATHE`, `GRASP`, `GESTURE`)
-by weight, so a bone never snaps, and bones not in any set are aimed at their own captured rest
-direction — a weight of zero is exactly the figure that shipped before the gestures existed.
+that clip by name and a figure with no clips falls back to the bind pose. The loop is
+twenty-four seconds, seventeen keys, deliberately slow: stand, breathe, the hand comes up
+unhurried, and the pipe **leaves his mouth** — he talks over it for a while, two beats of
+the hand and one of the free arm, then it goes back the way it came. Each key blends
+between named pose sets (`STANDING`, `BREATHE`, `GRASP`, `HELD`, `GESTURE`) by weight, so
+a bone never snaps, and bones not in any set are aimed at their own captured rest
+direction — a weight of zero is exactly the figure that shipped before the gestures
+existed.
+
+A pipe that leaves the mouth is two pipes, and the clip swaps them: `Human.pipe` rides
+`pipe_mouth`, a bone parented to the head, and `Human.pipe_held` rides `pipe_held`, a
+free bone the clip drives by *measured* position — the hand's place at each key is read
+off the pose the pass just wrote, never a constant. The swap is a scale crossfade keyed
+while the hand is on the bowl, where the two pipes already coincide.
 
 Two traps were found by number and are worth keeping. **`frame_set` before aiming, never
-after**: setting the frame re-evaluates the action and overwrites the pose with the keys already
-in it, so a loop that aimed and *then* set the frame keyed the reverted pose — which is how the
-old three-key loop exported "stand, stand, stand" and called it breathing. And the gesture is
-checked numerically at build time: the build prints the fingertip position at the grasp's peak
-against the pipe's grip point, so a weak reach reads as millimetres of gap rather than as a
-screenshot somebody squints at. 159 channels, 16.0 s.
+after**: setting the frame re-evaluates the action and overwrites the pose with the keys
+already in it, so a loop that aimed and *then* set the frame keyed the reverted pose —
+which is how the old three-key loop exported "stand, stand, stand" and called it
+breathing. And the gesture is checked numerically at build time: the build prints the
+fingertip position at the grasp's peak against the pipe's grip point, so a weak reach
+reads as millimetres of gap rather than as a screenshot somebody squints at. 165
+channels, 24.0 s.
 
 ---
 

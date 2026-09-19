@@ -63,6 +63,49 @@ public sealed class SkinnedModelInspector : Microsoft.Xna.Framework.Game
                                   + (model.JointCount > 72 ? "  OVER THE 72-BONE LIMIT" : string.Empty));
                 Console.WriteLine($"  parts      {model.Parts.Count}");
 
+                // Marker and prop nodes by name: an empty the generator placed for the
+                // game to read (the pipe's bowl, for the smoke) proves the loader kept it.
+                var marked = model.NodeNamesMatching("pipe");
+                if (marked.Count > 0)
+                {
+                    Console.WriteLine($"  markers    {string.Join(", ", marked)}");
+
+                    // Sample the first clip at two moments and report the pipe bones'
+                    // scale through the pose path the game draws with: a marker that
+                    // measures zero in-game measures zero here, and the channel dump
+                    // above then says whether the file or the sampling owns the zero.
+                    foreach (float t in new[] { 1.0f, 16.0f })
+                    {
+                        var pose = new SkinnedModel.NodePose[model.NodeCount];
+                        var clip = model.Clips[0];
+                        model.SampleClip(clip, t, pose, loop: true);
+                        Span<Matrix> worlds = stackalloc Matrix[model.NodeCount];
+                        model.ComputeWorldMatrices(pose, worlds);
+                        foreach (string m in new[] { "pipe_mouth", "pipe_held" })
+                        {
+                            int idx = model.FindNodeIndex(m);
+                            if (idx < 0) continue;
+                            var w = worlds[idx];
+                            float sc = new Vector3(w.M11, w.M12, w.M13).Length();
+                            Console.WriteLine($"             t={t,5:0.0}s {m}: pose S={pose[idx].S}, world scale {sc:0.00}");
+                        }
+
+                        // And through the instance path the director draws with —
+                        // the same numbers must come out, or the difference owns the bug.
+                        var instance = new SkinnedModelInstance(model);
+                        instance.Play("Idle");
+                        instance.PoseAt(t);
+                        foreach (string m in new[] { "pipe_mouth", "pipe_held", "pipe_bowl", "pipe_bowl_held" })
+                        {
+                            if (instance.TryGetNodeWorld(m, out Matrix nodeWorld))
+                            {
+                                float sc = new Vector3(nodeWorld.M11, nodeWorld.M12, nodeWorld.M13).Length();
+                                Console.WriteLine($"             t={t,5:0.0}s instance {m} world scale {sc:0.00}");
+                            }
+                        }
+                    }
+                }
+
                 var names = new List<string>();
                 foreach (SkinnedMeshPart part in model.Parts)
                 {

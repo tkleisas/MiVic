@@ -1,0 +1,16 @@
+# Q: the heights hold the ford — can the mission be lost through it?
+#
+#   MiVic.Game.exe --mission b3_seelow --probe tools/probe/b3-seelow.probe --probe-out artifacts/probe/b3-seelow.txt
+#
+# The denial is the primary objective, and it can only fail one way: four of theirs through
+# the gap. The probe walks them there itself, because a denial that cannot fail is not one.
+
+objectives
+units western 6
+tick 200
+order 30 move -270 -270
+order 31 move -270 -270
+order 32 move -270 -270
+order 33 move -270 -270
+tick 12000
+objectives

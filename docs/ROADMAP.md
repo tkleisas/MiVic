@@ -101,13 +101,15 @@ ties a title to a *situation*. "Come and take our weapons" and "Who dares wins" 
 different games from each other, and the difference has to be in the map, the forces
 and the objective kinds — not only in the briefing text.
 
-**Built: the briefing the campaign opens on.** A mission can be introduced by a
-scripted scene rather than by a paragraph in the HUD: a set, the figures standing in
-it, a camera that moves between framings, and a monologue typed on screen over the
-faction's own score. `m1_bridgehead` has one, played from the menu before the match
-and reachable on its own with `--cutscene`. A scene is a versioned file, so the words
-are content an author edits rather than a string in the client, and the loader refuses
-one a director could not play.
+**Built: a briefing on every mission.** A mission is introduced by a scripted scene
+rather than by a paragraph in the HUD: a set, the figures standing in it, a camera
+that moves between framings, and a monologue typed on screen over the faction's own
+score. Every mission of the Soviet campaign has one — the host is the same imported
+elder in the same study, and the words are what changes — played from the menu before
+the match and reachable on its own with `--cutscene <id>`. A scene is a versioned
+file, so the words are content an author edits rather than a string in the client, the
+loader refuses one a director could not play, and a test in `CutsceneFileTests` refuses
+a campaign mission that ships without one.
 
 **The rule the fiction keeps, and why it is written down:** the figures are the era's
 personalities — a greatcoat, a moustache, a pipe — and they are **never named**. No
@@ -119,10 +121,10 @@ one.
 
 **What is deliberately not built yet:** voices (the project has no recorded audio at
 all, and text over a procedural score needs none), mid-mission scenes raised from a
-trigger, debriefs, and more than one figure speaking. The figures are rigid parts with
-no skeleton, so a scene gestures — a slow turn of the head, the breath of the arms —
-and does not perform; skinning is the tier that would change that, and it is a project
-of its own.
+trigger, debriefs, and more than one figure speaking. The briefing figure is imported
+and skinned — it breathes, draws on its pipe and takes it in hand — but a scene still
+gestures rather than performs: the only clip it has is an idle one, and a second speaker
+would be a second performance the pipeline has not built.
 
 **The face, and why it is a surface and not a stack of boxes.** A soldier's head is a
 box with a helmet on it, which is what a soldier is at forty metres. At three metres the
@@ -137,6 +139,14 @@ curve — `BROW_Z`, `EYE_Z`, `LIP_Z` are that curve sampled — because a mousta
 by eye lands on the forehead. This is the cheap tier between "parts-rigged figure" and
 "skinned figure": the geometry carries the likeness and the parts contract still drives
 the animation.
+
+**The face was rebuilt again, and imported this time.** The warped sphere above is the
+generated tier, and it is still what a set or a second personality would be built from.
+The figure a briefing actually stands in the frame is **imported**: a MakeHuman base mesh
+with a real skull and a real skin, rigged, with an `Idle` clip, a mesh moustache and an
+authored pipe. See [MAKEHUMAN.md](MAKEHUMAN.md) and the cutscene section of the README.
+A face three metres away for eight seconds was the one thing the generated stack of boxes
+was never going to carry, and the honest answer was to stop asking it to.
 
 ---
 

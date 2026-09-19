@@ -120,7 +120,7 @@ public sealed class MainMenu
     {
         MenuCommand? raised = null;
 
-        string? next = CampaignProgress.NextUnwon(MissionCatalog.All.Select(m => m.Id), progress.WonMissions);
+        string? next = CampaignProgress.NextUnwon(CampaignCatalog.Soviet.MissionIds, progress.WonMissions);
 
         // Συνέχεια: the campaign where the player left it. When nothing has been won this
         // is the first mission, and when everything has been won the campaign is over and
@@ -143,7 +143,7 @@ public sealed class MainMenu
 
         if (DrawButton("Νέα εκστρατεία", "ξεκινήστε από την αρχή"))
         {
-            raised = new MenuCommand(MenuCommandKind.StartMission, MissionCatalog.All[0].Id, ResetProgress: true);
+            raised = new MenuCommand(MenuCommandKind.StartMission, CampaignCatalog.Soviet.MissionIds[0], ResetProgress: true);
         }
 
         if (DrawButton("Αποστολές", "αυτές που η εκστρατεία έχει κρίνει"))
@@ -175,8 +175,15 @@ public sealed class MainMenu
 
         bool unlocked = true;
 
-        foreach (MissionDefinition mission in MissionCatalog.All)
+        foreach (string missionId in CampaignCatalog.Soviet.MissionIds)
         {
+            MissionDefinition? found = MissionCatalog.Find(missionId);
+
+            if (found is not { } mission)
+            {
+                continue;
+            }
+
             bool won = progress.HasWon(mission.Id);
 
             if (won || unlocked)

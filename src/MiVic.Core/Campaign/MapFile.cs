@@ -371,6 +371,10 @@ public static class MapFile
                 writer.WriteString("faction", value.FactionOf(team).ToString());
                 writer.WriteNumber("side", value.SideOf(team));
                 writer.WriteBoolean("judged", value.IsJudged(team));
+                if (value.GreekNameOf(team) != FactionProfile.For(value.FactionOf(team)).GreekName)
+                {
+                    writer.WriteString("greekNameOverride", value.GreekNameOf(team));
+                }
                 writer.WriteEndObject();
             }
 

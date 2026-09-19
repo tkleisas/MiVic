@@ -1,0 +1,29 @@
+# Q: the supply convoy lives because the road is guarded — the escort objective, played.
+#
+#   MiVic.Game.exe --mission k4_offensive --probe tools/probe/k4-offensive.probe --probe-out artifacts/probe/k4-offensive.txt
+
+objectives
+units
+tick 60
+
+# The road's middle, guarded: the convoy walks through it on its own legs.
+order 4 move 190 40
+order 5 move 190 40
+order 6 move 190 40
+order 7 move 190 40
+order 8 move 190 40
+order 9 move 190 40
+order 10 move 190 40
+order 11 move 190 40
+order 12 move 190 40
+order 13 move 190 40
+order 14 move 190 40
+order 15 move 190 40
+order 16 move 190 40
+order 17 move 190 40
+
+tick 6000
+objectives
+expect "the convoy is not all through yet" 1.0 1.0 0.0
+tick 7000
+objectives

@@ -138,4 +138,14 @@ public sealed record MissionDefinition(
     /// </para>
     /// </summary>
     public Sim.MatchRoster Roster { get; init; } = Sim.MatchRoster.StandardSkirmish;
+
+    /// <summary>
+    /// The highest tier this mission's era can research, or zero for no cap. The Berlin of 1945
+    /// has no drones, no robots and no nuclear anything, and the Δυτικοί of that war reach their
+    /// later eras in somebody else's missions — so a mission says what its technology stops at,
+    /// and the bureau refuses a project above it exactly as it refuses one the tier has not
+    /// reached. Research that is never started is research the AI never waits on either, since
+    /// both ask the same <c>SimWorld</c> question.
+    /// </summary>
+    public int MaxTechTier { get; init; } = 0;
 }

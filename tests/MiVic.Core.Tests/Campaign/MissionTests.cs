@@ -50,10 +50,12 @@ public sealed class MissionTests
     [Fact]
     public void CatalogHasPlayableMissions()
     {
-        // Four, where this said three before the trigger layer existed: the fourth is
-        // 'm4_pass', the mission that uses the layer — a mission cannot be shipped without being
-        // in the catalog, and the catalog is what --mission <id> looks a mission up in.
-        Assert.Equal(4, MissionCatalog.All.Length);
+        // Twenty-one: the five of the Berlin chapter — the campaign's first chapter is its
+        // tutorial, and it landed with the era machinery — then Επιχείρηση Συνδετήρας, the five
+        // of the Korean chapter that introduces the ally, the four the campaign already had,
+        // and the six of the modern era that close it. A mission cannot be shipped without
+        // being in the catalog, and the catalog is what --mission <id> looks a mission up in.
+        Assert.Equal(21, MissionCatalog.All.Length);
 
         foreach (MissionDefinition mission in MissionCatalog.All)
         {
@@ -65,19 +67,22 @@ public sealed class MissionTests
         }
 
         // The three missions the campaign has always had are fought by the standard
-        // three-faction match: the ally is a side the mission declares rather than a column of
-        // the scenario builder, and these three declare the same sides they always have.
-        //
-        // The demonstration mission is the exception, and deliberately so. It is a script, and the
-        // campaign's Κινέζοι ally is played by the computer: an ally fighting its own war three
-        // hundred metres away would decide when this mission's triggers fire, which is a mission
-        // whose second act depends on somebody else's battle. So it declares the two sides it is
-        // about — Σοβιετικοί against Δυτικοί — and the layer is demonstrated on a map with no
-        // third party on it.
+        // three-faction match. Everything since declares its own sides — the demonstration by
+        // design, the Berlin chapter by era — and every declaration puts the player on side 0,
+        // which is what the victory rule and the client both read as "us".
         foreach (MissionDefinition mission in MissionCatalog.All)
         {
-            MatchRoster expected = mission.HasTriggers ? MatchRoster.Duel : MatchRoster.StandardSkirmish;
-            Assert.Equal(expected, mission.Roster);
+            Assert.Equal(0, mission.Roster.PlayerSide);
+
+            if (mission.Id is "m1_bridgehead" or "m2_ridge" or "m3_industry")
+            {
+                Assert.Equal(MatchRoster.StandardSkirmish, mission.Roster);
+            }
+            else
+            {
+                Assert.True(mission.Roster.TeamsInPlay >= 2,
+                    $"{mission.Id} declares fewer than the two sides a mission is fought between.");
+            }
         }
     }
 
@@ -182,6 +187,125 @@ public sealed class MissionTests
         world.Spawn(Faction.Western, 2, UnitKind.Factory, new WorldPos(0, 0, 200_000), default, 2_000);
 
         Assert.Equal(1, world.TeamRef(2).StructuresLost);
+    }
+
+    [Fact]
+    public void ARoleFilteredObjectiveIgnoresOtherStructures()
+    {
+        // The m1 auto-win, as a test: the objective asks for the command centre, so
+        // anything else the ally's AI happens to kill must not decide the mission.
+        SimWorld world = Mission("m1_bridgehead");
+
+        EntityId emplacement = world.Spawn(Faction.Western, 2, UnitKind.GunEmplacement,
+            new WorldPos(0, 0, 200_000), default, 1_400);
+        world.Despawn(emplacement);
+        world.RunTicks(MissionSystem.CheckInterval);
+
+        Assert.Equal(1, world.TeamRef(2).StructuresLost);
+        Assert.Equal(1, world.TeamRef(2).StructuresLostByKind[(int)UnitKind.GunEmplacement]);
+        Assert.Equal(0, world.TeamRef(2).StructuresLostByKind[(int)UnitKind.CommandCentre]);
+        Assert.True(world.Objectives[0].IsPending,
+            "A structure that is not the command centre completed a command-centre objective.");
+        Assert.Equal(GameOutcome.Ongoing, world.Outcome);
+
+        world.Despawn(FirstStructureOf(world, 2));
+        world.RunTicks(MissionSystem.CheckInterval);
+
+        Assert.Equal(1, world.TeamRef(2).StructuresLostByKind[(int)UnitKind.CommandCentre]);
+        Assert.True(world.Objectives[0].IsComplete,
+            "The command centre falling did not complete the command-centre objective.");
+        Assert.Equal(GameOutcome.Victory, world.Outcome);
+    }
+
+    private static SimWorld Synthetic(MissionDefinition mission)
+    {
+        var world = Scenario.NewWorld(ScenarioKind.Mission, mission.Seed, Capacity, mission);
+        Scenario.BuildMission(world, mission);
+        return world;
+    }
+
+    private static MissionDefinition EscortMission(int deadline, int target) => new(
+        Id: "test_escort",
+        GreekTitle: "δοκιμή συνοδείας",
+        GreekBriefing: "δοκιμή",
+        Seed: 20250101UL,
+        PlayerBase: new WorldPos(-180_000, 0, -180_000),
+        AllyBase: default,
+        EnemyBase: new WorldPos(0, 0, 200_000),
+        PlayerUnits: 10,
+        AllyUnits: 0,
+        EnemyUnits: 4,
+        Objectives:
+        [
+            new ObjectiveDefinition(
+                ObjectiveKind.EscortArea,
+                "Φτάστε στο αεροδρόμιο.",
+                TargetTeam: 2,
+                TargetCount: target,
+                CentreX: 0,
+                CentreZ: 0,
+                RadiusMm: 40_000,
+                DeadlineTick: deadline),
+        ],
+        TimeLimitTicks: 1_200)
+    {
+        Roster = MatchRoster.Duel,
+    };
+
+    [Fact]
+    public void EscortAreaCompletesWhenTheConvoyArrives()
+    {
+        SimWorld world = Synthetic(EscortMission(deadline: 600, target: 2));
+
+        Assert.True(world.Objectives[0].IsPending);
+        Assert.Equal(0, world.Objectives[0].Progress);
+
+        world.Spawn(Faction.Western, 2, UnitKind.Infantry, new WorldPos(0, 0, 0), default, 100);
+        world.Spawn(Faction.Western, 2, UnitKind.Infantry, new WorldPos(0, 0, 0), default, 100);
+        world.RunTicks(MissionSystem.CheckInterval);
+
+        Assert.Equal(2, world.Objectives[0].Progress);
+        Assert.True(world.Objectives[0].IsComplete, "Two arrivals did not complete the escort.");
+        Assert.Equal(GameOutcome.Victory, world.Outcome);
+    }
+
+    [Fact]
+    public void EscortAreaFailsAtTheDeadline()
+    {
+        SimWorld world = Synthetic(EscortMission(deadline: 200, target: 2));
+
+        world.Spawn(Faction.Western, 2, UnitKind.Infantry, new WorldPos(0, 0, 0), default, 100);
+        world.RunTicks(MissionSystem.CheckInterval);
+
+        Assert.True(world.Objectives[0].Progress == 1,
+            "One arrival was read as a high-water mark of more than one.");
+        Assert.True(world.Objectives[0].IsPending);
+
+        world.RunTicks(210);
+
+        Assert.True(world.Objectives[0].IsFailed, "A convoy that did not make the deadline did not fail.");
+        Assert.Equal(GameOutcome.Defeat, world.Outcome);
+    }
+
+    [Fact]
+    public void AMissionCanCapItsEra()
+    {
+        MissionDefinition era = EscortMission(deadline: 600, target: 2) with { MaxTechTier = 1 };
+        SimWorld world = Synthetic(era);
+
+        EntityId bureau = world.Spawn(Faction.Soviet, 0, UnitKind.DesignBureau,
+            new WorldPos(-180_000, 0, -180_000), default, 1_500);
+        world.TeamRef(0).TechTier = 2;
+        world.TeamRef(0).Materials = 10_000;
+
+        world.Enqueue(SimCommand.Research(bureau, TechId.SovietAdvance2, world.Tick + 1, 0));
+        int treasury = world.Team(0).Materials;
+        world.Step();
+
+        Assert.False(world.Team(0).IsResearching,
+            "A tier-2 project ran in a mission whose era stops at tier 1.");
+        Assert.True(world.Team(0).Materials >= treasury,
+            "The refused project was still paid for.");
     }
 
     [Fact]
@@ -380,10 +504,14 @@ public sealed class MissionTests
         // no triggers hashes nothing new, so the layer cannot disturb a mission that does not use
         // it. The fourth hash is a new mission's, not a moved one's.
         //
-        // Last changed by the audit that closed the state hash: every world's hash moved
-        // because the hash now folds in the entity fields it had been skipping, the route's
-        // own waypoints, and the corrected rounding of negative fixed-point products. None
-        // of the four missions changed; the fingerprint did.
+        // Last changed by the modern era's last six missions landing: the list grew to twenty-one,
+        // x5 to x10 appended their own six fingerprints after m1 to m4, and no earlier mission
+        // moved when they did. Before that it was the structure-loss ledger gaining a per-kind
+        // breakdown: the hash now folds the 32 slots of it for every team, so every world's hash
+        // moved with the field set again — no mission changed, the fingerprint did. Before that it
+        // was the audit that closed the state hash: every world's hash moved because the hash now
+        // folds in the entity fields it had been skipping, the route's own waypoints, and the
+        // corrected rounding of negative fixed-point products.
         //
         // Before that it was the production queues becoming state: a mission's starting buildings have
         // empty queues and their hashes moved anyway, which is exactly why the queue field is mixed
@@ -402,10 +530,27 @@ public sealed class MissionTests
         // cell.
         ulong[] expected =
         [
-            653583401159573312UL,
-            16436917479652038972UL,
-            15959304878872880113UL,
-            5603431237667183566UL,
+            9847799334465133416UL,
+            3283873620813569964UL,
+            4508879147646755874UL,
+            14817049138732711902UL,
+            1444733445562834875UL,
+            2403530285048726468UL,
+            3585420072741336489UL,
+            13890578630252119789UL,
+            15018273258975708685UL,
+            921221812242837666UL,
+            12987784401365476443UL,
+            10506566667300618048UL,
+            2314134954811554108UL,
+            13962516197684823025UL,
+            5050561699448869838UL,
+            9492141598485630500UL,
+            7506501707841203820UL,
+            3680081011739275840UL,
+            2195014991599519820UL,
+            2876269079344585704UL,
+            4729437655215668420UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)

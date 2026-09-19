@@ -1,0 +1,9 @@
+# Q: does the bridgehead hold? The economy chapter: hold the area, reach the tier if you can.
+#
+#   MiVic.Game.exe --mission b2_oder --probe tools/probe/b2-oder.probe --probe-out artifacts/probe/b2-oder.txt
+
+objectives
+teams
+tick 400
+objectives
+expect "the bridgehead is unbroken after twenty seconds" 1.0 1.0 0.0

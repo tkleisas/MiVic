@@ -1,0 +1,19 @@
+# Q: the convoy walks, and if nobody stops it, the agents win — the denial must be able to fail.
+#
+#   MiVic.Game.exe --mission pc_paperclip --probe tools/probe/pc-paperclip-loss.probe --probe-out artifacts/probe/pc-paperclip-loss.txt
+#
+# Nobody lifts a finger: the scientists are walked to the runway by their escort, four of
+# them board, and the mission is lost. A denial that cannot fail is not one, so the loss is
+# the first thing to watch.
+
+objectives
+teams
+tick 120
+expect "the convoy is on the road" 1.0 1.0 0.0
+unit 49
+unit 52
+tick 3000
+objectives
+expect "the convoy is not through yet" 0.0 0.0 0.0
+tick 8000
+objectives

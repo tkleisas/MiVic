@@ -1,0 +1,20 @@
+# Q: the flag goes up. The Reichstag falls, the trigger knows it, the scene completes.
+#
+#   MiVic.Game.exe --mission b5_reichstag --probe tools/probe/b5-reichstag.probe --probe-out artifacts/probe/b5-reichstag.txt
+#
+# Both objectives are watched: the ledger (the building, by role) and the scripted one, which
+# only the mission can complete. The garrison is the mission's own spawn, so the transcript
+# should say it stood there from the first tick — and that it no longer does.
+
+objectives
+triggers
+teams
+tick 400
+expect "the assault has not been won by the opening" 1.0 1.0 0.0
+
+# The Reichstag and its guns, six thousand hit points of building.
+blast 0 20 35 7000 0
+tick 100
+triggers
+objectives
+teams

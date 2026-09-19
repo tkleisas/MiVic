@@ -1,0 +1,32 @@
+# Q: does the Berlin chapter's first mission play, and is it won only by the command centre?
+#
+#   MiVic.Game.exe --mission b1_vistula --probe tools/probe/b1-vistula.probe --probe-out artifacts/probe/b1-vistula.txt
+#
+# The regression this mission was written against: m1 used to be decided in seconds by any
+# structure the ally's AI happened to kill. b1 has no ally, and its objective names the
+# command centre, so the first thousand ticks belong to the war and not to the ledger. The
+# second half is the war itself: the whole starting force is sent at the command centre,
+# which is the only way this mission is allowed to end.
+
+objectives
+teams
+tick 1000
+objectives
+expect "the war is still on a thousand ticks in" 1.0 1.0 0.0
+
+# The assault: everything mobile, at the command centre (structures 2 names its slot).
+structures 2
+order 4 attack 18
+order 5 attack 18
+order 6 attack 18
+order 7 attack 18
+order 8 attack 18
+order 9 attack 18
+order 10 attack 18
+order 11 attack 18
+order 12 attack 18
+order 13 attack 18
+order 14 attack 18
+tick 9000
+objectives
+teams

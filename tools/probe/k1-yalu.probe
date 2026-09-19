@@ -1,0 +1,19 @@
+# Q: the pass holds for thirty seconds with the ally fighting beside us.
+#
+#   MiVic.Game.exe --mission k1_yalu --probe tools/probe/k1-yalu.probe --probe-out artifacts/probe/k1-yalu.txt
+
+objectives
+teams
+order 8 move 0 0
+order 9 move 0 0
+order 10 move 0 0
+order 11 move 0 0
+order 12 move 0 0
+order 13 move 0 0
+order 14 move 0 0
+order 15 move 0 0
+order 16 move 0 0
+order 17 move 0 0
+tick 900
+objectives
+teams

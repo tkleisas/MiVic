@@ -35,7 +35,15 @@ namespace MiVic.Core.Sim;
 /// prevented, and the rule has no verdict to give about it either way.
 /// </para>
 /// </param>
-public readonly record struct MatchTeam(int Team, Faction Faction, int Side, bool Judged = true);
+/// <param name="GreekNameOverride">
+/// What the interface calls this team instead of its faction's name, when the era asks for it:
+/// the Δυτικοί of the Berlin chapter are the Ναζί, and the same army that is the enemy of the
+/// modern era is an earlier war's occupier. Cosmetic by construction — the roster is not hashed
+/// and an entity's own faction never changes — so it is a fact about how the match is presented,
+/// never about how it plays.
+/// </param>
+public readonly record struct MatchTeam(int Team, Faction Faction, int Side, bool Judged = true,
+    string? GreekNameOverride = null);
 
 /// <summary>
 /// <b>What is playing this match: which teams are in it, what faction each one plays, and who is on
@@ -110,14 +118,17 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
     private readonly int[] _side;
     private readonly bool[] _inPlay;
     private readonly bool[] _judged;
+    private readonly string?[] _greekNameOverride;
     private readonly int _teamsInPlay;
 
-    private MatchRoster(Faction[] faction, int[] side, bool[] inPlay, bool[] judged, int teamsInPlay)
+    private MatchRoster(Faction[] faction, int[] side, bool[] inPlay, bool[] judged,
+        string?[] greekNameOverride, int teamsInPlay)
     {
         _faction = faction;
         _side = side;
         _inPlay = inPlay;
         _judged = judged;
+        _greekNameOverride = greekNameOverride;
         _teamsInPlay = teamsInPlay;
     }
 
@@ -166,6 +177,7 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
         var side = new int[SimConstants.TeamCount];
         var inPlay = new bool[SimConstants.TeamCount];
         var judged = new bool[SimConstants.TeamCount];
+        var greekNameOverride = new string?[SimConstants.TeamCount];
 
         // A slot nobody declared keeps its own number as its faction and as its side. The faction is
         // the convention the game shipped with — slot 3 has none — and the side is only ever read
@@ -202,9 +214,10 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
             side[declared.Team] = declared.Side;
             inPlay[declared.Team] = true;
             judged[declared.Team] = declared.Judged;
+            greekNameOverride[declared.Team] = declared.GreekNameOverride;
         }
 
-        return new MatchRoster(faction, side, inPlay, judged, teams.Length);
+        return new MatchRoster(faction, side, inPlay, judged, greekNameOverride, teams.Length);
     }
 
     /// <summary>The roster a scenario is fought under.</summary>
@@ -296,6 +309,16 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
     public Faction FactionOf(int team)
         => (uint)team < SimConstants.TeamCount ? _faction[team] : Faction.None;
 
+    /// <summary>
+    /// What the interface calls a team: the declaration's override when the era named one,
+    /// the faction's own Greek name otherwise. Presentation only — the probe and the tests
+    /// read <see cref="FactionOf"/> and are never shown this.
+    /// </summary>
+    public string GreekNameOf(int team)
+        => (uint)team < SimConstants.TeamCount && _greekNameOverride[team] is { Length: > 0 } named
+            ? named
+            : FactionProfile.For(FactionOf(team)).GreekName;
+
     /// <summary>The side the player is on. What the victory check measures the enemies against.</summary>
     public int PlayerSide => SideOf(PlayerTeam);
 
@@ -336,7 +359,8 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
         {
             if (_inPlay[team] != other._inPlay[team] ||
                 _faction[team] != other._faction[team] ||
-                (other._inPlay[team] && (_side[team] != other._side[team] || _judged[team] != other._judged[team])))
+                (other._inPlay[team] && (_side[team] != other._side[team] || _judged[team] != other._judged[team] ||
+                    _greekNameOverride[team] != other._greekNameOverride[team])))
             {
                 return false;
             }
@@ -359,7 +383,8 @@ public sealed class MatchRoster : IEquatable<MatchRoster>
                 ((int)_faction[team] << 9 |
                  (int)(_side[team] & 0xFF) << 2 |
                  (_inPlay[team] ? 1 : 0) << 1 |
-                 (_judged[team] ? 1 : 0));
+                 (_judged[team] ? 1 : 0)) +
+                StringComparer.Ordinal.GetHashCode(_greekNameOverride[team] ?? string.Empty);
         }
 
         return hash;

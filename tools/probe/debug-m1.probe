@@ -1,0 +1,16 @@
+# Q: why is m1 declared won in seconds with nothing done?
+#
+#   MiVic.Game.exe --mission m1_bridgehead --probe tools/probe/debug-m1.probe --probe-out artifacts/probe/debug-m1.txt
+
+objectives
+structures 2
+teams
+tick 100
+objectives
+structures 2
+teams
+events 10
+tick 100
+objectives
+teams
+events 10

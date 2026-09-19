@@ -119,8 +119,8 @@ namespace MiVic.Game.Cutscene.Skinning
         /// <summary>
         /// The model-space world transform of a named node at the current pose, if the
         /// model has one. For marker nodes the asset carries — the pipe's bowl is an
-        /// empty parented to the head bone, so the smoke can rise from where the bowl
-        /// actually is this frame rather than from a constant somebody has to keep true.
+        /// empty parented to a bone, so the smoke can rise from where the bowl actually
+        /// is this frame rather than from a constant somebody has to keep true.
         /// </summary>
         public bool TryGetNodeWorld(string nodeName, out Matrix world)
         {

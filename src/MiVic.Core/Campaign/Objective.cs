@@ -1,5 +1,7 @@
 namespace MiVic.Core.Campaign;
 
+using MiVic.Core.Sim;
+
 /// <summary>What an objective asks of the player.</summary>
 public enum ObjectiveKind : byte
 {
@@ -61,6 +63,24 @@ public enum ObjectiveKind : byte
     /// </para>
     /// </summary>
     Scripted = 7,
+
+    /// <summary>
+    /// <b>Escort: the target team must get <see cref="ObjectiveDefinition.TargetCount"/> units
+    /// into the circle before the deadline.</b>
+    /// <para>
+    /// The mirror of <see cref="ObjectiveKind.DenyArea"/> and its twin the way holding is the
+    /// denial's twin and is not: the denial is completed by its clock, the escort is failed by
+    /// it. "The agents must fly four scientists out of the outpost" and "the agents must not"
+    /// are the same fact asked from the two ends of the runway — a campaign that can play both
+    /// sides of the same operation needs both readings, and one of them is this.
+    /// </para>
+    /// <para>
+    /// Progress is the high-water mark of arrivals, exactly as the denial reads it: the number
+    /// that matters is how many were inside at once, and it does not fall back when they leave —
+    /// the scientists who got through got through.
+    /// </para>
+    /// </summary>
+    EscortArea = 8,
 }
 
 /// <summary>Where an objective stands.</summary>
@@ -113,6 +133,14 @@ public enum ObjectiveStatus : byte
 /// objectives, and this one just has to hold until then. A non-constraint
 /// primary objective must be satisfied for the mission to be won.
 /// </param>
+/// <param name="Role">
+/// The structure kind this objective counts, for <see cref="ObjectiveKind.DestroyStructures"/>;
+/// <see cref="UnitKind.None"/> counts every structure, as it always has. It exists because
+/// "destroy their command centre" is a different mission from "destroy anything they own":
+/// without it, a gun emplacement the ally's AI happened to kill decided the campaign's first
+/// mission for the player. The count still reads the ledger, so a structure the enemy
+/// rebuilds does not refund it.
+/// </param>
 public sealed record ObjectiveDefinition(
     ObjectiveKind Kind,
     string GreekDescription,
@@ -127,7 +155,8 @@ public sealed record ObjectiveDefinition(
     int TierTarget = 0,
     int DeadlineTick = 0,
     bool IsPrimary = true,
-    bool Constraint = false);
+    bool Constraint = false,
+    UnitKind Role = UnitKind.None);
 
 /// <summary>
 /// Runtime progress of one objective. Part of the simulation state, so it is

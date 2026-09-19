@@ -1,0 +1,44 @@
+# Q: the city falls the way it was written to: anything, and the factory by name.
+#
+#   MiVic.Game.exe --mission b4_berlin --probe tools/probe/b4_berlin.probe --probe-out artifacts/probe/b4-berlin.txt
+#
+# The two objectives are two kinds of ledger: any three structures, and the factory by role.
+# The probe fights it the way a player would rather than the way a script might split it:
+# one fist, driven onto the factory, and the base taken apart from the inside out — a column
+# on a move order engages what it meets, which is how buildings the script did not name fall
+# to a script that stays short. Slots are the force as it actually stands: the formations
+# leave gaps in the numbering, and an order to a gap is an order to the dead.
+
+objectives
+teams
+
+# Positions read off `structures 2` for this seed; slots read off `units soviet`.
+# The orders go first: four hundred ticks of somebody else's war is four hundred
+# ticks in which slots die before the script can reach them.
+structures 2
+order 4 move -124 180
+order 5 move -124 180
+order 6 move -124 180
+order 7 move -124 180
+order 8 move -124 180
+order 9 move -124 180
+order 16 move -124 180
+order 17 move -124 180
+order 18 move -124 180
+order 19 move -124 180
+order 20 move -124 180
+order 21 move -124 180
+order 22 move -124 180
+order 23 move -124 180
+order 24 move -124 180
+order 25 move -124 180
+order 26 move -124 180
+order 27 move -124 180
+order 28 move -124 180
+order 29 move -124 180
+
+tick 400
+objectives
+expect "the city holds out past the opening" 1.0 1.0 0.0
+tick 13000
+objectives

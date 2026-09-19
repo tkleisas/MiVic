@@ -4,20 +4,15 @@ using MiVic.Core.Sim;
 namespace MiVic.Core.Campaign;
 
 /// <summary>
-/// The campaign, as data.
+/// The campaign, as data: every mission the Soviet track plays, composed in the order it plays
+/// them.
 /// <para>
-/// Three missions of the alternate-history war: a bridgehead against the Δυτικοί
-/// line, a ridge that decides the front, and an industrial race that decides
-/// whether the alliance can keep fighting at all. Each one exercises a different
-/// objective kind, so the campaign is also the acceptance test for the mission
-/// system.
-/// </para>
-/// <para>
-/// The fourth is the mission that uses the <em>trigger</em> layer — see
-/// <see cref="TriggerSystem"/> — and it is the one that shows what a campaign can be once a
-/// mission can say when something happens. The first three are deliberately left triggerless:
-/// they are laid out, fought and decided exactly as they were before the layer existed, and
-/// their state hashes are pinned to prove it.
+/// The chapters themselves are written in <see cref="MissionsSoviet"/> — Berlin, Paperclip,
+/// Korea and the modern era — and this catalogue is the one list they are composed into, so a
+/// mission is defined once and the order of play is said once. Three of the four the game
+/// shipped first (<c>m1_bridgehead</c>, <c>m2_ridge</c>, <c>m3_industry</c>) are still
+/// triggerless and still pinned by their state hashes; <c>m4_pass</c> is the one that
+/// demonstrates the <em>trigger</em> layer, and the chapters that came after it use it freely.
 /// </para>
 /// </summary>
 public static class MissionCatalog
@@ -25,9 +20,13 @@ public static class MissionCatalog
     /// <summary>Every mission, in campaign order.</summary>
     public static readonly MissionDefinition[] All =
     [
+        .. MissionsSoviet.Berlin,
+        MissionsSoviet.Paperclip,
+        .. MissionsSoviet.Korea,
+
         new MissionDefinition(
             Id: "m1_bridgehead",
-            GreekTitle: "Αποστολή 1 — Το Προγεφύρωμα",
+            GreekTitle: "Αποστολή 11 — Το Προγεφύρωμα",
             GreekBriefing:
                 "Οι Δυτικοί έχουν στήσει φυλάκιο βόρεια της γραμμής. " +
                 "Διασπάστε την άμυνα και καταστρέψτε το κέντρο διοίκησής τους. " +
@@ -46,7 +45,8 @@ public static class MissionCatalog
                     "Καταστρέψτε το κέντρο διοίκησης των Δυτικών.",
                     TargetTeam: 2,
                     TargetCount: 1,
-                    DeadlineTick: 7_200),
+                    DeadlineTick: 7_200,
+                    Role: UnitKind.CommandCentre),
                 new ObjectiveDefinition(
                     ObjectiveKind.ReachTechTier,
                     "Προαιρετικά: φτάστε σε τεχνολογικό επίπεδο 2.",
@@ -58,7 +58,7 @@ public static class MissionCatalog
 
         new MissionDefinition(
             Id: "m2_ridge",
-            GreekTitle: "Αποστολή 2 — Η Κορυφογραμμή",
+            GreekTitle: "Αποστολή 12 — Η Κορυφογραμμή",
             GreekBriefing:
                 "Η κορυφογραμμή στο κέντρο του χάρτη ελέγχει τον δρόμο προς τα νότια. " +
                 "Κρατήστε έξι μονάδες πάνω της για τριάντα δευτερόλεπτα, " +
@@ -93,7 +93,7 @@ public static class MissionCatalog
 
         new MissionDefinition(
             Id: "m3_industry",
-            GreekTitle: "Αποστολή 3 — Η Βιομηχανία της Νίκης",
+            GreekTitle: "Αποστολή 13 — Η Βιομηχανία της Νίκης",
             GreekBriefing:
                 "Ο πόλεμος κρίνεται στα εργοστάσια. " +
                 "Ανεβάστε την τεχνολογία στο επίπεδο 3 και συγκεντρώστε 4000 πόρους " +
@@ -145,7 +145,7 @@ public static class MissionCatalog
         // ---------------------------------------------------------------------------------
         new MissionDefinition(
             Id: "m4_pass",
-            GreekTitle: "Αποστολή 4 — Η Ενέδρα στο Πέρασμα",
+            GreekTitle: "Αποστολή 14 — Η Ενέδρα στο Πέρασμα",
             GreekBriefing:
                 "Οι Δυτικοί ανιχνεύουν το πέρασμα με φάλαγγα. Δεν πρέπει να βγουν στην οδό πίσω " +
                 "από τη γραμμή μας: αν φτάσουν τέσσερις μονάδες τους στο σημείο διαφυγής, το " +
@@ -379,6 +379,10 @@ public static class MissionCatalog
                           "knows the ambush is broken, and no predicate in the world can say it."),
             ],
         },
+
+        // The modern era closes the campaign: x5 to x10 are its last six, and they are written
+        // in MissionsSoviet beside the chapters that lead to them.
+        .. MissionsSoviet.Modern,
     ];
 
     /// <summary>Looks a mission up by id, or returns null when there is no such mission.</summary>

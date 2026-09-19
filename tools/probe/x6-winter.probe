@@ -1,0 +1,9 @@
+# Q: the frozen line holds through the cold, and the guns are the winter's to take.
+#
+#   MiVic.Game.exe --mission x6_winter --probe tools/probe/x6-winter.probe --probe-out artifacts/probe/x6-winter.txt
+
+objectives
+surfaces
+teams
+tick 2400
+objectives

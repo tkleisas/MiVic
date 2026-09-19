@@ -247,4 +247,23 @@ public sealed class MatchRosterTests
         Assert.True(duel.IsHostile(0, 2));
         Assert.False(duel.AreAllied(0, 1), "The Κινέζοι are not in this match, so they are not the player's ally.");
     }
+
+    [Fact]
+    public void ATeamCanBeNamedForItsEraWithoutChangingItsFaction()
+    {
+        // The Berlin chapter's enemy is the Δυτικοί army under its 1945 name: the override
+        // changes what the interface calls the team and nothing else — the faction it plays,
+        // the side it fights on and the tests' view of it are untouched.
+        MatchRoster era = MatchRoster.Declare(
+            new MatchTeam(0, Faction.Soviet, 0),
+            new MatchTeam(2, Faction.Western, 1, GreekNameOverride: "Ναζί"));
+
+        Assert.Equal("Ναζί", era.GreekNameOf(2));
+        Assert.Equal(Faction.Western, era.FactionOf(2));
+        Assert.True(FactionProfile.For(Faction.Soviet).GreekName == era.GreekNameOf(0),
+            "A team with no override keeps its faction's name.");
+        Assert.Equal(era, MatchRoster.Declare(
+            new MatchTeam(0, Faction.Soviet, 0),
+            new MatchTeam(2, Faction.Western, 1, GreekNameOverride: "Ναζί")));
+    }
 }

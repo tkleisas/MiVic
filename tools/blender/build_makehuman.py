@@ -41,11 +41,12 @@ Run:
 """
 
 import argparse
+import math
 import os
 import sys
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Quaternion, Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -145,36 +146,73 @@ GESTURE_B = {
     "lowerarm_r": (-0.10, -0.80, 0.15),
 }
 
-#: One loop of the scene, 16 s at 24 fps: stand, breathe, then the hand comes up to
-#: the pipe and holds while he draws on it; down; then the right hand rises and makes
-#: the point of the briefing; breathe out, and the loop closes where it opened. Each
-#: entry is (frame, weights); the weights blend between the standing directions and
-#: the gestures', so a bone never snaps, and the first and last keys are the same pose.
+#: The pipe held out while he talks over it: the hand comes forward and down off the
+#: face, presenting the bowl at chest height, and the head straightens — he is
+#: addressing the room now, not the pipe.
+HELD = {
+    "upperarm_l": (0.10, -0.50, -0.62),
+    "lowerarm_l": (-0.50, 0.05, 0.70),
+    "hand_l": (-0.25, 0.05, 0.45),
+    "head": (0.04, -0.03, 1.0),
+    "spine_02": (0.01, -0.01, 1.0),
+}
+
+#: Two beats of talk while the pipe is held: small turns of the hand and head, as if
+#: weighing the words. The difference between a man holding a pipe and a man thinking
+#: with one.
+TALK_A = {
+    "hand_l": (-0.32, 0.02, 0.38),
+    "head": (0.07, -0.02, 1.0),
+}
+
+TALK_B = {
+    "hand_l": (-0.18, 0.10, 0.50),
+    "head": (0.02, -0.06, 1.0),
+}
+
+#: One loop of the scene, 24 s at 24 fps, deliberately slow: stand, breathe, and the
+#: hand comes up unhurried; the pipe leaves his mouth and he talks over it for a
+#: while — two beats of the hand, the right hand joining for the point that matters —
+#: then it goes back the way it came, and the loop closes where it opened. Each entry
+#: is (frame, weights); the weights blend between the standing directions and the
+#: gestures', so a bone never snaps. `held` also drives the pipe swap: above 0.5 the
+#: mouth pipe scales away and the hand pipe scales in, both of them at the mouth while
+#: the hand is on the bowl, so the swap happens where the two already coincide.
 IDLE_KEYS = [
     (1, {}),
-    (60, {"breathe": 1.0}),
-    (120, {}),
-    (140, {"grasp": 0.6}),
-    (152, {"grasp": 1.0}),
-    (176, {"grasp": 1.0, "puff": 1.0}),
-    (224, {"grasp": 1.0, "puff": 0.3}),
-    (240, {"grasp": 0.5}),
-    (256, {}),
-    (284, {"gesture": 0.8}),
-    (300, {"gesture": 1.0}),
-    (316, {"gesture": 1.0, "gestureb": 1.0}),
-    (332, {"gesture": 0.6}),
-    (352, {"breathe": 1.0}),
-    (384, {}),
+    (72, {"breathe": 1.0}),
+    (144, {}),
+    (192, {"grasp": 0.45}),
+    (228, {"grasp": 0.85}),
+    (252, {"grasp": 1.0}),
+    (276, {"grasp": 1.0, "held": 1.0}),
+    (312, {"held": 1.0, "holdpose": 1.0, "talka": 1.0}),
+    (360, {"held": 1.0, "holdpose": 1.0, "talkb": 1.0}),
+    (408, {"held": 1.0, "holdpose": 1.0, "talka": 0.6, "gesture": 0.9}),
+    (432, {"held": 1.0, "holdpose": 1.0, "gesture": 1.0, "gestureb": 1.0}),
+    (456, {"held": 1.0, "holdpose": 1.0}),
+    (480, {"held": 1.0, "grasp": 1.0}),
+    (504, {"grasp": 1.0}),
+    (528, {}),
+    (552, {"breathe": 1.0}),
+    (576, {}),
 ]
 
-IDLE_LAST_FRAME = 384
+IDLE_LAST_FRAME = 576
+
+#: The pipe's two anchors, as bones: `pipe_mouth` rides the head, `pipe_held` is a
+#: free bone the clip drives directly (a child of the hand would inherit the hand's
+#: rotation as a constant tilt; driven, it is placed by measurement instead). The two
+#: pipes share one geometry and swap visibility by scale keys — a pipe in the hand is
+#: the same pipe, not a second prop.
+PIPE_BONES = ("pipe_mouth", "pipe_held")
 
 #: Every bone the loop poses. `head` and `spine_02` are here for the gesture; their
 #: standing direction is the rig's own rest, captured at build time, so a weight of
 #: zero is exactly the figure that shipped before the gesture existed.
 POSE_BONES = tuple(dict.fromkeys(list(STANDING) + list(GRASP) + list(PUFF)
-                                 + list(GESTURE) + list(GESTURE_B)))
+                                 + list(GESTURE) + list(GESTURE_B)
+                                 + list(HELD) + list(TALK_A) + list(TALK_B)))
 
 #: The body and its features. Subfolder under the asset root, filename, asset type.
 #: eyebrow008 because the reference's brows are thick, straight and dark, and it is
@@ -377,16 +415,46 @@ def aim_bone(armature, name, direction):
     bpy.context.view_layer.update()
 
 
+def add_pipe_bones(armature, mouth):
+    """Two extra bones for the pipe, so it can leave his mouth and come back.
+
+    `pipe_mouth` is a child of `head` at the corner of the mouth: the pipe in his
+    teeth rides the head, as it always has. `pipe_held` is a *root* bone at the same
+    spot, driven by the clip directly — a child of the hand would inherit the hand's
+    rotation as a constant tilt, and the difference between a pipe that turns with
+    the wrist and a pipe that stays level is exactly the difference between a prop
+    and a held thing. Both rest at the mouth, so the two pipes coincide on the frame
+    the swap happens.
+    """
+    bpy.context.view_layer.objects.active = armature
+    bpy.ops.object.mode_set(mode="EDIT")
+    for name, parent_name in (("pipe_mouth", "head"), ("pipe_held", None)):
+        bone = armature.data.edit_bones.new(name)
+        # Along +Y: a bone whose rest direction is armature-Y has an identity rest
+        # rotation, so the clip's rotation keys are armature-space rotations as read.
+        bone.head = mouth.copy()
+        bone.tail = mouth + Vector((0.0, 0.03, 0.0))
+        if parent_name is not None:
+            bone.parent = armature.data.edit_bones[parent_name]
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
 def author_idle(armature, fps=24, keys=IDLE_KEYS, last_frame=IDLE_LAST_FRAME):
     """Pose the figure through the briefing loop and keyframe it into `Idle`.
 
     A clip rather than a static pose, because the director asks for `Idle` by name and a
     figure with no clips falls back to the bind pose — which is the A-pose, and the A-pose
-    is the thing being fixed. The loop is one standing pose, a breath, the pipe grasp, and
-    back: the first and last keys are identical, so it loops without a seam. Each key aims
-    every posed bone at a direction blended from STANDING, BREATHE, GRASP and PUFF by the
-    key's weights; a bone whose direction is not in any of those rests at its own rest
+    is the thing being fixed. The loop is one standing pose, a breath, the pipe taken out
+    and talked over, and back: the first and last keys are identical, so it loops without
+    a seam. Each key aims every posed bone at a direction blended from the pose sets by
+    the key's weights; a bone whose direction is not in any of them rests at its own rest
     direction, captured before anything moves it.
+
+    The pipe bones are keyed too: `pipe_mouth` and `pipe_held` swap visibility by their
+    scale (the swap sits inside the crossfade where both stand at the mouth), and
+    `pipe_held`'s location and rotation are keyed from *measurement* in a second pass —
+    the hand's position at each key is read off the pose the first pass just wrote, so
+    the pipe sits in the palm rather than where a constant thought it would be.
     """
     bpy.context.view_layer.objects.active = armature
     armature.select_set(True)
@@ -403,6 +471,10 @@ def author_idle(armature, fps=24, keys=IDLE_KEYS, last_frame=IDLE_LAST_FRAME):
     action = bpy.data.actions.new("Idle")
     armature.animation_data.action = action
 
+    blends = (("grasp", GRASP), ("puff", PUFF), ("holdpose", HELD),
+              ("talka", TALK_A), ("talkb", TALK_B),
+              ("gesture", GESTURE), ("gestureb", GESTURE_B))
+
     for frame, weights in keys:
         # frame_set FIRST: it re-evaluates the action and overwrites the pose with
         # the interpolation of the keys so far. Aiming after it poses on top of that;
@@ -410,11 +482,8 @@ def author_idle(armature, fps=24, keys=IDLE_KEYS, last_frame=IDLE_LAST_FRAME):
         # pose, which is why three "breathe" keys once exported as three standings.
         bpy.context.scene.frame_set(frame)
 
-        grasp = weights.get("grasp", 0.0)
-        puff = weights.get("puff", 0.0)
-        gesture = weights.get("gesture", 0.0)
-        gesture_b = weights.get("gestureb", 0.0)
         breathe = weights.get("breathe", 0.0)
+        held = weights.get("held", 0.0)
 
         for name in POSE_BONES:
             base = STANDING.get(name, rest.get(name))
@@ -424,29 +493,60 @@ def author_idle(armature, fps=24, keys=IDLE_KEYS, last_frame=IDLE_LAST_FRAME):
             target = Vector(base)
             if breathe:
                 target += Vector(BREATHE.get(name, (0.0, 0.0, 0.0))) * breathe
-            if grasp and name in GRASP:
-                target = target.lerp(Vector(GRASP[name]), grasp)
-            if puff and name in PUFF:
-                target = target.lerp(Vector(PUFF[name]), puff)
-            if gesture and name in GESTURE:
-                target = target.lerp(Vector(GESTURE[name]), gesture)
-            if gesture_b and name in GESTURE_B:
-                target = target.lerp(Vector(GESTURE_B[name]), gesture_b)
+            for weight_name, pose in blends:
+                weight = weights.get(weight_name, 0.0)
+                if weight and name in pose:
+                    target = target.lerp(Vector(pose[name]), weight)
             aim_bone(armature, name, target)
 
         for pose_bone in armature.pose.bones:
             pose_bone.keyframe_insert("rotation_quaternion", frame=frame)
 
-        hand = armature.pose.bones.get("hand_l")
-        if hand is not None:
+        # The visibility swap. Both pipes stand at the mouth through the crossfade's
+        # middle, so the hand has the pipe in it on every frame the eye could catch.
+        for name, scale in (("pipe_mouth", 1.0 if held < 0.5 else 0.0),
+                            ("pipe_held", 0.0 if held < 0.5 else 1.0)):
+            pose_bone = armature.pose.bones.get(name)
+            if pose_bone is not None:
+                pose_bone.scale = (scale, scale, scale)
+                pose_bone.keyframe_insert("scale", frame=frame)
+
+    # Second pass: the held pipe's own motion. Every key of it is measured off the
+    # pose the first pass wrote — the palm when the pipe is the hand's, the mouth when
+    # it is not, so a slow swap never shows the pipe travelling without the hand.
+    held_bone = armature.pose.bones.get("pipe_held")
+    mouth_bone = armature.pose.bones.get("pipe_mouth")
+    if held_bone is not None and mouth_bone is not None:
+        held_rest = armature.data.bones["pipe_held"].head_local.copy()
+        for frame, weights in keys:
+            bpy.context.scene.frame_set(frame)
             bpy.context.view_layer.update()
-            print(f"    key {frame}: weights {weights}, "
-                  f"hand_l tail {tuple(round(c, 3) for c in (armature.matrix_world @ hand.tail))}")
+
+            if weights.get("held", 0.0) >= 0.5 and weights.get("grasp", 0.0) < 1.0:
+                # Held out: the shank rests across the fingers, the bowl stands up
+                # and a touch forward — a pipe being talked over, not one being
+                # smoked. The mesh's bowl hangs forward-down of the bone at rest, so
+                # -140° about X stands it up; the offset sets the grip into the palm
+                # rather than at its root.
+                anchor = (armature.matrix_world @ armature.pose.bones["hand_l"].head) \
+                    + Vector((0.0, 0.015, 0.025))
+                rotation = Matrix.Rotation(math.radians(-140.0), 4, "X").to_quaternion()
+            else:
+                anchor = armature.matrix_world @ mouth_bone.head
+                rotation = Quaternion()
+
+            held_bone.location = anchor - held_rest
+            held_bone.rotation_quaternion = rotation
+            held_bone.keyframe_insert("location", frame=frame)
+            held_bone.keyframe_insert("rotation_quaternion", frame=frame)
 
     armature.animation_data.action = action
     bpy.context.scene.frame_start = 1
     bpy.context.scene.frame_end = last_frame
     bpy.context.scene.render.fps = fps
+
+    bpy.context.scene.frame_set(1)
+    bpy.context.view_layer.update()
     # Not `action.fcurves`: Blender 5 actions carry slots and layers, and the channel
     # count is no longer on the action. What was keyed is visible in the export anyway.
     print(f"posed: Idle on {len(armature.pose.bones)} bones, "
@@ -680,23 +780,12 @@ def main():
     if not args.keep_standin:
         bpy.data.objects.remove(human, do_unlink=True)
 
-    # Posed last, and on the rig rather than on the meshes, so the bind pose stays what
-    # the exporter needs and the pose travels as a clip.
-    if not args.no_pose:
-        armature = next(o for o in bpy.context.scene.objects if o.type == "ARMATURE")
-        author_idle(armature)
-
-    # The face is painted into the skin map, in the Blender session, before the export —
-    # so the edited image is what the exporter embeds and the figure needs no sidecar.
-    if proxy is not None and args.diagnose:
-        _diagnose(proxy)
-
-    # The nose tip anchors both the moustache paint and the pipe, so it is found
-    # once. The head is found from the rig, not from a height fraction: the rest
-    # pose has the hands further forward than the face, so "most forward vertex of
-    # the whole body" is a knuckle. The head bone is at the base of the skull and
-    # the nose is 12 cm in front of it, which is well inside a sphere that the
-    # hands are outside of.
+    # The nose tip anchors the moustache paint, the pipe and its two bones, so it is
+    # found before any of them. The head is found from the rig, not from a height
+    # fraction: the rest pose has the hands further forward than the face, so "most
+    # forward vertex of the whole body" is a knuckle. The head bone is at the base of
+    # the skull and the nose is 12 cm in front of it, which is well inside a sphere
+    # that the hands are outside of.
     nose = None
     nose_index = -1
     armature = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
@@ -707,6 +796,27 @@ def main():
         else:
             anchor = proxy.matrix_world.inverted() @ armature.matrix_world @ head_bone.head_local
             nose, nose_index = makehuman_face.find_nose_tip(proxy, anchor)
+
+    # The pipe's bones go on before the posing: the clip keys them, and a bone added
+    # after the keys would hold its first key's value for the whole clip.
+    if not args.no_pipe and nose is not None and armature is not None:
+        mouth = nose + Vector((makehuman_pipe.MOUTH_OFF_MIDLINE,
+                               makehuman_pipe.MOUTH_BEHIND_NOSE,
+                               -makehuman_pipe.MOUTH_BELOW_NOSE))
+        add_pipe_bones(armature, mouth)
+        print(f"  pipe bones: pipe_mouth on head, pipe_held free, at "
+              f"({mouth.x:.3f}, {mouth.y:.3f}, {mouth.z:.3f})")
+
+    # Posed on the rig rather than on the meshes, so the bind pose stays what
+    # the exporter needs and the pose travels as a clip.
+    if not args.no_pose:
+        armature = next(o for o in bpy.context.scene.objects if o.type == "ARMATURE")
+        author_idle(armature)
+
+    # The face is painted into the skin map, in the Blender session, before the export —
+    # so the edited image is what the exporter embeds and the figure needs no sidecar.
+    if proxy is not None and args.diagnose:
+        _diagnose(proxy)
 
     # The face is painted into the skin map, in the Blender session, before the export —
     # so the edited image is what the exporter embeds and the figure needs no sidecar.
@@ -729,14 +839,15 @@ def main():
     # would unlink them as unread.
     if not args.no_pipe and proxy is not None and nose is not None:
         armature = next(o for o in bpy.context.scene.objects if o.type == "ARMATURE")
-        pipe = makehuman_pipe.build_pipe(armature, nose)
-        print(f"  pipe: {len(pipe.data.vertices)} verts at the corner of the mouth")
+        pipes = makehuman_pipe.build_pipe(armature, nose)
+        print(f"  pipe: {len(pipes[0].data.vertices)} verts × 2 (mouth and held) "
+              f"at the corner of the mouth")
 
         # The gesture is aimed by number, not by eye: where the fingertips stand at the
         # grasp's peak against the pipe's grip, so a weak reach reads as millimetres of
         # gap instead of as a screenshot somebody squints at.
         if not args.no_pose:
-            bpy.context.scene.frame_set(176)
+            bpy.context.scene.frame_set(252)
             bpy.context.view_layer.update()
             hand = armature.pose.bones.get("hand_l")
             if hand is not None:
