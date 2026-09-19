@@ -189,6 +189,21 @@ public static class TechCatalog
     public static bool IsCompleted(ulong mask, TechId id) => (mask & (1UL << (int)id)) != 0;
 
     /// <summary>
+    /// The tech tier a project belongs to: the era it is technology <em>of</em>. An advance is
+    /// measured by where it takes the team — the tier it grants — and everything else by the tier
+    /// it must already have, because a project that modifies tier-2 hardware is tier-2 technology
+    /// however cheap it is.
+    /// <para>
+    /// A mission can cap the era it is fought in, and this is the number that cap is compared
+    /// against. It is written once and asked by both the simulation's refusal and the panel that
+    /// offers the button, so a project the bureau will not take is a project the panel does not
+    /// offer as if it would.
+    /// </para>
+    /// </summary>
+    public static int EraTierOf(TechProject project)
+        => project.Effect == TechEffect.AdvanceTier ? project.Value : project.RequiredTier;
+
+    /// <summary>
     /// Projects a team may start right now: right faction, tier reached,
     /// prerequisite finished, and not already done.
     /// </summary>

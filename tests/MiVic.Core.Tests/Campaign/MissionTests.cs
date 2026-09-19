@@ -306,6 +306,76 @@ public sealed class MissionTests
             "A tier-2 project ran in a mission whose era stops at tier 1.");
         Assert.True(world.Team(0).Materials >= treasury,
             "The refused project was still paid for.");
+
+        // The same project, one mission later: a mission whose era reaches tier 2 takes the
+        // advance, which is the whole difference between b1's 1945 and b2's bridgehead. The cap
+        // is a ceiling, not a prohibition.
+        MissionDefinition reaches = era with { MaxTechTier = 2 };
+        SimWorld second = Synthetic(reaches);
+        EntityId secondBureau = second.Spawn(Faction.Soviet, 0, UnitKind.DesignBureau,
+            new WorldPos(-180_000, 0, -180_000), default, 1_500);
+        second.TeamRef(0).TechTier = 1;
+        second.TeamRef(0).Materials = 10_000;
+        second.Enqueue(SimCommand.Research(secondBureau, TechId.SovietAdvance2, second.Tick + 1, 0));
+        second.Step();
+
+        Assert.True(second.Team(0).IsResearching,
+            "A mission whose era reaches tier 2 refused the tier-2 advance.");
+    }
+
+    /// <summary>
+    /// <b>The tier a project belongs to is asked once.</b> The simulation refuses a project above
+    /// a mission's era and the panel that offers the button greys it out; both read
+    /// <see cref="TechCatalog.EraTierOf"/>, so the button cannot offer something the bureau would
+    /// silently refuse — the defect the Berlin chapter's first mission exposed, where "Επίπεδο 2:
+    /// Τεθωρακισμένα" was listed, enabled, and did nothing because 1945 stops at tier 1.
+    /// </summary>
+    [Fact]
+    public void TheEraTierOfAProjectIsTheTierItBelongsTo()
+    {
+        Assert.True(TechCatalog.TryGet(TechId.SovietAdvance2, out TechProject advance));
+        Assert.True(TechCatalog.TryGet(TechId.SovietElectro, out TechProject modifier));
+        Assert.True(TechCatalog.TryGet(TechId.SovietDeepBattle, out TechProject early));
+
+        // An advance belongs to the tier it grants; a modifier to the tier it must already have.
+        Assert.Equal(2, TechCatalog.EraTierOf(advance));
+        Assert.Equal(2, TechCatalog.EraTierOf(modifier));
+        Assert.Equal(1, TechCatalog.EraTierOf(early));
+
+        // And the refusal is that comparison: a mission capped at 1 refuses the advance and the
+        // tier-2 modifier, and takes the tier-1 doctrine.
+        MissionDefinition capped = EscortMission(deadline: 600, target: 2) with { MaxTechTier = 1 };
+        SimWorld world = Synthetic(capped);
+
+        EntityId bureau = world.Spawn(Faction.Soviet, 0, UnitKind.DesignBureau,
+            new WorldPos(-180_000, 0, -180_000), default, 1_500);
+        world.TeamRef(0).TechTier = 2;
+        world.TeamRef(0).Materials = 10_000;
+
+        // The advance is refused for the era before anything is finished.
+        Assert.False(world.CanResearch(bureau, TechId.SovietAdvance2, out string advanceRefusal));
+        Assert.Contains("εποχή", advanceRefusal, StringComparison.Ordinal);
+
+        // The prerequisite is finished, so the tier-2 modifier is refused by the era and nothing
+        // else — otherwise the test would pass for the wrong reason.
+        world.TeamRef(0).TechMask |= 1UL << (int)TechId.SovietAdvance2;
+
+        // The verdict and the words the panel now shows are the simulation's own: the tier-2
+        // modifier is refused for the era, and the tier-1 doctrine is not.
+        Assert.False(world.CanResearch(bureau, TechId.SovietElectro, out string modifierRefusal));
+        Assert.Contains("εποχή", modifierRefusal, StringComparison.Ordinal);
+        Assert.True(world.CanResearch(bureau, TechId.SovietDeepBattle, out string doctrineRefusal));
+        Assert.Empty(doctrineRefusal);
+
+        world.Enqueue(SimCommand.Research(bureau, TechId.SovietElectro, world.Tick + 1, 0));
+        world.Step();
+        Assert.False(world.Team(0).IsResearching,
+            "A tier-2 modifier ran in a mission whose era stops at tier 1.");
+
+        world.Enqueue(SimCommand.Research(bureau, TechId.SovietDeepBattle, world.Tick + 1, 0));
+        world.Step();
+        Assert.True(world.Team(0).IsResearching,
+            "A tier-1 doctrine was refused by a mission whose era reaches tier 1.");
     }
 
     [Fact]

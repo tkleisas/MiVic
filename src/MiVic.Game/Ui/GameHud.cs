@@ -879,6 +879,22 @@ public sealed class GameHud
             ImGui.Separator();
             ImGui.TextColored(MutedColor, "Έρευνα");
 
+            // The era a mission is fought in is a ceiling the simulation enforces, and a panel
+            // that worked the question out for itself offered a project the bureau would refuse:
+            // a button pressed with nothing happening, which reads as a broken panel rather than
+            // as a rule. The Berlin chapter's first mission stops at tier 1, which is why
+            // «Επίπεδο 2: Τεθωρακισμένα» did nothing there while the tier-1 doctrines researched.
+            // The verdict and the words are the simulation's own, from the same call the order is
+            // answered by — see SimWorld.CanResearch — the way the build rows read CanProduce.
+            var bureau = new EntityId(slot, building.Generation);
+            int eraCap = world.Mission?.MaxTechTier ?? 0;
+
+            if (eraCap > 0)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(MutedColor, $"η εποχή σταματά στο επίπεδο {eraCap}");
+            }
+
             if (team.IsResearching && TechCatalog.TryGet(team.ResearchingTech, out TechProject running))
             {
                 ImGui.Text($"{running.GreekName} — {team.ResearchTicksRemaining} τικ");
@@ -888,8 +904,9 @@ public sealed class GameHud
             {
                 int ticks = TechCatalog.TicksFor(building.Faction, project);
                 string label = $"{project.GreekName,-26} {project.Cost,4}Π {ticks / 20f,5:0.0}δ";
+                bool can = world.CanResearch(bureau, project.Id, out string reason);
 
-                ImGui.BeginDisabled(team.IsResearching || team.Materials < project.Cost);
+                ImGui.BeginDisabled(!can);
 
                 if (ImGui.Button(label))
                 {
@@ -898,7 +915,12 @@ public sealed class GameHud
 
                 ImGui.EndDisabled();
 
-                if (ImGui.IsItemHovered())
+                if (!can && reason.Length > 0)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextColored(MutedColor, reason);
+                }
+                else if (ImGui.IsItemHovered())
                 {
                     ImGui.SetTooltip(project.GreekDescription);
                 }

@@ -1157,7 +1157,7 @@ public sealed class SimWorld
                 return RemoveLastJob(slot);
 
             case SimCommandKind.Research:
-                return TryStartResearch(ref e, command.Tech);
+                return TryStartResearch(command.Target, command.Tech);
 
             case SimCommandKind.Attack:
                 return TryAttack(slot, ref e, command.AttackTarget);
@@ -3385,54 +3385,109 @@ public sealed class SimWorld
     }
 
     /// <summary>Starts a research project at a design bureau.</summary>
-    private bool TryStartResearch(ref Entity building, TechId tech)
+    private bool TryStartResearch(EntityId building, TechId tech)
     {
-        if (building.Kind != UnitKind.DesignBureau || (uint)building.TeamId >= SimConstants.TeamCount)
+        if (!CanResearch(building, tech, out _) || !TryResolve(building, out int slot))
         {
             return false;
         }
 
-        if (!TechCatalog.TryGet(tech, out TechProject project) || project.Faction != building.Faction)
+        ref Entity bureau = ref _entities[slot];
+        ref TeamState team = ref _teams[bureau.TeamId];
+        TechCatalog.TryGet(tech, out TechProject project);
+
+        team.Materials -= project.Cost;
+        team.ResearchingTech = tech;
+        team.ResearchTargetTier = project.RequiredTier;
+        team.ResearchTicksTotal = TechCatalog.TicksFor(bureau.Faction, project);
+        team.ResearchTicksRemaining = team.ResearchTicksTotal;
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a design bureau may start a project now, and why not when it may not, in the words
+    /// the panel shows.
+    /// <para>
+    /// <b>The one answer the button and the order both read.</b> The research panel used to work
+    /// the question out for itself — busy, and could the team pay — while the simulation asked
+    /// those plus the prerequisite and the mission's era. A project beyond the era was therefore
+    /// offered as a live button and refused in silence: the Berlin chapter's first mission stops
+    /// at tier 1, and «Επίπεδο 2: Τεθωρακισμένα» did nothing when it was pressed. The build panel
+    /// has read <see cref="CanProduce"/> this way since it was written, and this is the same
+    /// question asked of a different kind of work.
+    /// </para>
+    /// </summary>
+    /// <param name="building">The design bureau the project would run at.</param>
+    /// <param name="tech">The project.</param>
+    /// <param name="reason">Player-facing words for a refusal, or empty when it would start.</param>
+    public bool CanResearch(EntityId building, TechId tech, out string reason)
+    {
+        reason = string.Empty;
+
+        if (!TryResolve(building, out int slot))
         {
+            reason = "δεν υπάρχει τέτοιο κτίριο";
             return false;
         }
 
-        ref TeamState team = ref _teams[building.TeamId];
+        ref Entity bureau = ref _entities[slot];
 
-        if (team.IsResearching || TechCatalog.IsCompleted(team.TechMask, tech) || project.RequiredTier > team.TechTier)
+        if (bureau.Kind != UnitKind.DesignBureau || (uint)bureau.TeamId >= SimConstants.TeamCount)
         {
+            reason = "δεν είναι σχεδιαστικό γραφείο";
+            return false;
+        }
+
+        if (!TechCatalog.TryGet(tech, out TechProject project) || project.Faction != bureau.Faction)
+        {
+            reason = "άγνωστο σχέδιο";
+            return false;
+        }
+
+        ref TeamState team = ref _teams[bureau.TeamId];
+
+        if (team.IsResearching)
+        {
+            reason = "το γραφείο ερευνά ήδη";
+            return false;
+        }
+
+        if (TechCatalog.IsCompleted(team.TechMask, tech))
+        {
+            reason = "έχει ολοκληρωθεί";
+            return false;
+        }
+
+        if (project.RequiredTier > team.TechTier)
+        {
+            reason = $"χρειάζεται επίπεδο {project.RequiredTier}";
             return false;
         }
 
         // The era's own ceiling: a mission can say where its technology stops — 1945 does not
-        // reach era IV whatever the bureau can afford. The cap is measured by where a project
-        // takes the team: an advance is refused for the tier it would grant, anything else for
-        // the tier it must already have. Both the player's button and the AI's research pass
-        // through here, so one refusal covers both.
-        if (Mission is { MaxTechTier: > 0 } capped)
+        // reach the age of armour whatever the bureau can afford. The cap is measured by where a
+        // project takes the team, and the number is asked once, in TechCatalog.EraTierOf, so the
+        // panel that offers the button and the order that answers it cannot disagree.
+        if (Mission is { MaxTechTier: > 0 } capped && TechCatalog.EraTierOf(project) > capped.MaxTechTier)
         {
-            int destination = project.Effect == TechEffect.AdvanceTier ? project.Value : project.RequiredTier;
-            if (destination > capped.MaxTechTier)
-            {
-                return false;
-            }
+            reason = $"εκτός εποχής — σταματά στο επίπεδο {capped.MaxTechTier}";
+            return false;
         }
 
         if (project.Prerequisite != TechId.None && !TechCatalog.IsCompleted(team.TechMask, project.Prerequisite))
         {
+            reason = TechCatalog.TryGet(project.Prerequisite, out TechProject prerequisite)
+                ? $"χρειάζεται «{prerequisite.GreekName}»"
+                : "λείπει προαπαιτούμενο σχέδιο";
             return false;
         }
 
         if (team.Materials < project.Cost)
         {
+            reason = $"λείπουν {project.Cost - team.Materials} Π";
             return false;
         }
 
-        team.Materials -= project.Cost;
-        team.ResearchingTech = tech;
-        team.ResearchTargetTier = project.RequiredTier;
-        team.ResearchTicksTotal = TechCatalog.TicksFor(building.Faction, project);
-        team.ResearchTicksRemaining = team.ResearchTicksTotal;
         return true;
     }
 
