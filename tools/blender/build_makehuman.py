@@ -111,14 +111,12 @@ BREATHE = {
     "head": (0.0, -0.03, 0.0),
 }
 
-#: The pipe grasp: where the bones point while the hand is at the bowl, replacing the
-#: standing directions for the arm and tipping the head a few degrees towards it. The
-#: forearm folds up and in so the hand lands where the pipe is — at the figure's left,
-#: which is the corner of the mouth the pipe hangs from.
+#: The pipe grasp: where the head and the free arm point while the pipe is at his mouth.
+#: The *left* arm is not in here: a direction that looks right at the shoulder cannot put a
+#: hand on a point, and aiming one at the mouth folded the forearm through the chest —
+#: measured, the fingertips stood 69 mm from the pipe's grip with the sleeve laid across the
+#: tunic. The left arm is solved instead; see LEFT_ARM below.
 GRASP = {
-    "upperarm_l": (0.10, -0.80, -0.35),
-    "lowerarm_l": (-0.60, 0.45, 0.65),
-    "hand_l": (-0.35, 0.25, 0.35),
     "upperarm_r": (-0.30, 0.02, -1.0),
     "head": (0.03, -0.06, 1.0),
     "spine_02": (0.015, -0.02, 1.0),
@@ -146,29 +144,62 @@ GESTURE_B = {
     "lowerarm_r": (-0.10, -0.80, 0.15),
 }
 
-#: The pipe held out while he talks over it: the hand comes forward and down off the
-#: face, presenting the bowl at chest height, and the head straightens — he is
-#: addressing the room now, not the pipe.
+#: The pipe held out while he talks over it: the head straightens — he is addressing the
+#: room now, not the pipe. The left arm is solved; see LEFT_ARM.
 HELD = {
-    "upperarm_l": (0.10, -0.50, -0.62),
-    "lowerarm_l": (-0.50, 0.05, 0.70),
-    "hand_l": (-0.25, 0.05, 0.45),
     "head": (0.04, -0.03, 1.0),
     "spine_02": (0.01, -0.01, 1.0),
 }
 
-#: Two beats of talk while the pipe is held: small turns of the hand and head, as if
-#: weighing the words. The difference between a man holding a pipe and a man thinking
-#: with one.
+#: Two beats of talk while the pipe is held: small turns of the head, as if weighing the
+#: words, and small moves of the hand — see LEFT_ARM_TALK below for those.
 TALK_A = {
-    "hand_l": (-0.32, 0.02, 0.38),
     "head": (0.07, -0.02, 1.0),
 }
 
 TALK_B = {
-    "hand_l": (-0.18, 0.10, 0.50),
     "head": (0.02, -0.06, 1.0),
 }
+
+#: <b>The left arm, solved rather than aimed.</b> Everything else in this file points a bone
+#: at a direction, which is exact and cannot get a sign wrong — but a direction is not a
+#: place. The hand has to close on the pipe, and the first attempt at that aimed the upper
+#: arm, the forearm and the hand at three directions that each looked reasonable and put the
+#: fingertips 69 mm from the grip with the sleeve lying across the chest: the arm had folded
+#: *through* the body to get where it was pointing.
+#:
+#: So the left arm is a two-bone chain solved to a target: the wrist goes where the pipe is
+#: and the elbow goes where an elbow goes — out and down, on the pole below. The path from
+#: his side to his mouth is bowed away from the body, because the straight line between those
+#: two points runs through his belly, and the bow is what makes the hand travel around him.
+#:
+#: All of it is metres, in armature space, measured off the rig this file builds.
+LEFT_ARM = {
+    # Where the pipe's grip is, from the mouth anchor the pipe bone rides: the bowl hangs
+    # two centimetres forward of it and two and a half below.
+    "grip_from_mouth": Vector((0.008, -0.020, -0.024)),
+    # The hand's own direction when it is on the pipe: up, a little inward and forward.
+    "grasp_hand": Vector((-0.22, -0.20, 0.95)),
+    # The wrist when the pipe is held out to talk over: out from the shoulder, forward, a
+    # hand's width below it, with the hand turned a little further up than at the mouth.
+    "held_wrist": Vector((0.06, -0.26, -0.12)),
+    "held_hand": Vector((-0.20, -0.45, 0.87)),
+    # What the two talk beats add to the held position: two centimetres of hand, which is
+    # the difference between holding a pipe and thinking with one.
+    "talk_a": Vector((0.0, -0.02, 0.012)),
+    "talk_b": Vector((0.012, -0.035, -0.012)),
+    # Which way the elbow points. Down and out is where an elbow goes when a hand comes up
+    # to a face; the pole is a direction from the shoulder, not a position.
+    "pole": Vector((0.55, 0.30, -0.78)),
+    # How far the hand's path bows away from the straight line to the pipe at the middle of
+    # the lift — out to his left and forward, which is the way round his own chest.
+    "lift": Vector((0.62, -0.72, 0.30)),
+    "bow": 0.09,
+}
+
+#: The mouth anchor the pipe rides, as a name, so the solve reads where the pipe *is* on
+#: the frame it is solving rather than where a constant thought it would be.
+PIPE_MOUTH_BONE = "pipe_mouth"
 
 #: One loop of the scene, 24 s at 24 fps, deliberately slow: stand, breathe, and the
 #: hand comes up unhurried; the pipe leaves his mouth and he talks over it for a
@@ -415,6 +446,62 @@ def aim_bone(armature, name, direction):
     bpy.context.view_layer.update()
 
 
+def solve_arm(armature, side, wrist_target, pole):
+    """Put an arm's wrist on `wrist_target` with the elbow swinging towards `pole`.
+
+    Two-bone inverse kinematics, in closed form: the elbow lies on a circle around the
+    line from shoulder to wrist, and the pole says which point of that circle to take.
+    Aiming the two bones at the two directions this returns is exact — the wrist lands
+    on the target to floating-point — which is the difference between "the hand is
+    near the pipe" and "the hand is on it".
+
+    The angles are the law of cosines, so nothing here is tuned: the bone lengths are
+    the rig's own and the target is a place.
+    """
+    upper = armature.pose.bones.get(f"upperarm_{side}")
+    lower = armature.pose.bones.get(f"lowerarm_{side}")
+    upper_bone = armature.data.bones.get(f"upperarm_{side}")
+    lower_bone = armature.data.bones.get(f"lowerarm_{side}")
+
+    if upper is None or lower is None or upper_bone is None or lower_bone is None:
+        return False
+
+    bpy.context.view_layer.update()
+    shoulder = upper.head.copy()
+    first = upper_bone.length
+    second = lower_bone.length
+
+    to_target = wrist_target - shoulder
+    # A target at or past the arm's reach is not reachable: the elbow straightens, and
+    # clamping here is what keeps the solve from asking for a negative cosine.
+    reach = min(to_target.length, (first + second) * 0.999)
+
+    if reach < 1e-5:
+        return False
+
+    forward = to_target.normalized()
+
+    # The pole, flattened onto the plane the elbow swings in: only the part of it across
+    # the shoulder-to-wrist line says anything about where the elbow goes.
+    across = pole - shoulder
+    across -= forward * across.dot(forward)
+
+    if across.length < 1e-6:
+        across = Vector((0.0, 0.0, -1.0)) - forward * forward.z
+    if across.length < 1e-6:
+        return False
+
+    across.normalize()
+
+    cosine = (first * first + reach * reach - second * second) / (2.0 * first * reach)
+    angle = math.acos(max(-1.0, min(1.0, cosine)))
+    elbow = shoulder + (forward * math.cos(angle) + across * math.sin(angle)) * first
+
+    aim_bone(armature, f"upperarm_{side}", elbow - shoulder)
+    aim_bone(armature, f"lowerarm_{side}", wrist_target - elbow)
+    return True
+
+
 def add_pipe_bones(armature, mouth):
     """Two extra bones for the pipe, so it can leave his mouth and come back.
 
@@ -475,6 +562,58 @@ def author_idle(armature, fps=24, keys=IDLE_KEYS, last_frame=IDLE_LAST_FRAME):
               ("talka", TALK_A), ("talkb", TALK_B),
               ("gesture", GESTURE), ("gestureb", GESTURE_B))
 
+    # The left arm's own measurements, taken once off the standing pose: where its wrist
+    # hangs relative to its shoulder, and which way the hand points there. Everything the
+    # solve does afterwards is a move from that, so the clip starts and ends on the figure
+    # the aimed pass would have drawn.
+    for name in POSE_BONES:
+        base = STANDING.get(name, rest.get(name))
+        if base is not None:
+            aim_bone(armature, name, Vector(base))
+
+    bpy.context.view_layer.update()
+    l_shoulder = armature.pose.bones["upperarm_l"].head.copy()
+    l_wrist_offset = armature.pose.bones["hand_l"].head.copy() - l_shoulder
+    l_hand_dir = (armature.pose.bones["hand_l"].tail - armature.pose.bones["hand_l"].head).normalized()
+    l_hand_length = armature.data.bones["hand_l"].length
+
+    grip_from_mouth = LEFT_ARM["grip_from_mouth"]
+    grasp_hand = LEFT_ARM["grasp_hand"].normalized()
+    held_hand = LEFT_ARM["held_hand"].normalized()
+    pole = LEFT_ARM["pole"].normalized()
+    lift_dir = LEFT_ARM["lift"].normalized()
+
+    def solve_left_arm(weights):
+        """Place the left wrist for one key: stand, at the pipe, or held out to talk."""
+        bpy.context.view_layer.update()
+        shoulder = armature.pose.bones["upperarm_l"].head.copy()
+
+        grasp = weights.get("grasp", 0.0)
+        hold = weights.get("holdpose", 0.0)
+
+        # The grip is asked of the pipe's own bone, so it goes wherever the head has
+        # taken it on this frame: the head tips towards the pipe as he takes it.
+        mouth = armature.pose.bones[PIPE_MOUTH_BONE]
+        head_pose = armature.pose.bones["head"]
+        head_delta = head_pose.matrix @ armature.data.bones["head"].matrix_local.inverted()
+        grip = mouth.head + (head_delta.to_3x3() @ grip_from_mouth)
+
+        hand_dir = l_hand_dir.lerp(grasp_hand, grasp).lerp(held_hand, hold).normalized()
+        at_pipe = grip - hand_dir * l_hand_length
+        held_wrist = shoulder + LEFT_ARM["held_wrist"] + LEFT_ARM["talk_a"] * weights.get("talka", 0.0) \
+            + LEFT_ARM["talk_b"] * weights.get("talkb", 0.0)
+
+        target = (shoulder + l_wrist_offset).lerp(at_pipe, grasp).lerp(held_wrist, hold)
+
+        # The bow: the straight line from his side to his mouth is through his belly, so
+        # the hand is pushed out and forward through the middle of the move and lands on
+        # the line at either end. `sin` is zero at both stations and one between them.
+        lift = max(grasp, hold)
+        target += lift_dir * (LEFT_ARM["bow"] * math.sin(math.pi * min(1.0, lift)))
+
+        solve_arm(armature, "l", target, shoulder + pole)
+        aim_bone(armature, "hand_l", hand_dir)
+
     for frame, weights in keys:
         # frame_set FIRST: it re-evaluates the action and overwrites the pose with
         # the interpolation of the keys so far. Aiming after it poses on top of that;
@@ -490,6 +629,11 @@ def author_idle(armature, fps=24, keys=IDLE_KEYS, last_frame=IDLE_LAST_FRAME):
             if base is None:
                 continue
 
+            # The left arm is solved, not aimed — see solve_left_arm. Aiming it here and
+            # solving it afterwards would be two answers to one question.
+            if name in ("upperarm_l", "lowerarm_l", "hand_l"):
+                continue
+
             target = Vector(base)
             if breathe:
                 target += Vector(BREATHE.get(name, (0.0, 0.0, 0.0))) * breathe
@@ -498,6 +642,9 @@ def author_idle(armature, fps=24, keys=IDLE_KEYS, last_frame=IDLE_LAST_FRAME):
                 if weight and name in pose:
                     target = target.lerp(Vector(pose[name]), weight)
             aim_bone(armature, name, target)
+
+        # After everything it hangs from has been posed, and before the key is written.
+        solve_left_arm(weights)
 
         for pose_bone in armature.pose.bones:
             pose_bone.keyframe_insert("rotation_quaternion", frame=frame)
@@ -844,18 +991,61 @@ def main():
               f"at the corner of the mouth")
 
         # The gesture is aimed by number, not by eye: where the fingertips stand at the
-        # grasp's peak against the pipe's grip, so a weak reach reads as millimetres of
-        # gap instead of as a screenshot somebody squints at.
+        # grasp's peak against the pipe's grip, and how close the arm comes to the body on
+        # the way there. The first version of this pose read as a hand inside the chest,
+        # and the numbers behind it were a 69 mm gap and a sleeve lying across the tunic —
+        # so both are printed, and the second is the one that says "inside".
+        #
+        # The grip is read off the *posed* pipe, not off a rest-pose constant: the head
+        # tips towards the pipe as he takes it, and the spine straightens by eighteen
+        # degrees, which moves the mouth fifteen centimetres forward. A constant compared
+        # against a moving pipe is a number that lies, and this one did — it read 161 mm
+        # for a hand that was nine millimetres from the pipe.
         if not args.no_pose:
+            hand = armature.pose.bones.get("hand_l")
+            mouth_bone = armature.pose.bones.get(PIPE_MOUTH_BONE)
+
             bpy.context.scene.frame_set(252)
             bpy.context.view_layer.update()
-            hand = armature.pose.bones.get("hand_l")
-            if hand is not None:
+
+            if hand is not None and mouth_bone is not None:
                 tip = armature.matrix_world @ hand.tail
-                grip = nose + Vector((0.019, -0.006, -0.054))
+                head_pose = armature.pose.bones["head"]
+                head_delta = head_pose.matrix @ armature.data.bones["head"].matrix_local.inverted()
+                grip = armature.matrix_world @ (
+                    mouth_bone.head + (head_delta.to_3x3() @ LEFT_ARM["grip_from_mouth"]))
                 print(f"  gesture: fingertips {tuple(round(c, 3) for c in tip)}, "
                       f"grip {tuple(round(c, 3) for c in grip)}, "
                       f"gap {(tip - grip).length * 1000:.0f} mm")
+
+            # The body he must not put his hand in, as a capsule round the spine: the
+            # torso is about 0.13 m deep and 0.20 m wide where the arm passes it, and a
+            # wrist inside 0.14 m of the spine axis between hip and chest is inside the man.
+            spine = [armature.pose.bones.get(name) for name in ("spine_01", "spine_03")]
+            worst = (1e9, 0)
+            inside = 0
+
+            for frame in range(1, IDLE_LAST_FRAME + 1):
+                bpy.context.scene.frame_set(frame)
+                bpy.context.view_layer.update()
+
+                if hand is None or any(bone is None for bone in spine):
+                    break
+
+                base = armature.matrix_world @ spine[0].head
+                top = armature.matrix_world @ spine[1].tail
+                point = armature.matrix_world @ hand.head
+                span = top - base
+                along = max(0.0, min(1.0, (point - base).dot(span) / span.length_squared))
+                gap = (point - (base + span * along)).length
+
+                if gap < 0.14:
+                    inside += 1
+                if gap < worst[0]:
+                    worst = (gap, frame)
+
+            print(f"  gesture: wrist closest to the spine axis {worst[0] * 1000:.0f} mm "
+                  f"at frame {worst[1]}, frames inside 140 mm: {inside} of {IDLE_LAST_FRAME}")
             bpy.context.scene.frame_set(1)
 
     # The tunic's insignia is measured off the suit the same way the pipe is measured

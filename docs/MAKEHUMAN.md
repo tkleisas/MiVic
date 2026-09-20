@@ -440,6 +440,27 @@ rotation is what carries it through a chain: a bone aimed after its parent has m
 ends up pointing where it was asked to. `bpy.context.view_layer.update()` between bones is
 what keeps `head`/`tail` current.
 
+**The left arm is the exception: it is solved, not aimed.** A direction cannot get a sign
+wrong, but a direction is not a *place*, and a hand has to close on the pipe. Aimed at three
+directions that each looked reasonable — upper arm forward and down, forearm up and across,
+hand inward — the fingertips stopped **69 mm** short of the grip with the sleeve lying across
+the tunic and the wrist 60 mm from the spine axis. The arm had folded *through* the chest to
+get where it was pointing, which is what "his hand is inside his body" looks like in a
+briefing.
+
+So the left arm is a two-bone chain solved in closed form to a target (`solve_arm`): the
+elbow lies on a circle around the shoulder-to-wrist line and a pole says which point of it to
+take, so the angles are the law of cosines and nothing is tuned. The wrist goes where the pipe
+*is* — read off `pipe_mouth` on the frame being posed rather than off a constant, because the
+head tips towards the pipe and the spine straightens eighteen degrees as he takes it, which
+moves his mouth fifteen centimetres. And the path from his side to his mouth is **bowed away
+from the body**, because the straight line between those two points runs through his belly:
+90 mm of bow at mid-lift is what makes the hand travel round him instead of through him.
+
+Measured on the built clip, and printed by the build: fingertips **0 mm** from the grip at the
+grasp's peak, the wrist never closer than **273 mm** to the spine axis, and **0 of 576 frames**
+with the wrist inside 140 mm of it.
+
 The result is keyframed into an action named **`Idle`**, because `CutsceneDirector` asks for
 that clip by name and a figure with no clips falls back to the bind pose. The loop is
 twenty-four seconds, seventeen keys, deliberately slow: stand, breathe, the hand comes up
@@ -461,9 +482,11 @@ after**: setting the frame re-evaluates the action and overwrites the pose with 
 already in it, so a loop that aimed and *then* set the frame keyed the reverted pose —
 which is how the old three-key loop exported "stand, stand, stand" and called it
 breathing. And the gesture is checked numerically at build time: the build prints the
-fingertip position at the grasp's peak against the pipe's grip point, so a weak reach
-reads as millimetres of gap rather than as a screenshot somebody squints at. 165
-channels, 24.0 s.
+fingertip position at the grasp's peak against the pipe's grip point *on that frame* — the
+first version of that check compared against a rest-pose constant and read 161 mm for a hand
+that was 9 mm from the pipe, which is a measurement that lies rather than a check — and the
+closest the wrist comes to the spine axis anywhere in the clip, which is the number that says
+"inside the body". 165 channels, 24.0 s.
 
 ---
 

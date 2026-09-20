@@ -63,7 +63,7 @@ $exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
 
 python3 tools/render_cutscene.py --cutscene m1_briefing --out artifacts/cutscene `
     --width 1280 --height 720
-Copy-Item artifacts/cutscene/frame0072.png docs/images/briefing.png
+Copy-Item artifacts/cutscene/frame0100.png docs/images/briefing.png
 ```
 
 The cutscene command needs the size because the script's default is 960×540, and the
@@ -482,7 +482,11 @@ There are **no voices**: the words are typed on screen in Greek over the
 faction's own procedural score (a briefing is scored by its own side). The
 motion stays diorama-honest — a man at his desk, not an actor on a stage:
 he breathes, draws on his pipe (a wisp of smoke climbs off the bowl), takes
-it in hand for a moment, and sets out the front with one open hand. The room
+it in hand for a moment, and sets out the front with one open hand. The arm
+that takes the pipe is a **two-bone solve** rather than a direction like every
+other bone, because a direction is not a place: aimed at the mouth, it folded
+through his own chest and left the fingertips 69 mm from the pipe. See
+[docs/MAKEHUMAN.md](docs/MAKEHUMAN.md) §4 — the room
 is lit by the petrol lamp on the desk and nothing else, the light breathing
 with the flame, and the window behind the books is night. Space ends the
 line being read, Esc skips the scene, and every line is also the transcript's.
