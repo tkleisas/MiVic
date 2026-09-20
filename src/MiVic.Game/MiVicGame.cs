@@ -589,9 +589,12 @@ public sealed partial class MiVicGame : XnaGame
             // every trajectory comes at the viewer and a seventy-metre round is
             // foreshortened into a stub. Turned around, the line runs left to right and
             // every round recedes, which is the only angle at which its length shows.
-            _camera.ZoomTo(120f);
-            _camera.TiltTo(-0.62f);
-            _camera.Yaw = MathHelper.Pi;
+            // The overrides are honoured so that a round can be looked at rather than
+            // taken on trust: whether one is on screen depends on the frame, and how big
+            // it is depends on this.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 120f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.62f);
+            _camera.Yaw = _options.ScreenshotYaw ?? MathHelper.Pi;
         }
         else if (_options.NukeDemo)
         {
@@ -606,19 +609,25 @@ public sealed partial class MiVicGame : XnaGame
         {
             // Straight down over the effect grid, close enough that a muzzle flash is
             // more than a pixel. A fixture that does not frame itself is a fixture
-            // that costs a render per guess.
-            _camera.ZoomTo(150f);
-            _camera.TiltTo(-1.36f);
-            _camera.Yaw = 0f;
+            // that costs a render per guess. The overrides are honoured because the grid
+            // holds one of every effect and a frame wide enough for all of them is a
+            // frame in which none of them is legible.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 150f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -1.36f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 0f;
         }
         else if (_options.CombatDemo)
         {
             // Close in and low: a firefight is read from the side, at the distance
-            // where a tracer is a streak rather than a pixel.
-            _camera.ZoomTo(135f);
-            _camera.TiltTo(-0.48f);
-            _camera.Yaw = 1.05f;
-            _camera.FocusOn(Vector3.Zero);
+            // where a tracer is a streak rather than a pixel. Where it points is not
+            // written here: the fixture lays its line out on the clearest ground the map
+            // has, and FocusOnClearing aims the camera at the line further down, as the
+            // turret and emplacement fixtures do. The screenshot overrides are honoured
+            // because the line is a hundred metres wide and a frame of the whole of it is
+            // a frame of specks.
+            _camera.ZoomTo(_options.ScreenshotZoom ?? 75f);
+            _camera.TiltTo(_options.ScreenshotPitch ?? -0.48f);
+            _camera.Yaw = _options.ScreenshotYaw ?? 1.05f;
         }
         else if (_options.TurretDemo)
         {
@@ -844,6 +853,13 @@ public sealed partial class MiVicGame : XnaGame
         if (_options.TurretDemo)
         {
             FocusOnTurrets();
+        }
+
+        if (_options.CombatDemo)
+        {
+            // The line itself, which is the whole of the fixture: fifteen machines in a field
+            // and nothing else on the map to drag a centroid off them.
+            FocusOnClearing(Vector3.Zero);
         }
 
         if (_options.FlightDemo)

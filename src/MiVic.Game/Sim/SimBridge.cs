@@ -195,6 +195,22 @@ public sealed class SimBridge
             }
         }
 
+        // The line is laid out on the clearest ground the map has, not around the map's origin.
+        // The fight is the whole subject of this fixture and of every screenshot taken of it, and
+        // the origin is woodland: measured, all fifteen machines projected inside the viewport of
+        // the demo's own camera and not one of them could be seen, because the line to each of
+        // them passed through a canopy. The fixtures that stand two machines in a field have
+        // searched for a clearing since they were written; this one now does the same, and the
+        // line keeps the shape it was composed with.
+        if (!TryFindClearing(world.TerrainTypes, metres: 75f, out int bestCell, out int bestScore))
+        {
+            return bridge;
+        }
+
+        (int centreX, int centreZ) = CellCentreMetres(world.TerrainTypes, bestCell);
+
+        Console.WriteLine($"combat-demo: open ground at {centreX}, {centreZ} (score {bestScore})");
+
         // Attackers on one side, defenders on the other, eighty-five metres apart:
         // inside rifle range (90 m) so the smallest weapon in the game is firing too,
         // and outside the reach of nothing. Teams 0 and 2 are enemies in every
@@ -203,6 +219,9 @@ public sealed class SimBridge
         // Weighted towards infantry on purpose. Tanks and artillery kill each other in
         // about four seconds, which leaves nothing to look at; riflemen take half a
         // minute over the same job and keep the tracers coming.
+        //
+        // The coordinates are offsets from the clearing's centre, so the line moves with the
+        // ground the search picks and its own shape is the only thing written here.
         (Faction Faction, int Team, UnitKind Kind, int X, int Z)[] line =
         [
             (Faction.Soviet, 0, UnitKind.Infantry, -42, -16),
@@ -235,7 +254,7 @@ public sealed class SimBridge
                 faction,
                 team,
                 kind,
-                WorldPos.FromMetres(x, 0, z),
+                WorldPos.FromMetres(centreX + x, 0, centreZ + z),
                 Fix32.FromInt(definition.SpeedMmPerTick),
                 definition.Health);
         }
