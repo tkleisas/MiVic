@@ -316,6 +316,25 @@ public sealed class InstancedRenderer : IDisposable
 
     /// <summary>Issues one instanced draw call for <paramref name="count"/> copies of a mesh.</summary>
     public void Draw(Mesh mesh, InstanceData[] instances, int count)
+        => Draw(mesh, instances, count, billboards: false);
+
+    /// <summary>
+    /// Issues one instanced draw call for camera-facing quads the caller has already built in
+    /// world space — health bars, and anything else whose corners are placed rather than oriented
+    /// by the shader.
+    /// <para>
+    /// <b>The plain path culls, and a billboard must not be culled.</b> That is right for a model
+    /// seen from outside and wrong for a quad whose winding depends on the camera's own basis: the
+    /// triangles that come out facing away are dropped, and the bar is simply not there. Particles
+    /// have always drawn this way, which is why smoke and tracers were visible and the health bars
+    /// — which took the ordinary path — were not. The alpha in the instance colour is honoured here
+    /// too, because a bar is a strip of colour laid over the world rather than a surface in it.
+    /// </para>
+    /// </summary>
+    public void DrawBillboards(Mesh mesh, InstanceData[] instances, int count)
+        => Draw(mesh, instances, count, billboards: true);
+
+    private void Draw(Mesh mesh, InstanceData[] instances, int count, bool billboards)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(instances);
@@ -350,7 +369,7 @@ public sealed class InstancedRenderer : IDisposable
         BlendState? previous = null;
         RasterizerState? previousRasterizer = null;
 
-        if (_particles || _ghost)
+        if (_particles || _ghost || billboards)
         {
             // The shader returns unmultiplied colour, so the alpha pass is
             // NonPremultiplied rather than MonoGame's premultiplied AlphaBlend. Additive
@@ -362,7 +381,7 @@ public sealed class InstancedRenderer : IDisposable
                 ? BlendState.Additive
                 : BlendState.NonPremultiplied;
 
-            if (_particles)
+            if (_particles || billboards)
             {
                 // Billboards are single-sided and their winding depends on the
                 // camera basis, so culling them would make half of them vanish. A ghost

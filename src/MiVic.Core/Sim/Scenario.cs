@@ -493,7 +493,12 @@ public static class Scenario
                 position = new WorldPos(position.X, 60_000, position.Z);
             }
 
-            SpawnPlaced(world, faction, teamId, kind, position, speed, health: 100, spawned);
+            // Each role arrives with its own hit points. This passed a flat 100 — an infantryman's
+            // health — for every role, so a tank began every match at a third of its strength, an
+            // artillery piece at half and an aircraft at five eighths: a whole starting force that
+            // looked damaged on the first frame and died like infantry. The model gallery above
+            // has always passed the role's own number, and this is the same call it makes.
+            SpawnPlaced(world, faction, teamId, kind, position, speed, UnitCatalog.Get(kind).Health, spawned);
         }
     }
 

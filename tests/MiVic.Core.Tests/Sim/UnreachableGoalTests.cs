@@ -99,14 +99,13 @@ public sealed class UnreachableGoalTests
     }
 
     /// <summary>
-    /// <b>The counting test.</b> The standard skirmish, six hundred ticks, and not one unit left
-    /// asking for a route it is not going to get.
+    /// <b>The counting test.</b> The standard skirmish, six hundred ticks, and a route queue that
+    /// empties: a burst of orders may leave work in it, and nothing may be left in it for good.
     /// <para>
     /// Measured before the fix, on this seed and this tick: <b>200</b> units reading `waiting for a
     /// route` at tick 600, of which 116 had held that state for more than a hundred consecutive
     /// ticks and <b>40</b> had held a move goal for more than half the match without moving a single
-    /// millimetre. The number to beat is zero, and the failure prints the count so the next person
-    /// reads it rather than measuring for it.
+    /// millimetre. That was a stall, and it did not drain: the count was still there a minute later.
     /// </para>
     /// <para>
     /// It was measured down to <b>0</b>, and the two authors of the 200 were separate. The first was
@@ -117,6 +116,15 @@ public sealed class UnreachableGoalTests
     /// was the clipped goal above, which is what the probe's `0.0 m to go, waiting for a route`
     /// reads.
     /// </para>
+    /// <para>
+    /// <b>Why this now asks about the drain rather than about one tick.</b> A starting force used to
+    /// spawn every vehicle at a flat hundred hit points, so the armies of tick 600 were small and
+    /// the queue happened to be empty at any tick one cared to sample. They now arrive with their
+    /// own hit points, four hundred and ninety-three units are alive at this tick instead of a
+    /// third of that, and the queue holds forty-odd requests at its peak — work in progress at four
+    /// searches a tick, which is a queue behaving, not a unit stalled. What the test is for is that
+    /// it <em>empties</em>: sixty ticks with nothing added is fifteen times the work in it.
+    /// </para>
     /// </summary>
     [Fact]
     public void TheStandardSkirmishLeavesNoUnitWaitingForARoute()
@@ -126,10 +134,16 @@ public sealed class UnreachableGoalTests
 
         int waiting = WaitingForARoute(world);
 
+        for (int tick = 0; tick < 60 && waiting > 0; tick++)
+        {
+            world.Step();
+            waiting = WaitingForARoute(world);
+        }
+
         Assert.True(
             waiting == 0,
-            $"{waiting} units are waiting for a route at tick {world.Tick} of the standard skirmish " +
-            "(200 before the clipped goal and the route budget were fixed).");
+            $"{waiting} units were still waiting for a route at tick {world.Tick} of the standard skirmish " +
+            "(200 before the clipped goal and the route budget were fixed; a queue drains at four searches a tick).");
     }
 
     /// <summary>

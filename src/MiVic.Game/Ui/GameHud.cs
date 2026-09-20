@@ -776,6 +776,8 @@ public sealed class GameHud
         ref Entity building = ref world.GetRefBySlot(slot);
         FactionProfile profile = FactionProfile.For(building.Faction);
         TeamState team = world.Team(building.TeamId);
+        UnitDefinition structure = UnitCatalog.Get(building.Kind);
+        bool ours = building.TeamId == MatchRoster.PlayerTeam;
 
         // Anchored to the bottom-left corner so the panel grows upwards. It used
         // to sit at a fixed y = 430, which put every build button below the
@@ -787,7 +789,9 @@ public sealed class GameHud
 
         HudCommand? command = null;
 
-        if (!ImGui.Begin("Παραγωγή##build", PanelFlags))
+        // A building the player does not own is something to look at, and the panel says what it
+        // is rather than what it could make: an enemy factory has no rows to press.
+        if (!ImGui.Begin(ours ? "Παραγωγή##build" : "Πληροφορίες##build", PanelFlags))
         {
             ImGui.End();
             return null;
@@ -796,7 +800,18 @@ public sealed class GameHud
         ImGui.TextColored(ToVector4(FactionPalette.Primary(building.Faction)), profile.GreekName);
         ImGui.SameLine();
         ImGui.TextColored(MutedColor, FactionPalette.UnitLabel(building.Kind));
+
+        float structureHealth = structure.Health > 0
+            ? Math.Clamp((float)building.Health / structure.Health, 0f, 1f)
+            : 0f;
+        ImGui.ProgressBar(structureHealth, new NVec2(-1f, 12f), $"Υγεία {building.Health}/{structure.Health}");
         ImGui.Separator();
+
+        if (!ours)
+        {
+            ImGui.End();
+            return null;
+        }
 
         ReadOnlySpan<ProductionJob> jobs = world.JobsOf(slot);
 

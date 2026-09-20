@@ -496,7 +496,7 @@ public sealed class UnjudgedSideTests
         SimWorld skirmish = Scenario.NewWorld(ScenarioKind.Skirmish, 20250101, Capacity);
         Scenario.Build(skirmish, ScenarioKind.Skirmish);
 
-        Assert.Equal(9001795262535176951UL, StateHash.Compute(skirmish));
+        Assert.Equal(3523471750875444991UL, StateHash.Compute(skirmish));
         Assert.True(skirmish.Roster.IsJudged(0));
         Assert.True(skirmish.Roster.IsJudged(1));
         Assert.True(skirmish.Roster.IsJudged(2));

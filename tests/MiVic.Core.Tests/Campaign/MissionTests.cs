@@ -574,14 +574,18 @@ public sealed class MissionTests
         // no triggers hashes nothing new, so the layer cannot disturb a mission that does not use
         // it. The fourth hash is a new mission's, not a moved one's.
         //
-        // Last changed by the modern era's last six missions landing: the list grew to twenty-one,
-        // x5 to x10 appended their own six fingerprints after m1 to m4, and no earlier mission
-        // moved when they did. Before that it was the structure-loss ledger gaining a per-kind
-        // breakdown: the hash now folds the 32 slots of it for every team, so every world's hash
-        // moved with the field set again — no mission changed, the fingerprint did. Before that it
-        // was the audit that closed the state hash: every world's hash moved because the hash now
-        // folds in the entity fields it had been skipping, the route's own waypoints, and the
-        // corrected rounding of negative fixed-point products.
+        // Last changed by the starting force learning its own hit points: every mission's opening
+        // army used to spawn each vehicle at a flat hundred, and each now arrives with its role's
+        // own — a tank at 320, an artillery piece at 210, an aircraft at 160 — so every world's
+        // hash moved with the entities in it. No mission's layout changed; the men in it did.
+        // Before that it was the modern era's last six missions landing: the list grew to
+        // twenty-one, x5 to x10 appended their own six fingerprints after m1 to m4, and no earlier
+        // mission moved when they did. Before that it was the structure-loss ledger gaining a
+        // per-kind breakdown: the hash now folds the 32 slots of it for every team, so every
+        // world's hash moved with the field set again — no mission changed, the fingerprint did.
+        // Before that it was the audit that closed the state hash: every world's hash moved because
+        // the hash now folds in the entity fields it had been skipping, the route's own waypoints,
+        // and the corrected rounding of negative fixed-point products.
         //
         // Before that it was the production queues becoming state: a mission's starting buildings have
         // empty queues and their hashes moved anyway, which is exactly why the queue field is mixed
@@ -600,27 +604,27 @@ public sealed class MissionTests
         // cell.
         ulong[] expected =
         [
-            9847799334465133416UL,
-            3283873620813569964UL,
-            4508879147646755874UL,
-            14817049138732711902UL,
-            1444733445562834875UL,
-            2403530285048726468UL,
-            3585420072741336489UL,
-            13890578630252119789UL,
-            15018273258975708685UL,
-            921221812242837666UL,
-            12987784401365476443UL,
-            10506566667300618048UL,
-            2314134954811554108UL,
-            13962516197684823025UL,
-            5050561699448869838UL,
-            9492141598485630500UL,
-            7506501707841203820UL,
-            3680081011739275840UL,
-            2195014991599519820UL,
-            2876269079344585704UL,
-            4729437655215668420UL,
+            11269028153270824757UL,
+            3217977502415456868UL,
+            87605940995067279UL,
+            16690202942744634629UL,
+            3350244121700064277UL,
+            9153519797402813647UL,
+            14135575968721032438UL,
+            2635057952689540489UL,
+            4479648555535197023UL,
+            8947935229694599292UL,
+            1990750340667312305UL,
+            12262093172106548307UL,
+            9766550279458729716UL,
+            8292663533713689561UL,
+            11092795112343266517UL,
+            14978746362077417336UL,
+            18401283950996368465UL,
+            15546198243764340983UL,
+            9450275919715336022UL,
+            17700497080085893060UL,
+            7073279626260121875UL,
         ];
 
         for (int i = 0; i < MissionCatalog.All.Length; i++)

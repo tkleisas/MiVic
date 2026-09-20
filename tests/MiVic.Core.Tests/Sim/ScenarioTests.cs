@@ -42,7 +42,11 @@ public sealed class ScenarioTests
     /// deliberate change to the starting layout: this is what catches a refactor
     /// that quietly moves a unit, which a replay would then reproduce wrongly.
     /// <para>
-    /// Last changed by the production queues becoming state: what each building is making, how far
+    /// Last changed by the starting force learning its own hit points: every vehicle used to spawn
+    /// at a flat hundred — an infantryman's health — so a tank opened the match at a third of its
+    /// strength. Each role now arrives with the health the catalogue gives it, and the entities in
+    /// the opening world are what the hash is of.
+    /// Before that it was the production queues becoming state: what each building is making, how far
     /// along it is and how long the job always was are hashed now, for every live slot whether or
     /// not its queue is empty. A starting skirmish has every queue empty, and every hash moved
     /// anyway — which is the point of mixing a field unconditionally rather than only when it has
@@ -63,7 +67,7 @@ public sealed class ScenarioTests
     /// </summary>
     [Fact]
     public void SkirmishInitialHash_IsStable()
-        => Assert.Equal(9001795262535176951UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
+        => Assert.Equal(3523471750875444991UL, StateHash.Compute(Build(20250101, ScenarioKind.Skirmish, out _)));
 
     [Fact]
     public void SkirmishLaysOutThreeForcesOfTheRightSize()

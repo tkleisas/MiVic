@@ -1561,17 +1561,20 @@ public sealed partial class MiVicGame : XnaGame
         }
 
         // Health bars go over the markers but under the fog: a bar for a unit the
-        // player cannot see would give away that something is there.
+        // player cannot see would give away that something is there. They are drawn as
+        // billboards, not as ordinary meshes — see InstancedRenderer.DrawBillboards — because a
+        // culled quad built from the camera's own basis is a bar that is sometimes simply not
+        // there.
         if (_healthBackBatch is { Count: > 0 })
         {
-            _renderer.Draw(_healthBackBatch.Mesh, _healthBackBatch.Instances, _healthBackBatch.Count);
+            _renderer.DrawBillboards(_healthBackBatch.Mesh, _healthBackBatch.Instances, _healthBackBatch.Count);
             _drawCalls++;
             _instancesSubmitted += _healthBackBatch.Count;
         }
 
         if (_healthFillBatch is { Count: > 0 })
         {
-            _renderer.Draw(_healthFillBatch.Mesh, _healthFillBatch.Instances, _healthFillBatch.Count);
+            _renderer.DrawBillboards(_healthFillBatch.Mesh, _healthFillBatch.Instances, _healthFillBatch.Count);
             _drawCalls++;
             _instancesSubmitted += _healthFillBatch.Count;
             _healthBarsDrawn = _healthFillBatch.Count;
@@ -1815,14 +1818,13 @@ public sealed partial class MiVicGame : XnaGame
                 continue;
             }
 
-            bool selected = _selection.Contains(new EntityId(slot, entity.Generation));
+            // <b>Every unit and building carries its health, always.</b> The bar used to appear
+            // only on something already hurt — or on the player's own selection — which meant an
+            // enemy was drawn with no bar at all until it had been shot, and a player looking at
+            // a hostile column could not see how much of it was left. The fog rule below is what
+            // keeps that honest: a bar belongs to something the player can see, and an enemy the
+            // fog is hiding is not drawn either, so the bar gives nothing away.
             float fraction = Math.Clamp((float)entity.Health / definition.Health, 0f, 1f);
-
-            // Nothing to say about a healthy unit nobody asked about.
-            if (fraction >= 1f && !selected)
-            {
-                continue;
-            }
 
             if (DrawsFogOfWar &&
                 entity.TeamId != PlayerTeam &&
@@ -1843,8 +1845,10 @@ public sealed partial class MiVicGame : XnaGame
                 new Vector4(0.05f, 0.06f, 0.07f, 0.80f));
 
             // Anchored to the left edge, so the bar empties from the right, which is
-            // how every player already reads one.
-            Vector3 offset = position - (right * ((Width * (1f - fraction)) * 0.5f));
+            // how every player already reads one. Nudged a hand's width towards the camera so
+            // the fill is not coplanar with its own backing: two quads at one depth are a bar
+            // that flickers between the colour and the shadow behind it.
+            Vector3 offset = position - (right * ((Width * (1f - fraction)) * 0.5f)) + (forward * 0.06f);
 
             _healthFillBatch.Instances[_healthFillBatch.Count++] = new InstanceData(
                 Billboard(right, up, forward, offset, Width * fraction, Height * 0.68f),
@@ -3694,6 +3698,10 @@ public sealed partial class MiVicGame : XnaGame
     /// command rather than two spellings of one. What this method owns is the selection — which units
     /// are being told, and that only an armed one is worth telling — and nothing about the order.
     /// </para>
+    /// <para>
+    /// Only the player's own units are told: a selection may hold somebody else's, because looking
+    /// at an enemy is a thing a player does, and an enemy must never be ordered to shoot itself.
+    /// </para>
     /// </summary>
     private void IssueAttackOrders(int targetSlot)
     {
@@ -3703,7 +3711,8 @@ public sealed partial class MiVicGame : XnaGame
 
         foreach (EntityId id in _selection.Selected)
         {
-            if (world.TryGet(id, out Entity attacker) && UnitCatalog.Get(attacker.Kind).IsArmed)
+            if (world.TryGet(id, out Entity attacker) && attacker.TeamId == PlayerTeam &&
+                UnitCatalog.Get(attacker.Kind).IsArmed)
             {
                 world.OrderAttack(id, victim, attacker.TeamId);
             }
@@ -3711,14 +3720,26 @@ public sealed partial class MiVicGame : XnaGame
     }
 
     /// <summary>
-    /// Selects the closest own unit to the cursor. A second click on the same
-    /// unit within a third of a second selects every unit of that role on screen.
+    /// Selects the entity under the cursor — the player's own, or anybody else's to look at. A
+    /// second click on one of the player's own units within a third of a second selects every
+    /// unit of that role on screen.
+    /// <para>
+    /// <b>What may be selected and what may be ordered are two questions.</b> Looking at an enemy
+    /// tank is how a player finds out what it is and how much health it has left, so the click
+    /// takes it and the panel names it. Telling it what to do is the other question, and every
+    /// order path asks it — <see cref="IssueMoveOrder"/> and <see cref="IssueAttackOrders"/> walk
+    /// the selection and skip anything that is not the player's, and the build panel draws no rows
+    /// for a building that is not the player's.
+    /// </para>
     /// </summary>
     private void SelectSingle(Vector2 cursor, bool additive, double now)
     {
-        int slot = PickSlotAt(cursor);
+        int slot = PickSlotAt(cursor, teamFilter: -1);
+        bool own = slot >= 0 && _simulation!.World.GetRefBySlot(slot).TeamId == PlayerTeam;
 
-        if (slot >= 0 && slot == _lastClickedSlot && now - _lastClickSeconds < 0.35d)
+        // The double-click shortcut is a way to gather an army, and an army is the player's own:
+        // double-clicking a stranger inspects it, twice, which changes nothing.
+        if (own && slot == _lastClickedSlot && now - _lastClickSeconds < 0.35d)
         {
             SelectAllOfKind(slot);
             _lastClickedSlot = -1;
@@ -3779,11 +3800,18 @@ public sealed partial class MiVicGame : XnaGame
     }
 
     /// <summary>
-    /// Returns the own unit whose screen position is nearest to the cursor, or -1.
+    /// Returns the entity whose drawn body is nearest to the cursor, or -1.
     /// <para>
     /// This is the inverse of <see cref="TryProjectToScreen"/>, and the self-test
     /// round-trips the two against each other: project a unit, pick at that exact
     /// pixel, and the same unit must come back.
+    /// </para>
+    /// <para>
+    /// <b>A click lands on a body, not on a point.</b> The distance used to be measured to one
+    /// point two metres above the ground, which is the middle of an infantryman and the ankles of
+    /// a tank: a player clicking the turret — or the ground a building stands on, at a close zoom
+    /// where two metres is thirty pixels — missed a unit they could plainly see. The pick now
+    /// measures to the segment the model occupies, so anywhere on it counts.
     /// </para>
     /// </summary>
     private int PickSlotAt(Vector2 cursor, int teamFilter = PlayerTeam)
@@ -3808,12 +3836,21 @@ public sealed partial class MiVicGame : XnaGame
                 continue;
             }
 
-            if (!TryProjectToScreen(UnitAnchor(slot, ref entity), out Vector2 screen))
+            Vector3 foot = _simulation.GetRenderPosition(slot, interpolate: true);
+
+            if (!TryProjectToScreen(foot, out Vector2 basePixel))
             {
                 continue;
             }
 
-            float distance = Vector2.Distance(screen, cursor);
+            // The top of the model, or the foot alone when it does not project — a unit the
+            // camera is inside is still at its foot.
+            Vector2 topPixel =
+                TryProjectToScreen(foot + new Vector3(0f, PickHeightMetres(entity.Kind), 0f), out Vector2 top)
+                    ? top
+                    : basePixel;
+
+            float distance = DistanceToSegment(cursor, basePixel, topPixel);
 
             if (distance < bestDistance)
             {
@@ -3912,7 +3949,11 @@ public sealed partial class MiVicGame : XnaGame
 
         foreach (EntityId id in _selection.Selected)
         {
-            if (!world.TryGet(id, out Entity entity))
+            // Looking at an enemy is not commanding one. A selection can hold a foreign unit —
+            // clicking a hostile tank names it and shows its health — and a move order to it must
+            // be refused here rather than travelling to the simulation, which would answer it:
+            // the issuer and the owner would be the same team and the enemy would obey.
+            if (!world.TryGet(id, out Entity entity) || entity.TeamId != PlayerTeam)
             {
                 continue;
             }
@@ -3930,9 +3971,33 @@ public sealed partial class MiVicGame : XnaGame
         }
     }
 
-    /// <summary>A point roughly at a unit's centre, used for picking.</summary>
+    /// <summary>A point roughly at a unit's centre, used for box selection.</summary>
     private Vector3 UnitAnchor(int slot, ref Entity entity)
         => _simulation!.GetRenderPosition(slot, interpolate: true) + new Vector3(0f, 2f, 0f);
+
+    /// <summary>
+    /// How tall a thing is for picking, in metres: the span a click can land on. Rough by design
+    /// — a click is not a collision test, and the alternative is a per-model bound the picker
+    /// does not carry — and generous, because missing a unit the player can see is worse than
+    /// taking the one behind it.
+    /// </summary>
+    private static float PickHeightMetres(UnitKind kind)
+        => UnitCatalog.Get(kind).IsBuilding ? 12f : 4f;
+
+    /// <summary>Distance from a point to a line segment, in pixels.</summary>
+    private static float DistanceToSegment(Vector2 point, Vector2 a, Vector2 b)
+    {
+        Vector2 span = b - a;
+        float lengthSquared = span.LengthSquared();
+
+        if (lengthSquared <= 1e-6f)
+        {
+            return Vector2.Distance(point, a);
+        }
+
+        float t = Math.Clamp(Vector2.Dot(point - a, span) / lengthSquared, 0f, 1f);
+        return Vector2.Distance(point, a + (span * t));
+    }
 
     /// <summary>Projects a world position to screen pixels, rejecting points behind the camera.</summary>
     private bool TryProjectToScreen(Vector3 world, out Vector2 screen)

@@ -20,6 +20,13 @@
 # generation and the yards that lift a command ceiling its opening army is over, so more structures
 # and more material move through the world before that emplacement is ordered, and the slot it lands
 # in moved with them. See `capacity.probe` for that half of the AI's loop.
+#
+# The first gun is read at 421, not at the 510 it was raised in. It is destroyed in the fighting —
+# team 2's counter-attack reaches it — and the AI raises its replacement on the same site, into the
+# first slot a casualty has freed, which is what a defensive line is supposed to do. What put the
+# enemy's guns in range of it is the health a starting force arrives with: vehicles used to spawn at
+# a flat hundred hit points and were dead before the line was tested, and they now arrive with the
+# hit points the catalogue gives their role.
 
 # --- what the AI started with ------------------------------------------------------------------
 tick 2
@@ -58,14 +65,14 @@ attributes 145.3 -98.5
 # --- the radar, and what it is worth to the gun --------------------------------------------------
 # A Πυροβολείο sees 170 m and shoots 200, so its reach is 170 until a powered radar covers the ground
 # both ends of the shot stand on — and the whole 200 once one does.
-range 510
+range 421
 range 511
 
 # --- the gun firing with nobody having ordered it -------------------------------------------------
 # `order automatic` is the client reading the simulation: the emplacement picked that target itself.
 # And the target is 193 m away, which is past the 170 m this gun can see on its own — the shot is the
 # radar's, as much as the gun's.
-unit 510
+unit 421
 unit 513
 events 12
 
