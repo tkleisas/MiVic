@@ -37,28 +37,47 @@ the SDK's default, which would look like a release.
 
 | | |
 |---|---|
-| ![A firefight: a fireball, smoke and debris](docs/images/firefight.png) | ![A firing line: one of every weapon in flight](docs/images/firing-line.png) |
-| **Μάχη.** Βολές, καπνός, θραύσματα. | **Γραμμή βολής.** Όλα τα όπλα του παιχνιδιού, με βλήματα στον αέρα. |
-| ![A ground burst with its shockwave ring](docs/images/explosions.png) | ![Every model on one sheet](docs/images/models.png) |
-| **Έκρηξη.** Κύκλος κύματος κρούσης, χώμα, θραύσματα. | **Τα μοντέλα.** Όλα, παραγόμενα από σενάριο Blender. |
-| ![The briefing: a man at a desk in a study, with a Greek subtitle](docs/images/briefing.png) | |
-| **Η ενημέρωση.** Μια σκηνή με κάμερα, υπότιτλους και δικό της θέμα. | |
+| ![A firefight: two lines of machines with a shell bursting between them](docs/images/firefight.png) | ![A firing line: both sides trading fire, rounds in the air](docs/images/firing-line.png) |
+| **Μάχη.** Δύο γραμμές αντίκρυ, με βλήμα να σκάει ανάμεσά τους. | **Γραμμή βολής.** Βολές και βλήματα στον αέρα, από κάθε όπλο. |
+| ![A shell bursting on the ground, with debris thrown up](docs/images/explosions.png) | ![Every unit and building carrying its own health bar](docs/images/health.png) |
+| **Έκρηξη.** Βλήμα στο έδαφος, λάμψη και θραύσματα. | **Γραμμές υγείας.** Κάθε μονάδα και κτίριο, δικό μας και εχθρικό. |
+| ![Every model on one sheet](docs/images/models.png) | ![The briefing: a man at a desk in a study, with a Greek subtitle](docs/images/briefing.png) |
+| **Τα μοντέλα.** Όλα, παραγόμενα από σενάριο Blender. | **Η ενημέρωση.** Μια σκηνή με κάμερα, υπότιτλους και δικό της θέμα. |
 
 Όλες οι εικόνες παράγονται από το ίδιο το παιχνίδι, χωρίς να παιχτεί χέρι:
 
 ```pwsh
 $exe = "src/MiVic.Game/bin/Debug/net9.0/MiVic.Game.exe"
-& $exe --combat-demo  --screenshot docs/images/firefight.png  --screenshot-frame 22
-& $exe --fire-demo    --screenshot docs/images/firing-line.png --screenshot-frame 50
+
+# Η βάση, με τα πάνελ: η έκδοση που δείχνει είναι αυτής της κατασκευής.
+& $exe --select-hq --screenshot docs/images/skirmish.png --screenshot-frame 90 `
+       --screenshot-zoom 360 --screenshot-target-x -180 --screenshot-target-z -180
+
+# Η μάχη: και οι τέσσερις από το ίδιο fixture, σε διαφορετική στιγμή και απόσταση.
+& $exe --combat-demo --screenshot docs/images/firefight.png   --screenshot-frame 40 --screenshot-zoom 45
+& $exe --combat-demo --screenshot docs/images/firing-line.png --screenshot-frame 22 --screenshot-zoom 60
+& $exe --combat-demo --screenshot docs/images/explosions.png  --screenshot-frame 42 --screenshot-zoom 26
+& $exe --combat-demo --screenshot docs/images/health.png      --screenshot-frame 18 --screenshot-zoom 60
+
 & $exe --model-gallery docs/images/models.png
-python3 tools/render_cutscene.py --cutscene m1_briefing --out artifacts/cutscene \
+
+python3 tools/render_cutscene.py --cutscene m1_briefing --out artifacts/cutscene `
     --width 1280 --height 720
+Copy-Item artifacts/cutscene/frame0072.png docs/images/briefing.png
 ```
 
 The cutscene command needs the size because the script's default is 960×540, and the
-image above is 1280×720. Note also that it runs the **Debug** build while the probes in
-[docs/PROBE.md](docs/PROBE.md) are run from Release; content is copied per configuration,
-so a model regenerated since the last Debug build will not be in a scene rendered from it.
+image above is 1280×720; the file it copies is one of the composited frames, so the
+subtitle is the line the scene is saying at that moment. Note also that it runs the
+**Debug** build while the probes in [docs/PROBE.md](docs/PROBE.md) are run from Release;
+content is copied per configuration, so a model regenerated since the last Debug build
+will not be in a scene rendered from it.
+
+The combat fixture puts its line on the clearest ground the map has rather than at the
+map's origin, which is woodland — a firefight has to be visible to be worth
+photographing. `--screenshot-frame` picks the moment (whether a round is in the air, or
+a shell is bursting, depends entirely on it) and `--screenshot-zoom` the distance; the
+fixture's own defaults are a wide shot of the whole line.
 
 ## Factions / Παρατάξεις
 
